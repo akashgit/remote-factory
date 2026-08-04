@@ -1,0 +1,121 @@
+auto_merge:
+  command: cd {project_path} && CURRENT=$(git rev-parse --abbrev-ref HEAD) && COMMON=$(git rev-parse --git-common-dir) &&
+    BASE=$(git --git-dir="$COMMON" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && if [ "$CURRENT" = "$BASE" ]; then
+    echo "Already on $BASE — no merge needed"; exit 0; fi && git update-ref refs/heads/"$BASE" HEAD && PARENT_WT=$(cd "$COMMON/.."
+    && pwd) && git diff-tree --no-commit-id --name-only -r HEAD HEAD~1 | while read file; do if [ -f "$file" ]; then mkdir
+    -p "$PARENT_WT/$(dirname $file)" && cp "$file" "$PARENT_WT/$file"; fi; done && echo "Updated $BASE to $(git rev-parse
+    --short HEAD)"
+  edges_out: []
+  id: auto_merge
+  reads:
+  - .factory/reviews/builder-latest.md
+  type: FnNode
+  writes: []
+builder:
+  blocking: 'true'
+  edges_out:
+  - condition: null
+    target: gate_verify
+  id: builder
+  reads:
+  - .factory/reviews/study-output.md
+  role: builder
+  slots:
+    task_prompt_builder: 'You are fixing a bug in an open-source project for the SWE-bench benchmark.
+
+
+      ## Your Task
+
+
+      1. **Read the task instruction** — Read /tmp/task-instruction.md for the full bug description and task requirements.
+
+
+      2. **Understand the codebase** — explore the repository structure. Read relevant source files, test files, and configuration.
+      Identify the root cause of the bug described in the task. Search for how similar code in the same codebase already handles
+      the same pattern — follow existing conventions for consistency. Reproduce the bug with a small test script to confirm
+      the issue before implementing the fix.
+
+
+      3. **Implement the fix** — make the MINIMAL change that resolves the issue. Do NOT refactor, modernize, or add unrelated
+      improvements. Fix ONLY the described bug.
+
+
+      4. **Run the project''s own tests** — this is CRITICAL. Run the test suite to verify your fix works AND existing tests
+      still pass. Use pytest, tox, or whatever test runner the project uses. If specific test files are mentioned in the task,
+      run those first. If imports fail due to missing build artifacts, try `python setup.py build_ext --inplace` once. If
+      the environment still cannot run tests after one attempt, verify via `python -m py_compile <file>` and careful code
+      review — do NOT spend more than 2 attempts on environment setup.
+
+
+      5. **Commit your changes** — commit directly on the current branch with a descriptive message referencing the issue.
+      Do NOT create a new branch. Do NOT create a PR.
+
+
+      ## Rules
+
+
+      - MINIMAL fix only — smallest diff that resolves the issue
+
+      - MUST run tests before committing — never commit untested code
+
+      - Do NOT create branches or PRs — commit on current branch
+
+      - Do NOT run factory commands (factory eval, factory study, etc.)
+
+      - Do NOT modify test files unless the bug is IN the test infrastructure
+
+      - If tests fail after your fix, investigate and fix the issue
+
+      - Do NOT fix unrelated issues (e.g., deprecation warnings, Python version compatibility, linting errors, import modernization)
+      — fix ONLY the described bug, even if you encounter other problems while testing
+
+      - Limit investigation — once you understand the root cause, implement the fix immediately. Do not spend the majority
+      of your time exploring without making changes.
+
+      - Clean up any temporary test or reproduction scripts before committing — do NOT leave them in the repo
+
+
+      Read: .factory/reviews/study-output.md
+
+      Write output to: .factory/reviews/builder-latest.md
+
+      Read: .factory/reviews/study-output.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '7200'
+  type: AgentNode
+  writes:
+  - .factory/reviews/builder-latest.md
+gate_verify:
+  edges_out:
+  - condition: PROCEED
+    target: auto_merge
+  - condition: RELOOP
+    target: builder
+  evaluator_command: 'cd {project_path} && CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo ''NO_COMMITS'') && if [ "$CHANGES"
+    = ''NO_COMMITS'' ] || [ -z "$CHANGES" ]; then echo ''fail: builder did not commit any changes''; exit 0; fi && BUILDER_OUTPUT=$(cat
+    .factory/reviews/builder-latest.md 2>/dev/null || echo '''') && if echo "$BUILDER_OUTPUT" | grep -qiE ''tests?.*(pass|succeed|ok|PASSED)'';
+    then echo ''pass: builder reports tests passing''; elif echo "$BUILDER_OUTPUT" | grep -qiE ''tests?.*(fail|error|FAILED)'';
+    then echo ''reloop: builder needs to retry — tests did not pass''; else echo ''pass: changes committed, no issues detected'';
+    fi'
+  evaluator_type: fn
+  id: gate_verify
+  reads:
+  - .factory/reviews/builder-latest.md
+  slots:
+    max_iterations_gate_verify: '3'
+  type: GateNode
+study:
+  command: mkdir -p {project_path}/.factory/reviews && cd {project_path} && (echo '=== Repository Structure ===' && find .
+    -type f -name '*.py' | head -200 && echo '\n=== Test Files ===' && find . -type f -name 'test_*.py' -o -name '*_test.py'
+    | head -50 && echo '\n=== Configuration Files ===' && ls -la setup.py setup.cfg pyproject.toml tox.ini conftest.py 2>/dev/null
+    || true && echo '\n=== Task Instruction ===' && cat /tmp/task-instruction.md 2>/dev/null || echo 'No task instruction
+    file found at /tmp/task-instruction.md') > .factory/reviews/study-output.md 2>&1
+  edges_out:
+  - condition: null
+    target: builder
+  id: study
+  reads: []
+  type: FnNode
+  writes:
+  - .factory/reviews/study-output.md

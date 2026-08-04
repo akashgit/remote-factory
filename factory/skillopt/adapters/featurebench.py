@@ -49,32 +49,9 @@ class FeaturebenchAdapter(EnvAdapter):
         log.info("eval env built", limit=env_num, split=split, seed=seed)
         return env_num
 
-    def _extract_prompt_slot(self, skill_content: str) -> str:
-        """Extract just the prompt text from SKILL.md or return as-is if already raw."""
-        if not skill_content.startswith("---"):
-            return skill_content
-        from factory.skillopt.yaml_surface import load_yaml, extract_prompt_slots
-        ann_path = self.skill_path.parent / "SKILL.annotations.yaml"
-        if ann_path.exists():
-            surface = load_yaml(ann_path)
-            slots = extract_prompt_slots(surface)
-            if slots:
-                return next(iter(slots.values()))
-        match = re.search(
-            r'factory agent builder --task "(.*?)"\s*--project',
-            skill_content, re.DOTALL,
-        )
-        if match:
-            return match.group(1).strip()
-        return skill_content
-
     def rollout(
         self, env_manager: Any, skill_content: str, out_dir: str,
     ) -> list[RolloutResult]:
-        self.skill_path.parent.mkdir(parents=True, exist_ok=True)
-        self.skill_path.write_text(skill_content)
-        log.info("skill written", path=str(self.skill_path))
-
         script = _BENCHMARKS_DIR / "run-harbor.sh"
         if not script.exists():
             log.error("run-harbor.sh not found", path=str(script))
@@ -98,9 +75,8 @@ class FeaturebenchAdapter(EnvAdapter):
                 cmd += ["--limit", str(limit)]
 
         env = dict(os.environ)
-        prompt = self._extract_prompt_slot(skill_content)
-        env["FACTORY_SKILL_B64"] = base64.b64encode(
-            prompt.encode()
+        env["FACTORY_WORKFLOW_YAML_B64"] = base64.b64encode(
+            skill_content.encode()
         ).decode()
 
         git_ref = _get_git_ref()

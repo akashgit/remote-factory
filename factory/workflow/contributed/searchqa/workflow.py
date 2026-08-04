@@ -2,10 +2,12 @@
 
 The agent reads /tmp/task-instruction.md (question + search context),
 produces an answer in <answer> tags. No repo to study, no code to merge.
+
+Prompt override: set FACTORY_WORKFLOW_YAML_B64 env var with base64-encoded
+YAML annotations to override slot values at runtime.
+Use ``factory workflow run searchqa . --from-yaml <path>`` for local testing.
 """
 
-import base64
-import os
 from typing import Any
 
 from factory.models import ProjectState
@@ -24,23 +26,14 @@ meta = {
     ),
 }
 
-_DEFAULT_SKILL = (
+_DEFAULT_PROMPT = (
     "# Question Answering Skill\n\n"
     "(No learned rules yet. Rules will be added through the reflection process.)"
-)
-
-_FIXED_INSTRUCTIONS = (
     "\n\n## Instructions\n\n"
     "Read the question and search results from /tmp/task-instruction.md.\n"
     "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
     "Also include your answer in <answer> tags in your response.\n"
 )
-
-
-def _resolve_prompt() -> str:
-    b64 = os.environ.get("FACTORY_SKILL_B64")
-    skill = base64.b64decode(b64).decode() if b64 else _DEFAULT_SKILL
-    return skill + _FIXED_INSTRUCTIONS
 
 
 def workflow() -> Workflow:
@@ -52,7 +45,7 @@ def workflow() -> Workflow:
             role=AgentRole.BUILDER,
             model="sonnet",
             timeout=120,
-            prompt_template=_resolve_prompt(),
+            prompt_template=_DEFAULT_PROMPT,
             writes=set(),
         ),
     }

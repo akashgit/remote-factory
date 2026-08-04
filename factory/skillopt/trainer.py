@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 
 import structlog
+import yaml
 
 from factory.skillopt.adapter import EnvAdapter
 from factory.skillopt.aggregate import merge_patches
 from factory.skillopt.clip import rank_and_select
+from factory.skillopt.failure_tracker import FailureTracker
 from factory.skillopt.gate import evaluate_gate, select_gate_score
 from factory.skillopt.skill import apply_patch
 from factory.skillopt.slow_update import (
@@ -75,6 +77,7 @@ class SkillOptTrainer:
         self.yaml_surface: dict | None = None
         self.prompt_slots: dict[str, str] = {}
         self.prompt_slots_text: str = ""
+        self.failure_tracker = FailureTracker(out_dir)
         self._resolve_annotations(annotations_path)
 
     def _resolve_annotations(self, annotations_path: str) -> None:
@@ -99,6 +102,19 @@ class SkillOptTrainer:
 
     def _save_skill(self, content: str) -> None:
         self.skill_path.write_text(content)
+
+    def _serialize_yaml(self, slots: dict[str, str] | None = None) -> str:
+        """Serialize current YAML surface with given (or current) slot values."""
+        surface = self._build_updated_yaml_surface()
+        if slots:
+            for node_id, node in surface.items():
+                if not isinstance(node, dict):
+                    continue
+                node_slots = node.get("slots", {})
+                for k in node_slots:
+                    if k in slots:
+                        node_slots[k] = slots[k]
+        return yaml.dump(surface, default_flow_style=False, allow_unicode=True, width=120)
 
     def _checkpoint(self, label: str) -> None:
         ckpt_dir = self.out_dir / "checkpoints"
@@ -219,9 +235,11 @@ class SkillOptTrainer:
             self._save_skill(self.current_skill)
             baseline_dir = str(self.out_dir / "baseline_eval")
             Path(baseline_dir).mkdir(parents=True, exist_ok=True)
+            rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
             baseline_results = self.adapter.rollout(
-                eval_env, self.current_skill, baseline_dir,
+                eval_env, rollout_content, baseline_dir,
             )
+            self.failure_tracker.record_rollout(baseline_results, 0, "baseline")
             base_hard, base_soft = self._compute_score(baseline_results)
             self.current_score = select_gate_score(base_hard, base_soft, self.metric)
             self.best_score = self.current_score
@@ -264,6 +282,7 @@ class SkillOptTrainer:
 
         self._save_skill(self.best_skill)
         self._checkpoint("final")
+        self.failure_tracker.print_summary()
         log.info(
             "training complete",
             best_score=round(self.best_score, 4),
@@ -349,9 +368,11 @@ class SkillOptTrainer:
         else:
             env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
             self._save_skill(self.current_skill)
-            results = self.adapter.rollout(env, self.current_skill, step_dir)
+            rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
+            results = self.adapter.rollout(env, rollout_content, step_dir)
             log.info("rollout complete", results=len(results))
 
+        self.failure_tracker.record_rollout(results, self.global_step, "train")
         hard_before, soft_before = self._compute_score(results)
 
         step_buffer_context = self._build_step_buffer_context() if self.overfit else ""
@@ -453,11 +474,15 @@ class SkillOptTrainer:
         else:
             candidate_skill = apply_patch(self.current_skill, clipped)
 
+        candidate_yaml = self._serialize_yaml(candidate_slots) if self.yaml_surface else candidate_skill
+
         if self.overfit:
             self._save_skill(candidate_skill)
             if use_preloaded:
                 env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
-            eval_results = self.adapter.rollout(env, candidate_skill, step_dir + "/eval")
+            eval_content = candidate_yaml if self.yaml_surface else candidate_skill
+            eval_results = self.adapter.rollout(env, eval_content, step_dir + "/eval")
+            self.failure_tracker.record_rollout(eval_results, self.global_step, "eval_overfit")
             cand_hard, cand_soft = self._compute_score(eval_results)
             log.info(
                 "overfit eval",
@@ -472,7 +497,9 @@ class SkillOptTrainer:
             eval_env = self.adapter.build_eval_env(
                 env_num=0, split="eval", seed=self.eval_split_seed,
             )
-            eval_results = self.adapter.rollout(eval_env, candidate_skill, step_dir + "/eval")
+            eval_content = candidate_yaml if self.yaml_surface else candidate_skill
+            eval_results = self.adapter.rollout(eval_env, eval_content, step_dir + "/eval")
+            self.failure_tracker.record_rollout(eval_results, self.global_step, "eval")
             cand_hard, cand_soft = self._compute_score(eval_results)
 
         gate = evaluate_gate(
