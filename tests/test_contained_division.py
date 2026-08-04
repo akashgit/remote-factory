@@ -275,7 +275,9 @@ def test_without_the_flag_nothing_is_started_and_no_tools_are_registered(
     out = capsys.readouterr().out
     assert code == 0
     start.assert_not_called()
-    assert ".mcp.json" not in out
+    # No registration is *written* — the redirect that creates it, and the payload it would carry.
+    assert "> .mcp.json" not in out
+    assert "mcpServers" not in out
     assert "8430" not in out
 
 
