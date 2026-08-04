@@ -4116,9 +4116,10 @@ def plan_workflow() -> Workflow:
         id="check_prior_plans",
         evaluator_type="fn",
         evaluator_command=(
-            'grep -rl "$FOCUS" "$PROJECT_PATH/.factory/archive/" --include="plan-*.md" '
-            '> "$PROJECT_PATH/.factory/strategy/prior-plans.md" 2>/dev/null; '
-            '[ -s "$PROJECT_PATH/.factory/strategy/prior-plans.md" ]'
+            ': > "{project_path}/.factory/strategy/prior-plans.md"; '
+            '[ -n "$FOCUS" ] && grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
+            '> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null; '
+            '[ -s "{project_path}/.factory/strategy/prior-plans.md" ]'
         ),
         gate_prompt=(
             "Check .factory/archive/ for prior plan files matching the focus keywords. "
@@ -4316,7 +4317,7 @@ def plan_workflow() -> Workflow:
         command=(
             'python3 -c "'
             "import re, datetime, os; "
-            "project = os.environ.get('PROJECT_PATH', '.'); "
+            "project = '{project_path}'; "
             "plan = open(f'{project}/.factory/strategy/current.md').read(); "
             "focus = os.environ.get('FOCUS', 'plan'); "
             "slug = re.sub(r'[^a-z0-9]+', '-', focus.lower()).strip('-'); "
@@ -4324,8 +4325,7 @@ def plan_workflow() -> Workflow:
             "archive_name = f'plan-{slug}-{date}.md'; "
             "phases = re.findall(r'### Phase \\d+:.*', plan); "
             "backlog_path = f'{project}/.factory/strategy/backlog.md'; "
-            "existing = open(backlog_path).read() if os.path.exists(backlog_path) else ''; "
-            "items = '\\n'.join(f'- [ ] {p.lstrip(\"# \")} (see .factory/archive/{archive_name})' for p in phases); "
+            "items = '\\n'.join(f'- [ ] {p[4:]} (see .factory/archive/{archive_name})' for p in phases); "
             "open(backlog_path, 'a').write('\\n' + items + '\\n') if items else None; "
             "print(f'Seeded {len(phases)} backlog items from plan')"
             '"'
