@@ -92,17 +92,6 @@ confines agent-authored code, and neither replaces review (spec §1.2).
 # trying to read.
 _PARSER: argparse.ArgumentParser | None = None
 
-# How much of spec §13's phasing has landed. The design ships each phase as its own PR, so a flag
-# whose implementation is not in the tree yet must fail naming the phase it arrives in rather than
-# import a module that does not exist. Raised as each phase lands; when it reaches 4 this constant
-# and `_unsupported` both go away.
-_PHASE = 3
-
-
-def _unsupported(feature: str, *, phase: int) -> int:
-    print(f"{feature} is not implemented yet (arrives in phase {phase}).", file=sys.stderr)
-    return 2
-
 
 def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
     """Register the `contained` subcommand.
@@ -436,8 +425,6 @@ def _run_step(step: Step) -> subprocess.CompletedProcess[str]:
 
 def _verify(args: argparse.Namespace) -> int:
     if args.target == "k8s":
-        if _PHASE < 3:
-            return _unsupported("`factory contained verify --target k8s`", phase=3)
         from factory.contained.k8s_setup import verify_k8s
 
         checks = verify_k8s(namespace=args.namespace, division=args.division)
@@ -456,8 +443,6 @@ def cmd_contained(args: argparse.Namespace) -> int:
     if args.subcommand == "verify":
         return _verify(args)
     if args.subcommand == "setup":
-        if args.target == "k8s" and _PHASE < 3:
-            return _unsupported("`factory contained setup --target k8s`", phase=3)
         return run_setup(
             args.target if _target_given(args) else None,
             interactive=sys.stdin.isatty(),
@@ -466,8 +451,6 @@ def cmd_contained(args: argparse.Namespace) -> int:
             assume_yes=args.yes,
         )
     if args.subcommand == "bundle":
-        if _PHASE < 3:
-            return _unsupported("`factory contained bundle`", phase=3)
         from factory.contained.bundle import render_bundle
 
         print(render_bundle(namespace=args.namespace, storage_class=args.storage_class,
@@ -485,19 +468,9 @@ def cmd_contained(args: argparse.Namespace) -> int:
         return 2
 
     if args.target == "k8s":
-        if _PHASE < 3:
-            return _unsupported("--target k8s", phase=3)
-        if args.division and _PHASE < 4:
-            return _unsupported("--target k8s --division", phase=4)
         from factory.cli.contained_k8s import run_k8s
 
         return run_k8s(args)
-
-    if args.division and _PHASE < 2:
-        # Silently ignoring this would let a user believe the container-manufacturing plane took
-        # effect — the same reasoning the target-scoping applies to flags mismatched with --target.
-        # Checked before any materialization or provisioning work.
-        return _unsupported("--division", phase=2)
 
     return _run_local(args)
 
