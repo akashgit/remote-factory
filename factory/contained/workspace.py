@@ -111,6 +111,12 @@ def _materialize_worktree(source: Path, destination: Path, run_id: str) -> Works
     branch = f"{BRANCH_PREFIX}/{run_id}"
     is_new = not destination.exists()
     if is_new:
+        # A copy deleted by hand — `rm -rf ~/.factory-contained/<run>` — leaves git still believing
+        # a worktree is checked out there, and the branch stays claimed by it. Every later run of
+        # the same name then fails on "cannot force update the branch ... used by worktree at",
+        # naming a directory that no longer exists. Pruning first is cheap and only ever removes
+        # registrations whose directory is already gone.
+        _git(source, ["worktree", "prune"])
         _git(source, ["worktree", "add", "--force", "-B", branch, str(destination), "HEAD"])
         log.info("contained_worktree_created", path=str(destination), branch=branch)
     # A worktree carries committed state only. The point of a contained run is to exercise what is

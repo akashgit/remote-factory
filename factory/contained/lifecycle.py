@@ -285,6 +285,12 @@ def remove(name: str, target: str, *, assume_yes: bool, interactive: bool | None
         log.warning("contained_remove_failed", name=name, exit_code=code)
         return code
     log.info("contained_remove_completed", name=name)
+    # The division server is a *host* process the run depends on, so removing the run is what ends
+    # it. Nothing else does: it is deliberately detached from the command that started it.
+    from factory.contained.division import stop_recorded
+
+    if stop_recorded(name):
+        print(f"{name}: division endpoint stopped.")
     ws = workspace_for(name)
     if ws is not None:
         print(f"{name}: deleted. Workspace copy remains at {ws.path}.")
