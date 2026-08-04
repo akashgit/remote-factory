@@ -68,10 +68,6 @@ projects = state.setdefault("projects", {})
 if not isinstance(projects, dict):
     projects = state["projects"] = {}
 workspace = spec["workspace"]
-# The workspace itself and the directory the factory puts its experiment worktrees in. A worktree
-# path is not knowable in advance (it carries a per-run id), so the parent is seeded and each
-# worktree inherits nothing — which is why `hasTrustDialogAccepted` is also set at the top level,
-# where a Claude Code that honours it will not ask at all.
 for directory in (workspace, os.path.join(workspace, ".factory-worktrees")):
     entry = projects.setdefault(directory, {})
     if not isinstance(entry, dict):
@@ -81,16 +77,10 @@ for directory in (workspace, os.path.join(workspace, ".factory-worktrees")):
         enabled = set(entry.get("enabledMcpjsonServers") or [])
         entry["enabledMcpjsonServers"] = sorted(enabled | set(spec["servers"]))
 state["hasTrustDialogAccepted"] = True
-# The factory always runs Claude Code with --dangerously-skip-permissions; a contained run is the
-# sandboxed container that dialog asks you to be in. Answering it is recording the decision the
-# `factory contained` invocation already made.
 state["bypassPermissionsModeAccepted"] = True
 with open(path, "w") as handle:
     json.dump(state, handle, indent=2)
 
-# The per-run worktree the CEO works in cannot be named in advance, so project-scoped approval
-# cannot reach it. This is the setting that approves a project's own .mcp.json without naming the
-# project — the only form of the answer that covers a directory that does not exist yet.
 if spec["servers"]:
     settings_dir = os.path.expanduser("~/.claude")
     os.makedirs(settings_dir, exist_ok=True)
