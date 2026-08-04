@@ -18,6 +18,8 @@ never handles the material.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 import sys
 
@@ -25,12 +27,13 @@ import structlog
 
 from factory.contained.bundle import ROLE_NAME, SCC_ROLEBINDING, render_bundle
 from factory.contained.k8s import (
+    LABEL_CONTAINED,
     PVC_NAME,
     SECRET_NAME,
     SERVICE_ACCOUNT,
     ClusterError,
+    access_review,
     build_api_resources_argv,
-    build_can_i_argv,
     cli_binary,
     resolve_namespace,
 )
@@ -47,16 +50,22 @@ VERTEX_KEYS = ("CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PR
 # The verbs the pod's ServiceAccount needs. Checked as the ServiceAccount, not as the user: a
 # namespace where *you* can create pods but the pod cannot read its own logs fails on the agent's
 # first cluster call, several steps from anything this would otherwise have reported.
+# (verb, resource, subresource, apiGroup). The subresource is a field of its own rather than a
+# "pods/log" string, because that is precisely the distinction `oc auth can-i` loses — see
+# `k8s.render_access_review`. The group is explicit for the same class of reason: omitted means the
+# *core* group, so a review for `builds` with no group asks about a core resource that does not
+# exist and comes back denied, reporting a correct division namespace as missing its permissions.
 REQUIRED_SA_VERBS = (
-    ("create", "pods"),
-    ("get", "pods"),
-    ("delete", "pods"),
-    ("get", "pods/log"),
+    ("create", "pods", "", ""),
+    ("get", "pods", "", ""),
+    ("delete", "pods", "", ""),
+    ("get", "pods", "log", ""),
 )
 DIVISION_SA_VERBS = (
-    ("create", "builds.build.openshift.io"),
-    ("get", "builds.build.openshift.io"),
-    ("get", "imagestreams.image.openshift.io"),
+    ("create", "builds", "", "build.openshift.io"),
+    ("get", "builds", "", "build.openshift.io"),
+    ("create", "buildconfigs", "", "build.openshift.io"),
+    ("get", "imagestreams", "", "image.openshift.io"),
 )
 
 
@@ -67,7 +76,9 @@ def _run(argv: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[s
         return None
 
 
-def verify_k8s(*, namespace: str | None = None, division: bool = False) -> list[Check]:
+def verify_k8s(
+    *, namespace: str | None = None, division: bool = False, probe_inference: bool = True
+) -> list[Check]:
     """The cluster prerequisite checks, in the order a user would fix them.
 
     Nothing here raises: a machine with no `oc` at all must get a list of what is missing, not a
@@ -120,6 +131,8 @@ def verify_k8s(*, namespace: str | None = None, division: bool = False) -> list[
     checks.extend(_verb_checks(target, division))
     checks.append(_secret_check(binary, target))
     checks.append(_image_check())
+    if probe_inference:
+        checks.append(_inference_check(binary, target, resolve_image()))
     checks.append(_gitleaks_check())
     if division:
         checks.extend(_division_checks(target))
@@ -174,13 +187,16 @@ def _verb_checks(namespace: str, division: bool) -> list[Check]:
     wanted = REQUIRED_SA_VERBS + (DIVISION_SA_VERBS if division else ())
     missing = []
     unknown = False
-    for verb, resource in wanted:
-        result = _run(build_can_i_argv(verb, resource, namespace, as_service_account=SERVICE_ACCOUNT))
-        if result is None:
+    for verb, resource, subresource, group in wanted:
+        allowed = access_review(
+            verb, resource, namespace, subresource=subresource, group=group,
+            as_service_account=SERVICE_ACCOUNT,
+        )
+        if allowed is None:
             unknown = True
             continue
-        if result.returncode != 0:
-            missing.append(f"{verb} {resource}")
+        if not allowed:
+            missing.append(f"{verb} {resource}{'/' + subresource if subresource else ''}")
     if unknown:
         return [
             Check(
@@ -219,17 +235,19 @@ def _no_exec_check(namespace: str) -> Check:
 
     Attaching does not need it: `factory contained attach` runs as *you*, with your kubeconfig.
     """
-    result = _run(build_can_i_argv("create", "pods/exec", namespace,
-                                   as_service_account=SERVICE_ACCOUNT))
-    if result is None:
+    granted = access_review(
+        "create", "pods", namespace, subresource="exec", as_service_account=SERVICE_ACCOUNT
+    )
+    if granted is None:
         return Check(
             name="no_pods_exec",
             ok=False,
             detail="could not check whether the ServiceAccount has pods/exec",
-            fix=f"oc auth can-i create pods/exec -n {namespace} --as system:serviceaccount:"
-                f"{namespace}:{SERVICE_ACCOUNT}",
+            fix=(
+                "check that the cluster is reachable and that you may post a SubjectAccessReview: "
+                f"oc auth can-i create subjectaccessreviews -n {namespace}"
+            ),
         )
-    granted = result.returncode == 0
     return Check(
         name="no_pods_exec",
         ok=not granted,
@@ -288,6 +306,123 @@ def _keys_of(raw: str) -> set[str]:
     except json.JSONDecodeError:
         return set()
     return set(data) if isinstance(data, dict) else set()
+
+
+def _inference_check(binary: str, namespace: str, image: str) -> Check:
+    """Can a pod in this namespace actually reach inference? (spec §4.0 check 6)
+
+    **From inside the cluster, not from here.** A host-side check proves nothing about the pod's
+    egress: the laptop has a proxy, a VPN and a working DNS resolver that the namespace may not, and
+    a NetworkPolicy the laptop never sees. So this runs one short-lived pod, with the same image and
+    the same Secret a real run would use, and asks it to make a single request.
+
+    It is the one check that creates something, and it removes what it creates. That is the trade
+    the design makes deliberately: a credentials problem found here fails at launch with a named
+    cause, and found any other way it fails inside an agent call, minutes in, looking like a model
+    outage.
+    """
+    # A hash rather than a slice of the namespace: a truncated name can end in a hyphen, which
+    # RFC 1123 rejects and which the API server reports as an invalid *value* rather than as a
+    # naming mistake. Hashing also keeps two namespaces' probes from colliding.
+    pod = f"factory-inference-probe-{hashlib.sha1(namespace.encode()).hexdigest()[:8]}"
+    manifest = _probe_pod_manifest(pod, namespace, image)
+    try:
+        subprocess.run([binary, "delete", "pod", pod, "-n", namespace, "--ignore-not-found"],
+                       capture_output=True, text=True, timeout=60)
+        created = subprocess.run([binary, "apply", "-n", namespace, "-f", "-"],
+                                 input=manifest, capture_output=True, text=True, timeout=60)
+        if created.returncode != 0:
+            return Check(
+                name="inference_from_cluster",
+                ok=False,
+                detail=f"the probe pod could not be created: {created.stderr.strip()[:160]}",
+                fix=f"factory contained bundle --namespace {namespace} | {binary} apply -f -",
+            )
+        waited = subprocess.run(
+            [binary, "wait", f"pod/{pod}", "-n", namespace,
+             "--for=jsonpath={.status.phase}=Succeeded", "--timeout=180s"],
+            capture_output=True, text=True, timeout=240,
+        )
+        logs = subprocess.run([binary, "logs", pod, "-n", namespace],
+                              capture_output=True, text=True, timeout=60)
+        output = (logs.stdout or "").strip()
+        ok = waited.returncode == 0 and "PROBE_OK" in output
+        return Check(
+            name="inference_from_cluster",
+            ok=ok,
+            detail=(
+                "a pod in this namespace reached the configured inference backend"
+                if ok
+                else "a pod in this namespace could NOT reach inference: "
+                     + (output.splitlines()[-1][:200] if output else "the probe produced no output")
+            ),
+            fix=(
+                None if ok else
+                f"check the Secret's contents and the namespace's egress. The probe pod's own words "
+                f"are the best evidence: {binary} logs {pod} -n {namespace}"
+            ),
+        )
+    except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired) as exc:
+        return Check(
+            name="inference_from_cluster",
+            ok=False,
+            detail=f"the in-cluster inference probe could not be run: {exc}",
+            fix=None,
+        )
+    finally:
+        subprocess.run([binary, "delete", "pod", pod, "-n", namespace, "--ignore-not-found",
+                        "--wait=false"], capture_output=True, text=True, timeout=60)
+
+
+def _probe_pod_manifest(name: str, namespace: str, image: str) -> str:
+    """One pod, one request, no workspace, no PVC — it must not depend on anything under test.
+
+    The probe deliberately does not use the factory: it curls the backend the Secret configures, so
+    a failure means "this namespace cannot reach inference" rather than "something in the factory
+    broke". Both matter, and this check owns the first.
+    """
+    script = (
+        'set -e; '
+        'if [ -n "$CLAUDE_CODE_USE_VERTEX" ]; then '
+        '  url="https://${CLOUD_ML_REGION}-aiplatform.googleapis.com/generateContent"; '
+        'else '
+        '  url="https://api.anthropic.com/v1/messages"; '
+        'fi; '
+        'echo "probing $url"; '
+        'code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$url" || echo 000); '
+        'echo "http $code"; '
+        # Any HTTP status proves the request left the namespace and was answered. 000 is the one
+        # that means it did not — DNS, egress policy, or a proxy the laptop has and the pod lacks.
+        '[ "$code" != "000" ] && echo PROBE_OK || { echo "no response — DNS, egress or proxy"; exit 1; }'
+    )
+    return f"""\
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {name}
+  namespace: {namespace}
+  labels:
+    {LABEL_CONTAINED}: "true"
+spec:
+  restartPolicy: Never
+  serviceAccountName: {SERVICE_ACCOUNT}
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: {image}
+      command: ["sh", "-c", {json.dumps(script)}]
+      envFrom:
+        - secretRef:
+            name: {SECRET_NAME}
+            optional: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+"""
 
 
 def _image_check() -> Check:

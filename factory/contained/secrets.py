@@ -91,7 +91,11 @@ def scan(path: Path) -> ScanResult:
 
     findings = tuple(
         Finding(
-            file=str(item.get("File", "?")),
+            # Relative to the workspace root, not the absolute path of the *copy*. The copy is an
+            # implementation detail under ~/.factory-contained; a user told to fix
+            # `.factory-contained/<run>/rta/.env` goes and edits a file that is regenerated on the
+            # next run, while the real one keeps being uploaded.
+            file=_relative(str(item.get("File", "?")), path),
             line=int(item.get("StartLine", 0) or 0),
             rule=str(item.get("RuleID", "?")),
             description=str(item.get("Description", "")),
@@ -104,6 +108,13 @@ def scan(path: Path) -> ScanResult:
         findings=findings,
         detail="no secrets found" if not findings else f"{len(findings)} finding(s)",
     )
+
+
+def _relative(reported: str, root: Path) -> str:
+    try:
+        return str(Path(reported).resolve().relative_to(root.resolve()))
+    except (ValueError, OSError):
+        return reported
 
 
 def render_findings(result: ScanResult) -> str:

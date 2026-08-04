@@ -45,6 +45,12 @@ RESULT_DIR = f"{WORKSPACE_ROOT}/.factory/division/results"
 
 INTERNAL_REGISTRY = "image-registry.openshift-image-registry.svc:5000"
 
+# How long the sidecar waits for a Build to reach a terminal phase after its logs have ended. The
+# gap is small but real — the log stream closes before the controller writes the final phase — and
+# without the wait every successful build reads as "Running", which the Complete check calls a
+# failure.
+PHASE_TIMEOUT_SECONDS = 120
+
 MCP_CLUSTER_SERVER = "kubernetes"
 MCP_BUILD_SERVER = "factory-build"
 
@@ -65,13 +71,15 @@ deliberately not in this image.
 
 ## The loop
 
-1. **submit** — `start_build` with the Containerfile's path (relative to the workspace) and a tag.
-   The build context is this workspace; a sidecar container reads it off the shared volume and
-   starts an OpenShift `Build`. You never touch the build machinery yourself.
-2. **poll** — the call returns a build name. Read its status and its logs through the cluster tools.
-3. **read the logs** — a build that fails tells you why here, in the build log, not anywhere else.
-4. **fix** — edit the Containerfile or the source, and resubmit. Resubmitting is cheap; it is the
-   intended way to iterate.
+1. **submit** — `start_build` with the Containerfile's path **relative to your project directory**
+   and a tag. Your project directory is the build context, so a relative `COPY` resolves the way it
+   would on a laptop. A sidecar container reads the context off the shared volume and starts an
+   OpenShift `Build`; you never touch the build machinery yourself.
+2. **read the result** — the call blocks until the build finishes and returns the build log plus
+   whether it succeeded. Success means the Build reached `Complete`, not merely that a command
+   exited zero.
+3. **fix** — a build that fails tells you why in that log and nowhere else. Edit the Containerfile
+   or the source and resubmit; resubmitting is cheap and is the intended way to iterate.
 5. **validate** — when the build succeeds, run a **validation pod** on the resulting image and read
    its logs. A build that succeeds is not evidence that the image runs.
 
@@ -112,7 +120,26 @@ def sidecar_command() -> str:
     a tag, because the agent writes those files and the sidecar is the thing holding the credentials
     the agent must not have. `oc start-build --from-dir` is what carries the context — a binary
     source build, so there is no ConfigMap size ceiling and no fresh host-side upload per iteration.
+
+    Parsed with `sed` rather than `jq`: the sidecar image is an `oc` image, not the factory runtime,
+    and it carries neither jq nor python. Depending on a tool the image happens not to have fails at
+    the first build with `command not found`, which reads as a broken division rather than as a
+    missing package.
+
+    **The verdict comes from the Build's own phase, never from an exit code.** `oc start-build
+    --follow` exits 0 for a build that failed — observed directly: a build that died on `open
+    /tmp/build/inputs/Dockerfile: no such file or directory` was reported to the agent as "Build
+    succeeded". A false success is the worst possible answer here, because the agent goes on to
+    validate an image that was never produced. So the build is started, its logs are followed for
+    the transcript, and then `.status.phase` is read and required to be `Complete`.
+
+    **The Containerfile path is set on the BuildConfig, not passed as a build argument.** Binary
+    builds reject build args outright (`oc` warns and ignores them), so `--build-arg DOCKERFILE=`
+    silently did nothing and the build looked for a file named `Dockerfile` that was not there.
+    `dockerfilePath` is the field that actually selects it, and it is patched per request because
+    the agent may name a different file on the next iteration.
     """
+    ns = '"$FACTORY_BUILD_NAMESPACE"'
     return (
         f'mkdir -p "{REQUEST_DIR}" "{RESULT_DIR}"; '
         f'echo "build sidecar ready"; '
@@ -120,16 +147,36 @@ def sidecar_command() -> str:
         f'  for request in "{REQUEST_DIR}"/*.json; do '
         f'    [ -e "$request" ] || continue; '
         f'    name=$(basename "$request" .json); '
-        f'    dockerfile=$(jq -r ".dockerfile" "$request"); '
-        f'    tag=$(jq -r ".tag" "$request"); '
+        f'    dockerfile=$(sed -n \'s/.*"dockerfile"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p\' "$request"); '
+        f'    tag=$(sed -n \'s/.*"tag"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p\' "$request"); '
         f'    rm -f "$request"; '
-        f'    echo "building $tag from $dockerfile"; '
+        f'    log="{RESULT_DIR}/$name.log"; '
+        f'    echo "building $tag from $dockerfile" > "$log"; '
         f'    oc new-build --name "$tag" --binary --strategy docker '
-        f'      --to "$tag:latest" -n "$FACTORY_BUILD_NAMESPACE" >/dev/null 2>&1 || true; '
-        f'    oc start-build "$tag" --from-dir "{WORKSPACE_ROOT}" '
-        f'      --build-arg DOCKERFILE="$dockerfile" -n "$FACTORY_BUILD_NAMESPACE" '
-        f'      --follow > "{RESULT_DIR}/$name.log" 2>&1; '
-        f'    echo "$?" > "{RESULT_DIR}/$name.status"; '
+        f'      --to "$tag:latest" -n {ns} >> "$log" 2>&1 || true; '
+        # dockerfilePath is relative to the build context, and the context is the project directory
+        # — which is what the agent means by "my Containerfile", and what makes a relative COPY in
+        # that file resolve the way it does on a laptop.
+        f'    oc patch bc/"$tag" -n {ns} --type=json '
+        f'      -p "[{{\\"op\\":\\"add\\",\\"path\\":\\"/spec/strategy/dockerStrategy/dockerfilePath\\",'
+        f'\\"value\\":\\"$dockerfile\\"}}]" >> "$log" 2>&1 || true; '
+        f'    build=$(oc start-build "$tag" --from-dir "$FACTORY_BUILD_CONTEXT" '
+        f'      -n {ns} -o=name 2>>"$log"); '
+        f'    if [ -z "$build" ]; then echo 1 > "{RESULT_DIR}/$name.status"; continue; fi; '
+        f'    echo "started $build" >> "$log"; '
+        f'    oc logs -f "$build" -n {ns} >> "$log" 2>&1 || true; '
+        # The log stream ends before the controller finalizes the Build, so reading the phase right
+        # here catches it mid-flight — every successful build reported "Running", and a strict
+        # Complete check would have called all of them failures. Poll until the phase is terminal.
+        f'    waited=0; '
+        f'    while [ "$waited" -lt {PHASE_TIMEOUT_SECONDS} ]; do '
+        f'      phase=$(oc get "$build" -n {ns} -o jsonpath="{{.status.phase}}" 2>>"$log"); '
+        f'      case "$phase" in New|Pending|Running|"") sleep 2; waited=$((waited+2));; '
+        f'        *) break;; esac; '
+        f'    done; '
+        f'    echo "build phase: $phase" >> "$log"; '
+        f'    if [ "$phase" = "Complete" ]; then echo 0 > "{RESULT_DIR}/$name.status"; '
+        f'    else echo 1 > "{RESULT_DIR}/$name.status"; fi; '
         f'  done; '
         f'  sleep 2; '
         f'done'
@@ -179,7 +226,7 @@ TOOL = {{
         "properties": {{
             "dockerfile": {{
                 "type": "string",
-                "description": "Path to the Containerfile, relative to the workspace root",
+                "description": "Path to the Containerfile, relative to the project directory you are working in",
             }},
             "tag": {{
                 "type": "string",

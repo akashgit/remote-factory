@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -301,3 +302,27 @@ def test_readiness_is_checked_on_the_host_not_from_a_container() -> None:
 
     # Nothing is listening on this port, so the call returns False rather than hanging.
     assert wait_for_listening(1, timeout=0.2) is False
+
+
+def test_a_second_division_refuses_rather_than_adopting_the_first_ones_endpoint(
+    tmp_path: Path, contained_root: Path
+) -> None:
+    """Two runs sharing one endpoint means `rm` on either pulls the tools out from under the other."""
+    (contained_root / "first-run").mkdir(parents=True)
+    (contained_root / "first-run" / "division.pid").write_text(str(os.getpid()))
+    with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
+         patch("factory.contained.division.subprocess.Popen") as popen:
+        with pytest.raises(ContainedError, match="already held by the run 'first-run'"):
+            start_local_division(_plan(tmp_path))
+    popen.assert_not_called()
+
+
+def test_a_stale_pid_file_does_not_block_a_new_division(
+    tmp_path: Path, contained_root: Path
+) -> None:
+    """A run whose server already died must not lock the port forever."""
+    (contained_root / "dead-run").mkdir(parents=True)
+    pid_file = contained_root / "dead-run" / "division.pid"
+    pid_file.write_text("999999")            # a PID that cannot exist
+    assert division.port_owner() is None
+    assert not pid_file.exists()             # and the stale record is cleaned up

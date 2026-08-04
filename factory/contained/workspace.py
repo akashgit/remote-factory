@@ -52,30 +52,39 @@ def contained_home() -> Path:
     return Path(os.environ.get(CONTAINED_HOME_ENV, DEFAULT_CONTAINED_HOME)).expanduser()
 
 
-def materialize(source: Path, run_id: str) -> Workspace:
+def materialize(source: Path, run_id: str, *, self_contained: bool = False) -> Workspace:
     """Create (or reuse) the run's copy of `source`.
 
     Idempotent: an existing copy for the same run is refreshed rather than replaced, because a
     reattached run's in-progress work lives there.
     """
-    ws = plan_workspace(source, run_id)
+    ws = plan_workspace(source, run_id, self_contained=self_contained)
     ws.path.parent.mkdir(parents=True, exist_ok=True)
     if ws.kind == "worktree":
         return _materialize_worktree(ws.source, ws.path, run_id)
     return _materialize_copy(ws.source, ws.path)
 
 
-def plan_workspace(source: Path, run_id: str) -> Workspace:
+def plan_workspace(source: Path, run_id: str, *, self_contained: bool = False) -> Workspace:
     """The `Workspace` `materialize` would produce, without creating or touching anything.
 
     Dry-run needs the destination path, kind, and branch name in advance — the same values
     `materialize` computes — without `materialize`'s side effects: no directory is created, no
     worktree is added, nothing is rsynced. The one filesystem interaction that survives is the git
     repo check, a read-only `rev-parse` that decides `worktree` vs. `copy`; it changes nothing.
+
+    **`self_contained` is what the cluster target needs, and it is not an optimization.** A git
+    worktree's `.git` is a *file* pointing at the original repository's object store. Locally that
+    store is bind-mounted and everything works; in a pod there is no host to point at, so `git
+    status` fails, state detection reports `no_repo`, and the CEO silently drops to build mode —
+    the exact failure the `git_usable` probe exists to catch, and it catches it. A plain copy
+    carries a real `.git` directory and stands on its own. The worktree's advantages — cheap,
+    shared object store, work already on a branch — are all host-side, and the cluster brings its
+    work back as a tarball rather than as a branch anyway.
     """
     source = source.expanduser().resolve()
     destination = contained_home() / run_id / source.name
-    if is_git_repo(source):
+    if is_git_repo(source) and not self_contained:
         return Workspace(
             source=source, path=destination, kind="worktree", branch=f"{BRANCH_PREFIX}/{run_id}"
         )

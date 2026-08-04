@@ -38,10 +38,14 @@ BASE_RULES = """\
 
 # With --division only. `builds`/`buildconfigs` let the sidecar submit and poll a Build;
 # `imagestreams` is where the result lands.
+# `patch`/`update` on buildconfigs is not a widening: `create` + `delete` already give the same
+# power by a longer route, so withholding it only costs the sidecar an extra round trip and a race.
+# The sidecar needs it to set `dockerfilePath` per build, because the agent may name a different
+# Containerfile on the next iteration.
 DIVISION_RULES = """\
   - apiGroups: ["build.openshift.io"]
     resources: ["builds", "buildconfigs"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
   - apiGroups: ["build.openshift.io"]
     resources: ["builds/log"]
     verbs: ["get"]

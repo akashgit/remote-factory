@@ -43,6 +43,8 @@ from factory.contained.k8s import (
     build_pod_exec_argv,
     render_pod,
     render_pvc,
+    namespace_fs_group,
+    resolve_sidecar_image,
     resolve_namespace,
     stream_workspace,
     wait_for_container,
@@ -58,6 +60,7 @@ from factory.contained.workspace import (
     plan_workspace,
 )
 from factory.podman import (
+    TMUX_SESSION,
     build_run_command,
     container_name,
     dry_run_enabled,
@@ -89,7 +92,12 @@ def run_k8s(args: argparse.Namespace) -> int:
         if args.division:
             _require_openshift(dry_run)
         run_id = args.name or container_name(project)
-        ws = plan_workspace(project, run_id) if dry_run else materialize(project, run_id)
+        # Self-contained: nothing from this machine is mounted in a pod, so the copy has to carry
+        # its own .git rather than a pointer to one (see `plan_workspace`).
+        ws = (
+            plan_workspace(project, run_id, self_contained=True) if dry_run
+            else materialize(project, run_id, self_contained=True)
+        )
         plan = _build_pod_plan(args, ws, namespace, run_id)
     except (ContainedError, WorkspaceError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -196,6 +204,8 @@ def _build_pod_plan(
         factory_command=inner,
         storage_class=args.storage_class,
         division=args.division,
+        fs_group=namespace_fs_group(namespace),
+        sidecar_image=resolve_sidecar_image(),
         warnings=tuple(warnings),
     )
 
@@ -239,8 +249,13 @@ def _provision(plan: PodPlan, tarball: Path) -> None:
     # The identifier first, before any long-running work: a run whose name the user cannot see is a
     # run they cannot manage (§3.1).
     print(plan.name)
-    wait_for_container(plan.name, plan.namespace, LOADER_CONTAINER)
-    stream_workspace(tarball, plan.name, plan.namespace)
+    state = wait_for_container(plan.name, plan.namespace, LOADER_CONTAINER)
+    if state == "running":
+        stream_workspace(tarball, plan.name, plan.namespace)
+    else:
+        # Already unpacked for *this* run — the pod restarted after a successful upload. The marker
+        # is per-run, so this can never mean "a previous run's files are already here".
+        log.info("contained_workspace_already_present", pod=plan.name)
     wait_for_container(plan.name, plan.namespace, FACTORY_CONTAINER)
 
 
@@ -264,6 +279,24 @@ def _start(plan: PodPlan, ws: Workspace, project: Path) -> int:
                 file=sys.stderr,
             )
             return 1
+
+    # A pod of this name may already be mid-run: `apply` is idempotent, so a re-invocation reuses it
+    # rather than failing, and the tmux launch then collides with the session already there. Raw,
+    # that surfaces as "duplicate session: factory", which names tmux for what is really "you
+    # already have this run". The local target has the same shape of check on container creation.
+    existing = subprocess.run(
+        build_pod_exec_argv(plan.name, plan.namespace, ["tmux", "has-session", "-t", TMUX_SESSION]),
+        capture_output=True, text=True, timeout=120,
+    )
+    if existing.returncode == 0:
+        print(
+            f"contained: {plan.name} is already running a session — this is the same run, not a new "
+            f"one.\n"
+            f"  attach:  factory contained --target k8s attach {plan.name}\n"
+            f"  restart: factory contained --target k8s rm {plan.name}, then run this again",
+            file=sys.stderr,
+        )
+        return 1
 
     launch = build_pod_exec_argv(
         plan.name, plan.namespace,

@@ -316,9 +316,24 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
         # A worktree's .git is a *file* pointing at the original repository's object store. Without
         # that store mounted, every git command inside fails on a path that exists on the host and
         # not in the container — and the `git_usable` probe is what catches it.
+        #
+        # **Read-write, and the design said read-only.** Correcting §3.2 with what running it
+        # showed: the CEO creates its own experiment worktrees at `<project>/.factory-worktrees/`
+        # (§3.3), and `git worktree add` writes into the *common* dir — a ref lock, a worktree
+        # registration, objects. Read-only, the first cycle dies on
+        # "cannot lock ref ...: Read-only file system", which reads as a git bug rather than a mount
+        # mode. Nothing else in the design works around it: the copy has to be a valid worktree
+        # parent, and a valid worktree parent has a writable common dir.
+        #
+        # The cost, stated rather than buried: the container can write the source repository's git
+        # directory. "The host tree is untouched" remains true — that is a statement about the
+        # *working* tree — and the object store was already shared by construction, which is what
+        # makes the worktree cheap and what puts the run's branch where `sync`'s merge command can
+        # find it. But the blast radius is the copy *plus* the source repo's `.git`, not the copy
+        # alone.
         common = git_common_dir(ws.source)
         if common is not None:
-            mounts.append(Mount(common, str(common), read_only=True))
+            mounts.append(Mount(common, str(common)))
 
     shape = resolve_credentials()
     for host_path, relative in shape.home_mounts:
