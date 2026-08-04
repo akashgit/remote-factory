@@ -45,6 +45,20 @@ LOADER_CONTAINER = "workspace-loader"
 SIDECAR_CONTAINER = "build-sidecar"
 
 SERVICE_ACCOUNT = "factory"
+
+# The build sidecar runs a **different image** from the agent's container, and that is the whole
+# point (spec §7): it is the only holder of `oc` and the ServiceAccount token, and the runtime image
+# deliberately has neither. Using one image for both quietly collapses the boundary the k8s division
+# is built on — and fails loudly the first time a build is requested, with `oc: command not found`.
+SIDECAR_IMAGE_ENV = "FACTORY_CONTAINED_SIDECAR_IMAGE"
+DEFAULT_SIDECAR_IMAGE = "quay.io/openshift/origin-cli:latest"
+
+
+def resolve_sidecar_image(env: dict[str, str] | None = None) -> str:
+    import os
+
+    source = os.environ if env is None else env
+    return source.get(SIDECAR_IMAGE_ENV) or DEFAULT_SIDECAR_IMAGE
 PVC_NAME = "factory-workspace"
 SECRET_NAME = "factory-credentials"
 
@@ -53,9 +67,16 @@ LABEL_PROJECT = "factory.project"
 LABEL_NAME = "factory.name"
 LABEL_RUN = "factory.run"
 
-# The marker the loader waits for. Inside the PVC rather than in a shared emptyDir, so a pod that
-# restarts after a successful unpack does not re-request the tarball it already has.
-UNPACK_MARKER = f"{WORKSPACE_ROOT}/.factory-unpacked"
+# The marker the loader waits for, **per run**. Inside the PVC rather than in a shared emptyDir so a
+# pod that restarts after a successful unpack does not re-request the tarball it already has — and
+# named after the run because the PVC outlives the run that filled it. A single shared marker means
+# the *next* run finds it already present, skips its own upload, and quietly executes against the
+# previous run's files: a provenance failure of exactly the kind §2.1a exists to prevent, and one
+# that produces a plausible-looking result.
+
+
+def unpack_marker(run_name: str) -> str:
+    return f"{WORKSPACE_ROOT}/.factory-unpacked-{run_name}"
 
 # How long the loader waits for the host before giving up. Long enough for a large repository over a
 # slow link; short enough that a host that died mid-upload does not pin a pod indefinitely.
@@ -155,24 +176,119 @@ def build_delete_pod_argv(name: str, namespace: str) -> list[str]:
     return [cli_binary(), "delete", "pod", name, "-n", namespace, "--ignore-not-found"]
 
 
-def build_can_i_argv(
-    verb: str, resource: str, namespace: str, *, as_service_account: str | None = None
-) -> list[str]:
-    """A SelfSubjectAccessReview, or a SubjectAccessReview when asking about the ServiceAccount.
+def render_access_review(
+    verb: str, resource: str, namespace: str, *, subresource: str = "", group: str = "",
+    as_service_account: str | None = None,
+) -> str:
+    """A SubjectAccessReview asking whether a subject may do one thing in one namespace.
 
-    Both matter and they answer different questions: whether *you* can create the pod, and whether
-    the *pod* can do what the run needs. Reporting only the first passes a namespace that will fail
-    on the agent's first cluster call.
+    **The API object, not `oc auth can-i`** — and the difference is not stylistic. Measured against
+    OpenShift 4.21 on 2026-08-04:
+
+    | asked                | SubjectAccessReview | `oc auth can-i --as` |
+    |----------------------|---------------------|----------------------|
+    | `create pods`        | true                | yes                  |
+    | `create pods/exec`   | **false**           | **yes**              |
+    | `get pods/log`       | true                | yes                  |
+    | `create secrets`     | false               | no                   |
+
+    The CLI collapses a subresource onto its parent when impersonating, so it answers "yes" for
+    `pods/exec` on a ServiceAccount that RBAC plainly denies. That single wrong answer would make
+    `_no_exec_check` — the one check standing between the k8s division's sidecar and an agent that
+    can exec into it — report the boundary as broken on *every* cluster, forever. Spec §8 says
+    "via `SelfSubjectAccessReview`", meaning this object; the shorthand is not a substitute.
+
+    `subresource` is a field of its own here rather than a `resource/sub` string, which is exactly
+    the distinction the CLI loses.
     """
-    cmd = [cli_binary(), "auth", "can-i", verb, resource, "-n", namespace, "--quiet"]
+    attributes: dict[str, str] = {"namespace": namespace, "verb": verb, "resource": resource}
+    if subresource:
+        attributes["subresource"] = subresource
+    if group:
+        # Omitted means the *core* group, not "any group". A review for `builds` with no group asks
+        # about a core resource that does not exist and comes back denied — which would report a
+        # correctly-configured division namespace as missing its build permissions.
+        attributes["group"] = group
+    spec: dict[str, object] = {"resourceAttributes": attributes}
     if as_service_account:
-        cmd += ["--as", f"system:serviceaccount:{namespace}:{as_service_account}"]
-    return cmd
+        spec["user"] = f"system:serviceaccount:{namespace}:{as_service_account}"
+        kind = "SubjectAccessReview"
+    else:
+        # Without a subject it is a *self* review — "can I", not "can they". Both matter, and they
+        # answer different questions: whether you can create the pod, and whether the pod can do
+        # what the run needs.
+        kind = "SelfSubjectAccessReview"
+    return json.dumps(
+        {"apiVersion": "authorization.k8s.io/v1", "kind": kind, "spec": spec}, sort_keys=True
+    )
+
+
+def build_access_review_argv() -> list[str]:
+    """Post an access review and print nothing but the verdict."""
+    return [cli_binary(), "create", "-f", "-", "-o", "jsonpath={.status.allowed}"]
+
+
+def access_review(
+    verb: str, resource: str, namespace: str, *, subresource: str = "", group: str = "",
+    as_service_account: str | None = None,
+) -> bool | None:
+    """Whether the subject may do this. `None` when the review could not be run at all.
+
+    None is distinct from False on purpose: "denied" and "we could not find out" call for different
+    messages, and collapsing them reports a namespace as misconfigured when the cluster was simply
+    unreachable.
+    """
+    payload = render_access_review(
+        verb, resource, namespace, subresource=subresource, group=group,
+        as_service_account=as_service_account,
+    )
+    try:
+        result = subprocess.run(
+            build_access_review_argv(), input=payload, capture_output=True, text=True, timeout=60
+        )
+    except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        log.warning("k8s_access_review_failed", stderr=result.stderr.strip()[:200])
+        return None
+    return result.stdout.strip() == "true"
 
 
 def build_api_resources_argv(api_group: str) -> list[str]:
     """Detect an API by presence, not by which binary is installed (spec §6)."""
     return [cli_binary(), "api-resources", "--api-group", api_group, "-o", "name"]
+
+
+# OpenShift records the group range a namespace's pods may use in this annotation, as
+# "<start>/<size>". Kubernetes chowns a volume to the pod's `fsGroup` and marks it setgid, which is
+# the only supported way to make a PVC writable by a container running as an arbitrary UID.
+_SUPPLEMENTAL_GROUPS_ANNOTATION = "openshift.io/sa.scc.supplemental-groups"
+
+
+def namespace_fs_group(namespace: str) -> int | None:
+    """The `fsGroup` this namespace's pods may use, or None when the cluster does not say.
+
+    **Without this the workspace upload fails and it looks like a tar bug.** A freshly provisioned
+    PVC mounts as `root:root 0755`; the container runs as an arbitrary UID with gid 0; and the
+    unpack dies on `Cannot mkdir: Permission denied` for a directory the pod can plainly see. It is
+    only a *group* permission problem, and `fsGroup` is the field that fixes it.
+
+    Read from the namespace rather than hardcoded because an SCC with `fsGroup: MustRunAs` rejects a
+    value outside its range — so a fixed number works on one cluster and fails admission on the
+    next. `None` means "say nothing and let the cluster default it", which is right for plain
+    Kubernetes, where volumes are not root-owned in the first place.
+    """
+    result = _run([
+        cli_binary(), "get", "namespace", namespace,
+        "-o", f"jsonpath={{.metadata.annotations.{_SUPPLEMENTAL_GROUPS_ANNOTATION.replace('.', chr(92) + '.')}}}",
+    ])
+    if result is None or result.returncode != 0:
+        return None
+    raw = result.stdout.strip().split("/")[0]
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 # ------------------------------------------------------------------------------------------------
@@ -195,20 +311,23 @@ class PodPlan:
     storage_class: str | None = None
     secret_name: str = SECRET_NAME
     division: bool = False
+    fs_group: int | None = None
+    sidecar_image: str = ""
     warnings: tuple[str, ...] = field(default=())
 
 
-def loader_command() -> str:
+def loader_command(run_name: str) -> str:
     """The initContainer's script: wait for the host to unpack, then get out of the way.
 
     Bounded rather than infinite. A host that dies mid-upload otherwise leaves a pod sitting in
     `Init` forever, which reads as a scheduling problem rather than as an upload that never
     finished.
     """
+    marker = unpack_marker(run_name)
     return (
         f'echo "waiting for the workspace upload (timeout {LOADER_TIMEOUT_SECONDS}s)"; '
         f'waited=0; '
-        f'while [ ! -f "{UNPACK_MARKER}" ]; do '
+        f'while [ ! -f "{marker}" ]; do '
         f'  sleep 2; waited=$((waited+2)); '
         f'  if [ "$waited" -ge {LOADER_TIMEOUT_SECONDS} ]; then '
         f'    echo "the workspace was never uploaded; the host did not finish streaming it" >&2; '
@@ -219,13 +338,13 @@ def loader_command() -> str:
     )
 
 
-def unpack_command() -> str:
+def unpack_command(run_name: str) -> str:
     """What the host runs *inside* the loader, with the tarball on stdin.
 
     The marker is written by the same command that unpacks, and only on success, so a partial
     transfer leaves the loader waiting rather than starting the factory on half a tree.
     """
-    return f'tar xzf - -C "{WORKSPACE_ROOT}" && touch "{UNPACK_MARKER}"'
+    return f'tar xzf - -C "{WORKSPACE_ROOT}" && touch "{unpack_marker(run_name)}"'
 
 
 def render_pod(plan: PodPlan) -> str:
@@ -242,6 +361,9 @@ def render_pod(plan: PodPlan) -> str:
         for key, value in sorted(plan.env.items())
     )
     sidecar = _render_sidecar(plan) if plan.division else ""
+    # Omitted rather than guessed when the cluster does not publish a range: an fsGroup outside an
+    # SCC's `MustRunAs` range fails admission, which is worse than the default the cluster picks.
+    fs_group = f"\n    fsGroup: {plan.fs_group}" if plan.fs_group is not None else ""
     return f"""\
 apiVersion: v1
 kind: Pod
@@ -254,7 +376,7 @@ spec:
   restartPolicy: Never
   serviceAccountName: {SERVICE_ACCOUNT}
   securityContext:
-    runAsNonRoot: true
+    runAsNonRoot: true{fs_group}
     seccompProfile:
       type: RuntimeDefault
   volumes:
@@ -264,7 +386,7 @@ spec:
   initContainers:
     - name: {LOADER_CONTAINER}
       image: {plan.image}
-      command: ["sh", "-c", {_yaml_scalar(loader_command())}]
+      command: ["sh", "-c", {_yaml_scalar(loader_command(plan.name))}]
       volumeMounts:
         - name: workspace
           mountPath: {WORKSPACE_ROOT}
@@ -307,13 +429,17 @@ def _render_sidecar(plan: PodPlan) -> str:
 
     return f"""\
     - name: {SIDECAR_CONTAINER}
-      image: {plan.image}
+      image: {plan.sidecar_image or resolve_sidecar_image()}
       command: ["sh", "-lc", {_yaml_scalar(sidecar_command())}]
       env:
         - name: FACTORY_BUILD_NAMESPACE
           value: {_yaml_scalar(plan.namespace)}
         - name: FACTORY_RUN_NAME
           value: {_yaml_scalar(plan.name)}
+        # The build context is the *project* directory, not the workspace root, so a relative COPY
+        # in the agent's Containerfile resolves the way it does on a laptop.
+        - name: FACTORY_BUILD_CONTEXT
+          value: {_yaml_scalar(plan.project_dir)}
       volumeMounts:
         - name: workspace
           mountPath: {WORKSPACE_ROOT}
@@ -371,8 +497,14 @@ def apply_manifest(manifest: str, namespace: str) -> None:
     log.info("k8s_applied", namespace=namespace, output=result.stdout.strip()[:200])
 
 
-def wait_for_container(name: str, namespace: str, container: str, *, timeout: int = 300) -> None:
-    """Block until `container` is running, so the host can exec into it.
+def wait_for_container(
+    name: str, namespace: str, container: str, *, timeout: int = 300
+) -> str:
+    """Block until `container` is running or has finished. Returns `"running"` or `"terminated"`.
+
+    Both are answers, and conflating them hangs: an initContainer that already did its work on an
+    earlier pod for this run terminates before the host ever looks, and a wait that only accepts
+    "running" then times out against a container that succeeded.
 
     Polled rather than `oc wait`ed: the condition here is per-container ("the loader is up"), and
     `oc wait --for=condition=Ready` is per-pod and is never satisfied while an initContainer is
@@ -400,7 +532,16 @@ def wait_for_container(name: str, namespace: str, container: str, *, timeout: in
                     continue
                 state = status.get("state", {})
                 if "running" in state:
-                    return
+                    return "running"
+                terminated = state.get("terminated")
+                if isinstance(terminated, dict):
+                    if terminated.get("exitCode") == 0:
+                        return "terminated"
+                    raise ClusterError(
+                        f"container {container} in pod {name} exited "
+                        f"{terminated.get('exitCode')} ({terminated.get('reason')}). "
+                        f"`{cli_binary()} logs {name} -c {container} -n {namespace}` has why."
+                    )
                 last = json.dumps(state)[:200]
             phase = pod.get("status", {}).get("phase", "")
             if phase in ("Failed", "Succeeded") and not last:
@@ -423,7 +564,7 @@ def stream_workspace(tarball: Path, name: str, namespace: str) -> None:
     One exec, one tarball — the whole reason this is not `oc cp` of a directory.
     """
     argv = build_pod_exec_argv(
-        name, namespace, ["sh", "-c", unpack_command()], container=LOADER_CONTAINER
+        name, namespace, ["sh", "-c", unpack_command(name)], container=LOADER_CONTAINER
     )
     log.info("k8s_streaming_workspace", pod=name, bytes=tarball.stat().st_size)
     with tarball.open("rb") as handle:

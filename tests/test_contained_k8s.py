@@ -22,10 +22,9 @@ from factory.contained.k8s import (
     LOADER_CONTAINER,
     PVC_NAME,
     SERVICE_ACCOUNT,
-    UNPACK_MARKER,
     WORKSPACE_ROOT,
     PodPlan,
-    build_can_i_argv,
+    render_access_review,
     build_pod_attach_argv,
     loader_command,
     render_pod,
@@ -153,17 +152,25 @@ def test_the_pvc_is_rwo_and_survives_the_pod() -> None:
 
 def test_the_loader_waits_for_the_upload_and_gives_up_eventually(tmp_path: Path) -> None:
     """A host that died mid-upload must not pin a pod in Init forever."""
-    command = loader_command()
-    assert UNPACK_MARKER in command
+    command = loader_command("rta-test")
+    assert k8s.unpack_marker("rta-test") in command
     assert str(k8s.LOADER_TIMEOUT_SECONDS) in command
     doc = yaml.safe_load(render_pod(_plan(tmp_path)))
     loader = next(c for c in doc["spec"]["initContainers"] if c["name"] == LOADER_CONTAINER)
     assert loader["volumeMounts"][0]["mountPath"] == WORKSPACE_ROOT
 
 
+def test_the_marker_is_per_run_so_a_reused_pvc_cannot_serve_stale_files() -> None:
+    """The PVC outlives the run that filled it. A shared marker means the *next* run finds it
+    present, skips its own upload, and quietly runs against the previous run's files."""
+    assert k8s.unpack_marker("run-a") != k8s.unpack_marker("run-b")
+    assert "run-a" in loader_command("run-a")
+    assert "run-a" in unpack_command("run-a")
+
+
 def test_the_marker_is_written_only_on_a_successful_unpack() -> None:
     """A partial transfer must leave the loader waiting, not start the factory on half a tree."""
-    command = unpack_command()
+    command = unpack_command("rta-test")
     assert command.index("tar xzf") < command.index("&&") < command.index("touch")
 
 
@@ -339,22 +346,55 @@ def test_a_missing_object_names_the_command_that_restores_it() -> None:
 
 
 def test_permissions_are_checked_as_the_service_account_not_as_the_user() -> None:
-    argv = build_can_i_argv("create", "pods", "ns", as_service_account=SERVICE_ACCOUNT)
-    assert "--as" in argv
-    assert f"system:serviceaccount:ns:{SERVICE_ACCOUNT}" in argv
+    review = json.loads(render_access_review("create", "pods", "ns",
+                                             as_service_account=SERVICE_ACCOUNT))
+    assert review["kind"] == "SubjectAccessReview"
+    assert review["spec"]["user"] == f"system:serviceaccount:ns:{SERVICE_ACCOUNT}"
+    # And without a subject it is a *self* review — "can I", not "can they".
+    assert json.loads(render_access_review("create", "pods", "ns"))["kind"] == (
+        "SelfSubjectAccessReview"
+    )
+
+
+def test_a_subresource_is_its_own_field_not_a_slash_string() -> None:
+    """`oc auth can-i` collapses pods/exec onto pods when impersonating and answers yes for a verb
+    RBAC denies — measured against OpenShift 4.21. The API object keeps them apart."""
+    review = json.loads(render_access_review("create", "pods", "ns", subresource="exec",
+                                             as_service_account=SERVICE_ACCOUNT))
+    attributes = review["spec"]["resourceAttributes"]
+    assert attributes["resource"] == "pods"
+    assert attributes["subresource"] == "exec"
+    # No subresource must not leave an empty one behind, which some servers treat as a mismatch.
+    plain = json.loads(render_access_review("create", "pods", "ns"))
+    assert "subresource" not in plain["spec"]["resourceAttributes"]
+
+
+def test_an_unreachable_review_is_unknown_not_denied() -> None:
+    """"Denied" and "we could not find out" call for different messages."""
+    with patch("factory.contained.k8s.subprocess.run", side_effect=FileNotFoundError):
+        assert k8s.access_review("create", "pods", "ns") is None
+    with patch("factory.contained.k8s.subprocess.run", return_value=_completed("true")):
+        assert k8s.access_review("create", "pods", "ns") is True
+    with patch("factory.contained.k8s.subprocess.run", return_value=_completed("false")):
+        assert k8s.access_review("create", "pods", "ns") is False
 
 
 def test_pods_exec_being_granted_is_itself_a_failure() -> None:
     """The one check that fails when something succeeds (§6.3, §11)."""
-    with patch("factory.contained.k8s_setup._run", return_value=_completed()):
+    with patch("factory.contained.k8s_setup.access_review", return_value=True):
         check = k8s_setup._no_exec_check("ns")
     assert not check.ok
     assert "recover a shell" in check.detail
     assert check.fix
 
-    with patch("factory.contained.k8s_setup._run", return_value=_completed(returncode=1)):
+    with patch("factory.contained.k8s_setup.access_review", return_value=False):
         check = k8s_setup._no_exec_check("ns")
     assert check.ok
+
+    with patch("factory.contained.k8s_setup.access_review", return_value=None):
+        check = k8s_setup._no_exec_check("ns")
+    assert not check.ok
+    assert "could not check" in check.detail
 
 
 def test_a_secret_with_the_wrong_keys_is_reported_by_key_never_by_value() -> None:

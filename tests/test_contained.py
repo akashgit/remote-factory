@@ -443,3 +443,28 @@ def test_identity_is_projected_in_dry_run_without_starting_a_probe(tmp_path: Pat
     assert identity == Identity(
         user=f"{os.getuid()}:0", userns=None, detail=identity.detail
     )
+
+
+def test_the_source_git_dir_is_mounted_writable(git_project: Path, tmp_path: Path) -> None:
+    """The copy has to be a valid git *worktree parent*, and that needs a writable common dir.
+
+    The CEO creates experiment worktrees at `<project>/.factory-worktrees/` inside the copy, and
+    `git worktree add` writes a ref lock and a worktree registration into the common dir. Mounted
+    read-only, the first cycle dies on "cannot lock ref ...: Read-only file system" — which reads
+    as a git bug rather than as a mount mode.
+    """
+    home = tmp_path / "contained-home"
+    with patch.dict(
+        os.environ,
+        {"FACTORY_CONTAINED_DRY_RUN": "1", "FACTORY_CONTAINED_HOME": str(home)},
+        clear=False,
+    ):
+        args = interpret(["--", "study", str(git_project)])
+        from factory.contained.workspace import plan_workspace
+
+        ws = plan_workspace(git_project, "rta-test")
+        plan = cli._build_plan(args, ws, dry_run=True)
+
+    git_mounts = [m for m in plan.mounts if m.target.endswith(".git")]
+    assert git_mounts, "the source repository's git dir must be mounted"
+    assert not git_mounts[0].read_only

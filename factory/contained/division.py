@@ -270,6 +270,34 @@ def mcp_config(endpoint: str) -> dict[str, object]:
     return {"mcpServers": {MCP_SERVER_NAME: {"type": "http", "url": endpoint}}}
 
 
+def port_owner() -> str | None:
+    """Which run already owns the division port, if any.
+
+    One port, one server, and the PID file is the only record of whose it is. Without this check a
+    second `--division` run finds the port bound, concludes the server it just started came up, and
+    silently drives the *first* run's endpoint — after which `rm` on either one pulls the tools out
+    from under the other. Both symptoms appear far from the cause.
+    """
+    home = contained_home()
+    if not home.is_dir():
+        return None
+    for candidate in sorted(home.iterdir()):
+        pid_file = candidate / "division.pid"
+        try:
+            pid = int(pid_file.read_text().strip())
+        except (OSError, ValueError):
+            continue
+        try:
+            os.kill(pid, 0)                       # signal 0: does the process still exist?
+        except ProcessLookupError:
+            pid_file.unlink(missing_ok=True)      # stale; the run is gone
+            continue
+        except PermissionError:
+            pass                                  # alive, owned by someone else
+        return candidate.name
+    return None
+
+
 def _warn(endpoint: str, run_id: str) -> None:
     print(
         "\n"
@@ -302,6 +330,15 @@ def start_local_division(plan: ContainerPlan, *, dry_run: bool = False) -> Divis
             "--division needs `npx` on PATH to start podman-mcp-server. Install Node.js "
             "(`brew install node`) and retry, or drop --division to run without the "
             "container-manufacturing plane."
+        )
+
+    owner = port_owner()
+    if owner is not None and owner != plan.name:
+        raise ContainedError(
+            f"the division port {DIVISION_PORT} is already held by the run {owner!r}. One port, one "
+            f"server: starting a second would silently drive {owner}'s endpoint, and stopping "
+            "either would pull the tools out from under the other. Finish or remove that run first "
+            f"(`factory contained rm {owner}`), or run this one without --division."
         )
 
     log_dir = contained_home() / plan.name

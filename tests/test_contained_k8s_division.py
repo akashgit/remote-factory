@@ -119,3 +119,48 @@ def test_the_sweep_selects_by_the_run_label_only() -> None:
     assert "factory.run=rta-test" in argv
     # ImageStreams are deliberately not swept — they retain the tags the build produced.
     assert "imagestream" not in " ".join(argv)
+
+
+def test_the_verdict_comes_from_the_build_phase_not_an_exit_code() -> None:
+    """`oc start-build --follow` exits 0 for a build that failed — observed directly, and a false
+    success is the worst answer here because the agent goes on to validate an image that was never
+    produced."""
+    command = k8s_division.sidecar_command()
+    assert "status.phase" in command
+    assert '"$phase" = "Complete"' in command
+    # The exit code of start-build is explicitly not what decides.
+    assert 'echo "$?" >' not in command
+
+
+def test_the_containerfile_path_is_patched_onto_the_buildconfig() -> None:
+    """Binary builds reject build args, so --build-arg DOCKERFILE= silently did nothing and the
+    build looked for a file named Dockerfile that was not there."""
+    command = k8s_division.sidecar_command()
+    assert "dockerfilePath" in command
+    assert "--build-arg" not in command
+
+
+def test_the_build_context_is_the_project_directory(tmp_path: Path) -> None:
+    """A relative COPY in the agent's Containerfile must resolve the way it does on a laptop."""
+    plan = _plan(tmp_path)
+    assert "FACTORY_BUILD_CONTEXT" in render_pod(plan)
+    assert plan.project_dir in render_pod(plan)
+    assert '"$FACTORY_BUILD_CONTEXT"' in k8s_division.sidecar_command()
+
+
+def test_the_sidecar_runs_a_different_image_from_the_agent(tmp_path: Path) -> None:
+    """It is the only holder of `oc`; the runtime image deliberately has none. One image for both
+    collapses the boundary — and fails at the first build with `oc: command not found`."""
+    doc = yaml.safe_load(render_pod(_plan(tmp_path)))
+    agent = next(c for c in doc["spec"]["containers"] if c["name"] == FACTORY_CONTAINER)
+    sidecar = next(c for c in doc["spec"]["containers"] if c["name"] == SIDECAR_CONTAINER)
+    assert sidecar["image"] != agent["image"]
+    assert "cli" in sidecar["image"]
+
+
+def test_the_sidecar_needs_no_jq_or_python() -> None:
+    """Its image is an `oc` image, which carries neither."""
+    command = k8s_division.sidecar_command()
+    assert "jq " not in command
+    assert "python" not in command
+    assert "sed -n" in command

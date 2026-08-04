@@ -120,6 +120,23 @@ RUN set -eux; \
     "${FACTORY_HOME}/.venv/bin/factory" --help >/dev/null; \
     ln -sf "${FACTORY_HOME}/.venv/bin/factory" /usr/local/bin/factory
 
+# Claude Code shows a first-run onboarding wizard — theme picker and all — when it finds no
+# completed-onboarding marker, and a contained run then sits at that prompt forever with real tokens
+# already spent getting there. Found by running §5.5 step 3, not by reading. The marker is a plain
+# config file, so it is seeded here rather than by mounting the developer's ~/.claude (which is
+# opt-in via --mount precisely because it carries credentials and history).
+#
+# Only the onboarding keys are set. Nothing here configures inference, an account, or a theme
+# preference beyond the default — a fresh container gets a working non-interactive Claude Code, not
+# the developer's setup.
+RUN set -eux; \
+    printf '%s\n' \
+      '{' \
+      '  "hasCompletedOnboarding": true,' \
+      '  "installMethod": "native",' \
+      '  "autoUpdates": false' \
+      '}' > "${CONTAINER_HOME}/.claude.json"
+
 # The arbitrary-UID recipe, applied to every path the running process writes or executes from.
 # `g=u` rather than `g+rwX`: it copies the owner's bits exactly, so an executable stays executable
 # and a plain file does not silently become one.
@@ -132,7 +149,8 @@ RUN set -eux; \
              "${CONTAINER_HOME}/.cache" "${CONTAINER_HOME}/.npm" /workspace; \
     chgrp -R 0 "${FACTORY_HOME}" "${CONTAINER_HOME}" /workspace; \
     chmod -R g=u "${FACTORY_HOME}" "${CONTAINER_HOME}" /workspace; \
-    chmod g=u /etc/passwd
+    chmod g=u /etc/passwd; \
+    chmod g=u "${CONTAINER_HOME}/.claude.json"
 
 # 1001 is the UBI base image's non-root UID and is only the *default*: both targets override it.
 # Stated anyway so `podman run` with no --user is still non-root.
