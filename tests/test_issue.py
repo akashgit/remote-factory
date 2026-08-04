@@ -1022,3 +1022,208 @@ class TestCmdRunMultiIssue:
             code = cmd_run(ns)
 
         assert code == 1
+
+
+# ── parse_multi_issue_refs — slash accumulator success ────────
+
+
+class TestParseMultiIssueRefsSlashAccumulator:
+    """Cover lines 216-218, 222: slash-token successfully accumulates into a valid ref."""
+
+    def test_slash_token_accumulates_with_hash_suffix(self) -> None:
+        """'owner/repo #42' — slash token + hash suffix combines into a valid shorthand."""
+        result = parse_multi_issue_refs("owner/repo #42")
+        assert result == ["owner/repo #42"]
+
+    def test_slash_token_accumulates_two_refs(self) -> None:
+        """Two spaced shorthands both accumulate successfully."""
+        result = parse_multi_issue_refs("owner/repo #10, owner/repo #20")
+        assert result == ["owner/repo #10", "owner/repo #20"]
+
+    def test_slash_token_mixed_with_bare_number(self) -> None:
+        """Accumulated shorthand + bare number."""
+        result = parse_multi_issue_refs("owner/repo #10, 20")
+        assert result == ["owner/repo #10", "20"]
+
+
+# ── _resolve_focus_issues error path ──────────────────────────
+
+
+class TestResolveFocusIssuesError:
+    """Cover the error path where fetch_issue fails for one of the refs."""
+
+    def test_fetch_failure_propagates(self) -> None:
+        from factory.cli._path_resolver import _resolve_focus_issues
+
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch(
+                "factory.issue.subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, "gh", stderr="not found"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="Failed to fetch"):
+                _resolve_focus_issues("42", Path("/tmp/fake"))
+
+
+# ── _build_ceo_task — issue_numbers without issue_urls ────────
+
+
+class TestBuildCeoTaskIssueNumbersOnly:
+    """Cover the path where issue_numbers is set but issue_urls is empty."""
+
+    def test_issue_numbers_labels_without_urls(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="First + Second",
+            issue_numbers=[10, 20],
+        )
+        assert "These targets are from issues #10, #20" in task
+        assert "## Issue Tracking" in task
+        assert "--issue 10" in task
+        assert "--issue 20" in task
+
+    def test_issue_number_only_no_url(self) -> None:
+        """Single issue_number without issue_url — label has no parenthetical."""
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="Fix something",
+            issue_number=99,
+        )
+        assert "This target is from issue #99." in task
+        assert "(https://" not in task.split("This target")[1].split("spec")[0]
+
+
+# ── cmd_run backlog addition with multi-issue ─────────────────
+
+
+class TestCmdRunBacklogMultiIssue:
+    """Cover the add_backlog_item call + multi-issue assembly inside cmd_run."""
+
+    def test_cmd_run_adds_focus_to_backlog(self) -> None:
+        """Verify that cmd_run calls add_backlog_item when focus is set."""
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            loop=False,
+            focus="111 and 112",
+            discover_only=False,
+            no_github=False,
+            min_growth=None,
+            max_new=None,
+            branch=None,
+            run_id=None,
+            model=None,
+            use_profile=False,
+            tmux_persist=False,
+            background=False,
+            bg_agents=False,
+            prompt=None,
+            clean_pr=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        multi_result = [
+            ("First", "ctx1", 111, "url1"),
+            ("Second", "ctx2", 112, "url2"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.run._resolve_input", return_value=(Path("/tmp/fake"), None)),
+            patch("factory.cli.run._resolve_model", return_value=None),
+            patch("factory.cli.run._resolve_tmux_persist", return_value=False),
+            patch("factory.cli.run._resolve_background", return_value=False),
+            patch("factory.cli.run._resolve_bg_agents", return_value=False),
+            patch("factory.cli.run._resolve_focus_issues", return_value=multi_result),
+            patch("factory.cli.run.warn_deprecated_mode"),
+            patch("factory.cli.run._print_banner"),
+            patch("factory.cli.run._ensure_dashboard"),
+            patch("factory.cli.run._run_single_cycle", return_value=0),
+            patch("factory.cli.run._chain_modes", return_value=0),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            from factory.cli.run import cmd_run
+            code = cmd_run(ns)
+
+        assert code == 0
+
+    def test_cmd_run_context_set_to_none_for_multi(self) -> None:
+        """When multi-issue resolves 2+ items, context is set to None."""
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            loop=False,
+            focus="111, 112",
+            discover_only=False,
+            no_github=False,
+            min_growth=None,
+            max_new=None,
+            branch=None,
+            run_id=None,
+            model=None,
+            use_profile=False,
+            tmux_persist=False,
+            background=False,
+            bg_agents=False,
+            prompt=None,
+            clean_pr=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        multi_result = [
+            ("A", "ctx1", 111, "u1"),
+            ("B", "ctx2", 112, "u2"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.run._resolve_input", return_value=(Path("/tmp/fake"), "initial_ctx")),
+            patch("factory.cli.run._resolve_model", return_value=None),
+            patch("factory.cli.run._resolve_tmux_persist", return_value=False),
+            patch("factory.cli.run._resolve_background", return_value=False),
+            patch("factory.cli.run._resolve_bg_agents", return_value=False),
+            patch("factory.cli.run._resolve_focus_issues", return_value=multi_result),
+            patch("factory.cli.run.warn_deprecated_mode"),
+            patch("factory.cli.run._print_banner"),
+            patch("factory.cli.run._ensure_dashboard"),
+            patch("factory.cli.run._run_single_cycle", return_value=0) as mock_cycle,
+            patch("factory.cli.run._chain_modes", return_value=0),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            from factory.cli.run import cmd_run
+            cmd_run(ns)
+
+        call_kwargs = mock_cycle.call_args[1]
+        assert call_kwargs["focus"] == "A (issue #111) + B (issue #112)"
+
+
+# ── parse_multi_issue_refs — URL token branch ─────────────────
+
+
+class TestParseMultiIssueRefsUrlToken:
+    """Cover the http-prefix branch with mixed inputs."""
+
+    def test_url_mixed_with_bare_number(self) -> None:
+        result = parse_multi_issue_refs("https://github.com/o/r/issues/1 and 42")
+        assert result == ["https://github.com/o/r/issues/1", "42"]
+
+    def test_url_comma_separated_with_hash(self) -> None:
+        result = parse_multi_issue_refs("https://github.com/o/r/issues/5, #10")
+        assert result == ["https://github.com/o/r/issues/5", "10"]
+
+    def test_url_with_shorthand(self) -> None:
+        result = parse_multi_issue_refs(
+            "https://github.com/o/r/issues/1, owner/repo#99"
+        )
+        assert result == ["https://github.com/o/r/issues/1", "owner/repo#99"]
