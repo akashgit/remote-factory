@@ -96,7 +96,7 @@ _PARSER: argparse.ArgumentParser | None = None
 # whose implementation is not in the tree yet must fail naming the phase it arrives in rather than
 # import a module that does not exist. Raised as each phase lands; when it reaches 4 this constant
 # and `_unsupported` both go away.
-_PHASE = 2
+_PHASE = 3
 
 
 def _unsupported(feature: str, *, phase: int) -> int:
@@ -487,6 +487,8 @@ def cmd_contained(args: argparse.Namespace) -> int:
     if args.target == "k8s":
         if _PHASE < 3:
             return _unsupported("--target k8s", phase=3)
+        if args.division and _PHASE < 4:
+            return _unsupported("--target k8s --division", phase=4)
         from factory.cli.contained_k8s import run_k8s
 
         return run_k8s(args)
