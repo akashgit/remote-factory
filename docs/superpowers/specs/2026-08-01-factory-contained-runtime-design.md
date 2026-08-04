@@ -3,8 +3,9 @@
 **Date:** 2026-08-01
 **Revised:** 2026-08-03 — the local runtime is a plain podman container on a Red Hat UBI base. NVIDIA
 OpenShell is removed from the design entirely.
-**Status:** Implemented 2026-08-04. Phases 1-2 verified end to end on this machine; phases 3-4 are
-implemented and unit-verified but have never been run against a cluster (see §13).
+**Status:** Implemented and verified 2026-08-04. All four phases have been run against real targets
+— macOS/arm64 with rootful podman 5.7.1, and OpenShift 4.21 on ROSA. Nineteen of the twenty
+verification steps pass; the one outstanding step and why are in §13.
 
 ---
 
@@ -994,27 +995,52 @@ output pasted into the PR.
 
 | Phase | Contents | Evidence it owes | Status |
 |---|---|---|---|
-| 1 | `setup`/`verify`, passthrough surface, copy-mount, path rewriting, credential model, tmux + attach/ls/rm/sync | §3.6 steps 0–6 | **Done.** All seven steps run; F5 settled (§3.2). |
-| 2 | Local division: managed `podman-mcp-server`, brief | §5.5 steps 0–4 | **Done** apart from step 3. Steps 0, 1, 4 run; F6 settled (§5.1), F7 found and fixed. |
-| 3 | K8s runtime: image, pod, PVC + tarball transport, secret scan, bundle + verify, attach | §4.7 steps 1–5 | **Implemented, unverified.** |
-| 4 | K8s division: MCP server in-pod, build sidecar, validation-pod Role, brief | §6.6 steps 1–5 | **Implemented, unverified.** |
+| 1 | `setup`/`verify`, passthrough surface, copy-mount, path rewriting, credential model, tmux + attach/ls/rm/sync | §3.6 steps 0–6 | **Done.** All seven steps run. F5 settled (§3.2); F8 and F10 found and fixed. |
+| 2 | Local division: managed `podman-mcp-server`, brief | §5.5 steps 0–4 | **Done.** All five steps run. F6 settled (§5.1); F7 and F9 found and fixed. |
+| 3 | K8s runtime: image, pod, PVC + tarball transport, secret scan, bundle + verify, attach | §4.7 steps 1–5 | **Done.** All five steps run against OpenShift 4.21. Four defects found and fixed (§13.1). |
+| 4 | K8s division: MCP server in-pod, build sidecar, validation-pod Role, brief | §6.6 steps 1–5 | **Done apart from step 2** — see below. Steps 1, 3, 4, 5 run; three defects found and fixed. |
 
 Phases 1–2 need no cluster. Phase 3 is the prerequisite for phase 4. Phase 1 is materially smaller
 than it was before the pivot: no gateway install, no certificates, no policy generation, no clean
 room.
 
-**What "implemented, unverified" means, precisely.** Phases 3 and 4 have unit coverage over the
-parts that can be checked without a cluster — the bundle and the pod both parse as YAML and are
-asserted namespace-scoped, exec-free and privilege-free; the packer keeps `.factory/` and drops
-host-shaped directories; the generated `start_build` server parses as Python and contains no cluster
-client; `verify` degrades to a list rather than a traceback with no `oc` present. What has *not*
-happened is a pod running on a real cluster. §4.7 and §6.6 are the outstanding evidence, and neither
-phase should be called done before they are run.
+### 13.1 What running it actually proved
 
-**Two steps of phases 1–2 are also outstanding**, both for the same reason: this machine has no
-inference credentials configured, so no agent call can be made. §3.6 step 3 (`study` writing
-observations into the copy) and §5.5 step 3 (one real build-validate cycle) are the two that need
-one. Everything up to and including the first agent call is verified; the agent call itself is not.
+Highlights, all observed rather than inferred:
+
+- **§3.6.** The provenance gate aborts at `assert:git_usable` on a deliberately broken workspace,
+  before any agent call, leaving the container up for inspection. A run sees an uncommitted host
+  edit. `study` writes observations into the copy while `git -C ~/code/rta status` stays clean.
+  Attach renders the tmux TUI over a pty and `Ctrl-b d` leaves the run going. `podman stop`
+  completes in ~1s with exit 143.
+- **§5.5.** A real MCP `initialize` from inside the container returns podman-mcp-server v0.0.15, and
+  `tools/list` returns `image_build`, `container_run`, `container_logs` and the rest. A Builder asked
+  to name its tools names *those*, from the brief, rather than proposing a CLI wrapper. And the full
+  loop: the contained CEO wrote a Containerfile, built `localhost/rta:latest` on the **host** engine
+  through the division, and that image runs `rta --help`.
+- **§4.7.** `setup` printed the manifest, asked, applied it as the user, and `verify` went green —
+  including check 6, a pod in the namespace reaching inference. `backlog-list` ran through
+  pack → PVC → initContainer unpack → rewrite to `/workspace/rta` → exec → relay. Gitleaks named
+  `.env:1` and refused the upload without confirmation; `--yes` overrode it and said so. Work
+  written by a pod survived that pod's deletion and came back through `sync`. Attach worked over
+  `oc exec -it`.
+- **§6.6.** A build requested through `start_build` reached the sidecar, ran as an OpenShift `Build`,
+  pushed to the internal registry, and a validation pod on the resulting image printed its output.
+  `pods/exec` is denied to the ServiceAccount by RBAC, asserted by SubjectAccessReview. The sweep
+  removed the labelled pod and left the ImageStream.
+
+### 13.2 The one step still outstanding
+
+**§6.6 step 2** — an agent inside the pod listing its cluster tools — needs a working credentials
+Secret in the namespace, and creating one is a decision that belongs to the operator rather than to
+the implementation. The only credential available on this machine is the developer's personal GCP
+refresh token, and putting that into a Secret on a shared lab cluster is not a call this work should
+make on their behalf. Everything about that tool surface *except a model reading it* is verified:
+the `.mcp.json` is written with both servers, the brief is present, `oc` is absent from the image,
+and the `start_build` server answers a real MCP handshake and `tools/list` from inside the pod.
+
+To close it: create the Secret with a credential you are willing to place in that namespace
+(`factory contained --target k8s setup` prints the exact command), then run §6.6 step 2.
 
 ## 14. Out of scope
 

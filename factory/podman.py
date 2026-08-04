@@ -309,7 +309,8 @@ def build_run_command(
 
     from factory.contained.claude_state import render_seed_command
 
-    servers = tuple((mcp_config or {}).get("mcpServers", {}))
+    raw_servers = (mcp_config or {}).get("mcpServers", {})
+    servers: tuple[str, ...] = tuple(raw_servers) if isinstance(raw_servers, dict) else ()
     parts: list[str] = [
         render_seed_command(workdir, servers),
         f"cd {shlex.quote(workdir)}",
