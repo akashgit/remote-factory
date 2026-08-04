@@ -1,0 +1,20 @@
+# Build context for containers/factory/Containerfile.
+#
+# The image needs pyproject.toml, uv.lock, README.md, factory/ and skills/ — nothing else. The
+# repository as a whole is several hundred megabytes, most of it history, benchmark data and
+# virtualenvs, and every byte of it is streamed to the engine on each build.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!factory/
+!skills/
+
+# Re-excluded inside the directories that are included: caches and virtualenvs are large, are
+# rebuilt inside the image anyway, and an arm64 .venv copied into an amd64 image is actively wrong.
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/

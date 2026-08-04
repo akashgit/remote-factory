@@ -44,6 +44,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "tmux-capture",
             "tmux-stop",
             "refactory",
+            "contained",
             "dashboard",
             "agent",
         ],
@@ -323,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-capture": _cli.cmd_tmux_capture,
         "tmux-stop": _cli.cmd_tmux_stop,
         "refactory": _cli.cmd_refactory,
+        "contained": _cli.cmd_contained,
         "spec": lambda a: {
             "generate": _cli.cmd_spec_generate,
             "validate": _cli.cmd_spec_validate,

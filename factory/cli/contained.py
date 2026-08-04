@@ -1,0 +1,613 @@
+"""`factory contained` — run any factory command inside a podman container or a cluster pod.
+
+The runtime is a place to run the factory, not a mode of the factory: everything after `--` is
+handed inward verbatim, except for path rewriting (spec §2.5).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import platform
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import structlog
+
+from factory.contained.credentials import resolve_credentials, vertex_model_warning
+from factory.contained.env import CONTAINED_ENV_POLICY, redact_argv
+from factory.contained.errors import ContainedError
+from factory.contained.identity import IdentityError, resolve_identity
+from factory.contained.lifecycle import dispatch_lifecycle, reap_stale
+from factory.contained.paths import rewrite_argv
+from factory.contained.prereq import local_checks, render_checks
+from factory.contained.provenance import Probe, content_probe, provenance_probes
+from factory.contained.setup import run_setup
+from factory.contained.workspace import (
+    Workspace,
+    WorkspaceError,
+    git_common_dir,
+    materialize,
+    plan_workspace,
+)
+from factory.podman import (
+    CONTAINER_HOME,
+    DRY_RUN_ENV,
+    LABEL_CONTAINED,
+    LABEL_NAME,
+    LABEL_PROJECT,
+    LABEL_SOURCE,
+    ContainerPlan,
+    Mount,
+    Step,
+    build_run_command,
+    container_name,
+    dry_run_enabled,
+    growth_context_warning,
+    plan_steps,
+    project_hash,
+    resolve_image,
+)
+
+log = structlog.get_logger()
+
+
+LIFECYCLE_SUBCOMMANDS = ("ls", "attach", "rm", "sync", "setup", "verify", "bundle")
+
+# Flags whose meaning exists only for one runtime. Using one against the other is a mistake worth
+# naming: silently ignoring it makes a user believe a namespace or a mount took effect.
+_LOCAL_ONLY = ("mount", "live")
+_K8S_ONLY = ("namespace", "storage_class")
+
+# Printed as three tables rather than a flat argparse list: the target-scoping is the information a
+# user needs most, and a flat list hides it (spec §2.2).
+_HELP_EPILOG = """\
+Both targets:
+  --target local|k8s     Which runtime                              (default: local)
+  --division             Enable the container-manufacturing plane for that target
+  --name NAME            Runtime name                               (default: derived)
+  --env KEY=VALUE        Extra environment for the runtime, repeatable
+  --forward VAR          Forward a named host variable, repeatable
+  --image REF            Override the runtime image
+
+Local only:
+  --mount PATH           Additional host path bind-mounted in, repeatable
+  --live                 Reserved; mount the real working tree instead of a copy (not implemented)
+
+K8s only:
+  --namespace NS         Namespace                    (default: current kube context)
+  --storage-class SC     Workspace PVC storage class  (default: cluster default)
+
+The two runtimes share a command surface and an image, not a threat model. Local has no egress
+control and holds credentials directly; k8s keeps a restricted SCC and a NetworkPolicy. Neither
+confines agent-authored code, and neither replaces review (spec §1.2).
+"""
+
+# Set by `build_contained_parser`, read by `cmd_contained`. `interpret` needs the parser itself (to
+# call `.error()` on) and the namespace has no room for it: `set_defaults` would put every key into
+# `--help` output and into every namespace repr, which is noise in exactly the place a user is
+# trying to read.
+_PARSER: argparse.ArgumentParser | None = None
+
+# How much of spec §13's phasing has landed. The design ships each phase as its own PR, so a flag
+# whose implementation is not in the tree yet must fail naming the phase it arrives in rather than
+# import a module that does not exist. Raised as each phase lands; when it reaches 4 this constant
+# and `_unsupported` both go away.
+_PHASE = 1
+
+
+def _unsupported(feature: str, *, phase: int) -> int:
+    print(f"{feature} is not implemented yet (arrives in phase {phase}).", file=sys.stderr)
+    return 2
+
+
+def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the `contained` subcommand.
+
+    The payload after `--` is `argparse.REMAINDER`: it is handed to the factory inside the runtime
+    verbatim. Validating it here would mean the host has to know every subcommand the contained
+    factory supports, which it cannot — and a passthrough that second-guesses its payload breaks
+    every time the CLI grows.
+    """
+    global _PARSER
+    p = sub.add_parser(
+        "contained",
+        help="Run any factory command in a container (local) or a pod (k8s)",
+        usage="factory contained [runtime flags] -- <factory command>\n"
+              "       factory contained {ls|attach|rm|sync|setup|verify|bundle} [name]",
+        epilog=_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        # `--name` and `--namespace` share a prefix. Without this, argparse's default prefix
+        # matching lets `--name` silently resolve to `--namespace` (or any future flag that happens
+        # to share a prefix with another), which is exactly the kind of flag-aliasing this parser
+        # has to name loudly rather than let happen quietly.
+        allow_abbrev=False,
+    )
+    # One REMAINDER for everything positional, split afterwards by `interpret`. A declarative split
+    # is not expressible: an optional positional carrying `choices` would try to match the first
+    # word of the payload and reject it as an invalid choice.
+    # Every flag is SUPPRESSed from argparse's own listing and described in the epilog instead.
+    # A flat list hides the target-scoping, which is the information a user needs most (spec §2.2),
+    # and printing both renders each flag twice.
+    p.add_argument("rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    p.add_argument("--target", choices=["local", "k8s"], default="local", help=argparse.SUPPRESS)
+    p.add_argument("--division", action="store_true", default=False, help=argparse.SUPPRESS)
+    p.add_argument("--name", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", dest="extra_env",
+                   help=argparse.SUPPRESS)
+    p.add_argument("--forward", action="append", default=[], metavar="VAR", help=argparse.SUPPRESS)
+    p.add_argument("--mount", action="append", default=[], metavar="PATH", help=argparse.SUPPRESS)
+    p.add_argument("--live", action="store_true", default=False, help=argparse.SUPPRESS)
+    p.add_argument("--namespace", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--storage-class", default=None, dest="storage_class", help=argparse.SUPPRESS)
+    p.add_argument("--image", default=None, help=argparse.SUPPRESS)
+    # `rm` prompts before deleting an active runtime (§2.3) and the k8s upload prompts on a
+    # gitleaks finding (§4.5); `--yes` skips both for automation.
+    p.add_argument("--yes", action="store_true", default=False, help=argparse.SUPPRESS)
+    _PARSER = p
+    return p
+
+
+def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Split the positional remainder and check flag scoping. Call once, before anything else.
+
+    argparse offers no post-parse hook, so this is invoked explicitly — by `cmd_contained`, and by
+    the tests, which must exercise the same interpretation the CLI performs.
+
+    Sets `args.subcommand` and `args.factory_args` always; `args.name` only when a lifecycle
+    positional supplies one. `--name` is parsed onto `args.name` before this runs, and the
+    verbatim-payload branches must leave it alone — otherwise a run like
+    `contained --name foo -- study /p` would have its explicit name overwritten with None here.
+    """
+    rest = list(args.rest)
+    if rest and rest[0] == "--":          # argparse leaves the separator inside a REMAINDER
+        args.subcommand, args.factory_args = None, rest[1:]
+    elif rest and rest[0] in LIFECYCLE_SUBCOMMANDS:
+        args.subcommand = rest[0]
+        args.factory_args = []
+        tail = rest[1:]
+        # `--yes` is the one trailing flag this REMAINDER split still honors — it gates `rm`
+        # deleting an active runtime (§2.3), so `rm foo --yes` has to reach `args.yes` rather than
+        # being silently dropped the way every other trailing flag is.
+        if "--yes" in tail:
+            args.yes = True
+            tail = [token for token in tail if token != "--yes"]
+        # Everything else that looks like a flag here is a mistake worth naming, not swallowing.
+        # The REMAINDER split means `--target k8s` typed *after* the subcommand never reaches
+        # `args.target` — it lands here as a plain string instead, so a silent absorption would
+        # leave `args.target` at its default ("local") while the user believes they asked for k8s,
+        # and would hand a lifecycle command a name like "--target" to resolve.
+        flag_like = [token for token in tail if token.startswith("-")]
+        if flag_like:
+            parser.error(
+                f"unrecognized flag {flag_like[0]!r} after `factory contained "
+                f"{args.subcommand}`. Runtime flags (--target, --namespace, --name, ...) go before "
+                f"the subcommand, for example:\n"
+                f"  factory contained --target k8s {args.subcommand}"
+            )
+        # Only the positional overrides `--name` here, and only when one was actually given —
+        # `ls` takes no name.
+        if tail:
+            args.name = tail[0]
+    else:
+        args.subcommand, args.factory_args = None, rest
+
+    for dest in _LOCAL_ONLY:
+        if getattr(args, dest) and args.target != "local":
+            parser.error(f"--{dest.replace('_', '-')} only applies to --target local")
+    for dest in _K8S_ONLY:
+        if getattr(args, dest) and args.target != "k8s":
+            parser.error(f"--{dest.replace('_', '-')} only applies to --target k8s")
+
+    if args.subcommand in ("attach", "rm", "sync") and not args.name:
+        parser.error(f"`factory contained {args.subcommand}` needs a runtime name. Try `ls`.")
+    if not args.subcommand and not args.factory_args:
+        parser.error(
+            "`factory contained` expects a factory command after `--`, for example:\n"
+            "  factory contained -- ceo ~/code/rta\n"
+            "  factory contained --division -- study ~/code/rta"
+        )
+
+
+def _target_given(args: argparse.Namespace) -> bool:
+    """Whether the user actually typed `--target`, not just landed on its default.
+
+    `--target` defaults to `"local"` (never `None`), so the parsed value alone cannot tell "the user
+    asked for local" from "the user didn't say" — and only the second case should trigger
+    `run_setup`'s interactive question. Recognizes both the space form (`--target local`) and the
+    equals form; an explicit `--target=local` must not be mistaken for "didn't say".
+    """
+    return any(token == "--target" or token.startswith("--target=") for token in sys.argv)
+
+
+def _parse_extra_env(pairs: list[str]) -> dict[str, str]:
+    """Parse repeated `--env KEY=VALUE` into a mapping, rejecting anything malformed."""
+    parsed: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key.strip():
+            raise ContainedError(
+                f"--env {pair!r} is not KEY=VALUE. Each --env takes one variable, and the value may "
+                "be empty but the '=' may not be omitted."
+            )
+        parsed[key.strip()] = value
+    return parsed
+
+
+def _resolve_project(factory_args: list[str]) -> Path:
+    """The first existing directory named in the payload — the project a run works on.
+
+    Everything after `--` is opaque to the host (§2.4): it is not parsed as `factory ceo`'s own
+    flags, so the one thing that can safely be assumed is that a contained run always starts from a
+    project already on this machine, somewhere in that payload (§2.1a).
+    """
+    for token in factory_args:
+        candidate = Path(token).expanduser()
+        if candidate.is_dir():
+            resolved = candidate.resolve()
+            # The rule is generic — the first existing directory anywhere in the payload — so a
+            # free-text value that coincidentally names one is picked silently otherwise. Logging it
+            # is what keeps that visible.
+            log.info("contained_project_resolved", token=token, project=str(resolved))
+            return resolved
+    raise ContainedError(
+        f"no existing directory found in {factory_args!r}. `factory contained` materializes a "
+        "workspace from a project already on this machine, for example:\n"
+        "  factory contained -- ceo ~/code/rta"
+    )
+
+
+def _macos_share_warning(mounts: list[Mount]) -> str | None:
+    """On macOS, a host path outside $HOME is not shared into the podman machine at all.
+
+    It does not fail at `podman run` — the mount is simply not there, which surfaces as an empty
+    directory inside and is exactly the failure the provenance probes exist to name. Warning at
+    launch turns a confusing probe failure into an expected one.
+    """
+    if platform.system() != "Darwin":
+        return None
+    home = Path.home().resolve()
+    outside = [
+        str(m.source) for m in mounts if home != m.source and home not in m.source.parents
+    ]
+    if not outside:
+        return None
+    return (
+        f"macOS: {', '.join(outside)} is outside {home}. The podman machine shares $HOME by "
+        "default, so a path outside it is not mounted at all rather than mounted empty. Add it with "
+        "`podman machine set --volume` and restart the machine, or move the path under $HOME."
+    )
+
+
+def _compose_env(args: argparse.Namespace, shape_env: dict[str, str]) -> dict[str, str]:
+    """`FACTORY_` by default, plus the backend variables, plus exactly what `--forward` names.
+
+    Nothing implicit (spec §3.5). `--env` is applied last because it is the documented escape hatch
+    for backend quirks, and an escape hatch that loses to a computed default is not one.
+    """
+    env = CONTAINED_ENV_POLICY.resolve(dict(os.environ))
+    env["HOME"] = CONTAINER_HOME
+    env.update(shape_env)
+    for name in args.forward:
+        value = os.environ.get(name)
+        if value is None:
+            raise ContainedError(f"--forward {name}: not set in this environment")
+        env[name] = value
+    env.update(_parse_extra_env(args.extra_env))
+    return env
+
+
+def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> ContainerPlan:
+    """Compose the provisioning plan for one local run.
+
+    The project is a bind mount, not an upload, so the plan carries no project transfer and none of
+    the `.gitignore` handling a transfer needs. What replaces it is the provenance probe list
+    (§2.1a): a mount can be present, empty, stale, or read-only, and all four look identical until
+    something is asserted.
+    """
+    warnings: list[str] = []
+    image = args.image or resolve_image()
+
+    # The workspace is mounted at its own absolute path — identical inside and out. Not cosmetic:
+    # the local division's builds are executed by an engine *outside* the container (§5), which
+    # resolves the build-context path in its own filesystem namespace.
+    workspace_mount = Mount(source=ws.path, target=str(ws.path))
+    mounts: list[Mount] = [workspace_mount]
+
+    factory_home = Path("~/.factory").expanduser()
+    if factory_home.is_dir():
+        # Read-write: config, credential profiles, the registry and ACE-evolved playbooks work as on
+        # the host and keep accumulating (§3.3).
+        mounts.append(Mount(factory_home, f"{CONTAINER_HOME}/.factory"))
+
+    if ws.kind == "worktree":
+        # A worktree's .git is a *file* pointing at the original repository's object store. Without
+        # that store mounted, every git command inside fails on a path that exists on the host and
+        # not in the container — and the `git_usable` probe is what catches it.
+        common = git_common_dir(ws.source)
+        if common is not None:
+            mounts.append(Mount(common, str(common), read_only=True))
+
+    shape = resolve_credentials()
+    for host_path, relative in shape.home_mounts:
+        mounts.append(Mount(host_path, f"{CONTAINER_HOME}/{relative}", read_only=True))
+    warnings.extend(shape.warnings)
+    if not shape.ok:
+        warnings.append(
+            f"inference is not configured ({shape.detail}). The run will start and every agent call "
+            "will fail. Fix: " + (shape.fix or "see `factory contained verify`")
+        )
+    model_warning = vertex_model_warning(shape, args.factory_args)
+    if model_warning:
+        warnings.append(model_warning)
+
+    for extra in args.mount:
+        resolved = Path(extra).expanduser().resolve()
+        if not resolved.exists():
+            raise ContainedError(f"--mount {extra}: no such path on this machine")
+        mounts.append(Mount(resolved, str(resolved)))
+
+    share_warning = _macos_share_warning(mounts)
+    if share_warning:
+        warnings.append(share_warning)
+
+    identity = resolve_identity(image, workspace_mount, dry_run=dry_run)
+    log.info("contained_identity", detail=identity.detail)
+
+    factory_argv, changes = rewrite_argv(args.factory_args, ws.source, ws.path)
+    for before, after in changes:
+        # The rewrite rule is generic — any payload token that resolves to an existing in-project
+        # path gets translated, including a free-text value that coincidentally names one. Logging
+        # every rewrite keeps that visible instead of silent.
+        log.info("contained_path_rewritten", before=before, after=after)
+
+    inner = "factory " + " ".join(shlex.quote(token) for token in factory_argv)
+    name = args.name or container_name(ws.source)
+    return ContainerPlan(
+        name=name,
+        image=image,
+        workdir=str(ws.path),
+        env=_compose_env(args, shape.env),
+        labels={
+            LABEL_CONTAINED: "true",
+            LABEL_PROJECT: project_hash(ws.source),
+            LABEL_NAME: name,
+            LABEL_SOURCE: str(ws.source),
+        },
+        mounts=tuple(mounts),
+        run_command=build_run_command(str(ws.path), inner),
+        factory_command=inner,
+        user=identity.user,
+        userns=identity.userns,
+        warnings=tuple(warnings),
+    )
+
+
+def _emit_dry_run(plan: ContainerPlan, steps: list[Step]) -> int:
+    """Print the exact commands the real path would run, then provision nothing.
+
+    `steps` is the same list `cmd_contained` executes step-by-step — rendering a separately composed
+    command list here is exactly the drift a dry-run contract exists to forbid.
+    """
+    print(f"DRY RUN — {plan.name} ({plan.image}); nothing is provisioned.")
+    for step in steps:
+        print(f"[{step.name}] {shlex.join(redact_argv(step.argv, CONTAINED_ENV_POLICY))}")
+    return 0
+
+
+_NAME_TAKEN_MARKERS = ("already in use", "already exists")
+
+
+def _handle_create_failure(
+    step: Step, result: subprocess.CompletedProcess[str], plan: ContainerPlan
+) -> tuple[subprocess.CompletedProcess[str], str | None]:
+    """When `podman run` fails on a name collision, try to clear it and retry once.
+
+    A failed run that leaves its container behind otherwise blocks every later invocation of the
+    same name behind a bare "name already in use", with nothing pointing at how to get unstuck.
+    `reap_stale` only ever removes a container this factory created and that is no longer running;
+    anything it declines to touch falls through to an actionable message instead of a silent retry,
+    since a name collision could equally mean "you meant to reattach".
+    """
+    if step.name != "create" or not any(m in result.stderr.lower() for m in _NAME_TAKEN_MARKERS):
+        return result, None
+    reaped, detail = reap_stale(plan.name)
+    if reaped:
+        log.info("contained_create_retry_after_reap", name=plan.name, detail=detail)
+        result = _run_step(step)
+        if result.returncode == 0:
+            return result, None
+    hint = (
+        f"container {plan.name!r} already exists ({detail}). Attach to it with `factory contained "
+        f"attach {plan.name}`, remove it with `factory contained rm {plan.name}`, or pass --name to "
+        "provision under a different name."
+    )
+    return result, hint
+
+
+def _run_step(step: Step) -> subprocess.CompletedProcess[str]:
+    log.info("contained_step", step=step.name, argv=redact_argv(step.argv, CONTAINED_ENV_POLICY))
+    timeout = 300 if step.name == "create" else 120
+    return subprocess.run(step.argv, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def _verify(args: argparse.Namespace) -> int:
+    if args.target == "k8s":
+        if _PHASE < 3:
+            return _unsupported("`factory contained verify --target k8s`", phase=3)
+        from factory.contained.k8s_setup import verify_k8s
+
+        checks = verify_k8s(namespace=args.namespace, division=args.division)
+        print(render_checks(checks, ready_command="factory contained --target k8s -- ceo <path>"))
+        return 0 if all(c.ok for c in checks) else 1
+    checks = local_checks()
+    print(render_checks(checks))
+    return 0 if all(c.ok for c in checks) else 1
+
+
+def cmd_contained(args: argparse.Namespace) -> int:
+    """Run the factory inside a container (local) or a pod (k8s)."""
+    assert _PARSER is not None, "build_contained_parser must run before cmd_contained"
+    interpret(_PARSER, args)
+
+    if args.subcommand == "verify":
+        return _verify(args)
+    if args.subcommand == "setup":
+        if args.target == "k8s" and _PHASE < 3:
+            return _unsupported("`factory contained setup --target k8s`", phase=3)
+        return run_setup(
+            args.target if _target_given(args) else None,
+            interactive=sys.stdin.isatty(),
+            namespace=args.namespace,
+            division=args.division,
+            assume_yes=args.yes,
+        )
+    if args.subcommand == "bundle":
+        if _PHASE < 3:
+            return _unsupported("`factory contained bundle`", phase=3)
+        from factory.contained.bundle import render_bundle
+
+        print(render_bundle(namespace=args.namespace, storage_class=args.storage_class,
+                            division=args.division, image=args.image or resolve_image()))
+        return 0
+    if args.subcommand:
+        return dispatch_lifecycle(args)
+
+    if args.live:
+        print(
+            "--live is reserved and not implemented. The workspace is a copy by choice, so the "
+            "host tree is untouched and nothing is left behind (spec §2.2, §3.2).",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.target == "k8s":
+        if _PHASE < 3:
+            return _unsupported("--target k8s", phase=3)
+        from factory.cli.contained_k8s import run_k8s
+
+        return run_k8s(args)
+
+    if args.division and _PHASE < 2:
+        # Silently ignoring this would let a user believe the container-manufacturing plane took
+        # effect — the same reasoning the target-scoping applies to flags mismatched with --target.
+        # Checked before any materialization or provisioning work.
+        return _unsupported("--division", phase=2)
+
+    return _run_local(args)
+
+
+def _run_local(args: argparse.Namespace) -> int:
+    dry_run = dry_run_enabled()
+    # Bound before the first `try` because the `finally` below has to be able to shut the division
+    # down no matter which step raised — including one that raised before it was ever started.
+    division = None
+    try:
+        project = _resolve_project(args.factory_args)
+        run_id = args.name or container_name(project)
+        # Dry-run must not touch the host: no worktree, no branch, no rsync. `plan_workspace`
+        # computes the same path/kind/branch `materialize` would, purely from path and git-repo
+        # detection, without any of `materialize`'s side effects.
+        ws = plan_workspace(project, run_id) if dry_run else materialize(project, run_id)
+        plan = _build_plan(args, ws, dry_run=dry_run)
+        if args.division:
+            from factory.contained.division import start_local_division
+
+            division = start_local_division(plan, dry_run=dry_run)
+            plan = division.plan
+    except (ContainedError, WorkspaceError, IdentityError) as exc:
+        # A half-materialized run is worse than none: reporting and stopping here means the next
+        # attempt starts clean instead of layering on top of a plan already known bad.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        if dry_run:
+            # ws.path does not exist yet — nothing was materialized — so there is nothing there to
+            # read. The source project always exists, so the content_hash probe is composed from it
+            # instead: same argv shape (still checked against ws.path, the eventual runtime
+            # destination), a real digest, but of a projection rather than a measurement.
+            content = content_probe(ws.source)
+            if content is not None:
+                print(
+                    "Note: the content_hash probe below is a projection from the source tree — "
+                    f"dry-run does not create the copy at {ws.path} it would eventually check "
+                    "against.",
+                    file=sys.stderr,
+                )
+        else:
+            content = content_probe(ws.path)
+
+        probes: list[Probe] = provenance_probes(
+            str(ws.path),
+            expect_factory_state=(project / ".factory" / "config.json").exists(),
+            expect_git=(project / ".git").exists(),
+            content=content,
+        )
+        steps = plan_steps(plan, probes)
+
+        # Warnings go to stderr and never change the exit code. Growth context in particular is a
+        # "your numbers are not comparable" problem, not a "this cannot run" problem.
+        for warning in (growth_context_warning(), *plan.warnings):
+            if warning:
+                print(f"Warning: {warning}", file=sys.stderr)
+
+        if dry_run:
+            return _emit_dry_run(plan, steps)
+
+        if shutil.which("podman") is None:
+            print(
+                "Error: `podman` is not installed. Run `factory contained setup`, or set "
+                f"{DRY_RUN_ENV}=1 to compose the commands without running them.",
+                file=sys.stderr,
+            )
+            return 1
+
+        return _execute(plan, steps, probes)
+    finally:
+        if division is not None:
+            division.stop()
+
+
+def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> int:
+    hints = {f"assert:{p.name}": p.hint for p in probes}
+    created = False
+    for step in steps:
+        try:
+            result = _run_step(step)
+        except KeyboardInterrupt:
+            print(
+                f"\nInterrupted. The container {plan.name} may still be running the factory — the "
+                "interrupt reached this client, not the container. Stop it with:\n"
+                f"  podman stop {plan.name}",
+                file=sys.stderr,
+            )
+            return 130
+        create_hint = None
+        if result.returncode != 0:
+            result, create_hint = _handle_create_failure(step, result, plan)
+        if result.returncode != 0:
+            hint = create_hint or hints.get(step.name, result.stderr.strip())
+            print(f"contained: step '{step.name}' failed\n  {hint}", file=sys.stderr)
+            if created:
+                # The container survives a failed assertion on purpose: it is the only way to look
+                # at what actually landed in the mount.
+                print(
+                    f"  The container is still there for inspection:\n"
+                    f"    podman exec -it {plan.name} sh\n"
+                    f"    factory contained rm {plan.name}",
+                    file=sys.stderr,
+                )
+            return 1
+        if step.name == "create":
+            created = True
+
+    # The identifier first, before anything else: a run whose name the user cannot see is a run
+    # they cannot manage (§3.1).
+    print(plan.name)
+    print(f"  attach:  factory contained attach {plan.name}")
+    print(f"  result:  factory contained sync {plan.name}")
+    return 0
