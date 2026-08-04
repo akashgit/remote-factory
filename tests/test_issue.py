@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from pathlib import Path
@@ -644,3 +645,380 @@ class TestBuildCeoTaskMultiIssue:
             issue_urls=[],
         )
         assert "This target is from issue #42" in task
+
+    def test_multi_issue_numbers_without_urls(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="First (issue #10) + Second (issue #20)",
+            issue_numbers=[10, 20],
+            issue_urls=[],
+        )
+        assert "These targets are from issues" in task
+        assert "#10" in task
+        assert "#20" in task
+        assert "## Issue Tracking" in task
+        assert "--issue 10" in task
+        assert "--issue 20" in task
+        assert "https://" not in task.split("These targets")[1].split("All issue")[0]
+
+    def test_multi_issue_numbers_with_partial_urls(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="First (issue #10) + Second (issue #20)",
+            issue_numbers=[10, 20],
+            issue_urls=["https://github.com/o/r/issues/10"],
+        )
+        assert "#10 (https://github.com/o/r/issues/10)" in task
+        assert "#20" in task
+
+
+# ── parse_multi_issue_refs — slash / http branches ──────────
+
+
+class TestParseMultiIssueRefsSlashAndHttp:
+    """Cover the '/' token accumulator and 'http' prefix branches."""
+
+    def test_url_only(self) -> None:
+        result = parse_multi_issue_refs("https://github.com/o/r/issues/42")
+        assert result == ["https://github.com/o/r/issues/42"]
+
+    def test_two_urls(self) -> None:
+        result = parse_multi_issue_refs(
+            "https://github.com/o/r/issues/1, https://github.com/o/r/issues/2"
+        )
+        assert result == [
+            "https://github.com/o/r/issues/1",
+            "https://github.com/o/r/issues/2",
+        ]
+
+    def test_slash_token_not_issue_ref_returns_empty(self) -> None:
+        """A bare 'some/path' that never combines into a valid ref → empty list."""
+        result = parse_multi_issue_refs("some/path")
+        assert result == []
+
+    def test_slash_token_with_trailing_noise_returns_empty(self) -> None:
+        """'org/repo stuff' — slash token accumulates but never forms a valid ref."""
+        result = parse_multi_issue_refs("org/repo stuff")
+        assert result == []
+
+    def test_owner_repo_hash_single(self) -> None:
+        """owner/repo#42 — has both / and # so skips the slash branch."""
+        result = parse_multi_issue_refs("owner/repo#42")
+        assert result == ["owner/repo#42"]
+
+    def test_slash_token_accumulates_into_shorthand(self) -> None:
+        """'owner/repo#42 owner/repo#43' — each has / and # so uses the shorthand path."""
+        result = parse_multi_issue_refs("owner/repo#42 owner/repo#43")
+        assert result == ["owner/repo#42", "owner/repo#43"]
+
+    def test_only_noise_words_returns_empty(self) -> None:
+        """Input with only noise words should return empty list."""
+        result = parse_multi_issue_refs("issue and issues")
+        assert result == []
+
+
+# ── cmd_ceo multi-issue path ────────────────────────────────
+
+
+class TestCmdCeoMultiIssue:
+    """Cover the multi-issue branch in cmd_ceo (lines 75-82)."""
+
+    def test_cmd_ceo_multi_focus_assembles_correctly(self) -> None:
+        """When _resolve_focus_issues returns 2+ items, cmd_ceo joins them."""
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            headless=False,
+            bg=False,
+            bg_agents=False,
+            prompt=None,
+            focus="111 and 112",
+            dir=None,
+            refine=None,
+            no_github=False,
+            use_profile=False,
+            model=None,
+            tmux_persist=False,
+            background=False,
+            clean_pr=None,
+            run_id=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        multi_result = [
+            ("First issue", "ctx1", 111, "https://github.com/o/r/issues/111"),
+            ("Second issue", "ctx2", 112, "https://github.com/o/r/issues/112"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.ceo._validate_ceo_flags") as mock_validate,
+            patch("factory.cli.ceo._resolve_ceo_project") as mock_resolve,
+            patch("factory.cli.ceo._resolve_focus_issues", return_value=multi_result),
+            patch("factory.cli.ceo._validate_late_flags", return_value=None),
+            patch("factory.cli.ceo._execute_ceo", return_value=0) as mock_exec,
+        ):
+            mock_validate.return_value = (
+                "improve", False, False, False, None, "111 and 112", None, None,
+            )
+            mock_resolve.return_value = (
+                Path("/tmp/fake"), None, None, None,
+                None, False, False, None, None,
+            )
+            from factory.cli.ceo import cmd_ceo
+            code = cmd_ceo(ns)
+
+        assert code == 0
+        call_kwargs = mock_exec.call_args[1]
+        assert call_kwargs["issue_numbers"] == [111, 112]
+        assert call_kwargs["issue_urls"] == [
+            "https://github.com/o/r/issues/111",
+            "https://github.com/o/r/issues/112",
+        ]
+        assert "First issue (issue #111)" in call_kwargs["focus"]
+        assert "Second issue (issue #112)" in call_kwargs["focus"]
+
+    def test_cmd_ceo_single_focus_assembles_correctly(self) -> None:
+        """When _resolve_focus_issues returns exactly 1 item, cmd_ceo uses single-issue path."""
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            headless=False,
+            bg=False,
+            bg_agents=False,
+            prompt=None,
+            focus="42",
+            dir=None,
+            refine=None,
+            no_github=False,
+            use_profile=False,
+            model=None,
+            tmux_persist=False,
+            background=False,
+            clean_pr=None,
+            run_id=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        single_result = [
+            ("Add widgets", "ctx", 42, "https://github.com/o/r/issues/42"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.ceo._validate_ceo_flags") as mock_validate,
+            patch("factory.cli.ceo._resolve_ceo_project") as mock_resolve,
+            patch("factory.cli.ceo._resolve_focus_issues", return_value=single_result),
+            patch("factory.cli.ceo._validate_late_flags", return_value=None),
+            patch("factory.cli.ceo._execute_ceo", return_value=0) as mock_exec,
+        ):
+            mock_validate.return_value = (
+                "improve", False, False, False, None, "42", None, None,
+            )
+            mock_resolve.return_value = (
+                Path("/tmp/fake"), None, None, None,
+                None, False, False, None, None,
+            )
+            from factory.cli.ceo import cmd_ceo
+            code = cmd_ceo(ns)
+
+        assert code == 0
+        call_kwargs = mock_exec.call_args[1]
+        assert call_kwargs["issue_number"] == 42
+        assert call_kwargs["issue_url"] == "https://github.com/o/r/issues/42"
+        assert "Add widgets (issue #42)" == call_kwargs["focus"]
+
+    def test_cmd_ceo_multi_focus_no_github_fails(self) -> None:
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            headless=False,
+            bg=False,
+            bg_agents=False,
+            prompt=None,
+            focus="111 and 112",
+            dir=None,
+            refine=None,
+            no_github=True,
+            use_profile=False,
+            model=None,
+        )
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.ceo._validate_ceo_flags") as mock_validate,
+            patch("factory.cli.ceo._resolve_ceo_project") as mock_resolve,
+        ):
+            mock_validate.return_value = (
+                "improve", False, False, False, None, "111 and 112", None, None,
+            )
+            mock_resolve.return_value = (
+                Path("/tmp/fake"), None, None, None,
+                None, False, False, None, None,
+            )
+            from factory.cli.ceo import cmd_ceo
+            code = cmd_ceo(ns)
+
+        assert code == 1
+
+
+# ── cmd_run multi-issue path ────────────────────────────────
+
+
+class TestCmdRunMultiIssue:
+    """Cover the multi-issue branch in cmd_run (lines 394-406)."""
+
+    def test_cmd_run_multi_focus_assembles_correctly(self) -> None:
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            loop=False,
+            focus="111 and 112",
+            discover_only=False,
+            no_github=False,
+            min_growth=None,
+            max_new=None,
+            branch=None,
+            run_id=None,
+            model=None,
+            use_profile=False,
+            tmux_persist=False,
+            background=False,
+            bg_agents=False,
+            prompt=None,
+            clean_pr=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        multi_result = [
+            ("First", "ctx1", 111, "https://github.com/o/r/issues/111"),
+            ("Second", "ctx2", 112, "https://github.com/o/r/issues/112"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.run._resolve_input", return_value=(Path("/tmp/fake"), None)),
+            patch("factory.cli.run._resolve_model", return_value=None),
+            patch("factory.cli.run._resolve_tmux_persist", return_value=False),
+            patch("factory.cli.run._resolve_background", return_value=False),
+            patch("factory.cli.run._resolve_bg_agents", return_value=False),
+            patch("factory.cli.run._resolve_focus_issues", return_value=multi_result),
+            patch("factory.cli.run.warn_deprecated_mode"),
+            patch("factory.cli.run._print_banner"),
+            patch("factory.cli.run._ensure_dashboard"),
+            patch("factory.cli.run._run_single_cycle", return_value=0) as mock_cycle,
+            patch("factory.cli.run._chain_modes", return_value=0),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            from factory.cli.run import cmd_run
+            code = cmd_run(ns)
+
+        assert code == 0
+        call_kwargs = mock_cycle.call_args[1]
+        assert call_kwargs["issue_numbers"] == [111, 112]
+        assert call_kwargs["issue_urls"] == [
+            "https://github.com/o/r/issues/111",
+            "https://github.com/o/r/issues/112",
+        ]
+        assert "First (issue #111)" in call_kwargs["focus"]
+        assert "Second (issue #112)" in call_kwargs["focus"]
+
+    def test_cmd_run_single_focus_assembles_correctly(self) -> None:
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            loop=False,
+            focus="42",
+            discover_only=False,
+            no_github=False,
+            min_growth=None,
+            max_new=None,
+            branch=None,
+            run_id=None,
+            model=None,
+            use_profile=False,
+            tmux_persist=False,
+            background=False,
+            bg_agents=False,
+            prompt=None,
+            clean_pr=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+
+        single_result = [
+            ("Add widgets", "ctx", 42, "https://github.com/o/r/issues/42"),
+        ]
+
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.run._resolve_input", return_value=(Path("/tmp/fake"), None)),
+            patch("factory.cli.run._resolve_model", return_value=None),
+            patch("factory.cli.run._resolve_tmux_persist", return_value=False),
+            patch("factory.cli.run._resolve_background", return_value=False),
+            patch("factory.cli.run._resolve_bg_agents", return_value=False),
+            patch("factory.cli.run._resolve_focus_issues", return_value=single_result),
+            patch("factory.cli.run.warn_deprecated_mode"),
+            patch("factory.cli.run._print_banner"),
+            patch("factory.cli.run._ensure_dashboard"),
+            patch("factory.cli.run._run_single_cycle", return_value=0) as mock_cycle,
+            patch("factory.cli.run._chain_modes", return_value=0),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("pathlib.Path.is_dir", return_value=True),
+        ):
+            from factory.cli.run import cmd_run
+            code = cmd_run(ns)
+
+        assert code == 0
+        call_kwargs = mock_cycle.call_args[1]
+        assert call_kwargs["issue_number"] == 42
+        assert call_kwargs["issue_url"] == "https://github.com/o/r/issues/42"
+        assert "Add widgets (issue #42)" == call_kwargs["focus"]
+
+    def test_cmd_run_multi_focus_no_github_fails(self) -> None:
+        ns = argparse.Namespace(
+            path="/tmp/fake",
+            profile=None,
+            mode="improve",
+            loop=False,
+            focus="111 and 112",
+            discover_only=False,
+            no_github=True,
+            min_growth=None,
+            max_new=None,
+            branch=None,
+            run_id=None,
+            model=None,
+            use_profile=False,
+            tmux_persist=False,
+            background=False,
+            bg_agents=False,
+            prompt=None,
+            clean_pr=None,
+            no_worktree=False,
+            overwrite=None,
+        )
+        with (
+            patch("factory.user_config.load_config"),
+            patch("factory.cli.run._resolve_input", return_value=(Path("/tmp/fake"), None)),
+            patch("factory.cli.run._resolve_model", return_value=None),
+            patch("factory.cli.run._resolve_tmux_persist", return_value=False),
+            patch("factory.cli.run._resolve_background", return_value=False),
+            patch("factory.cli.run._resolve_bg_agents", return_value=False),
+        ):
+            from factory.cli.run import cmd_run
+            code = cmd_run(ns)
+
+        assert code == 1
