@@ -172,17 +172,34 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "frontend-design": {
         "description": (
-            "Feature-to-UI pipeline that discovers your design system from your "
-            "code and enforces it on every new feature. Researches existing design "
-            "tokens, components, and layout patterns to build a consistency baseline. "
-            "Produces a UI spec constrained by the baseline, gets user approval, "
-            "builds with discovered design rules enforced, then runs design-specific "
-            "QA with a two-tier gate (hard failures auto-revert, soft warnings "
-            "surface for review). Works on any frontend project with a defined "
+            "Feature-to-UI pipeline that enforces a design system on every new "
+            "feature. If a design system already exists on disk (from a prior "
+            "discover run), skips the research phase and goes straight to spec "
+            "writing with a lightweight staleness check. If no design system "
+            "exists, runs the full 5-researcher pipeline first. Produces a UI "
+            "spec constrained by the baseline, gets user approval, builds with "
+            "discovered design rules enforced, then runs design-specific QA with "
+            "a two-tier gate (hard failures auto-revert, soft warnings surface "
+            "for review). Works on any frontend project with a defined "
             "token/component system. Use when the user says 'frontend-design', "
             "'design UI for X', or wants design-consistent frontend implementation."
         ),
         "argument_hint": "<project_path> --focus <feature description>",
+    },
+    "frontend-design-discover": {
+        "description": (
+            "Design system extraction — discovers the project's design system "
+            "and produces human-readable, editable artifacts. Runs 5 parallel "
+            "researchers (tokens, components, patterns, UX, infrastructure) then "
+            "synthesizes into design-baseline.json and rules.md. Run this once "
+            "to establish the design system, review and edit the output, then "
+            "use frontend-design (build) mode for each new feature without "
+            "re-running researchers. Supports external design system URLs via "
+            "--focus for cross-referencing (e.g., 'https://ux.redhat.com/'). "
+            "Use when the user says 'discover design system', 'extract design "
+            "system', or wants to establish design rules before building features."
+        ),
+        "argument_hint": "<project_path>",
     },
     "frontend-design-scan": {
         "description": (
@@ -749,12 +766,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
     result = f"{frontmatter}\n\n{header}\n\n{body}\n"
 
     line_count = result.count("\n") + 1
-    if line_count > 500:
+    if line_count > 600:
         log.warning(
             "skill_export.oversized",
             workflow=name,
             lines=line_count,
-            limit=500,
+            limit=600,
         )
 
     return result
@@ -836,7 +853,7 @@ def validate_skill(content: str) -> list[str]:
             issues.append(f"Description exceeds 1024 chars ({len(desc_val)})")
 
     line_count = content.count("\n") + 1
-    if line_count > 500:
-        issues.append(f"Body exceeds 500 lines ({line_count})")
+    if line_count > 600:
+        issues.append(f"Body exceeds 600 lines ({line_count})")
 
     return issues

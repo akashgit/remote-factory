@@ -461,10 +461,10 @@ class TestValidateSkill:
         assert any("kebab" in i.lower() for i in issues)
 
     def test_oversized_body(self) -> None:
-        body = "\n".join(f"line {i}" for i in range(600))
+        body = "\n".join(f"line {i}" for i in range(700))
         content = f'---\nname: workflow-test\ndescription: "x"\n---\n{body}'
         issues = validate_skill(content)
-        assert any("500" in i for i in issues)
+        assert any("600" in i for i in issues)
 
 
 # ── real workflow skill generation ──────────────────────────────
