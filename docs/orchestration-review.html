@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}img,svg{display:block;max-width:100%}</style>
+<title>Distributing the Factory Workflow Engine</title>
+<style>
+  :root {
+    --ink:      #171A1F;
+    --ink-soft: #4C525A;
+    --ink-mute: #767D85;
+    --ground:   #EDEEEA;
+    --surface:  #F8F8F5;
+    --raised:   #FFFFFF;
+    --rule:     #CFD1C9;
+    --rule-soft:#DFE0DA;
+    --accent:   #3B3E93;
+    --accent-bg:#E2E3F2;
+    --signal:   #9A6410;
+    --signal-bg:#F2E7CF;
+    --good:     #375F41;
+    --good-bg:  #DDE8DC;
+    --shadow:   0 1px 2px rgba(23,26,31,.06), 0 8px 24px -16px rgba(23,26,31,.35);
+
+    --f-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --f-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    --f-mono: "SF Mono", ui-monospace, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+
+    --measure: 72ch;
+    --step--1: 0.815rem;
+    --step-0:  1.0rem;
+    --step-1:  1.19rem;
+    --step-2:  1.48rem;
+    --step-3:  1.95rem;
+    --step-4:  2.7rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:      #E4E6E1;
+      --ink-soft: #A8AEB4;
+      --ink-mute: #7C838B;
+      --ground:   #131519;
+      --surface:  #1A1D22;
+      --raised:   #21252B;
+      --rule:     #31363D;
+      --rule-soft:#282C32;
+      --accent:   #9698EC;
+      --accent-bg:#232449;
+      --signal:   #DFA84E;
+      --signal-bg:#33280F;
+      --good:     #85BC91;
+      --good-bg:  #1D2E20;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.9);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:      #E4E6E1;
+    --ink-soft: #A8AEB4;
+    --ink-mute: #7C838B;
+    --ground:   #131519;
+    --surface:  #1A1D22;
+    --raised:   #21252B;
+    --rule:     #31363D;
+    --rule-soft:#282C32;
+    --accent:   #9698EC;
+    --accent-bg:#232449;
+    --signal:   #DFA84E;
+    --signal-bg:#33280F;
+    --good:     #85BC91;
+    --good-bg:  #1D2E20;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.9);
+  }
+  :root[data-theme="light"] {
+    --ink:      #171A1F;
+    --ink-soft: #4C525A;
+    --ink-mute: #767D85;
+    --ground:   #EDEEEA;
+    --surface:  #F8F8F5;
+    --raised:   #FFFFFF;
+    --rule:     #CFD1C9;
+    --rule-soft:#DFE0DA;
+    --accent:   #3B3E93;
+    --accent-bg:#E2E3F2;
+    --signal:   #9A6410;
+    --signal-bg:#F2E7CF;
+    --good:     #375F41;
+    --good-bg:  #DDE8DC;
+    --shadow:   0 1px 2px rgba(23,26,31,.06), 0 8px 24px -16px rgba(23,26,31,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: var(--step-0);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+
+  .page {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 1.35rem 6rem;
+  }
+
+  @media (min-width: 1040px) {
+    .page { grid-template-columns: 13.5rem minmax(0,1fr); column-gap: 3.5rem; padding-inline: 2rem; }
+    .masthead { grid-column: 1 / -1; }
+  }
+
+  /* ── masthead ────────────────────────────────── */
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: 3.4rem 0 2.2rem;
+    margin-bottom: 3rem;
+  }
+  .kicker {
+    font-family: var(--f-mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem 1.1rem;
+    margin-bottom: 1.4rem;
+  }
+  .kicker span { white-space: nowrap; }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: var(--step-4);
+    line-height: 1.1;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0 0 1rem;
+    max-width: 20ch;
+  }
+  .standfirst {
+    font-size: var(--step-1);
+    color: var(--ink-soft);
+    max-width: var(--measure);
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  /* ── section rail ────────────────────────────── */
+  .rail { display: none; }
+  @media (min-width: 1040px) {
+    .rail {
+      display: block;
+      position: sticky;
+      top: 2rem;
+      align-self: start;
+      font-family: var(--f-mono);
+      font-size: var(--step--1);
+      line-height: 1.5;
+    }
+    .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+    .rail a {
+      color: var(--ink-mute);
+      text-decoration: none;
+      border-left: 2px solid var(--rule-soft);
+      padding-left: .75rem;
+      display: block;
+      transition: color .15s, border-color .15s;
+    }
+    .rail a:hover, .rail a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+  }
+
+  main { min-width: 0; }
+
+  /* ── sections ────────────────────────────────── */
+  section { margin-bottom: 4.2rem; scroll-margin-top: 1.5rem; }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: var(--step--1);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 .5rem;
+  }
+  .eyebrow.warn { color: var(--signal); }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: var(--step-3);
+    line-height: 1.18;
+    letter-spacing: -.012em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+    max-width: 26ch;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: var(--step-2);
+    line-height: 1.25;
+    margin: 2.6rem 0 .8rem;
+    text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--f-body);
+    font-weight: 650;
+    font-size: var(--step-0);
+    margin: 1.8rem 0 .5rem;
+  }
+  p, li { max-width: var(--measure); text-wrap: pretty; }
+  p { margin: 0 0 1.05rem; }
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.2rem; }
+  li { margin-bottom: .45rem; }
+  ul { list-style: none; padding-left: 0; }
+  ul > li { padding-left: 1.15rem; position: relative; }
+  ul > li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: .72em;
+    width: .34rem; height: .34rem;
+    background: var(--ink-mute);
+    border-radius: 50%;
+  }
+  ol > li::marker { font-family: var(--f-mono); font-size: .85em; color: var(--ink-mute); }
+  strong { font-weight: 650; }
+  a { color: var(--accent); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: .87em;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: .08em .32em;
+    word-break: break-word;
+  }
+  th code, td code { background: none; border: none; padding: 0; }
+
+  /* ── tables ──────────────────────────────────── */
+  .scroller { overflow-x: auto; margin: 1.4rem 0 1.8rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--raised); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--step--1); min-width: 34rem; }
+  caption {
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: var(--step--1);
+    color: var(--ink-mute);
+    padding: .8rem 1rem;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  th, td { text-align: left; padding: .7rem 1rem; vertical-align: top; border-bottom: 1px solid var(--rule-soft); }
+  thead th {
+    font-family: var(--f-mono);
+    font-weight: 500;
+    font-size: .78rem;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    background: var(--surface);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td { max-width: 30rem; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── pills ───────────────────────────────────── */
+  .pill {
+    display: inline-block;
+    font-family: var(--f-mono);
+    font-size: .72rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: .15rem .5rem;
+    border-radius: 3px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .pill.solved { background: var(--good-bg); color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+  .pill.partial { background: var(--signal-bg); color: var(--signal); border-color: color-mix(in srgb, var(--signal) 30%, transparent); }
+  .pill.ours { background: var(--accent-bg); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+  /* ── constraint ledger ───────────────────────── */
+  .ledger { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--raised); margin: 1.5rem 0 1.8rem; }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .3rem .9rem;
+    padding: .95rem 1.1rem;
+    border-bottom: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--signal);
+  }
+  .row:last-child { border-bottom: none; }
+  @media (min-width: 700px) {
+    .row { grid-template-columns: minmax(0,1fr) 8.5rem; align-items: start; }
+    .row .verdict { text-align: right; }
+  }
+  .row .what { font-weight: 600; }
+  .row .what + .why { color: var(--ink-soft); font-size: var(--step--1); max-width: 68ch; }
+  .row .src { font-family: var(--f-mono); font-size: .75rem; color: var(--ink-mute); }
+
+  /* ── option cards ────────────────────────────── */
+  .options { display: grid; gap: 1.1rem; margin: 1.5rem 0 1.8rem; }
+  @media (min-width: 860px) { .options.two { grid-template-columns: 1fr 1fr; } }
+  .opt {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--raised);
+    padding: 1.15rem 1.25rem 1.3rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+  }
+  .opt.pick { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); }
+  .opt h4 { margin-top: 0; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+  .opt p, .opt li { max-width: none; font-size: var(--step--1); }
+  .opt .tag {
+    font-family: var(--f-mono);
+    font-size: .72rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .pro-con { display: grid; gap: .1rem; margin-top: .3rem; }
+  .pro-con div { display: grid; grid-template-columns: 1.4rem 1fr; gap: .3rem; font-size: var(--step--1); align-items: start; line-height: 1.5; padding: .18rem 0; }
+  .pro-con .mark { font-family: var(--f-mono); font-weight: 600; }
+  .pro .mark { color: var(--good); }
+  .con .mark { color: var(--signal); }
+  .opt footer {
+    margin-top: auto;
+    padding-top: .9rem;
+    border-top: 1px solid var(--rule-soft);
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+  }
+  .opt footer strong { color: var(--ink); }
+
+  /* ── callout ─────────────────────────────────── */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 1.05rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0 5px 5px 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .label {
+    font-family: var(--f-mono);
+    font-size: var(--step--1);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: .4rem;
+  }
+  .callout.warn { border-left-color: var(--signal); }
+  .callout.warn .label { color: var(--signal); }
+
+  /* ── queue topology ──────────────────────────── */
+  .topo { border: 1px solid var(--rule); border-radius: 6px; background: var(--raised); padding: 1.3rem 1.25rem; margin: 1.5rem 0 1.8rem; overflow-x: auto; }
+  .lane { display: grid; grid-template-columns: 10.5rem minmax(0,1fr); gap: .8rem; align-items: center; padding: .55rem 0; border-bottom: 1px dashed var(--rule-soft); min-width: 32rem; }
+  .lane:last-child { border-bottom: none; }
+  .lane .qname { font-family: var(--f-mono); font-size: var(--step--1); color: var(--accent); }
+  .lane .qname small { display: block; color: var(--ink-mute); font-size: .72rem; letter-spacing: .04em; }
+  .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .chip {
+    font-family: var(--f-mono);
+    font-size: .74rem;
+    padding: .2rem .5rem;
+    border-radius: 3px;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .chip.sticky { border-color: color-mix(in srgb, var(--signal) 45%, transparent); color: var(--signal); background: var(--signal-bg); }
+
+  /* ── phases ──────────────────────────────────── */
+  .phases { counter-reset: ph -1; display: flex; flex-direction: column; gap: 0; margin: 1.5rem 0 1.8rem; }
+  .phase {
+    display: grid;
+    grid-template-columns: 3rem minmax(0,1fr);
+    gap: 0 1rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .phase:last-child { border-bottom: 1px solid var(--rule-soft); }
+  .phase::before {
+    counter-increment: ph;
+    content: "P" counter(ph);
+    font-family: var(--f-mono);
+    font-size: var(--step--1);
+    color: var(--accent);
+    padding-top: .15rem;
+  }
+  .phase h4 { margin: 0 0 .35rem; }
+  .phase p { margin: 0; font-size: var(--step--1); color: var(--ink-soft); }
+
+  footer.doc {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.6rem;
+    margin-top: 1rem;
+    font-size: var(--step--1);
+    color: var(--ink-mute);
+    font-family: var(--f-mono);
+  }
+
+  a:focus-visible, .rail a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
+  html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="kicker">
+      <span>Architecture review</span>
+      <span>remote-factory</span>
+      <span>28 Jul 2026</span>
+      <span>incl. PR #1051 · #1052</span>
+    </div>
+    <h1>Distributing the factory workflow engine</h1>
+    <p class="standfirst">The graph IR is already the right abstraction. What's single-machine is the <em>interpreter</em> — execution position on a Python call stack, artifacts on a local filesystem, agents as local subprocesses. Here's what that costs, what the in-flight PRs reveal about it, and how a durable-execution engine maps onto every existing primitive.</p>
+  </header>
+
+  <nav class="rail" aria-label="Sections">
+    <ol>
+      <li><a href="#today">Current abstraction</a></li>
+      <li><a href="#limits">Constraint ledger</a></li>
+      <li><a href="#prs">PRs #1051 / #1052</a></li>
+      <li><a href="#caching">Prompt caching</a></li>
+      <li><a href="#proposal">Temporal mapping</a></li>
+      <li><a href="#workspace">Tradeoff: workspace</a></li>
+      <li><a href="#ceo">Tradeoff: CEO path</a></li>
+      <li><a href="#alternatives">Engine alternatives</a></li>
+      <li><a href="#phases">Migration phases</a></li>
+      <li><a href="#open">Open decisions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="today">
+      <p class="eyebrow">Current state</p>
+      <h2>You already have a compiler front-end</h2>
+
+      <p><code>factory/workflow/primitives.py</code> + <code>definitions.py</code> is a typed graph IR that's independent of how it runs — and it already has two back-ends: <code>executor.py</code> walks it for headless runs, <code>skill_export.py</code> compiles it to prose for the CEO agent. That design decision is what makes this whole proposal cheap. <strong>Nothing about the graph model needs to change.</strong></p>
+
+      <div class="scroller">
+        <table>
+          <caption>The node contract as it stands</caption>
+          <thead>
+            <tr><th scope="col">Piece</th><th scope="col">Where</th><th scope="col">What it buys you</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>10 node types — <code>AgentNode</code>, <code>FnNode</code>, <code>GateNode</code>, <code>Fork</code>/<code>Join</code>, <code>SubgraphFork</code>, <code>Selection</code>, <code>Study</code></td>
+              <td><code>primitives.py:108–209</code></td>
+              <td>A typed step taxonomy — the unit you'd want to schedule remotely</td>
+            </tr>
+            <tr>
+              <td><code>reads</code> / <code>writes</code> sets on every node</td>
+              <td><code>primitives.py:114–115</code></td>
+              <td><strong>A declared dataflow contract.</strong> Today it only feeds the validator and an in-memory barrier — it is the single most under-exploited asset in the codebase</td>
+            </tr>
+            <tr>
+              <td><code>Edge(condition=VerdictType)</code></td>
+              <td><code>primitives.py:215</code></td>
+              <td>Cyclic control flow: <span class="pill ours">proceed</span> <span class="pill ours">reloop</span> <span class="pill ours">halt</span></td>
+            </tr>
+            <tr>
+              <td><code>AgentConfig(model, timeout)</code> per role</td>
+              <td><code>primitives.py:41–54</code></td>
+              <td>Per-step resource hints — already the right shape for per-queue scaling policy</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Roughly 16 workflows are registered today, from 3-node <code>discover</code> up to <code>improve</code> at ~20 nodes and <code>parallel_improve</code> with worktree fan-out. The complexity you're hitting is real, and it's growing in the direction the current interpreter handles worst.</p>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="limits">
+      <p class="eyebrow warn">Where it breaks</p>
+      <h2>Eight single-machine assumptions</h2>
+
+      <p>These live in the interpreter, not the graph. Each is annotated with whether a durable-execution engine resolves it outright, or whether it needs work from you regardless.</p>
+
+      <div class="ledger">
+        <div class="row">
+          <div>
+            <div class="what">Execution position lives on the Python call stack</div>
+            <div class="why"><code>_execute_from()</code> recurses along edges; progress state (<code>completed_files</code>, <code>node_context</code>, <code>iteration_counts</code>) is instance memory. A crash loses the entire run. <code>checkpoint.py</code> exists but serves only the CEO path — the executor never touches it.</div>
+            <div class="src">executor.py:157, 91–95</div>
+          </div>
+          <div class="verdict"><span class="pill solved">engine solves</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what"><code>reads</code>/<code>writes</code> are declared but never materialized</div>
+            <div class="why"><code>_wait_for_reads()</code> polls <code>node.reads − completed_files</code>, an in-memory set. It never touches disk and never fetches anything. The contract is written down; the I/O implementing it does not exist.</div>
+            <div class="src">executor.py:972–996</div>
+          </div>
+          <div class="verdict"><span class="pill partial">your work</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">Every step is bound to one local filesystem</div>
+            <div class="why"><code>_run_shell</code> uses <code>cwd=self.project_path</code>; <code>invoke_agent</code> spawns <code>claude -p</code> as a local subprocess in that same directory. All inter-step state is <code>.factory/*</code> files plus the git working tree.</div>
+            <div class="src">executor.py:953, agents/runner.py:229</div>
+          </div>
+          <div class="verdict"><span class="pill partial">your work</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">Parallelism is asyncio inside one process</div>
+            <div class="why"><code>ForkNode</code> → <code>asyncio.gather</code>; <code>SubgraphForkNode</code> creates local git worktrees throttled by <code>asyncio.Semaphore(parallelism)</code>. The ceiling is one box's RAM, CPU, and API concurrency — this is the limit you're describing.</div>
+            <div class="src">executor.py:447, 556–563</div>
+          </div>
+          <div class="verdict"><span class="pill solved">engine solves</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">Gates mix nondeterminism into the walker</div>
+            <div class="why"><code>_evaluate_gate</code> calls an LLM and parses the verdict inline. Any durable engine requires the orchestration path be replayable — LLM calls must move behind an activity boundary that returns a <code>Verdict</code>.</div>
+            <div class="src">executor.py:821–921</div>
+          </div>
+          <div class="verdict"><span class="pill partial">your work</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">Human gates silently degrade</div>
+            <div class="why"><code>evaluator_type="user"</code> returns <code>Verdict.proceed()</code> unconditionally in headless mode. Design-mode approval gates are decorative outside an interactive CEO session.</div>
+            <div class="src">executor.py:826–827</div>
+          </div>
+          <div class="verdict"><span class="pill solved">engine solves</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">No retry semantics — any exception kills the run</div>
+            <div class="why">Node failure sets <code>result.halted = True</code> and unwinds. The only resilience is a module-global mutable <code>_consecutive_failures</code> counter in the agent runner, which is also a race hazard under <code>invoke_agents_parallel</code> (acknowledged in-code with <code>_track_failures=False</code>).</div>
+            <div class="src">executor.py:242–255, agents/runner.py:24, 540</div>
+          </div>
+          <div class="verdict"><span class="pill solved">engine solves</span></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <div class="what">Terminal side effects aren't idempotent</div>
+            <div class="why"><code>SelectionNode</code> performs <code>git merge</code> plus <code>store.finalize()</code> with no idempotency key. Re-running after a partial failure is unsafe — which is precisely <em>why</em> there's no retry today. This must be fixed before any engine can retry safely.</div>
+            <div class="src">executor.py:678–727</div>
+          </div>
+          <div class="verdict"><span class="pill partial">your work</span></div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <span class="label">Read this ledger as a sequence, not a list</span>
+        <p>Three of the eight are prerequisites you owe yourself regardless of which engine wins: real artifact I/O, gate determinism, and idempotent finalize. Do those and the single-machine executor gets better too. Skip them and no orchestrator can help you, because retries will corrupt experiment state.</p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="prs">
+      <p class="eyebrow">In flight</p>
+      <h2>What PRs #1051 and #1052 are actually telling you</h2>
+
+      <p>Both PRs are building toward nested orchestration — an outer loop that observes and steers inner factory cycles. Read together, they're an independent rediscovery of the same problem this proposal addresses, solved with the tools currently available.</p>
+
+      <h3>#1051 — <code>InnerLoop</code> + <code>CycleAnalyzer</code></h3>
+      <p><code>InnerLoop.step()</code> is a <code>model.forward()</code>-shaped interface: it shells out to <code>factory ceo --mode evolve --no-worktree</code> as a subprocess, then reconstructs what happened by parsing <code>.factory/</code> artifacts. <code>CycleAnalyzer</code> does the reconstruction across four tiers — <code>events.jsonl</code> for agent steps and costs, <code>results.tsv</code> for verdicts and scores, experiment dirs for eval artifacts, and the workflow definition for DAG provenance.</p>
+
+      <div class="callout">
+        <span class="label">The load-bearing observation</span>
+        <p><code>CycleAnalyzer</code> is a <strong>post-hoc execution ledger, reverse-engineered from files a run happened to leave behind</strong>. Its <code>NodeTrace</code> dataclass literally re-joins declared <code>reads</code>/<code>writes</code> against artifacts that exist on disk, guessing at what ran. In a durable-execution engine that ledger <em>is</em> the workflow history: typed, complete, queryable, and produced without a single extra line of instrumentation.</p>
+      </div>
+
+      <p>The PR's own "How to consume InnerLoop" section poses Path A (Python optimizer) vs Path B (agent optimizer as a factory mode) vs Path C (hybrid) as an architectural fork. That fork dissolves under a durable engine: <strong>the outer loop is a parent workflow, the inner cycle is a child workflow</strong>, and whether the parent's decision step is Python or an LLM agent becomes an ordinary node-type choice inside it — not a different integration architecture. You get Path A's programmatic control and Path B's agent reasoning in the same structure.</p>
+
+      <h3>#1052 — <code>optimize</code> mode + <code>pre_eval</code>/<code>post_eval</code></h3>
+      <p>The <code>optimize</code> workflow is a run→collect→reflect loop over a <em>target</em> mode, driving <code>evolve</code> on a separate project. Two details are diagnostic:</p>
+
+      <ul>
+        <li><strong><code>pre_eval</code> and <code>post_eval</code> are pure instrumentation nodes.</strong> The PR body is explicit — <code>pre_eval</code> copies <code>current_score.json</code> to <code>eval_before.json</code> "giving CycleAnalyzer a before-snapshot"; <code>post_eval</code> emits an <code>eval.completed</code> event "enabling <code>CycleAnalyzer._extract_scores()</code>". These are DAG nodes added so a downstream component can reconstruct execution state. That's the graph paying rent for a missing ledger. Under an engine with real history, both nodes are deletable.</li>
+        <li><strong><code>--focus "mode:project_path:benchmark"</code> is a workflow input struct encoded as a colon-delimited string.</strong> Typed workflow inputs are free in every engine under consideration. This is a small thing that will get painful fast as outer-loop configuration grows.</li>
+      </ul>
+
+      <p>Also worth flagging for the review itself: #1052 carries #1051's nine commits plus its own, and its diff touches <code>definitions.py</code> at +829/−184 against #1051's +447/−0. The stacking means the two can't be evaluated independently — and both branches reintroduce a stray top-level <code>workflow-evolve/SKILL.md</code> alongside the correct <code>skills/workflow-evolve/SKILL.md</code>, which looks like an artifact of running the exporter from the wrong cwd.</p>
+
+      <div class="callout">
+        <span class="label">Recommendation on sequencing</span>
+        <p>Don't block these PRs on the orchestration work — they encode real domain knowledge about what an outer loop needs to observe, and that knowledge is exactly the requirements document for the durable-execution port. But <strong>treat <code>CycleRecord</code> as the target schema, not <code>CycleAnalyzer</code> as the permanent mechanism.</strong> Keep the dataclasses; expect the file-scraping implementation behind them to be replaced by history queries.</p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="caching">
+      <p class="eyebrow">Premise check</p>
+      <h2>Distribution does not cost you prompt caching</h2>
+
+      <p>Anthropic prompt caching is <strong>server-side</strong>, keyed on exact prefix bytes and scoped to your API key and organization, with a 5-minute default TTL (1 hour extended). It is not machine-local. Spreading steps across workers does not, by itself, lose a single cache hit.</p>
+
+      <p>What <em>does</em> cost you cache hits:</p>
+
+      <div class="scroller">
+        <table>
+          <caption>Real cache risks, ranked</caption>
+          <thead>
+            <tr><th scope="col">Risk</th><th scope="col">Mechanism</th><th scope="col">Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Prefix instability</strong></td>
+              <td><code>resolve_prompt()</code> composes the prompt at call time from machine-local state: base prompt + <code>~/.factory/playbooks/&lt;role&gt;.md</code> (ACE-evolved) + <code>~/.factory/profile.md</code> + <code>skills/workflow-*/SKILL.md</code>. A different worker with a different playbook version emits different bytes — a guaranteed miss.</td>
+              <td>Resolve the prompt bundle once per run, content-hash it, ship it as a run artifact. <strong>Worth doing today, independent of any of this.</strong></td>
+            </tr>
+            <tr>
+              <td><strong>TTL gaps</strong></td>
+              <td>Same-role steps scheduled far apart fall outside the cache window.</td>
+              <td>Extended 1h TTL; schedule same-role work adjacently on the same queue.</td>
+            </tr>
+            <tr>
+              <td><strong>Session continuity</strong></td>
+              <td>Claude Code's <code>--resume</code> and <code>~/.claude</code> transcripts <em>are</em> machine-local.</td>
+              <td>Non-issue today: every <code>invoke_agent</code> is a one-shot <code>claude -p</code> with <code>--append-system-prompt-file</code>. <strong>You are already stateless per agent call.</strong> Only matters if you later want multi-turn agents, which needs worker affinity.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>So the actual cost of distribution is <strong>the workspace</strong> — the git tree and <code>.factory/</code> — not the cache. That reframes the whole design problem, and it's the subject of the first tradeoff below.</p>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="proposal">
+      <p class="eyebrow">Proposal</p>
+      <h2>Temporal as a third back-end, not a rewrite</h2>
+
+      <p>Add <code>factory/workflow/temporal/</code> containing a deterministic <em>interpreter</em> of the existing graph — a third consumer of the IR alongside <code>WorkflowExecutor</code> and <code>skill_export</code>. <code>definitions.py</code> is untouched. Both interpreters ship in parallel until parity is proven against the existing <code>--dry-run</code> path and benchmark suite.</p>
+
+      <div class="scroller">
+        <table>
+          <caption>Primitive → engine construct</caption>
+          <thead>
+            <tr><th scope="col">Factory primitive</th><th scope="col">Temporal construct</th><th scope="col">Note</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>Workflow</code> graph</td><td>Workflow function interpreting the graph</td><td>Pure, replayable; graph hash pinned into workflow input</td></tr>
+            <tr><td><code>AgentNode</code></td><td>Activity on a <strong>role-specific task queue</strong></td><td>Heartbeat driven by the existing <code>stream-json</code> line callback in <code>claude.py</code></td></tr>
+            <tr><td><code>FnNode</code> / <code>Study</code></td><td>Activity on a short-task queue</td><td>Cheap, high-concurrency workers</td></tr>
+            <tr><td><code>GateNode</code> (agent / fn)</td><td>Activity returns a <code>Verdict</code>; workflow branches on the value</td><td>Moves <code>_parse_agent_verdict</code> behind the activity boundary</td></tr>
+            <tr><td><code>GateNode</code> (user)</td><td><code>wait_condition</code> + Signal / Update</td><td>Real human-in-the-loop instead of auto-proceed. Indefinite waits cost nothing</td></tr>
+            <tr><td><code>ForkNode</code> / <code>JoinNode</code></td><td><code>asyncio.gather</code> over activity handles</td><td>Direct translation of today's code</td></tr>
+            <tr><td><code>SubgraphForkNode</code></td><td><strong>Child workflows</strong>, one per hypothesis</td><td>Each with its own workspace; parallelism becomes a scheduling policy, not a semaphore</td></tr>
+            <tr><td><code>SelectionNode</code></td><td>Parent gathers child results; merge is an idempotent activity</td><td>Requires the idempotency-key work from the ledger</td></tr>
+            <tr><td>RELOOP + <code>iteration_counts</code></td><td>Workflow state; <code>continue_as_new</code> per outer cycle</td><td>Also fixes the unbounded-recursion risk in long reloop chains</td></tr>
+            <tr><td><code>blocking=False</code> archivist</td><td>Child workflow with <code>ABANDON</code> parent-close policy</td><td>Replaces the 30s <code>asyncio.wait</code> drain that currently cancels stragglers</td></tr>
+            <tr><td><code>InnerLoop.step()</code> <span class="pill ours">#1051</span></td><td>Child workflow execution</td><td>Subprocess + file-scrape becomes a typed call returning a typed result</td></tr>
+            <tr><td><code>CycleAnalyzer</code> <span class="pill ours">#1051</span></td><td>Workflow history + queries</td><td><code>CycleRecord</code> survives as the schema; the scraping does not</td></tr>
+            <tr><td><code>optimize</code> outer loop <span class="pill ours">#1052</span></td><td>Parent workflow driving child <code>evolve</code> runs</td><td>Resolves the PR's Path A / B / C fork entirely</td></tr>
+            <tr><td><code>checkpoint.py</code></td><td>— deleted —</td><td>Event history <em>is</em> the checkpoint</td></tr>
+            <tr><td><code>_consecutive_failures</code></td><td><code>RetryPolicy</code> + non-retryable error types</td><td>Removes the global-mutable race</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Scaling steps individually falls out natively</h3>
+      <p>One task queue per role, each with independently sized worker pools and its own <code>max_concurrent_activities</code>. This is the requirement you opened with, and it needs no new mechanism.</p>
+
+      <div class="topo">
+        <div class="lane">
+          <div class="qname">study-q<small>cheap · high fan-out</small></div>
+          <div class="chips"><span class="chip">study</span><span class="chip">insights</span><span class="chip">detect</span><span class="chip">eval</span></div>
+        </div>
+        <div class="lane">
+          <div class="qname">research-q<small>sonnet · scale to 10+</small></div>
+          <div class="chips"><span class="chip">researcher</span><span class="chip">researcher_similar</span><span class="chip">researcher_techstack</span><span class="chip">researcher_pitfalls</span><span class="chip">failure_analyst</span></div>
+        </div>
+        <div class="lane">
+          <div class="qname">strategy-q<small>opus · low volume</small></div>
+          <div class="chips"><span class="chip">strategist</span><span class="chip">refiner</span><span class="chip">gate_*</span></div>
+        </div>
+        <div class="lane">
+          <div class="qname">build-q<small>opus · large containers · sticky</small></div>
+          <div class="chips"><span class="chip sticky">builder</span><span class="chip sticky">health_checker</span><span class="chip sticky">code_reviewer</span><span class="chip sticky">adversarial_tester</span><span class="chip sticky">precheck</span></div>
+        </div>
+        <div class="lane">
+          <div class="qname">archive-q<small>haiku · 20+ workers</small></div>
+          <div class="chips"><span class="chip">archivist</span><span class="chip">spec_update</span></div>
+        </div>
+      </div>
+      <p style="font-size:var(--step--1); color:var(--ink-mute); margin-top:-.6rem;">Amber chips share a workspace and must land on the same worker — see the workspace tradeoff below.</p>
+
+      <h3>Two constraints that will bite</h3>
+      <ul>
+        <li><strong>Payload size.</strong> Agent stdout runs to megabytes. Never return it into workflow state — return an artifact URI plus a small verdict struct. Temporal caps payloads at 2 MB and history at 50 MB, and <code>result.node_outputs[node_id] = output</code> in today's executor stores full stdout in memory for every node.</li>
+        <li><strong>Determinism versioning.</strong> A graph edit mid-run breaks replay. Pin the graph definition hash into the workflow input so a running execution keeps its graph, and use <code>workflow.patched()</code> for interpreter changes. Note this interacts directly with <code>optimize</code> mode from #1052, whose entire purpose is <em>mutating workflow definitions</em> — running optimizations must not adopt a graph mid-flight.</li>
+      </ul>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="workspace">
+      <p class="eyebrow">Tradeoff · expanded</p>
+      <h2>How aggressive should the workspace refactor be?</h2>
+
+      <p>This is the real cost of distribution. Steps communicate through <code>.factory/*</code> files and a git working tree; on one machine that's free. Three postures, with what each actually buys.</p>
+
+      <p>Before comparing them, the fact that decides it: <strong>look at what each node's <code>reads</code>/<code>writes</code> actually touch.</strong> In <code>improve_workflow</code>, the shared prefix — <code>study → researcher → gate_research → strategist → gate_strategy</code> — touches only <code>.factory/strategy/*.md</code>. It is artifact-only and can run anywhere. The per-hypothesis loop — <code>builder → health_checker → code_reviewer → adversarial_tester → gate_precheck</code> — needs the actual git working tree, because QA reads the diff. The natural fault line is exactly the <code>SubgraphForkNode</code> boundary that already exists in the graph.</p>
+
+      <div class="options two">
+        <div class="opt">
+          <h4>Worker-affine everywhere <span class="tag">minimum change</span></h4>
+          <p>An <code>allocate_workspace</code> activity returns the worker's unique task-queue name; every subsequent activity in the run is scheduled to that queue, so it hits the same worker and the same worktree.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>Zero artifact-transport work. Current filesystem semantics preserved byte for byte.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Fastest path to durability — you get crash-resume and retries this month.</span></div>
+            <div class="con"><span class="mark">−</span><span>You can only scale whole runs, not steps. This does not solve your stated problem.</span></div>
+            <div class="con"><span class="mark">−</span><span>A worker restart strands the workspace; recovery means re-running the whole branch.</span></div>
+            <div class="con"><span class="mark">−</span><span>Container sizing becomes worst-case: every worker must be big enough for <code>builder</code>.</span></div>
+          </div>
+          <footer>Right answer only if durability, not scale, is the near-term goal.</footer>
+        </div>
+
+        <div class="opt">
+          <h4>Full content-addressed artifacts <span class="tag">maximum change</span></h4>
+          <p>Every node materializes its declared <code>reads</code> from an object store before running and uploads its <code>writes</code> after, returning content hashes. Workers are fully stateless.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>True per-step scaling and heterogeneous container sizes. Any worker runs any step.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Turns the <code>reads</code>/<code>writes</code> declarations into enforced, tested reality — a correctness win on its own.</span></div>
+            <div class="con"><span class="mark">−</span><span>The builder/QA loop needs the working tree, so this means shipping git state on every hop — expensive and slow for large repos.</span></div>
+            <div class="con"><span class="mark">−</span><span>Requires every node's declarations to be complete and accurate. They currently aren't verified against runtime behavior.</span></div>
+          </div>
+          <footer>The right end state, the wrong starting point.</footer>
+        </div>
+      </div>
+
+      <div class="options">
+        <div class="opt pick">
+          <h4>Hybrid — sticky branches, artifact prefix <span class="tag">recommended</span></h4>
+          <p>Split at the fault line the graph already draws. The shared prefix and cross-branch coordination go artifact-based and fan out freely. Within a hypothesis branch, steps stay pinned to one worker and one worktree. Code moves between branches via git push to a bare remote — machinery <code>worktree.py</code> already half-implements.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>Parallelises exactly what's expensive: research fan-out, N-hypothesis branches, and outer-loop <code>optimize</code> runs driving many targets.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Container sizing per queue — cheap boxes for research and archival, large ones only on <code>build-q</code>.</span></div>
+            <div class="pro"><span class="mark">+</span><span>You only need accurate <code>reads</code>/<code>writes</code> for prefix nodes to start — a much smaller correctness surface than the full refactor.</span></div>
+            <div class="con"><span class="mark">−</span><span>Two workspace modes to reason about; a node's placement is now part of its contract and needs to be declared on the node.</span></div>
+            <div class="con"><span class="mark">−</span><span>Branch-internal failures still cost a whole-branch replay, not a single-step retry.</span></div>
+          </div>
+          <footer><strong>Verdict:</strong> take this. It gets you real per-step scaling where it pays, without pretending the QA loop can be stateless. Add a <code>workspace: "shared" | "sticky"</code> field to <code>Node</code> and let the validator enforce that a sticky node never reads an artifact-only predecessor's output without an explicit materialization edge.</footer>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="ceo">
+      <p class="eyebrow">Tradeoff · expanded</p>
+      <h2>Does the CEO path come along?</h2>
+
+      <p>Context for the choice: today <code>factory ceo</code> is the primary entry point. It launches an interactive Claude Code session with <code>ceo.md</code> as system prompt, the agent reads the matching <code>SKILL.md</code>, and follows it as prose — spawning specialists via <code>factory agent &lt;role&gt;</code>. The headless <code>WorkflowExecutor</code> is the secondary path, used by benchmarks and <code>--headless</code> runs. That means <strong>the two paths have different reliability characteristics today</strong>, and any orchestration work applied to one widens that gap.</p>
+
+      <p>Note also that <code>InnerLoop.step()</code> in #1051 drives the <em>CEO</em> path, not the executor — it shells out to <code>factory ceo --mode evolve</code>. So the outer-loop work currently depends on the path that would be left behind.</p>
+
+      <div class="options two">
+        <div class="opt">
+          <h4>Headless executor only <span class="tag">smallest blast radius</span></h4>
+          <p>Temporal backs <code>factory workflow run</code>. <code>factory ceo</code> is untouched and keeps working exactly as today.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>No change to the 2.3k-line <code>cli/ceo.py</code>, no risk to the primary user-facing flow.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Benchmarks and CI runs — the workloads that most need scale — benefit immediately.</span></div>
+            <div class="con"><span class="mark">−</span><span>The capability gap widens permanently: durable, scalable, observable headless runs versus a best-effort interactive path.</span></div>
+            <div class="con"><span class="mark">−</span><span>#1051's <code>InnerLoop</code> keeps shelling out to the un-orchestrated path, so outer-loop work gains nothing.</span></div>
+            <div class="con"><span class="mark">−</span><span>Two divergent implementations of the same 16 workflows to keep semantically aligned. This is already a maintenance cost; it grows.</span></div>
+          </div>
+          <footer>Defensible only if you expect the CEO path to be deprecated.</footer>
+        </div>
+
+        <div class="opt">
+          <h4>CEO becomes a Temporal client <span class="tag">unifying</span></h4>
+          <p><code>factory ceo</code> starts a workflow and drives user gates via signals; the interactive session becomes a presentation layer over durable execution.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>One execution model. <code>evaluator_type="user"</code> gates become genuinely meaningful in both paths.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Interactive runs gain crash-resume — today a closed terminal loses a multi-hour cycle.</span></div>
+            <div class="pro"><span class="mark">+</span><span>The dashboard reads workflow history instead of tailing <code>events.jsonl</code>.</span></div>
+            <div class="con"><span class="mark">−</span><span>Substantial rewrite of <code>cli/ceo.py</code>, and it changes the CEO's felt behaviour — the agent stops being the orchestrator and becomes a participant. That is a product decision, not just an engineering one.</span></div>
+            <div class="con"><span class="mark">−</span><span>The SKILL.md prose playbooks lose their reason to exist in their current form, which is a large amount of committed, reviewed work.</span></div>
+          </div>
+          <footer>The right destination — but not a first move.</footer>
+        </div>
+      </div>
+
+      <div class="options">
+        <div class="opt pick">
+          <h4>Headless first, CEO retrofitted as a declared phase <span class="tag">recommended</span></h4>
+          <p>Ship the headless interpreter now, but design the gate and signal API on the assumption the CEO will become a client. Concretely: define the human-gate protocol (signal names, verdict payload shape, timeout semantics) in phase 1 even though only the headless path uses it, and keep <code>skill_export</code> generating SKILL.md from the same graph so the two never drift on step ordering.</p>
+          <div class="pro-con">
+            <div class="pro"><span class="mark">+</span><span>Small first move, but no rework when the CEO migrates — the API it needs already exists and has been exercised.</span></div>
+            <div class="pro"><span class="mark">+</span><span>Lets you decide the CEO's fate with evidence, after seeing how the headless path behaves under real load.</span></div>
+            <div class="con"><span class="mark">−</span><span>You carry two paths for a defined interval, and "defined" requires discipline — write the deprecation criterion down now.</span></div>
+          </div>
+          <footer><strong>Verdict:</strong> take this, and make the phase-3 trigger explicit: migrate the CEO once the headless path has run the full <code>improve</code> workflow end-to-end at parity for some agreed number of cycles.</footer>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="alternatives">
+      <p class="eyebrow">Comparison</p>
+      <h2>Engine alternatives</h2>
+
+      <p>Weighted against your stated constraint: <strong>containerized, but not tied to Kubernetes or OpenShift primitives.</strong> That constraint does real work here — it demotes the K8s-native options that would otherwise be strong, since their scheduling model <em>is</em> the cluster's.</p>
+
+      <div class="scroller">
+        <table>
+          <caption>Assessed against cyclic gates, long agent runs, human waits, and container-agnostic deployment</caption>
+          <thead>
+            <tr><th scope="col">Engine</th><th scope="col">Fit</th><th scope="col">Assessment</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Temporal</strong></td>
+              <td><span class="pill solved">recommended</span></td>
+              <td>Cyclic RELOOP semantics need real code, not YAML. Multi-hour activities and indefinite human waits are its core case. Per-queue scaling maps 1:1 onto "scale steps individually." Workers are plain containers — no cluster primitives required, runs anywhere containers run. Cost: a server plus a datastore to operate, and the determinism discipline.</td>
+            </tr>
+            <tr>
+              <td><strong>Restate</strong></td>
+              <td><span class="pill partial">strong runner-up</span></td>
+              <td>Best developer experience for durable handlers and human-in-the-loop; single binary, materially lighter to operate than Temporal. Virtual objects would give per-project serialization for free — useful, since concurrent runs against one project are a live hazard today. Against it: younger ecosystem, smaller Python SDK, less proven at multi-hour activity durations.</td>
+            </tr>
+            <tr>
+              <td><strong>Hatchet</strong></td>
+              <td><span class="pill partial">viable</span></td>
+              <td>Postgres-backed, task-queue-first with DAG support and concurrency keys. Simpler to run than Temporal and genuinely container-agnostic. Weaker durable-code model — cyclic gate logic is less natural to express than in a workflow function.</td>
+            </tr>
+            <tr>
+              <td><strong>DBOS</strong></td>
+              <td><span class="pill partial">wrong axis</span></td>
+              <td>Near-zero infrastructure — durable execution in-process on Postgres. Very low migration cost and it would fix the crash-resume problem. But cross-machine per-step scaling is precisely its weak axis, and that's your actual requirement.</td>
+            </tr>
+            <tr>
+              <td><strong>Argo Workflows</strong></td>
+              <td><span class="pill partial">ruled out by constraint</span></td>
+              <td>Container-per-step gives genuine isolation and per-step resource requests, and it would have been a serious contender. But it <em>is</em> Kubernetes primitives — that's its entire scheduling model, which conflicts with your stated requirement. You'd also encode reloop and gate logic in YAML and lose the Python IR's fidelity.</td>
+            </tr>
+            <tr>
+              <td><strong>Prefect / Dagster / Flyte</strong></td>
+              <td><span class="pill partial">poor fit</span></td>
+              <td>Data-pipeline shaped. Acyclic assumptions, materialization semantics built for datasets, and no good story for a 45-minute wait on a human verdict.</td>
+            </tr>
+            <tr>
+              <td><strong>Ray</strong></td>
+              <td><span class="pill ours">complement</span></td>
+              <td>Compute fan-out, not durable orchestration. Could sit <em>inside</em> an activity for parallel eval sweeps — not a replacement for the control plane.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="phases">
+      <p class="eyebrow">Sequencing</p>
+      <h2>Migration phases</h2>
+
+      <div class="phases">
+        <div class="phase">
+          <div>
+            <h4>Prerequisites — do these regardless of engine</h4>
+            <p>Pin prompt bundles by content hash. Make <code>reads</code>/<code>writes</code> accurate and enforced by a test that fails when a node touches an undeclared path. Give <code>finalize</code> and the selection merge idempotency keys (<code>run_id + node_id</code>). Move verdict parsing behind a clean boundary. Every one of these improves the current single-machine executor.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div>
+            <h4>Durable interpreter, one queue, worker-affine</h4>
+            <p>Temporal interpreter over the existing graph; all nodes as activities on a single queue with a sticky workspace. Behaviour-identical to today, but durable, resumable, and observable. Prove parity against <code>--dry-run</code> and the benchmark suite before anything else changes.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div>
+            <h4>Split queues, per-role scaling</h4>
+            <p>Task queue per role with independently sized worker pools. Derive <code>RetryPolicy</code> and timeouts from the existing <code>AgentConfig</code> entries. This is where the scale problem you opened with actually gets solved.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div>
+            <h4>Child-workflow fan-out and artifact prefix</h4>
+            <p><code>SubgraphForkNode</code> becomes child workflows; the shared prefix moves to content-addressed artifacts per the hybrid workspace decision. Real human gates via signals. <code>InnerLoop</code> and <code>optimize</code> from #1051/#1052 become parent workflows here — and <code>pre_eval</code>/<code>post_eval</code> get deleted.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div>
+            <h4>CEO as client; dashboard on history</h4>
+            <p>Retrofit <code>factory ceo</code> against the gate API defined in phase 1. Dashboard reads workflow history rather than tailing <code>events.jsonl</code>. Retire <code>checkpoint.py</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────── -->
+    <section id="open">
+      <p class="eyebrow">Needs your call</p>
+      <h2>Open decisions</h2>
+
+      <ul>
+        <li><strong>Self-hosted Temporal or Temporal Cloud?</strong> Self-hosting means running the server plus Postgres/Cassandra and Elasticsearch for visibility — real operational weight. Cloud removes that but puts run metadata off-premises, which given the Red Hat context may not fly. This materially affects whether Restate's single-binary story wins instead.</li>
+        <li><strong>Do concurrent runs against one project need to be serialized?</strong> Today nothing prevents two cycles racing on the same <code>.factory/</code> directory. If that guarantee matters, Restate's virtual objects give it natively; in Temporal it's a workflow-ID uniqueness policy you have to design.</li>
+        <li><strong>Should #1051/#1052 land before or after the prerequisites?</strong> My read: land them, because they document what the outer loop needs. But agree now that <code>CycleAnalyzer</code>'s implementation is provisional, so nobody builds more on the file-scraping path.</li>
+        <li><strong>What's the deprecation criterion for the CEO path?</strong> Write it down in phase 1 or the two paths will coexist indefinitely.</li>
+      </ul>
+
+      <div class="callout">
+        <span class="label">If you only take one thing</span>
+        <p>The prerequisites are the whole gate. Accurate artifact declarations, deterministic gates, and idempotent finalize are what make retries safe — and until retries are safe, no orchestration engine can do anything for you except fail more expensively. They're also the changes that make the current executor better on their own, which makes them the lowest-risk work on this page.</p>
+      </div>
+    </section>
+
+    <footer class="doc">
+      Sources: factory/workflow/{primitives,executor,definitions,validation}.py · factory/agents/runner.py · factory/runners/claude.py · factory/checkpoint.py · factory/worktree.py · PR #1051 (feat/inner-loop, 9 commits) · PR #1052 (factory/run-d711f400, +1 commit on #1051)
+    </footer>
+
+  </main>
+</div>
+</body>
+</html>

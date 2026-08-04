@@ -468,3 +468,67 @@ def test_the_source_git_dir_is_mounted_writable(git_project: Path, tmp_path: Pat
     git_mounts = [m for m in plan.mounts if m.target.endswith(".git")]
     assert git_mounts, "the source repository's git dir must be mounted"
     assert not git_mounts[0].read_only
+
+
+def test_the_run_pre_answers_claude_codes_interactive_prompts() -> None:
+    """A contained run has a real terminal that nobody is watching.
+
+    Claude Code asks "do you trust this folder?" and "new MCP server found" only in interactive
+    mode, so headless specialist agents never hit them and the interactive CEO does — and the run
+    then sits at a menu having already spent the tokens it took to get there. Both answers are
+    implied by having launched the run at all.
+    """
+    from factory.podman import build_run_command
+
+    command = build_run_command("/w/rta", "factory study /w/rta",
+                                mcp_config={"mcpServers": {"podman": {}}})
+    assert "hasTrustDialogAccepted" in command
+    assert "enabledMcpjsonServers" in command
+    assert "enableAllProjectMcpServers" in command
+    # The factory always runs Claude Code with --dangerously-skip-permissions, and that mode has
+    # its own acceptance dialog.
+    assert "bypassPermissionsModeAccepted" in command
+    # The seeding happens before the factory starts, not after.
+    assert command.index("hasTrustDialogAccepted") < command.index("factory study")
+    # The experiment worktrees the CEO creates live under the workspace and are asked about
+    # separately, so their parent is seeded too.
+    assert ".factory-worktrees" in command
+
+
+def test_seeding_merges_rather_than_clobbers(tmp_path: Path) -> None:
+    """~/.claude may be a mount the user opted into — it is their file, with real history in it."""
+    import json
+    import subprocess
+
+    from factory.contained.claude_state import render_seed_command
+
+    home = tmp_path / "home"
+    home.mkdir()
+    existing = {"projects": {"/other": {"hasTrustDialogAccepted": True}}, "somethingElse": 42}
+    (home / ".claude.json").write_text(json.dumps(existing))
+
+    subprocess.run(
+        ["sh", "-c", render_seed_command("/w/rta", ("podman",))],
+        env={**os.environ, "HOME": str(home)}, check=True,
+    )
+    result = json.loads((home / ".claude.json").read_text())
+    assert result["somethingElse"] == 42
+    assert result["projects"]["/other"]["hasTrustDialogAccepted"] is True
+    assert result["projects"]["/w/rta"]["enabledMcpjsonServers"] == ["podman"]
+
+
+def test_seeding_survives_a_corrupt_state_file(tmp_path: Path) -> None:
+    """A half-written file must not stop a run; the questions it answers are not optional."""
+    import json
+    import subprocess
+
+    from factory.contained.claude_state import render_seed_command
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".claude.json").write_text("{ not json")
+    subprocess.run(
+        ["sh", "-c", render_seed_command("/w/rta")],
+        env={**os.environ, "HOME": str(home)}, check=True,
+    )
+    assert json.loads((home / ".claude.json").read_text())["hasTrustDialogAccepted"] is True

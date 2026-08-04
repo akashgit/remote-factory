@@ -299,10 +299,21 @@ def build_run_command(
 
     The MCP registration and any division files are written inside the container because they
     belong next to the project, whose location inside is known only here.
+
+    The first thing it does is pre-answer Claude Code's trust and MCP-approval prompts for this
+    workspace (`factory.contained.claude_state`). They are interactive-only, and a contained run has
+    a real terminal that nobody is watching — so unanswered they read as a hang, after the tokens it
+    took to reach them have already been spent.
     """
     import json
 
-    parts: list[str] = [f"cd {shlex.quote(workdir)}"]
+    from factory.contained.claude_state import render_seed_command
+
+    servers = tuple((mcp_config or {}).get("mcpServers", {}))
+    parts: list[str] = [
+        render_seed_command(workdir, servers),
+        f"cd {shlex.quote(workdir)}",
+    ]
     if mcp_config is not None:
         payload = shlex.quote(json.dumps(mcp_config, sort_keys=True))
         parts.append(f"printf '%s' {payload} > .mcp.json")
