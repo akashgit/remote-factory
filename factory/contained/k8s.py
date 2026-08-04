@@ -651,8 +651,13 @@ def remove_cluster_runtime(name: str, *, namespace: str | None = None, assume_ye
     # lifecycle concern, and a sweep that only exists when a feature is installed is a sweep that
     # silently stops happening.
     swept = _run(sweep_argv(target, name))
-    if swept is not None and swept.returncode == 0 and swept.stdout.strip():
-        print(f"{name}: swept {swept.stdout.strip()}")
+    # `oc delete --ignore-not-found` reports "No resources found" on stdout when it matched nothing,
+    # so a bare non-empty check prints "swept No resources found" — which reads as if something was
+    # swept. Only a line that actually says `deleted` is one.
+    if swept is not None and swept.returncode == 0:
+        deleted = [line for line in swept.stdout.splitlines() if "deleted" in line]
+        if deleted:
+            print(f"{name}: swept {len(deleted)} pod(s) the run created")
 
     result = _run(build_delete_pod_argv(name, target))
     if result is None or result.returncode != 0:
