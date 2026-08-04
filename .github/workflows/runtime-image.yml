@@ -1,0 +1,146 @@
+name: Contained runtime image
+
+# The image `factory contained` runs, for both targets (spec §7).
+#
+# Built and published here rather than on demand: on-demand building is slow for every cold start,
+# and it is circular for the cluster target, whose whole point is that the laptop is not the build
+# host. `factory contained setup` pulls; it does not build.
+#
+# **Multi-arch is not optional.** One image serves an arm64 laptop and amd64 cluster nodes, so this
+# publishes a manifest list rather than a single tag. Build and validate on the *same*
+# architecture — a probe that builds on arm64 and validates on amd64 is not evidence about either.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - containers/factory/Containerfile
+      - factory/**
+      - skills/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/runtime-image.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (default: latest)'
+        required: false
+        default: 'latest'
+        type: string
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/factory-runtime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is emulated here. It is slow, and it is the only way to produce the manifest the
+      # laptop half of the design pulls without maintaining a second runner.
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/factory/Containerfile
+          platforms: ${{ matrix.platform }}
+          # Pushed by digest and assembled into a manifest list below, so a half-finished matrix
+          # never leaves a tag pointing at one architecture.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Export the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `inputs.tag` reaches the shell through `env:` rather than by interpolation, here and in
+      # every step below: a workflow_dispatch input is user-supplied text, and pasting it into a
+      # `run:` block makes it shell source.
+      - name: Assemble the manifest list
+        env:
+          TAG: ${{ inputs.tag || 'latest' }}
+        run: |
+          tag="$TAG"
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${tag}" \
+            --tag "${IMAGE}:${GITHUB_SHA::12}" \
+            $(printf "${IMAGE}@sha256:%s " $(ls /tmp/digests | sed 's/^sha256://'))
+
+      - name: Verify the published manifest carries both architectures
+        env:
+          TAG: ${{ inputs.tag || 'latest' }}
+        run: |
+          tag="$TAG"
+          docker buildx imagetools inspect "${IMAGE}:${tag}"
+          for arch in amd64 arm64; do
+            docker buildx imagetools inspect "${IMAGE}:${tag}" --raw \
+              | grep -q "\"architecture\":\"${arch}\"" \
+              || { echo "::error::${arch} is missing from the published manifest"; exit 1; }
+          done
+
+      # The factory has to actually start in the image. A published image that pulls but whose
+      # entry point is broken fails at the far end of a workspace upload and a pod start, where it
+      # reads as a cluster problem.
+      - name: Smoke-test the published image
+        env:
+          TAG: ${{ inputs.tag || 'latest' }}
+        run: |
+          tag="$TAG"
+          docker run --rm "${IMAGE}:${tag}" factory --help > /dev/null
+          docker run --rm "${IMAGE}:${tag}" tmux -V
+          docker run --rm "${IMAGE}:${tag}" git --version

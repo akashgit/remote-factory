@@ -79,6 +79,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
 9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 10. **Adversarial** (`factory/adversarial.py`): GAN-style adversarial eval loop state machine — phase transitions with hysteresis, per-role streak counters, convergence detection. State persisted at `.factory/adversarial_state.json`
+11. **Contained** (`factory/contained/` + `factory/podman.py` + `factory/cli/contained.py`): `factory contained [runtime flags] -- <any factory command>` runs the factory in a podman container (`--target local`) or a cluster pod (`--target k8s`). See "Contained runtimes" below.
 
 ### Target project's `.factory/` layout
 
@@ -237,6 +238,34 @@ factory review --verdict KEEP --pr 42           # Post structured review on GitH
 ```
 
 `factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on before transitioning to Improve mode. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`.
+
+## Contained runtimes
+
+`factory contained` runs any factory command somewhere other than the developer's shell. Everything after `--` is handed inward **verbatim** except for path rewriting — the runtime is a place to run the factory, not a mode of it, so the host never parses the payload's semantics and cannot break when the CLI grows.
+
+```bash
+factory contained -- ceo ~/code/rta                      # local container, watch it
+factory contained --division -- ceo ~/code/rta           # ...and let the agent build images
+factory contained --target k8s --namespace ns -- run ~/code/rta --loop
+factory contained --target k8s --division -- ceo ~/code/rta
+factory contained ls | attach <name> | rm <name> | sync <name> | setup | verify | bundle
+FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/rta   # compose, provision nothing
+```
+
+**The two targets share a command surface and an image, not a threat model** (design §1.2). Neither confines agent-authored code, and neither replaces review. Local is the *weaker* of the two: no egress control, and credentials live inside the container. K8s keeps a restricted SCC and namespace-scoped RBAC. Anyone carrying the pre-2026-08-03 mental model of the local runtime as the confined one will over-trust it.
+
+Six things are load-bearing and fail quietly if broken:
+
+- **Provenance.** A run always starts from the files on this machine, uncommitted changes included — never `HEAD`, never a fresh clone. The workspace is a git worktree with the working tree rsynced over the top, because a HEAD checkout silently drops the gitignored `.factory/` the whole experiment history lives in. Five assertions then run between provisioning and the first agent call (`factory/contained/provenance.py`); a failure aborts naming the file and the likely cause, and leaves the runtime up for inspection.
+- **Identity.** A bind mount carries ownership through unchanged, so a container whose UID does not own the tree gets a *silently read-only* workspace. The rule differs between rootless, rootful and macOS, so `factory/contained/identity.py` **probes** rather than deciding: a throwaway container reports the mount's owner as the kernel inside sees it, and the run matches. The runtime image is built for arbitrary UIDs (group 0, `chmod g=u`), which is also what OpenShift's restricted SCC needs.
+- **PID 1.** The factory spawns agent subprocesses and is not a well-behaved init, so the container runs `--init` around `sleep infinity` and the run itself lives in tmux. The runtime persists after the run — a failed run is exactly when its state is worth reading.
+- **Credentials cross the boundary, by design.** There is no gateway. The policy is `FACTORY_` by default, plus exactly what `--forward` names, plus the backend variables the resolved shape requires (`factory/contained/credentials.py`) — nothing implicit. `verify` reports credential *shape*, never material, and secret-looking values are redacted anywhere a command is printed. On k8s the credentials come from a namespace Secret the user creates; the factory references it by name and never handles the material.
+- **Both divisions reach outward, and that is the point.** Builds cannot happen inside either boundary, so `--division` is opt-in and separately named. Locally it starts an **unauthenticated** `podman-mcp-server` on :8430 — detached into its own process group, because the run outlives the launch, and stopped by `factory contained rm`. On the cluster it goes through OpenShift `Build` objects behind a sidecar container that is the only holder of `oc` and the ServiceAccount token; that separation is a boundary only while the Role excludes `pods/exec`, which `verify` asserts.
+- **All podman knowledge lives in `factory/podman.py` and all cluster knowledge in `factory/contained/k8s.py`.** Both **compose** commands and do not execute them, which is what makes `FACTORY_CONTAINED_DRY_RUN=1` print the same argv the real path runs rather than a separate rendering that drifts.
+
+The runtime image (`containers/factory/Containerfile`) is UBI9 + the factory wheel + the agent CLIs + tmux, published multi-arch by CI (`.github/workflows/runtime-image.yml`). `factory contained setup` pulls it; it does not build. tmux is compiled in a builder stage because neither the UBI repositories nor EPEL ship it.
+
+Design and evidence: `docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md`.
 
 ## Observability
 

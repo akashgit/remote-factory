@@ -196,9 +196,43 @@ factory ceo <path> --mode design --focus "topic"              # Seed with a spec
 # Create — extend the factory
 factory ceo <path> --mode create --focus "description"        # Create a new factory mode
 factory ceo <path> --mode create --focus "mode: change"       # Update an existing mode
+
+# Contained — run any factory command somewhere other than your shell
+factory contained -- ceo <path>                               # In a podman container
+factory contained --division -- ceo <path>                    # ...and let the agent build images
+factory contained --target k8s --namespace ns -- run <path> --loop   # In a cluster pod
+factory contained ls | attach <name> | rm <name> | sync <name>
 ```
 
 See `factory --help` for the complete list.
+
+---
+
+## Contained Runtimes
+
+`factory contained` runs the factory against a pinned toolchain and a **copy** of your project, so
+your working tree is untouched and nothing is left behind. Everything after `--` is passed inward
+verbatim — it is a place to run the factory, not a mode of it.
+
+```bash
+factory contained setup            # Pull the runtime image, check prerequisites
+factory contained verify           # Report what's missing, with the fix for each
+factory contained -- ceo ~/code/my-project
+factory contained attach <name>    # Live TUI mid-run; Ctrl-b d detaches, the run continues
+factory contained sync <name>      # Prints the branch and the merge command — never merges for you
+```
+
+`--target k8s` runs it unattended on a cluster instead, with the workspace on a PVC that survives
+the pod. `--division` gives the agent a container-manufacturing plane so it can build an image, run
+it, read the failure and iterate.
+
+**Read the guarantees before trusting them.** The two targets share a command surface and an image,
+not a threat model. Neither confines agent-authored code, neither is a multi-tenant boundary, and
+neither replaces review — `contained` bounds *accidents* and gives runs a reproducible environment.
+The local target has no egress control and holds inference credentials inside the container;
+`--division` opens an unauthenticated container-control endpoint on localhost for the life of the
+run. All of this is deliberate and documented in
+[the design](docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md) §1.2 and §11.
 
 ---
 
