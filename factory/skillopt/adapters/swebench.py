@@ -66,6 +66,11 @@ class SwebenchAdapter(EnvAdapter):
             val=len(self._val_ids),
             test=len(self._test_ids),
         )
+        all_ids = self._train_ids + self._val_ids + self._test_ids
+        if self.instances:
+            all_ids = self.instances
+        if all_ids:
+            _prepull_images(all_ids)
 
     def build_train_env(self, batch_size: int, seed: int) -> Any:
         if self.instances:
@@ -92,31 +97,9 @@ class SwebenchAdapter(EnvAdapter):
         log.info("eval env built", limit=env_num, split=split, seed=seed)
         return env_num
 
-    def _extract_prompt_slot(self, skill_content: str) -> str:
-        if not skill_content.startswith("---"):
-            return skill_content
-        from factory.skillopt.yaml_surface import load_yaml, extract_prompt_slots
-        ann_path = self.skill_path.parent / "SKILL.annotations.yaml"
-        if ann_path.exists():
-            surface = load_yaml(ann_path)
-            slots = extract_prompt_slots(surface)
-            if slots:
-                return next(iter(slots.values()))
-        match = re.search(
-            r'factory agent builder --task "(.*?)"\s*--project',
-            skill_content, re.DOTALL,
-        )
-        if match:
-            return match.group(1).strip()
-        return skill_content
-
     def rollout(
         self, env_manager: Any, skill_content: str, out_dir: str,
     ) -> list[RolloutResult]:
-        self.skill_path.parent.mkdir(parents=True, exist_ok=True)
-        self.skill_path.write_text(skill_content)
-        log.info("skill written", path=str(self.skill_path))
-
         script = _BENCHMARKS_DIR / "run-harbor.sh"
         if not script.exists():
             log.error("run-harbor.sh not found", path=str(script))
@@ -146,8 +129,9 @@ class SwebenchAdapter(EnvAdapter):
                 cmd += ["--limit", str(limit)]
 
         env = dict(os.environ)
-        prompt = self._extract_prompt_slot(skill_content)
-        env["FACTORY_SKILL_B64"] = base64.b64encode(prompt.encode()).decode()
+        env["FACTORY_WORKFLOW_YAML_B64"] = base64.b64encode(
+            skill_content.encode()
+        ).decode()
         if self.student_model:
             env["FACTORY_STUDENT_MODEL"] = self.student_model
 
@@ -186,6 +170,62 @@ class SwebenchAdapter(EnvAdapter):
 
     def get_task_types(self) -> list[str]:
         return ["bug_fix"]
+
+
+def _instance_to_image(instance_id: str) -> str:
+    return f"swebench/sweb.eval.x86_64.{instance_id.replace('__', '_1776_')}:latest"
+
+
+def _prepull_images(instance_ids: list[str], concurrency: int = 5) -> None:
+    """Pre-pull SWE-bench Docker images to avoid Docker Hub rate limits."""
+    images = list({_instance_to_image(iid) for iid in instance_ids})
+
+    to_pull: list[str] = []
+    for img in images:
+        result = subprocess.run(
+            ["docker", "image", "inspect", img],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode != 0:
+            to_pull.append(img)
+
+    log.info(
+        "pre-pull check",
+        total=len(images),
+        cached=len(images) - len(to_pull),
+        need_pull=len(to_pull),
+    )
+    if not to_pull:
+        return
+
+    pulled = 0
+    failed = 0
+    for batch_start in range(0, len(to_pull), concurrency):
+        batch = to_pull[batch_start:batch_start + concurrency]
+        procs: list[tuple[str, subprocess.Popen]] = []
+        for img in batch:
+            proc = subprocess.Popen(
+                ["docker", "pull", img],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            procs.append((img, proc))
+
+        for img, proc in procs:
+            try:
+                _, stderr = proc.communicate(timeout=600)
+                if proc.returncode == 0:
+                    pulled += 1
+                    log.info("pulled", image=img)
+                else:
+                    failed += 1
+                    log.warning("pull failed", image=img, stderr=stderr.decode()[-200:])
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                failed += 1
+                log.warning("pull timeout", image=img)
+
+    log.info("pre-pull complete", pulled=pulled, failed=failed)
 
 
 def _get_git_ref() -> str:

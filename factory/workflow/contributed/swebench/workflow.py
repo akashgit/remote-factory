@@ -8,9 +8,12 @@ Designed for Harbor containers where:
 - Harbor's pytest verifier is the FINAL authority on pass/fail
 - Harbor checks the MAIN branch for changes
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
+
+Prompt override: set FACTORY_WORKFLOW_YAML_B64 env var with base64-encoded
+YAML annotations to override slot values (prompt, timeout, etc.) at runtime.
+Use ``factory workflow run swebench . --from-yaml <path>`` for local testing.
 """
 
-import base64
 import os
 from typing import Any
 
@@ -63,13 +66,6 @@ _DEFAULT_PROMPT = (
 )
 
 
-def _resolve_prompt() -> str:
-    b64 = os.environ.get("FACTORY_SKILL_B64")
-    if b64:
-        return base64.b64decode(b64).decode()
-    return _DEFAULT_PROMPT
-
-
 def _resolve_model() -> str:
     return os.environ.get("FACTORY_STUDENT_MODEL", "opus")
 
@@ -107,7 +103,7 @@ def workflow() -> Workflow:
         model=_resolve_model(),
         timeout=7200,
         max_iterations=3,
-        prompt_template=_resolve_prompt(),
+        prompt_template=_DEFAULT_PROMPT,
         reads={".factory/reviews/study-output.md"},
         writes={".factory/reviews/builder-latest.md"},
     )

@@ -50,16 +50,34 @@ def cmd_workflow(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run a named workflow on a project."""
+    import base64
+    import os
+    import tempfile
+
     name = args.name
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
+    from_yaml = getattr(args, "from_yaml", None)
 
-    workflows = register_all()
-    wf = workflows.get(name)
-    if not wf:
-        print(f"Unknown workflow: {name}")
-        print(f"Available: {', '.join(workflows)}")
-        return 1
+    yaml_b64 = os.environ.get("FACTORY_WORKFLOW_YAML_B64")
+    if yaml_b64 and not from_yaml:
+        tmp = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w")
+        tmp.write(base64.b64decode(yaml_b64).decode())
+        tmp.close()
+        from_yaml = tmp.name
+        log.info("loaded workflow YAML from FACTORY_WORKFLOW_YAML_B64 env var")
+
+    if from_yaml:
+        from factory.skillopt.yaml_surface import yaml_to_workflow
+        wf = yaml_to_workflow(from_yaml, name)
+        log.info("workflow loaded from YAML override", path=from_yaml, name=name)
+    else:
+        workflows = register_all()
+        wf = workflows.get(name)
+        if not wf:
+            print(f"Unknown workflow: {name}")
+            print(f"Available: {', '.join(workflows)}")
+            return 1
 
     executor = WorkflowExecutor(
         wf,
@@ -246,6 +264,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
+    p.add_argument(
+        "--from-yaml", default=None, metavar="PATH",
+        help="Load workflow from YAML annotations file (overrides slot values on base workflow)",
+    )
 
     # list
     wf_sub.add_parser("list", help="List all registered workflows")

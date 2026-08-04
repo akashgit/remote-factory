@@ -13,7 +13,6 @@ Designed for Harbor containers where:
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
 """
 
-import base64
 import os
 from typing import Any
 
@@ -91,9 +90,6 @@ _DEFAULT_PROMPT = (
 
 
 def _resolve_prompt() -> str:
-    b64 = os.environ.get("FACTORY_SKILL_B64")
-    if b64:
-        return base64.b64decode(b64).decode()
     return _DEFAULT_PROMPT
 
 
