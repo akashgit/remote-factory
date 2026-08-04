@@ -2347,7 +2347,37 @@ def frontend_design_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Phase 1: Design System Research (4 parallel researchers) ──
+    # ── Phase 0: Design System Existence Check ──
+    # If the design system already exists on disk (from a previous discover
+    # run), skip the full research pipeline and go straight to the spec
+    # writer via a lightweight staleness check. If it doesn't exist, fall
+    # through to the full 5-researcher pipeline.
+
+    nodes["gate_design_system"] = GateNode(
+        id="gate_design_system",
+        evaluator_type="fn",
+        evaluator_command=(
+            "ds={project_path}/.factory/design-system && "
+            "[ -f $ds/design-baseline.json ] && [ -f $ds/rules.md ] && "
+            "[ -f $ds/infra-context.md ] && echo PROCEED || "
+            "echo 'reloop: design system not found'"
+        ),
+    )
+
+    nodes["staleness_checker"] = AgentNode(
+        id="staleness_checker",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Design system staleness check. Compare design-baseline.json "
+            "and rules.md against the current codebase for drift. "
+            "Write verdict (STALE/DRIFT/CURRENT) to "
+            ".factory/design-system/staleness-report.md."
+        ),
+        writes={".factory/design-system/staleness-report.md"},
+    )
+
+    # ── Phase 1: Design System Research (5 parallel researchers) ──
+    # Only reached when gate_design_system RELOOPs (no design system on disk).
 
     nodes["fork_design_research"] = ForkNode(
         id="fork_design_research",
@@ -2766,7 +2796,20 @@ def frontend_design_workflow() -> Workflow:
     # ── Edges ──
 
     edges = [
-        # Fork to researchers
+        # Design system existence check (entry point)
+        Edge(
+            source="gate_design_system",
+            target="staleness_checker",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_design_system",
+            target="fork_design_research",
+            condition=VerdictType.RELOOP,
+        ),
+        # Staleness checker → spec writer (skip research)
+        Edge(source="staleness_checker", target="spec_writer"),
+        # Fork to researchers (only reached via RELOOP from gate_design_system)
         Edge(source="fork_design_research", target="researcher_tokens"),
         Edge(source="fork_design_research", target="researcher_components"),
         Edge(source="fork_design_research", target="researcher_patterns"),
@@ -2839,7 +2882,7 @@ def frontend_design_workflow() -> Workflow:
         name="frontend-design",
         nodes=nodes,
         edges=edges,
-        start_node="fork_design_research",
+        start_node="gate_design_system",
         trigger=trigger,
     )
 
@@ -3005,6 +3048,231 @@ def frontend_design_scan_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="fork_scan_research",
+        trigger=trigger,
+    )
+
+
+# ── W₁₄: Frontend Design Discover — Design System Extraction ──
+
+
+def frontend_design_discover_workflow() -> Workflow:
+    """W₁₄: Frontend Design Discover — extract a reusable design system.
+
+    Fork(5 design researchers) → Join → CEO gate → Design Auditor →
+    CEO gate → Archivist(async)
+
+    No spec writer, no builder, no QA — discover-only.
+    Produces human-readable, editable design system artifacts that
+    persist across feature builds. Run once, edit the output, then
+    use frontend-design (build) mode for each new feature without
+    re-running researchers.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Phase 1: Design System Research (5 parallel researchers) ──
+
+    nodes["fork_discover_research"] = ForkNode(
+        id="fork_discover_research",
+        targets=[
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+            "researcher_infra",
+        ],
+    )
+
+    nodes.update(_design_researcher_nodes())
+
+    nodes["researcher_infra"] = AgentNode(
+        id="researcher_infra",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Infrastructure context research. "
+            "Discover the backend deployment architecture by reading Dockerfile, "
+            "docker-compose.yml, k8s/ manifests, and Helm charts. Identify what "
+            "environment the backend runs in (container, K8s pod, VM, serverless) "
+            "and what system tools are available inside the container. "
+            "Examine the backend API architecture: framework (FastAPI, Flask, etc.), "
+            "router registration pattern, how new endpoints are added, existing "
+            "endpoint inventory. Map resource access patterns: how the backend "
+            "reaches external resources — K8s API via in-cluster config, SSH "
+            "backends, database connections, external APIs. Document data sources: "
+            "where data comes from (K8s node resources, subprocess calls, database "
+            "queries, external APIs) and which client libraries are available. "
+            "Write to .factory/design-system/infra-context.md."
+        ),
+        writes={".factory/design-system/infra-context.md"},
+    )
+
+    nodes["join_discover_research"] = JoinNode(
+        id="join_discover_research",
+        sources=[
+            "researcher_tokens", "researcher_components", "researcher_patterns",
+            "researcher_ux", "researcher_infra",
+        ],
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+    )
+
+    nodes["gate_discover_research"] = GateNode(
+        id="gate_discover_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify all five design research artifacts exist and are substantive. "
+            "token-audit.md must list actual CSS custom properties. "
+            "component-inventory.md must list actual .tsx files with component names. "
+            "pattern-library.md must describe actual page layout patterns. "
+            "ux-patterns.md must describe actual animation, hierarchy, or UX patterns. "
+            "infra-context.md must describe the deployment environment and backend "
+            "API architecture. "
+            "RELOOP if any artifact is empty or clearly fabricated. "
+            "PROCEED if all five have real data."
+        ),
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+    )
+
+    # ── Phase 2: Design Auditor (synthesize baseline + rules) ──
+
+    nodes["design_auditor"] = AgentNode(
+        id="design_auditor",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design system auditor (discover mode). "
+            "Read .factory/design-system/token-audit.md, component-inventory.md, "
+            "pattern-library.md, ux-patterns.md, and infra-context.md. "
+            "Synthesize into two outputs: "
+            "(1) .factory/design-system/design-baseline.json — valid JSON with "
+            "token_registry, component_inventory, pattern_library, ux_patterns, "
+            "and infrastructure keys. The infrastructure key must include: "
+            "deployment (type, orchestrator), container_capabilities (available "
+            "and unavailable tools), resource_access (how the backend reaches "
+            "external resources), api_architecture (framework, router pattern, "
+            "existing endpoints), and data_sources (where data comes from). "
+            "Extract actual values from the research, do not fabricate. "
+            "(2) .factory/design-system/rules.md — HARD RULES section "
+            "(token purity, font family, component wrappers, dark mode parity, "
+            "accessibility floor, infrastructure fidelity — no unavailable system "
+            "tools, use established resource access patterns, follow API registration "
+            "pattern) and SOFT GUIDELINES section (spacing, border-radius, "
+            "motion choreography, icons, page structure, status colors, information "
+            "hierarchy, user-friendliness). "
+            "If previous design-baseline.json exists, merge and flag drift. "
+            "Preserve any existing MANUAL OVERRIDES section in rules.md. "
+            "This is a discover-only run — the design system files will be "
+            "reviewed and edited by a human designer before feature builds."
+        ),
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+        writes={
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+    )
+
+    nodes["gate_discover_audit"] = GateNode(
+        id="gate_discover_audit",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify design-baseline.json is valid JSON with token_registry, "
+            "component_inventory, and pattern_library keys. "
+            "Verify rules.md contains both HARD RULES and SOFT GUIDELINES sections. "
+            "RELOOP if malformed. PROCEED if structurally valid."
+        ),
+        reads={
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+    )
+
+    # ── Phase 3: Archivist (async) ──
+
+    nodes["archivist_discover"] = AgentNode(
+        id="archivist_discover",
+        role=AgentRole.ARCHIVIST,
+        prompt_template=(
+            "Archive the design system discovery results. "
+            "Note which artifacts were produced and summarize the design system "
+            "for future reference. The user should review and edit the design "
+            "system files before running feature builds."
+        ),
+        reads={
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+        writes={".factory/archive/design-discover.md"},
+        blocking=False,
+    )
+
+    # ── Edges ──
+
+    edges = [
+        # Fork to researchers
+        Edge(source="fork_discover_research", target="researcher_tokens"),
+        Edge(source="fork_discover_research", target="researcher_components"),
+        Edge(source="fork_discover_research", target="researcher_patterns"),
+        Edge(source="fork_discover_research", target="researcher_ux"),
+        Edge(source="fork_discover_research", target="researcher_infra"),
+        # Researchers to join
+        Edge(source="researcher_tokens", target="join_discover_research"),
+        Edge(source="researcher_components", target="join_discover_research"),
+        Edge(source="researcher_patterns", target="join_discover_research"),
+        Edge(source="researcher_ux", target="join_discover_research"),
+        Edge(source="researcher_infra", target="join_discover_research"),
+        # Join → research gate
+        Edge(source="join_discover_research", target="gate_discover_research"),
+        # Research gate
+        Edge(
+            source="gate_discover_research",
+            target="design_auditor",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_discover_research",
+            target="fork_discover_research",
+            condition=VerdictType.RELOOP,
+        ),
+        # Design auditor → audit gate
+        Edge(source="design_auditor", target="gate_discover_audit"),
+        Edge(
+            source="gate_discover_audit",
+            target="archivist_discover",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_discover_audit",
+            target="design_auditor",
+            condition=VerdictType.RELOOP,
+        ),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "frontend-design-discover"
+
+    return Workflow(
+        name="frontend-design-discover",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_discover_research",
         trigger=trigger,
     )
 
@@ -3411,5 +3679,6 @@ def register_all() -> dict[str, Workflow]:
         "spec-update": spec_update_workflow(),
         "founder": founder_workflow(),
         "frontend-design": frontend_design_workflow(),
+        "frontend-design-discover": frontend_design_discover_workflow(),
         "frontend-design-scan": frontend_design_scan_workflow(),
     }
