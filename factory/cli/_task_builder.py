@@ -46,17 +46,17 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "The full step-by-step playbook is in your system prompt above."
         ),
         "plan": (
-            "\n\nRun Plan mode: prior plan check + research + strategy + archive with NO implementation. "
-            "First check .factory/archive/ for prior plans matching the focus topic — if found, "
-            "ask the user whether to continue an existing plan or start fresh. "
-            "Research the space with 3 parallel researchers (domain, practices, constraints), "
-            "synthesize a phased plan via the Strategist, then two sequential user gates: "
-            "1) Keep this plan? (yes → archive, no → discard and exit), "
-            "2) Seed backlog? (yes → commit phases as backlog items + archive, no → archive only). "
-            "Do NOT spawn any Builder agents. "
+            "\n\nRun Plan mode: prior plan check + research + strategy + optional GitHub publishing "
+            "with NO implementation. "
+            "First check GitHub issues (plan label) and .factory/archive/ for prior plans matching "
+            "the focus topic — if found, ask the user whether to continue an existing plan or start fresh. "
+            "Run 3 parallel researchers (domain, practices, constraints), CEO review gate, then "
+            "synthesize a phased plan via the Strategist, then three sequential user gates: "
+            "1) Keep this plan? (yes → continue, no → discard and exit), "
+            "2) Publish to GitHub? (yes → post as issue, no → skip), "
+            "3) Seed backlog? (yes → extract phases to backlog.md with issue refs, no → done). "
             "Do NOT transition to build or improve mode — plan mode is terminal. "
-            "After the user chooses and the Archivist fires (if applicable), the cycle is complete. "
-            "The full step-by-step playbook is in your system prompt above."
+            "If the user previously ran plan mode, check for prior plans before researching.\n"
         ),
     }
     if mode == "discover":

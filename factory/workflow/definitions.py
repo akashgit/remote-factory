@@ -4094,16 +4094,21 @@ def founder_workflow() -> Workflow:
 
 
 def plan_workflow() -> Workflow:
-    """W₁₅: Plan Mode — prior plan check + research + strategy + approve + archive. Terminal.
+    """W₁₅: Plan Mode — prior plan check + research + strategy + approve + publish. Terminal.
 
     CheckPriorPlans → [matches?] → GatePriorPlans(user) → Fork(3 researchers) →
     Join → CEO gate → Strategist → GateKeepPlan(user) →
-      Keep (PROCEED):    GateSeedBacklog(user) →
-        Seed (PROCEED):    SeedBacklog → Archivist(async) → done
-        No seed (HALT):    Archivist(async) → done
-      Discard (HALT):    done (no archive, no backlog)
+      Keep (PROCEED):    GatePublishGitHub(user) →
+        Publish (PROCEED):   PublishGitHub → GateSeedBacklog(user) →
+          Seed (PROCEED):    SeedBacklog → done
+          No seed (HALT):    done
+        Skip (HALT):         GateSeedBacklog(user) →
+          Seed (PROCEED):    SeedBacklog → done
+          No seed (HALT):    done
+      Discard (HALT):    done
 
     Planning-only mode. Produces a phased plan at .factory/strategy/current.md.
+    Optionally publishes to GitHub as an issue with the 'plan' label.
     Does NOT chain to build/improve — user must explicitly invoke those modes
     to execute the plan.
     """
@@ -4117,13 +4122,23 @@ def plan_workflow() -> Workflow:
         evaluator_type="fn",
         evaluator_command=(
             ': > "{project_path}/.factory/strategy/prior-plans.md"; '
-            '[ -n "$FOCUS" ] && grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
-            '> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null; '
+            'if [ -n "$FOCUS" ]; then '
+            '  if gh auth status >/dev/null 2>&1 && git remote -v 2>/dev/null | grep -q .; then '
+            '    gh issue list --label plan --search "$FOCUS" --json number,title,url '
+            '      --jq ".[] | \\"#\\(.number) \\(.title) — \\(.url)\\"" '
+            '      > "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
+            '  fi; '
+            '  if [ ! -s "{project_path}/.factory/strategy/prior-plans.md" ]; then '
+            '    grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
+            '      >> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
+            '  fi; '
+            'fi; '
             '[ -s "{project_path}/.factory/strategy/prior-plans.md" ]'
         ),
         gate_prompt=(
-            "Check .factory/archive/ for prior plan files matching the focus keywords. "
-            "Write matching file paths to .factory/strategy/prior-plans.md. "
+            "Check GitHub issues with plan label and .factory/archive/ for prior plans "
+            "matching the focus keywords. Write matching results to .factory/strategy/prior-plans.md "
+            "(GitHub issue URLs or local file paths). "
             "PROCEED if matches exist (file is non-empty), HALT if no matches (skip to fresh research)."
         ),
         writes={".factory/strategy/prior-plans.md"},
@@ -4286,7 +4301,7 @@ def plan_workflow() -> Workflow:
         ],
     )
 
-    # ── Two sequential binary user gates ─────────────────────
+    # ── Three sequential binary user gates ────────────────────
 
     nodes["gate_keep_plan"] = GateNode(
         id="gate_keep_plan",
@@ -4299,15 +4314,74 @@ def plan_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
     )
 
+    nodes["gate_publish_github"] = GateNode(
+        id="gate_publish_github",
+        evaluator_type="user",
+        gate_prompt=(
+            "Ask the user: 'Publish this plan as a GitHub issue? "
+            "(yes → post to GitHub, no → skip publishing)'\n"
+            "Map: yes → PROCEED, no → HALT"
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
     nodes["gate_seed_backlog"] = GateNode(
         id="gate_seed_backlog",
         evaluator_type="user",
         gate_prompt=(
             "Ask the user: 'Seed backlog? "
-            "(yes → commit phases as backlog items, no → archive only)'\n"
+            "(yes → commit phases as backlog items, no → done)'\n"
             "Map: yes → PROCEED, no → HALT"
         ),
         reads={".factory/strategy/current.md"},
+    )
+
+    # ── GitHub publishing ─────────────────────────────────────
+
+    nodes["publish_github"] = FnNode(
+        id="publish_github",
+        command=(
+            'bash -c \''
+            'set -e; '
+            'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+            'if ! gh auth status >/dev/null 2>&1; then '
+            '  echo "SKIP: gh not authenticated"; exit 0; '
+            'fi; '
+            'if ! git remote -v 2>/dev/null | grep -q .; then '
+            '  echo "SKIP: no git remote configured"; exit 0; '
+            'fi; '
+            'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
+            'FOCUS="${FOCUS:-}"; '
+            'ISSUE_NUM=""; '
+            'if echo "$FOCUS" | grep -qE "^[0-9]+$"; then '
+            '  ISSUE_NUM="$FOCUS"; '
+            'elif echo "$FOCUS" | grep -qoE "#([0-9]+)"; then '
+            '  ISSUE_NUM=$(echo "$FOCUS" | grep -oE "[0-9]+" | tail -1); '
+            'fi; '
+            'if [ -n "$ISSUE_NUM" ]; then '
+            '  gh issue comment "$ISSUE_NUM" --body-file "{project_path}/.factory/strategy/current.md"; '
+            '  gh issue edit "$ISSUE_NUM" --add-label plan; '
+            '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+            '  echo "Plan posted to issue #$ISSUE_NUM"; '
+            'else '
+            '  TITLE="Plan: ${FOCUS:-project}"; '
+            '  ISSUE_URL=$(gh issue create --title "$TITLE" --body-file "{project_path}/.factory/strategy/current.md" --label plan); '
+            '  ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE "[0-9]+$"); '
+            '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+            '  echo "Created plan issue: $ISSUE_URL"; '
+            'fi'
+            '\''
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/strategy/github-issue-ref.txt"},
+        notes=(
+            "Publishes the approved plan to a GitHub issue. Two cases: "
+            "if --focus is an issue number, posts as a comment on that issue and adds the plan label. "
+            "Otherwise, creates a new issue titled 'Plan: <focus>'. "
+            "Writes the issue number to github-issue-ref.txt for downstream use by seed_backlog. "
+            "Graceful degradation: if gh is not authenticated or no git remote exists, "
+            "writes 'none' and exits cleanly."
+        ),
     )
 
     # ── Backlog seeding ───────────────────────────────────────
@@ -4316,16 +4390,15 @@ def plan_workflow() -> Workflow:
         id="seed_backlog",
         command=(
             'python3 -c "'
-            "import re, datetime, os; "
+            "import re, os; "
             "project = '{project_path}'; "
             "plan = open(f'{project}/.factory/strategy/current.md').read(); "
-            "focus = os.environ.get('FOCUS', 'plan'); "
-            "slug = re.sub(r'[^a-z0-9]+', '-', focus.lower()).strip('-'); "
-            "date = datetime.date.today().isoformat(); "
-            "archive_name = f'plan-{slug}-{date}.md'; "
+            "ref_file = f'{project}/.factory/strategy/github-issue-ref.txt'; "
+            "issue_num = open(ref_file).read().strip() if os.path.exists(ref_file) else 'none'; "
+            "ref = f'(see #{issue_num})' if issue_num != 'none' else '(see .factory/strategy/current.md)'; "
             "phases = re.findall(r'### Phase \\d+:.*', plan); "
             "backlog_path = f'{project}/.factory/strategy/backlog.md'; "
-            "items = '\\n'.join(f'- [ ] {p[4:]} (see .factory/archive/{archive_name})' for p in phases); "
+            "items = '\\n'.join(f'- [ ] {p[4:]} {ref}' for p in phases); "
             "open(backlog_path, 'a').write('\\n' + items + '\\n') if items else None; "
             "print(f'Seeded {len(phases)} backlog items from plan')"
             '"'
@@ -4334,30 +4407,10 @@ def plan_workflow() -> Workflow:
         writes={".factory/strategy/backlog.md"},
         notes=(
             "Extracts phase headers from the approved plan at current.md and appends them "
-            "as backlog items to backlog.md. Each item references the archived plan file "
-            "for traceability. Example format: "
-            "'- [ ] Phase 1: Set up auth middleware (see .factory/archive/plan-auth-redesign-2026-08-04.md)'"
+            "as backlog items to backlog.md. References GitHub issue number if publish_github "
+            "ran (reads github-issue-ref.txt), otherwise references current.md. "
+            "Example: '- [ ] Phase 1: Set up auth middleware (see #42)'"
         ),
-    )
-
-    # ── Archivist ─────────────────────────────────────────────
-
-    nodes["archivist_plan"] = AgentNode(
-        id="archivist_plan",
-        role=AgentRole.ARCHIVIST,
-        prompt_template=(
-            "Archive the approved plan. Read .factory/strategy/current.md "
-            "and summarize the key decisions, phased approach, and next steps. "
-            "Write the archive to .factory/archive/ using the naming convention: "
-            "plan-<topic-slug>-<YYYY-MM-DD>.md where topic-slug is derived from "
-            "the --focus argument or project name (lowercase, hyphens for spaces). "
-            "Check for existing files with the same name and append a numeric suffix "
-            "(e.g., plan-auth-redesign-2026-08-04-2.md) if a collision exists on the same day. "
-            "Example: .factory/archive/plan-auth-redesign-2026-08-04.md"
-        ),
-        reads={".factory/strategy/current.md"},
-        writes={".factory/archive/"},
-        blocking=False,
     )
 
     # ── Edges ─────────────────────────────────────────────────
@@ -4383,17 +4436,16 @@ def plan_workflow() -> Workflow:
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
         # Strategist → first user gate (keep or discard?)
         Edge(source="strategist", target="gate_keep_plan"),
-        # Keep gate:
-        #   Keep (PROCEED) → second user gate (seed backlog?)
-        #   Discard (HALT) has no outgoing edge — implicit workflow termination
-        Edge(source="gate_keep_plan", target="gate_seed_backlog", condition=VerdictType.PROCEED),
-        # Seed backlog gate:
-        #   Seed (PROCEED) → seed_backlog → archivist
-        #   No seed (HALT) → archivist (archive without backlog)
+        # Keep gate → publish gate
+        Edge(source="gate_keep_plan", target="gate_publish_github", condition=VerdictType.PROCEED),
+        # Publish gate → publish FnNode (user says yes)
+        Edge(source="gate_publish_github", target="publish_github", condition=VerdictType.PROCEED),
+        # Publish gate → skip to seed backlog gate (user says no)
+        Edge(source="gate_publish_github", target="gate_seed_backlog", condition=VerdictType.HALT),
+        # After publishing → seed backlog gate
+        Edge(source="publish_github", target="gate_seed_backlog"),
+        # Seed backlog gate
         Edge(source="gate_seed_backlog", target="seed_backlog", condition=VerdictType.PROCEED),
-        Edge(source="gate_seed_backlog", target="archivist_plan", condition=VerdictType.HALT),
-        # Backlog seeding → archivist
-        Edge(source="seed_backlog", target="archivist_plan"),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:

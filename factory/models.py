@@ -527,6 +527,7 @@ class CycleState(BaseModel):
         "improve",
         "meta",
         "parallel-improve",
+        "plan",
         "qa",
         "refine",
         "research",
