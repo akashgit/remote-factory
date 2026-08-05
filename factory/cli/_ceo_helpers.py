@@ -316,10 +316,10 @@ def _validate_late_flags(
         )
         return 1
 
-    if focus and mode not in ("improve", "research", "create", "evolve", "frontend-design", "frontend-design-discover") and not design_existing:
+    if focus and mode not in ("improve", "research", "create", "evolve", "frontend-design", "frontend-design-discover", "plan") and not design_existing:
         print(
             f"Error: --focus (targeted mode) only works in improve, research, create, evolve, frontend-design, "
-            f"or frontend-design-discover mode, "
+            f"frontend-design-discover, or plan mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,
         )
