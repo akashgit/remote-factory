@@ -45,6 +45,19 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "run --mode improve afterward to harden what works. "
             "The full step-by-step playbook is in your system prompt above."
         ),
+        "plan": (
+            "\n\nRun Plan mode: prior plan check + research + strategy + optional GitHub publishing "
+            "with NO implementation. "
+            "First check GitHub issues (plan label) and .factory/archive/ for prior plans matching "
+            "the focus topic — if found, ask the user whether to continue an existing plan or start fresh. "
+            "Run 3 parallel researchers (domain, practices, constraints), CEO review gate, then "
+            "synthesize a phased plan via the Strategist, then three sequential user gates: "
+            "1) Keep this plan? (yes → continue, no → discard and exit), "
+            "2) Publish to GitHub? (yes → post as issue, no → skip), "
+            "3) Seed backlog? (yes → extract phases to backlog.md with issue refs, no → done). "
+            "Do NOT transition to build or improve mode — plan mode is terminal. "
+            "If the user previously ran plan mode, check for prior plans before researching.\n"
+        ),
     }
     if mode == "discover":
         if discover_only:

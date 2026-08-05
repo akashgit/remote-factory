@@ -142,6 +142,18 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
+    "plan": {
+        "description": (
+            "Plan mode — prior plan check + research + strategy + keep/publish/seed approve, "
+            "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
+            "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "
+            "Three sequential gates: Keep plan? → Publish to GitHub? → Seed backlog? "
+            "Terminal — does not chain to build or improve. Use when the user says 'plan X', "
+            "'just plan', 'research and plan but don't build', or wants strategic analysis "
+            "without code changes."
+        ),
+        "argument_hint": "<project_path> [--focus <topic>]",
+    },
     "founder": {
         "description": (
             "Founder mode — rapid prototyping pipeline for fast hypothesis iteration. "
