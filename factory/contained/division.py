@@ -1,4 +1,4 @@
-"""The local container-manufacturing plane — opt-in via `--division` (spec §5).
+"""The local container-manufacturing plane — opt-in via `--division`.
 
 The division gives the contained agent the *host's* podman engine, so it can build an image, run it,
 read the failure and iterate.
@@ -7,15 +7,13 @@ read the failure and iterate.
 its own, and giving it one means nested containerization — which needs a privileged container or a
 user-namespace configuration that is fragile on Linux and unavailable inside the macOS podman
 machine. So the division reaches outward, and it is opt-in and separately named for exactly that
-reason. (Under the previous runtime the reason was different — a seccomp filter blocked `mount` and
-`CLONE_NEWUSER` for the agent and every child — but the conclusion is the same.)
+reason.
 
 **What that costs, stated plainly.** For the life of the run, anything that can reach port 8430 can
-build and run containers on the host. `podman-mcp-server` has no authentication and the pivot
-removed the enforcement point that used to sit in front of it, so the mitigation here is disclosure
-rather than technology: a loud warning naming the endpoint and its lifetime, and a shutdown tied to
-the run rather than left to chance. §5.2 of the design records what tightening looks like when that
-time comes.
+build and run containers on the host, on every network interface. `podman-mcp-server` has no
+authentication and nothing enforces access in front of it, so the mitigation is disclosure rather
+than technology: a warning that names the bind address and the exposure, and a shutdown tied to the
+run rather than left to chance.
 
 Four mechanical details, each of which fails silently if got wrong:
 
@@ -28,8 +26,8 @@ Four mechanical details, each of which fails silently if got wrong:
   VM's gateway rather than to macOS. `probe_host_alias` asks rather than assumes. (Probed on this
   machine — macOS, libkrun, rootful — all three candidates reach a server bound on the host.)
 - **The server must outlive the command that started it**, which is the one place this module
-  departs from a literal reading of §5.1. The launch returns as soon as the detached tmux session
-  exists, by design (§3.1), while the run continues for minutes or hours; a server whose lifetime
+  departs from a literal reading of. The launch returns as soon as the detached tmux session
+  exists, by design, while the run continues for minutes or hours; a server whose lifetime
   was the launcher's would be gone before the agent's first build. So it is detached into its own
   process group, its PGID is recorded next to the workspace, and `factory contained rm` stops it.
 """
@@ -69,7 +67,7 @@ STARTUP_TIMEOUT = 90.0
 
 # Candidates for "the host", most-canonical first. `host.containers.internal` is podman's own name
 # and is right on Linux; on macOS it resolves to the podman machine VM rather than to macOS, so the
-# gvproxy host-gateway address is tried next. Probed, never assumed (spec §5.1, open item F6).
+# gvproxy host-gateway address is tried next. Probed rather than assumed.
 HOST_CANDIDATES = (HOST_ALIAS, "192.168.127.254", "host.docker.internal")
 
 DIVISION_BRIEF_PATH = ".factory/division/README.md"
@@ -120,7 +118,7 @@ class Division:
 
         **The endpoint has to outlive the command that started it.** The launch returns as soon as
         the detached tmux session exists — that is what lets it print the run's identifier instead
-        of blocking for the length of a cycle (spec §3.1) — but the run itself keeps going for
+        of blocking for the length of a cycle — but the run itself keeps going for
         minutes or hours afterwards. A server tied to the launching process would be gone before
         the agent's first build, and the agent would see a connection error that reads like a
         podman fault.
@@ -411,7 +409,7 @@ def _with_division(plan: ContainerPlan, endpoint: str) -> ContainerPlan:
 
     The brief is not decoration. Without it, a Refiner given only the tool registration scoped 165
     lines of new CLI code to wrap the tools it already had, while its own task text forbade
-    modifying source (spec §5.4).
+    modifying source.
     """
     return dataclasses.replace(
         plan,

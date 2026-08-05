@@ -11,7 +11,7 @@ command fails inside with a plain "no such file", which is the honest outcome: `
 a path is made available on purpose.
 
 Locally the rewrite is usually a no-op, because the workspace copy is bind-mounted at its own
-absolute path — identical inside and out (spec §2.5). That is not a reason to skip it: the payload
+absolute path — identical inside and out. That is not a reason to skip it: the payload
 still names the *original* project path, which is a different directory from the copy, and the k8s
 target rewrites to `/workspace/<name>` where nothing coincides.
 """

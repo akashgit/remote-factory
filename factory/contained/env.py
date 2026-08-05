@@ -1,10 +1,8 @@
 """Which environment variables cross into a contained run, and what is masked when one is printed.
 
-**This inverts the pre-pivot policy, and the inversion is the point (spec §3.5).** The OpenShell
-runtime forwarded `FACTORY_` only and pinned `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` to inert
-values, specifically so no credential prefix crossed the boundary — a gateway outside the sandbox
-held the real material. There is no gateway now. `CLAUDE_CODE_*` and `CLOUD_ML_*` must cross for
-the Vertex path to work at all, and `ANTHROPIC_API_KEY` must cross for the direct path.
+Credential material genuinely crosses into the runtime: nothing outside it terminates inference on
+its behalf. `CLAUDE_CODE_*` and `CLOUD_ML_*` have to cross for the Vertex path to work, and
+`ANTHROPIC_API_KEY` for the direct one.
 
 So the policy is: `FACTORY_` by default, plus exactly what `--forward` names, plus the backend
 variables the resolved credential shape requires (`factory.contained.credentials`). Nothing
@@ -98,7 +96,7 @@ def redact_env(env: dict[str, str], policy: EnvPolicy) -> dict[str, str]:
 def redact_argv(argv: list[str], policy: EnvPolicy) -> list[str]:
     """Mask secret-looking `--env KEY=VALUE` pairs in a composed command line.
 
-    Credentials now genuinely cross the boundary (spec §3.5), so this is no longer a belt-and-braces
+    Credentials now genuinely cross the boundary, so this is no longer a belt-and-braces
     check against a policy that already refused to forward them — it is the only thing standing
     between a real API key and every dry-run transcript, log line and evidence file.
     """

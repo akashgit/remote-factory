@@ -3,18 +3,18 @@
 A run never writes the host's working tree. It works on a copy, bind-mounted at *its own* absolute
 path — identical inside and out — which is what lets the local division's builds resolve a
 Containerfile on the host and read what the agent actually wrote. Those builds are executed by an
-engine outside the container (spec §5), which resolves the context path in its own filesystem
+engine outside the container, which resolves the context path in its own filesystem
 namespace; mounting the copy at the *original* path instead would give the agent one tree and the
 build another, and the divergence surfaces as "file not found" for a file the agent can plainly see.
 
-The copy always starts from the files on this machine, uncommitted changes included (spec §2.1a).
+The copy always starts from the files on this machine, uncommitted changes included.
 Git projects get a worktree from HEAD — cheap, sharing the object store, and the run's work is
 already on a branch when it comes back — and the working tree is then synced over the top, because
 the whole point of a contained run is to exercise code that is not committed yet. Everything else
 is rsynced.
 
 Copies live under `~/.factory-contained/`, deliberately not under `~/.factory/`, which is itself
-bind-mounted read-write (spec §3.3) — nesting them would produce overlapping bind mounts.
+bind-mounted read-write — nesting them would produce overlapping bind mounts.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def git_common_dir(source: Path) -> Path | None:
 
     A worktree's `.git` is a file, not a directory, so the original repository's git directory has
     to be mounted too or every git command inside the container fails on a path that exists on the
-    host and not in the container (spec §3.2). `--git-common-dir` rather than `--git-dir` because
+    host and not in the container. `--git-common-dir` rather than `--git-dir` because
     the source may itself be a worktree, in which case only the common dir holds the objects.
     """
     result = subprocess.run(

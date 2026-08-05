@@ -1,8 +1,7 @@
 """Podman integration — composing the commands that run the factory inside a container.
 
-Everything that knows about the `podman` CLI lives here (spec §5.3). The surface is external and
-moves independently of the factory, and one file to fix is the difference between a version bump
-and an archaeology session.
+Everything that knows about the `podman` CLI lives here. That surface is external and moves
+independently of the factory, so keeping it in one file means one place to fix when it changes.
 
 The module **composes** command lines and does not execute them; execution and error handling live
 in `factory.cli.contained`. That split is what makes `FACTORY_CONTAINED_DRY_RUN=1` honest — dry-run
@@ -14,16 +13,14 @@ Two shapes deserve explanation up front.
 whose PID 1 neither forwards signals nor reaps children accumulates zombies and ignores `podman
 stop`. So the container is created with `--init` (podman's catatonit becomes PID 1) around a
 trivial `sleep infinity`, and the run itself is started afterwards inside tmux. The process tree
-then has a supervisor at both levels (spec §3.1).
+then has a supervisor at both levels.
 
-**Why the factory starts via `exec` rather than as the container's command.** Spec §2.1a requires
-the provenance assertions to run after the workspace is in place and *before* the first agent call,
-and to abort naming the file and the likely cause. Folding them into the container's command would
-put their failure inside `podman logs`, where the host has to poll for container death and guess
-which assertion broke. Running them as `podman exec` steps between create and run keeps per-probe
-exit codes and stderr on the host, which is where the message a user reads is composed. Nothing
-about ordering forces this — mounts, environment and labels are all supplied at create time, which
-is the constraint the pivot away from OpenShell actually removed.
+**Why the factory starts via `exec` rather than as the container's command.** The provenance
+assertions have to run after the workspace is in place and *before* the first agent call, and to
+abort naming the file and the likely cause. Folding them into the container's command would put
+their failure inside `podman logs`, where the host has to poll for container death and guess which
+assertion broke. Running them as `podman exec` steps between create and run keeps per-probe exit
+codes and stderr on the host, which is where the message a user reads is composed.
 """
 
 from __future__ import annotations
@@ -51,16 +48,16 @@ LABEL_SOURCE = "factory.source"
 TMUX_SESSION = "factory"
 
 # The runtime image's home directory. The container runs under an arbitrary UID matched to the
-# workspace's owner (§3.2), which usually has no /etc/passwd entry — so `$HOME` has to be stated
+# workspace's owner, which usually has no /etc/passwd entry — so `$HOME` has to be stated
 # explicitly or the shell inherits `/` and everything that writes a dotfile writes it to the image's
 # read-only root. Anything home-relative on the host (`~/.factory`, gcloud's ADC) is mounted under
 # this rather than at its host path.
 CONTAINER_HOME = "/home/factory"
 
-# The container's PID-1 payload under `--init`. It has to outlive the factory: spec §3.4 keeps the
+# The container's PID-1 payload under `--init`. It has to outlive the factory:.4 keeps the
 # container after the run ends, because a failed run is exactly when its state is worth reading.
 # `sleep infinity` dies on SIGTERM, so `podman stop` still completes inside the grace period rather
-# than escalating to SIGKILL — which is what §3.6 step 6 checks.
+# than escalating to SIGKILL — which is what.6 step 6 checks.
 IDLE_COMMAND = "sleep infinity"
 
 # The two variables that feed growth dimensions. They merge 50/50 into the composite score, so their
@@ -68,7 +65,7 @@ IDLE_COMMAND = "sleep infinity"
 GROWTH_CONTEXT_VARS = ("FACTORY_MANAGED_DIRS", "FACTORY_VAULT_PATH")
 
 # podman's name for the host. On macOS the container runs inside the podman machine VM, so this
-# resolves to the VM's gateway rather than to macOS itself — see spec §5.1/F6, and
+# resolves to the VM's gateway rather than to macOS itself —.1/F6, and
 # `factory.contained.division`, which probes rather than assumes.
 HOST_ALIAS = "host.containers.internal"
 
@@ -113,7 +110,7 @@ class Mount:
 
     `target` is a full path, not a parent: unlike an upload, a bind mount lands exactly where it is
     told. Locally `source` and `target` are the same string for the workspace, which is the
-    path-preserving property §2.5 depends on — the local division's builds are executed by an engine
+    path-preserving property.5 depends on — the local division's builds are executed by an engine
     *outside* the container and resolve their context path in the host engine's namespace.
     """
 
@@ -262,7 +259,7 @@ def build_info_argv() -> list[str]:
 def build_stat_argv(image: str, mount: Mount, *, user: str | None = None) -> list[str]:
     """Compose a throwaway container that reports a mount's ownership as the container sees it.
 
-    §3.2 refuses to encode an identity rule that is wrong for one of rootless / rootful / macOS.
+   .2 refuses to encode an identity rule that is wrong for one of rootless / rootful / macOS.
     This is the measurement that replaces the rule: mount the path, ask the kernel inside the
     container who owns it, and match the run's identity to the answer.
     """

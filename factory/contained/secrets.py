@@ -1,4 +1,4 @@
-"""Scanning a workspace for secrets before it leaves the machine (spec §4.5).
+"""Scanning a workspace for secrets before it leaves the machine.
 
 The k8s path copies a developer's working tree onto cluster storage, and a `.env` or a stray key
 file goes with it. [Gitleaks](https://github.com/gitleaks/gitleaks) runs over the packed tree —

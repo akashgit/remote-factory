@@ -20,8 +20,6 @@ a mode of it, so the host never parses what you pass and cannot break when the C
     agent-authored code, it is **not** a multi-tenant boundary, and it does **not** replace review.
     See [What each target actually guarantees](#what-each-target-actually-guarantees).
 
-Design and evidence: `docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md`.
-
 ---
 
 ## Quick start

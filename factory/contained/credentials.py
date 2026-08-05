@@ -1,9 +1,8 @@
 """Resolving how a contained run reaches inference — by shape, never by material.
 
-**This section of the design reverses the previous one (spec §3.5).** There is no gateway to
-terminate inference, so the container holds credential material directly. Pretending otherwise
-would leave the runtime unable to make a single agent call, so the honest thing is to name exactly
-what crosses and refuse to guess anything else.
+The container holds credential material directly — nothing outside it terminates inference on its
+behalf. Since that cannot be avoided, the next best thing is to name exactly what crosses and refuse
+to guess anything else.
 
 Three supported shapes, all explicit:
 
@@ -45,7 +44,7 @@ class CredentialShape:
     """How a run reaches inference, described without naming any material.
 
     `home_mounts` pairs a host path with a path *relative to the container's home directory*, not
-    an absolute one. The workspace is mounted path-preservingly (spec §2.5) but a credential store
+    an absolute one. The workspace is mounted path-preservingly but a credential store
     is not: gcloud looks under `$HOME/.config/gcloud` inside the container, and the container's home
     is not the host's. Leaving the destination home-relative keeps that mapping in one place — the
     caller, which is the only thing that knows the container's home.
@@ -72,7 +71,7 @@ def resolve_credentials(
     Checked in the order a user would expect to win: an explicitly configured Vertex setup, then a
     direct API key, then a credential profile already sitting in the mounted `~/.factory/`. The
     profile case comes last because it needs `--profile` in the payload to take effect, which the
-    host cannot see — the payload after `--` is opaque by design (spec §2.4).
+    host cannot see — the payload after `--` is opaque by design.
     """
     env = dict(os.environ if environ is None else environ)
     config = config_path or FACTORY_CONFIG
@@ -85,7 +84,7 @@ def resolve_credentials(
             ok=True,
             detail=(
                 f"Anthropic API, key from ANTHROPIC_API_KEY, model {_model(env)}. The key crosses "
-                "into the container (spec §3.5)."
+                "into the container."
             ),
             env={"ANTHROPIC_API_KEY": env["ANTHROPIC_API_KEY"]},
         )
@@ -185,7 +184,7 @@ def vertex_model_warning(shape: CredentialShape, factory_args: list[str]) -> str
 
     A warning rather than an error, and the one place the host looks inside the payload beyond path
     rewriting: it inspects for the presence of a token, never its meaning, so it cannot break when
-    the CLI grows a subcommand (spec §2.4). Left unwarned, the failure arrives as a 429 storm from
+    the CLI grows a subcommand. Left unwarned, the failure arrives as a 429 storm from
     a model whose quota is zero, which reads like a network fault.
     """
     if shape.backend != "vertex":

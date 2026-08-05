@@ -35,8 +35,8 @@ def render_seed_command(workspace: str, mcp_servers: tuple[str, ...] = ()) -> st
     onboarding marker) and `~/.claude` may be a mount the user opted into with `--mount`, in which
     case it is *their* file and clobbering it would discard real history.
 
-    Seeding the workspace path alone is *not* enough, and finding that out took a run: the CEO
-    works inside an experiment worktree whose directory carries a per-run id
+    Seeding the workspace path alone is *not* enough: the CEO works inside an experiment worktree
+    whose directory carries a per-run id
     (`.factory-worktrees/run-<id>`), and Claude Code resolves the project from the current
     directory. That path cannot be known at launch. So the two answers are given the only way that
     covers a directory not yet created — `hasTrustDialogAccepted` at the top level of

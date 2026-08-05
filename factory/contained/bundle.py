@@ -1,4 +1,4 @@
-"""The namespace prerequisite bundle — plain YAML the user applies (spec §8).
+"""The namespace prerequisite bundle — plain YAML the user applies.
 
 `factory contained bundle` prints it and never applies it. `factory contained --target k8s setup`
 prints it, asks, and then applies it *with the user's own credentials*. `factory contained verify`
@@ -23,7 +23,7 @@ SCC_ROLEBINDING = "factory-scc"
 
 # The verbs the *pod's* ServiceAccount needs, and no more.
 #
-# `pods/exec` is absent on purpose and its absence is load-bearing (spec §6.3, §11): the build
+# `pods/exec` is absent on purpose and its absence is load-bearing: the build
 # sidecar is a boundary only because the agent cannot exec into it. Adding this verb — for any
 # reason, including "attach would be easier" — hands the agent the shell path the sidecar exists to
 # close. Attach does not need it here: `factory contained attach` runs as *you*, with your
