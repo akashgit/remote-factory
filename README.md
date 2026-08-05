@@ -231,8 +231,11 @@ not a threat model. Neither confines agent-authored code, neither is a multi-ten
 neither replaces review — `contained` bounds *accidents* and gives runs a reproducible environment.
 The local target has no egress control and holds inference credentials inside the container;
 `--division` opens an unauthenticated container-control endpoint on localhost for the life of the
-run. All of this is deliberate and documented in
-[the design](docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md) §1.2 and §11.
+run. All of this is deliberate and documented.
+
+Full guide, with worked examples of every command: **[docs/contained.md](docs/contained.md)**.
+Design and evidence:
+[the design spec](docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md).
 
 ---
 
