@@ -1194,6 +1194,12 @@ def study_project_local(project_path: Path, *, focus: str | None = None, **kwarg
             ]
         )
 
+    from factory.mempalace.reader import mp_read as _mp_read
+
+    mp_context = _mp_read(project_path, task_hint=focus)
+    if mp_context:
+        lines.extend(["", "## Memory Context (MemPalace)", "", mp_context])
+
     return "\n".join(lines)
 
 

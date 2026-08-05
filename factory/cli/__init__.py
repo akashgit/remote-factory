@@ -75,6 +75,7 @@ from factory.cli.ceo import (
     cmd_tmux_ls as cmd_tmux_ls,
     cmd_tmux_stop as cmd_tmux_stop,
 )
+from factory.cli.mempalace import cmd_mempalace as cmd_mempalace
 from factory.cli.eval_cmds import (
     cmd_adversarial_state as cmd_adversarial_state,
     cmd_baseline as cmd_baseline,

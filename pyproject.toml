@@ -13,6 +13,7 @@ dependencies = [
     "filelock>=3.0",
     "networkx>=3.6.1",
     "langfuse>=3.0",
+    "mempalace>=3.6.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

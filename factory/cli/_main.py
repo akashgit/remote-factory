@@ -104,7 +104,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "mempalace"]),
     (
         "Configuration",
         [
@@ -1138,6 +1138,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_workflow_parser(sub)  # type: ignore[arg-type]
 
+    # mempalace — MemPalace operations (read, write, browse)
+    mp = sub.add_parser("mempalace", help="MemPalace operations (read, write, browse)")
+    mp_sub = mp.add_subparsers(dest="mempalace_action", required=True)
+
+    mp_read = mp_sub.add_parser("read", help="Read MemPalace context for a project")
+    mp_read.add_argument("project_path", help="Path to the project")
+    mp_read.add_argument("--task-hint", help="Task context for targeted retrieval")
+
+    mp_write = mp_sub.add_parser("write", help="Write project data to MemPalace")
+    mp_write.add_argument("project_path", help="Path to the project")
+
+    mp_browse = mp_sub.add_parser("browse", help="Browse palace hierarchy: wings → rooms → drawers")
+    mp_browse.add_argument("project_path", help="Path to the project")
+    mp_browse.add_argument("--wing", help="Filter to a specific wing")
+    mp_browse.add_argument("--room", help="Filter to a specific room (requires --wing)")
+    mp_browse.add_argument("--drawer", help="Show full content of a specific drawer by ID")
+
     return parser
 
 
@@ -1234,6 +1251,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
         ).cmd_workflow(a),
+        "mempalace": _cli.cmd_mempalace,
     }
 
     try:
