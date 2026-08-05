@@ -190,14 +190,12 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "Feature-to-UI pipeline that enforces a design system on every new "
             "feature. If a design system already exists on disk (from a prior "
             "discover run), skips the research phase and goes straight to spec "
-            "writing with a lightweight staleness check. If no design system "
-            "exists, runs the full 5-researcher pipeline first. Produces a UI "
-            "spec constrained by the baseline, gets user approval, builds with "
-            "discovered design rules enforced, then runs design-specific QA with "
-            "a two-tier gate (hard failures auto-revert, soft warnings surface "
-            "for review). Works on any frontend project with a defined "
-            "token/component system. Use when the user says 'frontend-design', "
-            "'design UI for X', or wants design-consistent frontend implementation."
+            "writing. If no design system exists, runs the full 5-researcher "
+            "pipeline first. Produces a UI spec constrained by the baseline, "
+            "gets user approval, builds with discovered design rules enforced, "
+            "then runs design-specific QA with a two-tier gate (hard failures "
+            "auto-revert, soft warnings surface for review). Use "
+            "frontend-design-refresh to update a stale design system."
         ),
         "argument_hint": "<project_path> --focus <feature description>",
     },
@@ -209,23 +207,30 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "synthesizes into design-baseline.json and rules.md. Run this once "
             "to establish the design system, review and edit the output, then "
             "use frontend-design (build) mode for each new feature without "
-            "re-running researchers. Supports external design system URLs via "
-            "--focus for cross-referencing (e.g., 'https://ux.redhat.com/'). "
-            "Use when the user says 'discover design system', 'extract design "
-            "system', or wants to establish design rules before building features."
+            "re-running researchers."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "frontend-design-refresh": {
+        "description": (
+            "Design system refresh — re-runs researchers against the current "
+            "codebase, diffs the results against the existing design system, "
+            "and presents a structured changeset for user approval before "
+            "updating. Use when the codebase has changed significantly since "
+            "the last discover/refresh and the design system needs updating. "
+            "The user reviews and approves each change — nothing is overwritten "
+            "without explicit approval."
         ),
         "argument_hint": "<project_path>",
     },
     "frontend-design-scan": {
         "description": (
-            "Continuous design health monitoring — scans the entire codebase for "
-            "design system drift without building anything. Researches tokens, "
-            "components, patterns, and UX quality, then runs all design check "
-            "scripts against every source file. Produces a structured health "
-            "report with per-dimension scores and trend data. Designed for use "
-            "with --loop for hourly continuous scanning. Use when the user says "
-            "'scan for design drift', 'check design health', or wants passive "
-            "design consistency monitoring."
+            "Design compliance audit with fix pipeline — scans the codebase "
+            "for design system violations, produces a structured health report "
+            "with per-dimension scores, then generates an actionable fix plan. "
+            "The user reviews and approves which fixes to apply. Approved fixes "
+            "are implemented by a builder and verified with a build gate. "
+            "HALT at the approval gate for report-only mode (no fixes)."
         ),
         "argument_hint": "<project_path>",
     },

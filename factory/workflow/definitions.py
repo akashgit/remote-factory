@@ -2392,8 +2392,8 @@ def frontend_design_workflow() -> Workflow:
     # ── Phase 0: Design System Existence Check ──
     # If the design system already exists on disk (from a previous discover
     # run), skip the full research pipeline and go straight to the spec
-    # writer via a lightweight staleness check. If it doesn't exist, fall
-    # through to the full 5-researcher pipeline.
+    # writer. If it doesn't exist, fall through to the full 5-researcher
+    # pipeline. Use frontend-design-refresh to update a stale design system.
 
     nodes["gate_design_system"] = GateNode(
         id="gate_design_system",
@@ -2404,18 +2404,6 @@ def frontend_design_workflow() -> Workflow:
             "[ -f $ds/infra-context.md ] && echo PROCEED || "
             "echo 'reloop: design system not found'"
         ),
-    )
-
-    nodes["staleness_checker"] = AgentNode(
-        id="staleness_checker",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Design system staleness check. Compare design-baseline.json "
-            "and rules.md against the current codebase for drift. "
-            "Write verdict (STALE/DRIFT/CURRENT) to "
-            ".factory/design-system/staleness-report.md."
-        ),
-        writes={".factory/design-system/staleness-report.md"},
     )
 
     # ── Phase 1: Design System Research (5 parallel researchers) ──
@@ -2841,7 +2829,7 @@ def frontend_design_workflow() -> Workflow:
         # Design system existence check (entry point)
         Edge(
             source="gate_design_system",
-            target="staleness_checker",
+            target="spec_writer",
             condition=VerdictType.PROCEED,
         ),
         Edge(
@@ -2849,8 +2837,6 @@ def frontend_design_workflow() -> Workflow:
             target="fork_design_research",
             condition=VerdictType.RELOOP,
         ),
-        # Staleness checker → spec writer (skip research)
-        Edge(source="staleness_checker", target="spec_writer"),
         # Fork to researchers (only reached via RELOOP from gate_design_system)
         Edge(source="fork_design_research", target="researcher_tokens"),
         Edge(source="fork_design_research", target="researcher_components"),
@@ -2933,14 +2919,15 @@ def frontend_design_workflow() -> Workflow:
 
 
 def frontend_design_scan_workflow() -> Workflow:
-    """W₁₃: Frontend Design Scan — continuous design health monitoring.
+    """W₁₃: Frontend Design Scan — compliance audit with fix pipeline.
 
     Fork(4 design researchers) → Join → Auditor →
     Fork(6 check scripts, full codebase) → Join →
-    Health report writer → Archivist(async)
+    Health report writer → Compliance planner → User gate →
+    Compliance builder → Build gate → Archivist(async)
 
-    No builder, no spec writer, no user gates — scan-only.
-    Designed for use with --loop for continuous hourly scanning.
+    Scans the codebase for design system violations, produces an
+    actionable fix plan, and applies approved fixes.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -3044,13 +3031,76 @@ def frontend_design_scan_workflow() -> Workflow:
         writes={".factory/design-system/health-report.json"},
     )
 
-    # ── Phase 5: Archivist (async) ──
+    # ── Phase 5: Compliance Plan + Fix Pipeline ──
+
+    nodes["compliance_planner"] = AgentNode(
+        id="compliance_planner",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Compliance planner. Read the health report and design system "
+            "rules. Produce an actionable fix plan at "
+            ".factory/design-system/compliance-plan.md listing each "
+            "violation with file, fix description, risk level, and scope. "
+            "Group related fixes. Separate auto-fixable from manual items."
+        ),
+        reads={
+            ".factory/design-system/health-report.json",
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+        writes={".factory/design-system/compliance-plan.md"},
+    )
+
+    nodes["gate_compliance_approve"] = GateNode(
+        id="gate_compliance_approve",
+        evaluator_type="user",
+        gate_prompt=(
+            "Review the compliance fix plan. It lists design system violations "
+            "and proposed fixes. PROCEED to apply the fixes, RELOOP with "
+            "feedback to revise the plan, HALT to skip fixes (report only)."
+        ),
+        reads={".factory/design-system/compliance-plan.md"},
+    )
+
+    nodes["compliance_builder"] = AgentNode(
+        id="compliance_builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Compliance builder. Read the approved compliance plan and apply "
+            "each fix. Follow the design system rules strictly. Only fix "
+            "items listed in the plan — do not refactor or change behavior. "
+            "After fixes, run tsc and lint to verify nothing is broken."
+        ),
+        reads={
+            ".factory/design-system/compliance-plan.md",
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+        writes={".factory/reviews/compliance-fixes.md"},
+    )
+
+    nodes["gate_compliance_build"] = GateNode(
+        id="gate_compliance_build",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && npx tsc --noEmit 2>&1 && npm run lint 2>&1 "
+            "&& echo PROCEED || echo FAIL"
+        ),
+        reads={".factory/reviews/compliance-fixes.md"},
+    )
+
+    # ── Phase 6: Archivist (async) ──
 
     nodes["archivist_scan"] = AgentNode(
         id="archivist_scan",
         role=AgentRole.ARCHIVIST,
-        prompt_template="Archive the design scan results and health report.",
-        reads={".factory/design-system/health-report.json"},
+        prompt_template=(
+            "Archive the design scan results, compliance plan, and fixes."
+        ),
+        reads={
+            ".factory/design-system/health-report.json",
+            ".factory/design-system/compliance-plan.md",
+        },
         writes={".factory/archive/design-scan.md"},
         blocking=False,
     )
@@ -3078,8 +3128,37 @@ def frontend_design_scan_workflow() -> Workflow:
         *[Edge(source=name, target="join_scan_checks") for name, _ in check_scripts],
         # Join → health report
         Edge(source="join_scan_checks", target="health_report_writer"),
-        # Health report → archivist
-        Edge(source="health_report_writer", target="archivist_scan"),
+        # Health report → compliance planner
+        Edge(source="health_report_writer", target="compliance_planner"),
+        # Compliance planner → user approval
+        Edge(source="compliance_planner", target="gate_compliance_approve"),
+        Edge(
+            source="gate_compliance_approve",
+            target="compliance_builder",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_compliance_approve",
+            target="compliance_planner",
+            condition=VerdictType.RELOOP,
+        ),
+        Edge(
+            source="gate_compliance_approve",
+            target="archivist_scan",
+            condition=VerdictType.HALT,
+        ),
+        # Builder → build gate
+        Edge(source="compliance_builder", target="gate_compliance_build"),
+        Edge(
+            source="gate_compliance_build",
+            target="archivist_scan",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_compliance_build",
+            target="compliance_builder",
+            condition=VerdictType.RELOOP,
+        ),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -3764,6 +3843,272 @@ def evolve_workflow() -> Workflow:
     )
 
 
+# ── W₁₅: Frontend Design Refresh — Update Design System ──────
+
+
+def frontend_design_refresh_workflow() -> Workflow:
+    """W₁₅: Frontend Design Refresh — update an existing design system.
+
+    Fork(5 design researchers) → Join → CEO gate → Refresh Auditor →
+    CEO gate → Refresh Differ → User gate → Apply Changes → Archivist(async)
+
+    Re-runs researchers against the current codebase, diffs against
+    the existing design system, and presents a structured changeset
+    for user approval before updating.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Phase 1: Design System Research (5 parallel researchers) ──
+
+    nodes["fork_refresh_research"] = ForkNode(
+        id="fork_refresh_research",
+        targets=[
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+            "researcher_infra",
+        ],
+    )
+
+    nodes.update(_design_researcher_nodes())
+
+    nodes["researcher_infra"] = AgentNode(
+        id="researcher_infra",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Infrastructure context research. "
+            "Discover the backend deployment architecture by reading Dockerfile, "
+            "docker-compose.yml, k8s/ manifests, and Helm charts. Identify what "
+            "environment the backend runs in (container, K8s pod, VM, serverless) "
+            "and what system tools are available inside the container. "
+            "Examine the backend API architecture: framework (FastAPI, Flask, etc.), "
+            "router registration pattern, how new endpoints are added, existing "
+            "endpoint inventory. Map resource access patterns: how the backend "
+            "reaches external resources — K8s API via in-cluster config, SSH "
+            "backends, database connections, external APIs. Document data sources: "
+            "where data comes from (K8s node resources, subprocess calls, database "
+            "queries, external APIs) and which client libraries are available. "
+            "Write to .factory/design-system/infra-context.md."
+        ),
+        writes={".factory/design-system/infra-context.md"},
+    )
+
+    nodes["join_refresh_research"] = JoinNode(
+        id="join_refresh_research",
+        sources=[
+            "researcher_tokens", "researcher_components", "researcher_patterns",
+            "researcher_ux", "researcher_infra",
+        ],
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+    )
+
+    nodes["gate_refresh_research"] = GateNode(
+        id="gate_refresh_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify all five design research artifacts exist and are substantive. "
+            "RELOOP if any artifact is empty or clearly fabricated. "
+            "PROCEED if all five have real data."
+        ),
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+    )
+
+    # ── Phase 2: Refresh Auditor (synthesize NEW baseline + rules) ──
+
+    nodes["refresh_auditor"] = AgentNode(
+        id="refresh_auditor",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design system auditor (refresh mode). "
+            "Read all five research files. Synthesize into staged outputs: "
+            "(1) .factory/design-system/design-baseline.json.new — the new "
+            "baseline reflecting the current codebase state. "
+            "(2) .factory/design-system/rules.md.new — the new rules. "
+            "Write to .new staging files — do NOT overwrite the existing "
+            "design-baseline.json or rules.md. The differ will compare "
+            "old vs new and the user will approve changes before they "
+            "are applied. Preserve any MANUAL OVERRIDES section from the "
+            "existing rules.md in the new version."
+        ),
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
+        },
+        writes={
+            ".factory/design-system/design-baseline.json.new",
+            ".factory/design-system/rules.md.new",
+        },
+    )
+
+    nodes["gate_refresh_audit"] = GateNode(
+        id="gate_refresh_audit",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify design-baseline.json.new is valid JSON with token_registry, "
+            "component_inventory, and pattern_library keys. "
+            "Verify rules.md.new contains both HARD RULES and SOFT GUIDELINES. "
+            "RELOOP if malformed. PROCEED if structurally valid."
+        ),
+        reads={
+            ".factory/design-system/design-baseline.json.new",
+            ".factory/design-system/rules.md.new",
+        },
+    )
+
+    # ── Phase 3: Diff old vs new, present changeset for user approval ──
+
+    nodes["refresh_differ"] = AgentNode(
+        id="refresh_differ",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design system refresh differ. Compare the existing "
+            "design-baseline.json and rules.md against the newly produced "
+            "design-baseline.json.new and rules.md.new. Produce a structured "
+            "changeset at .factory/design-system/refresh-changeset.md listing "
+            "all added, removed, and changed tokens, components, rules, and "
+            "infrastructure details with impact assessments. The user will "
+            "review this changeset before changes are applied."
+        ),
+        reads={
+            ".factory/design-system/design-baseline.json.new",
+            ".factory/design-system/rules.md.new",
+        },
+        writes={".factory/design-system/refresh-changeset.md"},
+    )
+
+    nodes["gate_refresh_approve"] = GateNode(
+        id="gate_refresh_approve",
+        evaluator_type="user",
+        gate_prompt=(
+            "Review the design system changeset. It shows what changed in the "
+            "codebase since the last discover/refresh. PROCEED to apply the "
+            "updates to the design system, RELOOP with feedback to revise, "
+            "HALT to keep the existing design system unchanged."
+        ),
+        reads={".factory/design-system/refresh-changeset.md"},
+    )
+
+    # ── Phase 4: Apply approved changes ──
+
+    nodes["refresh_applier"] = FnNode(
+        id="refresh_applier",
+        command=(
+            "cd {project_path}/.factory/design-system && "
+            "mv design-baseline.json.new design-baseline.json && "
+            "mv rules.md.new rules.md && "
+            "echo 'Design system updated successfully'"
+        ),
+        reads={
+            ".factory/design-system/design-baseline.json.new",
+            ".factory/design-system/rules.md.new",
+        },
+        writes={
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+    )
+
+    nodes["archivist_refresh"] = AgentNode(
+        id="archivist_refresh",
+        role=AgentRole.ARCHIVIST,
+        prompt_template=(
+            "Archive the design system refresh. Record what changed "
+            "and the user's approval decision."
+        ),
+        reads={
+            ".factory/design-system/refresh-changeset.md",
+            ".factory/design-system/design-baseline.json",
+        },
+        writes={".factory/archive/design-refresh.md"},
+        blocking=False,
+    )
+
+    # ── Edges ──
+
+    edges = [
+        # Fork to researchers
+        Edge(source="fork_refresh_research", target="researcher_tokens"),
+        Edge(source="fork_refresh_research", target="researcher_components"),
+        Edge(source="fork_refresh_research", target="researcher_patterns"),
+        Edge(source="fork_refresh_research", target="researcher_ux"),
+        Edge(source="fork_refresh_research", target="researcher_infra"),
+        # Researchers to join
+        Edge(source="researcher_tokens", target="join_refresh_research"),
+        Edge(source="researcher_components", target="join_refresh_research"),
+        Edge(source="researcher_patterns", target="join_refresh_research"),
+        Edge(source="researcher_ux", target="join_refresh_research"),
+        Edge(source="researcher_infra", target="join_refresh_research"),
+        # Join → research gate
+        Edge(source="join_refresh_research", target="gate_refresh_research"),
+        Edge(
+            source="gate_refresh_research",
+            target="refresh_auditor",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_refresh_research",
+            target="fork_refresh_research",
+            condition=VerdictType.RELOOP,
+        ),
+        # Auditor → audit gate
+        Edge(source="refresh_auditor", target="gate_refresh_audit"),
+        Edge(
+            source="gate_refresh_audit",
+            target="refresh_differ",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_refresh_audit",
+            target="refresh_auditor",
+            condition=VerdictType.RELOOP,
+        ),
+        # Differ → user approval
+        Edge(source="refresh_differ", target="gate_refresh_approve"),
+        Edge(
+            source="gate_refresh_approve",
+            target="refresh_applier",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_refresh_approve",
+            target="refresh_differ",
+            condition=VerdictType.RELOOP,
+        ),
+        # Apply → archivist
+        Edge(source="refresh_applier", target="archivist_refresh"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "frontend-design-refresh"
+
+    return Workflow(
+        name="frontend-design-refresh",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_refresh_research",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 _BUILTIN_REGISTRY: dict[str, Any] | None = None
@@ -3792,6 +4137,7 @@ def _get_builtin_registry() -> dict[str, Any]:
         "founder": founder_workflow,
         "frontend-design": frontend_design_workflow,
         "frontend-design-discover": frontend_design_discover_workflow,
+        "frontend-design-refresh": frontend_design_refresh_workflow,
         "frontend-design-scan": frontend_design_scan_workflow,
         "parallel-improve": parallel_improve_workflow,
         "plan": plan_workflow,
