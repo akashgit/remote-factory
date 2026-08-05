@@ -174,8 +174,8 @@ def _object_checks(binary: str, namespace: str, division: bool) -> list[Check]:
                 detail=f"{kind}/{name} present" if ok else f"{kind}/{name} is missing",
                 fix=(
                     None if ok else
-                    f"factory contained bundle --namespace {namespace}"
-                    f"{' --division' if division else ''} | {binary} apply -f -"
+                    f"factory contained --namespace {namespace}"
+                    f"{' --division' if division else ''} bundle | {binary} apply -f -"
                 ),
             )
         )
@@ -217,8 +217,8 @@ def _verb_checks(namespace: str, division: bool) -> list[Check]:
             ),
             fix=(
                 None if ok else
-                f"factory contained bundle --namespace {namespace}"
-                f"{' --division' if division else ''} | oc apply -f -"
+                f"factory contained --namespace {namespace}"
+                f"{' --division' if division else ''} bundle | oc apply -f -"
             ),
         ),
         _no_exec_check(namespace),
@@ -336,7 +336,7 @@ def _inference_check(binary: str, namespace: str, image: str) -> Check:
                 name="inference_from_cluster",
                 ok=False,
                 detail=f"the probe pod could not be created: {created.stderr.strip()[:160]}",
-                fix=f"factory contained bundle --namespace {namespace} | {binary} apply -f -",
+                fix=f"factory contained --namespace {namespace} bundle | {binary} apply -f -",
             )
         waited = subprocess.run(
             [binary, "wait", f"pod/{pod}", "-n", namespace,
@@ -492,16 +492,37 @@ def setup_k8s(
         return 2
 
     manifest = render_bundle(namespace=target, division=division, image=resolve_image())
-    print(f"About to apply the following to namespace {target} with your own {binary} credentials:")
+    apply_line = (f"  factory contained --namespace {target}"
+                  f"{' --division' if division else ''} bundle | {binary} apply -f -")
+
+    # Say the outcome before printing 80 lines of YAML that would otherwise bury it — and check the
+    # blocker the user actually has. With no cluster reachable, nothing could be applied whatever
+    # they answer, and "About to apply..." would be untrue.
+    reachable = _run([binary, "config", "current-context"])
+    if reachable is None or reachable.returncode != 0 or not reachable.stdout.strip():
+        print(
+            f"No cluster is selected, so nothing can be applied to {target} from here.\n"
+            f"Log in first (`{binary} login ...`), then re-run. The manifest you will need is "
+            "below; you can also hand it to whoever owns the namespace:\n"
+            f"{apply_line}\n",
+            file=sys.stderr,
+        )
+        print(manifest)
+        return 1
+
+    if not (assume_yes or _confirm_first(interactive, target, binary)):
+        print(
+            f"Nothing was applied. Apply it yourself, or hand it to whoever owns {target}:\n"
+            f"{apply_line}\n",
+            file=sys.stderr,
+        )
+        print(manifest)
+        return 1
+
+    print(f"Applying to namespace {target} with your own {binary} credentials:")
     print()
     print(manifest)
     print()
-
-    if not (assume_yes or _confirm(interactive)):
-        print("Nothing was applied. Hand the manifest above to whoever owns the namespace:")
-        print(f"  factory contained bundle --namespace {target}"
-              f"{' --division' if division else ''} | {binary} apply -f -")
-        return 1
 
     try:
         result = subprocess.run(
@@ -518,8 +539,7 @@ def setup_k8s(
         print(f"Applying the bundle failed: {result.stderr.strip()}", file=sys.stderr)
         print(
             "If this is a permissions problem, hand the manifest above to whoever owns the "
-            f"namespace:\n  factory contained bundle --namespace {target}"
-            f"{' --division' if division else ''} | {binary} apply -f -",
+            f"namespace:\n{apply_line}",
             file=sys.stderr,
         )
 
@@ -532,15 +552,18 @@ def setup_k8s(
     print(render_checks(
         checks,
         ready_command=f"factory contained --target k8s --namespace {target} -- ceo <path>",
+        setup_command=None,
     ))
     return 0 if all(c.ok for c in checks) else 1
 
 
-def _confirm(interactive: bool) -> bool:
+def _confirm_first(interactive: bool, namespace: str, binary: str) -> bool:
+    """Ask before applying — and when there is nobody to ask, say so once, plainly."""
     if not interactive:
         print(
-            "Not a terminal, and --yes was not given: nothing will be applied.",
+            "Not a terminal and --yes was not given, so nothing will be applied.",
             file=sys.stderr,
         )
         return False
-    return input("Apply it? [y/N] ").strip().lower() in ("y", "yes")
+    print(f"This will create the objects below in namespace {namespace} using your {binary} login.")
+    return input("Apply them? [y/N] ").strip().lower() in ("y", "yes")

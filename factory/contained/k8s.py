@@ -45,42 +45,35 @@ LOADER_CONTAINER = "workspace-loader"
 SIDECAR_CONTAINER = "build-sidecar"
 
 SERVICE_ACCOUNT = "factory"
-
-# The build sidecar runs a **different image** from the agent's container, and that is the whole
-# point (spec §7): it is the only holder of `oc` and the ServiceAccount token, and the runtime image
-# deliberately has neither. Using one image for both quietly collapses the boundary the k8s division
-# is built on — and fails loudly the first time a build is requested, with `oc: command not found`.
-SIDECAR_IMAGE_ENV = "FACTORY_CONTAINED_SIDECAR_IMAGE"
-DEFAULT_SIDECAR_IMAGE = "quay.io/openshift/origin-cli:latest"
-
-
-def resolve_sidecar_image(env: dict[str, str] | None = None) -> str:
-    import os
-
-    source = os.environ if env is None else env
-    return source.get(SIDECAR_IMAGE_ENV) or DEFAULT_SIDECAR_IMAGE
 PVC_NAME = "factory-workspace"
 SECRET_NAME = "factory-credentials"
+
+# The build sidecar runs a different image from the agent's container, and that is the whole point:
+# it is the only holder of `oc` and the ServiceAccount token, and the runtime image deliberately has
+# neither. Using one image for both collapses that separation — and fails at the first build with
+# `oc: command not found`.
+SIDECAR_IMAGE_ENV = "FACTORY_CONTAINED_SIDECAR_IMAGE"
+DEFAULT_SIDECAR_IMAGE = "quay.io/openshift/origin-cli:latest"
 
 LABEL_CONTAINED = "factory.contained"
 LABEL_PROJECT = "factory.project"
 LABEL_NAME = "factory.name"
 LABEL_RUN = "factory.run"
 
-# The marker the loader waits for, **per run**. Inside the PVC rather than in a shared emptyDir so a
-# pod that restarts after a successful unpack does not re-request the tarball it already has — and
-# named after the run because the PVC outlives the run that filled it. A single shared marker means
-# the *next* run finds it already present, skips its own upload, and quietly executes against the
-# previous run's files: a provenance failure of exactly the kind §2.1a exists to prevent, and one
-# that produces a plausible-looking result.
-
-
-def unpack_marker(run_name: str) -> str:
-    return f"{WORKSPACE_ROOT}/.factory-unpacked-{run_name}"
-
 # How long the loader waits for the host before giving up. Long enough for a large repository over a
 # slow link; short enough that a host that died mid-upload does not pin a pod indefinitely.
 LOADER_TIMEOUT_SECONDS = 900
+
+
+def unpack_marker(run_name: str) -> str:
+    """The marker the loader waits for, per run.
+
+    It lives on the PVC rather than in a shared emptyDir so a pod that restarts after a successful
+    unpack does not re-request the tarball it already has. It is named after the run because the PVC
+    outlives the run that filled it: one shared marker would let the *next* run find it, skip its own
+    upload, and quietly execute against the previous run's files.
+    """
+    return f"{WORKSPACE_ROOT}/.factory-unpacked-{run_name}"
 
 
 class ClusterError(ContainedError):
@@ -104,7 +97,7 @@ def cli_binary() -> str:
 
 
 def current_namespace() -> str | None:
-    """The namespace from the current context. Never hardcoded (spec §2.2)."""
+    """The namespace from the current context. Never hardcoded."""
     result = _run([cli_binary(), "config", "view", "--minify", "-o",
                    "jsonpath={..namespace}"])
     if result is None or result.returncode != 0:
@@ -112,12 +105,33 @@ def current_namespace() -> str | None:
     return result.stdout.strip() or None
 
 
+def has_cluster_context() -> bool:
+    """Whether a cluster is configured at all.
+
+    `ls` spans both targets, and a laptop that has never touched a cluster should not be told its
+    cluster is broken. This separates "not set up" from "set up and unreachable".
+    """
+    result = _run([cli_binary(), "config", "current-context"], timeout=15)
+    return result is not None and result.returncode == 0 and bool(result.stdout.strip())
+
+
+def resolve_sidecar_image(env: dict[str, str] | None = None) -> str:
+    import os
+
+    source = os.environ if env is None else env
+    return source.get(SIDECAR_IMAGE_ENV) or DEFAULT_SIDECAR_IMAGE
+
+
 def resolve_namespace(explicit: str | None) -> str:
     namespace = explicit or current_namespace()
     if not namespace:
+        # Never say "pass --namespace" to someone who just did. The two causes have different
+        # fixes, and blaming the user for the flag they used sends them round in circles.
+        if explicit is not None:
+            raise ClusterError(f"--namespace was given as {explicit!r}, which is not a usable name.")
         raise ClusterError(
-            "no namespace given and the current context does not name one. Pass --namespace, or "
-            "select one with `oc project <name>`."
+            "no namespace given. Pass --namespace <name> before the subcommand, or select one "
+            "with `oc project <name>`."
         )
     return namespace
 
@@ -164,8 +178,8 @@ def build_pod_attach_argv(
 ) -> list[str]:
     """`oc exec -it <pod> -- tmux attach`.
 
-    tmux has no network protocol, so an exec with a TTY is the transport here exactly as it is
-    locally. A pod restart loses the session; the workspace survives on the PVC (spec §4.6).
+    tmux has no network protocol, so an exec with a TTY is the transport. A pod restart loses the
+    session; the workspace survives on the PVC.
     """
     return build_pod_exec_argv(
         name, resolve_namespace(namespace), ["tmux", "attach", "-t", session], tty=True

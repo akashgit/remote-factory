@@ -1,6 +1,6 @@
 """The namespace prerequisite bundle — plain YAML the user applies (spec §8).
 
-`factory contained bundle` prints it and never applies it. `factory contained setup --target k8s`
+`factory contained bundle` prints it and never applies it. `factory contained --target k8s setup`
 prints it, asks, and then applies it *with the user's own credentials*. `factory contained verify`
 checks each object and each required verb. That split is what keeps "the factory does not mutate
 RBAC on its own" intact while still ending in a namespace that works.
@@ -15,6 +15,7 @@ rather than a value the user is expected to find and edit in the output.
 
 from __future__ import annotations
 
+from factory.contained.errors import ContainedError
 from factory.contained.k8s import SECRET_NAME, SERVICE_ACCOUNT, render_pvc
 
 ROLE_NAME = "factory-runtime"
@@ -70,10 +71,21 @@ def render_bundle(
 
     The Secret is deliberately *not* in here. It carries credential material, and the factory never
     reads or writes that — it references the Secret by name and `verify` checks it exists and
-    carries the expected keys (spec §4.5). The command to create it is printed as a comment so the
-    user has it in front of them without the factory ever touching the value.
+    carries the expected keys. The command to create it is printed as a comment so the user has it
+    in front of them without the factory ever touching the value.
+
+    A namespace is never invented. Emitting cluster YAML pinned to a guessed name invites the user
+    to apply it somewhere they did not intend, and "it defaulted to `factory`" is not something they
+    would think to check.
     """
-    target = namespace or _safe_current_namespace() or "factory"
+    target = namespace or _safe_current_namespace()
+    if not target:
+        raise ContainedError(
+            "no namespace to generate the bundle for. Pass --namespace <name> before the "
+            "subcommand:\n"
+            "  factory contained --target k8s --namespace <name> bundle\n"
+            "or select one first with `oc project <name>`."
+        )
     rules = BASE_RULES + (DIVISION_RULES if division else "")
     image_note = f"#   runtime image: {image}\n" if image else ""
 
@@ -81,7 +93,7 @@ def render_bundle(
 # factory contained — namespace prerequisites for {target}
 #
 # Apply with your own credentials:
-#     factory contained bundle --namespace {target}{' --division' if division else ''} | oc apply -f -
+#     factory contained --namespace {target}{' --division' if division else ''} bundle | oc apply -f -
 #
 # Then create the inference credentials Secret yourself — the factory never handles the material:
 #     oc create secret generic {SECRET_NAME} -n {target} \\

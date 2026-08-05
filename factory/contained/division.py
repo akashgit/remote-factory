@@ -298,18 +298,32 @@ def port_owner() -> str | None:
     return None
 
 
-def _warn(endpoint: str, run_id: str) -> None:
+def _warn(endpoint: str, run_id: str, *, dry_run: bool = False) -> None:
+    """Tell the user what was started, what it exposes, and what to do about it.
+
+    All three, in that order. The exposure is real and the user cannot mitigate it by understanding
+    our reasoning — only by knowing the bind scope and having a way to stop it.
+    """
+    started = "Would start" if dry_run else "Started"
+    stop = (
+        "It stops when the run is removed:"
+        if not dry_run
+        else "Nothing was started — this is a dry run."
+    )
     print(
         "\n"
-        "  ┌─ DIVISION ENABLED ─────────────────────────────────────────────────────────────\n"
-        f"  │ podman-mcp-server is listening on port {DIVISION_PORT} with NO AUTHENTICATION.\n"
-        f"  │ The container reaches it at {endpoint}.\n"
-        "  │ Anything that can reach that port can build and run containers on this host —\n"
-        "  │ outside the container boundary, by necessity (§5).\n"
+        "  ┌─ Container builds enabled (--division) ───────────────────────────────────────\n"
+        f"  │ {started} podman-mcp-server so the agent can build and run container images.\n"
+        f"  │ The run reaches it at {endpoint}\n"
         "  │\n"
-        f"  │ It outlives this command, because the run does. Stop it with:\n"
-        f"  │     factory contained rm {run_id}\n"
-        "  └────────────────────────────────────────────────────────────────────────────────\n",
+        f"  │ It listens on 0.0.0.0:{DIVISION_PORT} — every network interface, not just this\n"
+        "  │ machine — and it has no authentication. For as long as the run lasts, anyone\n"
+        "  │ who can reach that port can build and run containers as you.\n"
+        "  │\n"
+        "  │ Avoid --division on untrusted networks.\n"
+        f"  │ {stop}\n"
+        + (f"  │     factory contained rm {run_id}\n" if not dry_run else "")
+        + "  └───────────────────────────────────────────────────────────────────────────────\n",
         file=sys.stderr,
     )
 
@@ -323,6 +337,8 @@ def start_local_division(plan: ContainerPlan, *, dry_run: bool = False) -> Divis
     """
     if dry_run:
         endpoint = f"http://{HOST_ALIAS}:{DIVISION_PORT}/mcp"
+        _warn(endpoint, plan.name, dry_run=True)
+        print(f"[division] {' '.join(server_argv())}", file=sys.stderr)
         return Division(plan=_with_division(plan, endpoint), endpoint=endpoint, process=None)
 
     if shutil.which("npx") is None:

@@ -249,10 +249,23 @@ def test_rm_deletes_a_stopped_run_without_prompting() -> None:
     with patch(
         "factory.contained.lifecycle._podman_entries",
         return_value=[_entry("ours", state="exited")],
-    ), patch("factory.contained.lifecycle.subprocess.call", return_value=0) as call:
+    ), patch("factory.contained.lifecycle.subprocess.run",
+             return_value=subprocess.CompletedProcess([], 0, "ours\n", "")) as run:
         code = lifecycle.remove("ours", "local", assume_yes=False, interactive=False)
     assert code == 0
-    assert call.call_args[0][0][:2] == ["podman", "rm"]
+    assert run.call_args[0][0][:2] == ["podman", "rm"]
+
+
+def test_rm_does_not_echo_podmans_own_output(capsys: pytest.CaptureFixture[str]) -> None:
+    """podman prints the name it removed; our own report follows, and the pair reads as a stutter."""
+    with patch(
+        "factory.contained.lifecycle._podman_entries",
+        return_value=[_entry("ours", state="exited")],
+    ), patch("factory.contained.lifecycle.subprocess.run",
+             return_value=subprocess.CompletedProcess([], 0, "ours\n", "")):
+        lifecycle.remove("ours", "local", assume_yes=True, interactive=False)
+    out = capsys.readouterr().out
+    assert not out.startswith("ours\n")
 
 
 def test_reap_stale_leaves_a_running_container_alone() -> None:

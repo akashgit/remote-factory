@@ -189,8 +189,12 @@ def test_launch_warns_that_the_endpoint_is_unauthenticated(
          patch("factory.contained.division.probe_host_alias", return_value="host.containers.internal"):
         start_local_division(_plan(tmp_path))
     err = capsys.readouterr().err
-    assert "NO AUTHENTICATION" in err
-    assert str(DIVISION_PORT) in err
+    # What it exposes, in terms a user can act on: the bind scope, the absence of auth, and a
+    # mitigation — not a citation.
+    assert "no authentication" in err.lower()
+    assert f"0.0.0.0:{DIVISION_PORT}" in err
+    assert "untrusted networks" in err
+    assert "§" not in err
 
 
 def test_stop_signals_the_whole_group_not_just_the_shell(tmp_path: Path) -> None:
