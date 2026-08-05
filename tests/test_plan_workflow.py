@@ -25,8 +25,8 @@ def wf():
 
 def test_plan_workflow_structure(wf):
     """Verify node and edge counts match the expected topology."""
-    assert len(wf.nodes) == 14
-    assert len(wf.edges) == 18
+    assert len(wf.nodes) == 12
+    assert len(wf.edges) == 16
     assert wf.name == "plan"
     assert wf.start_node == "check_prior_plans"
     assert wf.terminal is True
@@ -60,11 +60,9 @@ def test_plan_workflow_edge_coverage(wf):
         ("gate_research", "strategist", VerdictType.PROCEED),
         ("gate_research", "fork_research", VerdictType.RELOOP),
         ("strategist", "gate_keep_plan", None),
-        ("gate_keep_plan", "gate_publish_github", VerdictType.PROCEED),
-        ("gate_publish_github", "publish_github", VerdictType.PROCEED),
-        ("gate_publish_github", "gate_seed_backlog", VerdictType.HALT),
-        ("publish_github", "gate_seed_backlog", None),
-        ("gate_seed_backlog", "seed_backlog", VerdictType.PROCEED),
+        ("gate_keep_plan", "publish_github", VerdictType.PROCEED),
+        ("gate_keep_plan", "strategist", VerdictType.RELOOP),
+        ("publish_github", "seed_backlog", None),
     ]
     assert edge_tuples == expected
 
@@ -80,11 +78,13 @@ def test_plan_publish_github_node_exists(wf):
     assert ".factory/strategy/github-issue-ref.txt" in node.writes
 
 
-def test_plan_gate_publish_github_exists(wf):
-    """Verify gate_publish_github GateNode exists with user evaluator."""
-    node = wf.nodes["gate_publish_github"]
+def test_plan_single_gate_prompt_includes_github_warning(wf):
+    """Verify gate_keep_plan prompt warns about GitHub publishing."""
+    node = wf.nodes["gate_keep_plan"]
     assert isinstance(node, GateNode)
     assert node.evaluator_type == "user"
+    assert "GitHub issue" in node.gate_prompt
+    assert "backlog" in node.gate_prompt
 
 
 def test_plan_no_archivist_node(wf):
@@ -92,26 +92,22 @@ def test_plan_no_archivist_node(wf):
     assert "archivist_plan" not in wf.nodes
 
 
-def test_plan_publish_github_edges(wf):
-    """Verify the publish path edges are correctly wired."""
+def test_plan_publish_directly_wired_after_gate(wf):
+    """Verify publish_github and seed_backlog are directly wired with no gates between."""
     edges_from_keep = [
-        (e.target, e.condition)
-        for e in wf.edges if e.source == "gate_keep_plan"
+        (e.target, e.condition) for e in wf.edges if e.source == "gate_keep_plan"
     ]
-    assert ("gate_publish_github", VerdictType.PROCEED) in edges_from_keep
-
-    edges_from_publish_gate = [
-        (e.target, e.condition)
-        for e in wf.edges if e.source == "gate_publish_github"
-    ]
-    assert ("publish_github", VerdictType.PROCEED) in edges_from_publish_gate
-    assert ("gate_seed_backlog", VerdictType.HALT) in edges_from_publish_gate
+    assert ("publish_github", VerdictType.PROCEED) in edges_from_keep
+    assert ("strategist", VerdictType.RELOOP) in edges_from_keep
 
     edges_from_publish = [
-        (e.target, e.condition)
-        for e in wf.edges if e.source == "publish_github"
+        (e.target, e.condition) for e in wf.edges if e.source == "publish_github"
     ]
-    assert ("gate_seed_backlog", None) in edges_from_publish
+    assert ("seed_backlog", None) in edges_from_publish
+
+    # Removed gate nodes must not exist
+    assert "gate_publish_github" not in wf.nodes
+    assert "gate_seed_backlog" not in wf.nodes
 
 
 def test_plan_seed_backlog_no_archive_ref(wf):
@@ -169,3 +165,4 @@ def test_plan_skill_export(wf):
     assert "workflow-plan" in skill
     assert "Publish" in skill
     assert "archivist" not in skill.lower() or "archivist_plan" not in skill
+    assert "single" in skill.lower() or "Single" in skill

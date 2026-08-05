@@ -4098,17 +4098,12 @@ def plan_workflow() -> Workflow:
 
     CheckPriorPlans → [matches?] → GatePriorPlans(user) → Fork(3 researchers) →
     Join → CEO gate → Strategist → GateKeepPlan(user) →
-      Keep (PROCEED):    GatePublishGitHub(user) →
-        Publish (PROCEED):   PublishGitHub → GateSeedBacklog(user) →
-          Seed (PROCEED):    SeedBacklog → done
-          No seed (HALT):    done
-        Skip (HALT):         GateSeedBacklog(user) →
-          Seed (PROCEED):    SeedBacklog → done
-          No seed (HALT):    done
+      Keep (PROCEED):    PublishGitHub → SeedBacklog → done
+      Refine (RELOOP):   → Strategist
       Discard (HALT):    done
 
     Planning-only mode. Produces a phased plan at .factory/strategy/current.md.
-    Optionally publishes to GitHub as an issue with the 'plan' label.
+    On approval, automatically publishes to GitHub and seeds backlog.
     Does NOT chain to build/improve — user must explicitly invoke those modes
     to execute the plan.
     """
@@ -4301,37 +4296,16 @@ def plan_workflow() -> Workflow:
         ],
     )
 
-    # ── Three sequential binary user gates ────────────────────
+    # ── Single user approval gate ─────────────────────────────
 
     nodes["gate_keep_plan"] = GateNode(
         id="gate_keep_plan",
         evaluator_type="user",
         gate_prompt=(
             "Present the plan to the user. Ask: 'Keep this plan? "
-            "(yes → archive it, no → discard)'\n"
-            "Map: yes → PROCEED, no → HALT"
-        ),
-        reads={".factory/strategy/current.md"},
-    )
-
-    nodes["gate_publish_github"] = GateNode(
-        id="gate_publish_github",
-        evaluator_type="user",
-        gate_prompt=(
-            "Ask the user: 'Publish this plan as a GitHub issue? "
-            "(yes → post to GitHub, no → skip publishing)'\n"
-            "Map: yes → PROCEED, no → HALT"
-        ),
-        reads={".factory/strategy/current.md"},
-    )
-
-    nodes["gate_seed_backlog"] = GateNode(
-        id="gate_seed_backlog",
-        evaluator_type="user",
-        gate_prompt=(
-            "Ask the user: 'Seed backlog? "
-            "(yes → commit phases as backlog items, no → done)'\n"
-            "Map: yes → PROCEED, no → HALT"
+            "Approving will publish it as a comment on the GitHub issue "
+            "and seed the backlog with plan phases.'\n"
+            "Map: yes → PROCEED, feedback → RELOOP (re-run Strategist), no → HALT"
         ),
         reads={".factory/strategy/current.md"},
     )
@@ -4434,18 +4408,14 @@ def plan_workflow() -> Workflow:
         # Research gate → strategist (proceed) or back to fork (reloop)
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
-        # Strategist → first user gate (keep or discard?)
+        # Strategist → single user gate (keep, refine, or discard?)
         Edge(source="strategist", target="gate_keep_plan"),
-        # Keep gate → publish gate
-        Edge(source="gate_keep_plan", target="gate_publish_github", condition=VerdictType.PROCEED),
-        # Publish gate → publish FnNode (user says yes)
-        Edge(source="gate_publish_github", target="publish_github", condition=VerdictType.PROCEED),
-        # Publish gate → skip to seed backlog gate (user says no)
-        Edge(source="gate_publish_github", target="gate_seed_backlog", condition=VerdictType.HALT),
-        # After publishing → seed backlog gate
-        Edge(source="publish_github", target="gate_seed_backlog"),
-        # Seed backlog gate
-        Edge(source="gate_seed_backlog", target="seed_backlog", condition=VerdictType.PROCEED),
+        # Keep gate → auto-publish → auto-seed (no user prompts between)
+        Edge(source="gate_keep_plan", target="publish_github", condition=VerdictType.PROCEED),
+        # Keep gate → refine (re-run strategist with feedback)
+        Edge(source="gate_keep_plan", target="strategist", condition=VerdictType.RELOOP),
+        # Publish → seed backlog (automatic, no gate)
+        Edge(source="publish_github", target="seed_backlog"),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:

@@ -144,10 +144,11 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "plan": {
         "description": (
-            "Plan mode — prior plan check + research + strategy + keep/publish/seed approve, "
+            "Plan mode — prior plan check + research + strategy + single approval gate, "
             "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
             "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "
-            "Three sequential gates: Keep plan? → Publish to GitHub? → Seed backlog? "
+            "Single approval gate: 'Keep this plan?' — approval auto-publishes to GitHub and seeds backlog. "
+            "RELOOP re-runs Strategist with feedback. HALT exits without publishing. "
             "Terminal — does not chain to build or improve. Use when the user says 'plan X', "
             "'just plan', 'research and plan but don't build', or wants strategic analysis "
             "without code changes."
