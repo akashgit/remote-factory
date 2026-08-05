@@ -594,3 +594,16 @@ def test_internal_event_names_do_not_print_at_info_level() -> None:
         capture_output=True, text=True,
     )
     assert result.stdout == "", f"internal events still at info level:\n{result.stdout}"
+
+
+def test_bad_arguments_are_caught_before_a_workspace_is_made(
+    git_project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Validation that costs nothing must not happen after a copy and a container probe."""
+    home = tmp_path / "contained-home"
+    with patch.dict(os.environ, {"FACTORY_CONTAINED_HOME": str(home)}, clear=False):
+        args = interpret(["--env", "NOTAPAIR", "--", "study", str(git_project)])
+        code = cli.cmd_contained(args)
+    assert code == 2
+    assert "not KEY=VALUE" in capsys.readouterr().err
+    assert not home.exists(), "a workspace was created before the arguments were checked"
