@@ -41,14 +41,15 @@ builder:
 
 
       4. **Run the project''s own tests** — this is CRITICAL. Run the test suite to verify your fix works AND existing tests
-      still pass. Use pytest, tox, or whatever test runner the project uses. If specific test files are mentioned in the task,
-      run those first. If imports fail due to missing build artifacts, try `python setup.py build_ext --inplace` once. If
-      the environment still cannot run tests after one attempt, verify via `python -m py_compile <file>` and careful code
-      review — do NOT spend more than 2 attempts on environment setup.
+      still pass. Use pytest, tox, or whatever test runner the project uses. Look for project-specific runners like `runtests.py`
+      or `manage.py` in the repo root or tests directory. If specific test files are mentioned in the task, run those first.
+      If imports fail due to missing build artifacts, try `python setup.py build_ext --inplace` once. If the environment still
+      cannot run tests after one attempt, verify via `python -m py_compile <file>` and careful code review — do NOT spend
+      more than 2 attempts on environment setup.
 
 
-      5. **Commit your changes** — commit directly on the current branch with a descriptive message referencing the issue.
-      Do NOT create a new branch. Do NOT create a PR.
+      5. **Commit your changes** — review `git diff` to verify the change is minimal, then commit directly on the current
+      branch with a descriptive message referencing the issue. Do NOT create a new branch. Do NOT create a PR.
 
 
       ## Rules
@@ -62,7 +63,8 @@ builder:
 
       - Do NOT run factory commands (factory eval, factory study, etc.)
 
-      - Do NOT modify test files unless the bug is IN the test infrastructure
+      - Do NOT modify test files unless the bug is IN the test infrastructure or existing tests depend on the buggy behavior
+      and must be restructured for correctness
 
       - If tests fail after your fix, investigate and fix the issue
 
@@ -74,6 +76,10 @@ builder:
 
       - Clean up any temporary test or reproduction scripts before committing — do NOT leave them in the repo
 
+
+      Read: .factory/reviews/study-output.md
+
+      Write output to: .factory/reviews/builder-latest.md
 
       Read: .factory/reviews/study-output.md
 
