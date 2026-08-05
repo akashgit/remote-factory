@@ -1,5 +1,10 @@
 # `factory contained` — new-user defect report
 
+> **All 21 defects have been addressed** — 18 fixed, 2 documented where the underlying constraint
+> cannot be removed, and 1 (D3) partly: the message loops are gone, but publishing the runtime image
+> is still outstanding. Each entry carries its status inline. This report is kept as the record of
+> what a first-run user hit.
+
 Reviewed against `docs/contained.md` only, from a clean room: virgin `$HOME` (no `~/.factory`, no
 `~/.claude`), freshly installed `factory` on `PATH`, all credential and `FACTORY_*` override
 variables unset, podman available but its machine stopped, no `~/.kube`.
@@ -46,6 +51,8 @@ and is marked *(needed the image workaround)*.
 
 ### D1. `--namespace` is dropped by `attach`, `rm` and `sync` on `--target k8s` — every documented cluster lifecycle command fails
 
+> **Status: FIXED — namespace threaded into attach/rm/sync; the message no longer blames the flag you passed**
+
 **What I ran**
 
 ```
@@ -88,6 +95,8 @@ should distinguish the two cases: "`--namespace` was not given and the current c
 ---
 
 ### D2. The run's identifier is printed *last*, buried under ~60 lines of debug logging — the doc claims the opposite *(needed the image workaround)*
+
+> **Status: FIXED — identifier printed before provisioning; internal events moved to debug**
 
 **What I ran**
 
@@ -146,6 +155,8 @@ planned, change the doc rather than the claim — but the debug spam should go e
 ---
 
 ### D3. `setup` dead-ends, and its own advice cannot be followed
+
+> **Status: PARTLY FIXED — the loop and the unrunnable build hint are gone; publishing the image is still outstanding**
 
 **What I ran**
 
@@ -211,6 +222,8 @@ per-check `fix: factory contained setup` line for the same reason.
 
 ### D4. `bundle`'s own output prints a command the CLI refuses to run
 
+> **Status: FIXED — bundle emits a runnable command and implies the cluster target**
+
 **What I ran**
 
 ```
@@ -251,6 +264,8 @@ subcommand) in `factory/contained/bundle.py`, in the `k8s_setup` "Nothing was ap
 ---
 
 ### D5. A failed launch leaves a git worktree and a branch in the user's repository, with no way to clean them up — the doc promises the opposite
+
+> **Status: FIXED — failed launches roll back; rm prints the worktree and branch cleanup**
 
 **What I ran**
 
@@ -309,6 +324,8 @@ cleanup commands:
 
 ### D6. `FACTORY_CONTAINED_DRY_RUN=1 --division` never mentions the division — the one thing you would run a dry-run to preview
 
+> **Status: FIXED — dry-run shows the division banner and the server command**
+
 **What I ran**
 
 ```
@@ -341,6 +358,8 @@ step line in dry-run mode, prefixed to make clear nothing was started.
 ---
 
 ### D7. `ls` reports "Nothing could be listed" when nothing is wrong, and exits 0 when everything is wrong
+
+> **Status: FIXED — 'none' vs 'could not look' vs 'not configured'; non-zero exit on failure**
 
 **What I ran**
 
@@ -383,6 +402,8 @@ context at all and `--target k8s` was not given. Exit non-zero when a backend fa
 ---
 
 ### D8. Local `verify`'s footer sends the user to a command that cannot fix the failing check; k8s `verify`'s footer names the wrong target
+
+> **Status: FIXED — the footer names only checks setup can repair**
 
 **What I ran**
 
@@ -427,6 +448,8 @@ failing check is one `setup` can act on, and spell the target: `Fix them, or run
 
 ### D9. `--division` opens the endpoint on **all** interfaces, and neither the banner nor the doc says so *(needed the image workaround)*
 
+> **Status: DOCUMENTED — bind scope stated in the banner and the guide; loopback is not available**
+
 **What I ran**
 
 ```
@@ -465,6 +488,8 @@ The pattern: messages that explain *why the maintainers made a decision*, cite d
 cannot open, or name internals, instead of telling the user what to do.
 
 ### D10. Spec-section citations in user-facing output (four instances, one of them in the security banner)
+
+> **Status: FIXED — every spec citation removed from runtime output and user docs**
 
 **`factory contained --help`, final paragraph:**
 
@@ -513,6 +538,8 @@ wanted, publish the design document in the docs site and use a URL. Replacement 
 
 ### D11. `--help`'s closing paragraph argues with the design instead of orienting the reader
 
+> **Status: FIXED — --help rewritten; subcommands, --yes and env vars now documented**
+
 Quoted in D10. Problems, separately from the `§1.2`:
 
 - **"share a command surface and an image, not a threat model"** is a maintainer's note-to-self about
@@ -545,6 +572,8 @@ works — `help=argparse.SUPPRESS` at `factory/cli/contained.py:138`), and omits
 `FACTORY_CONTAINED_*` environment variable including `FACTORY_CONTAINED_DRY_RUN`.
 
 ### D12. Provenance failure hints explain the design rather than tell you what to do
+
+> **Status: FIXED — hints lead with cause and a Try: line**
 
 **What the doc advertises** (and what the code at `factory/contained/provenance.py:86-90` prints):
 
@@ -585,6 +614,8 @@ contained: the workspace is not a usable git repository.
 
 ### D13. Structured log lines leak internal event names into normal output *(needed the image workaround)*
 
+> **Status: FIXED — contained_* events at debug; token= renamed argument=**
+
 Every run prints, at info level, on stdout/stderr:
 
 ```
@@ -608,6 +639,8 @@ in the doc's transcripts.
 explanation available only at debug level.
 
 ### D14. Three warnings fire on every single run, one of them irrelevant to most payloads
+
+> **Status: FIXED — growth warning conditional; macOS check reads real mounts; ordering changed**
 
 Every launch — dry or real, local or k8s, with any payload — prints:
 
@@ -636,6 +669,8 @@ demote it to a one-line note with a doc link. Check the real mount list
 one that will actually break the run comes last (closest to the prompt).
 
 ### D15. Interactive `factory contained setup` shows a menu the documentation never mentions, and prints a bare `Error:` on EOF
+
+> **Status: FIXED — EOF defaults to local; the prompt is documented**
 
 **What I ran** (under a pty, stdin closed)
 
@@ -667,6 +702,8 @@ output. (The prompt itself is fine and better written than most of the surroundi
 
 ### D16. The published doc's transcripts are cleaned-up, not captured *(needed the image workaround)*
 
+> **Status: FIXED — transcripts re-captured from a clean install**
+
 Beyond D2 (missing 60 lines of logging) and D10 (missing `(§5)`), the doc's dry-run transcript
 renders `[run]` as:
 
@@ -689,6 +726,8 @@ product does not meet, which is worse than either.
 
 ### D17. Raw podman output leaks a bare container name into `rm` and relaunch output *(needed the image workaround)*
 
+> **Status: FIXED — podman's stdout no longer echoed**
+
 ```
 $ factory contained rm rtarun --yes
 rtarun                                        <- stray, from `podman rm`
@@ -708,6 +747,8 @@ Cosmetic, but the doubled name reads like a stutter or a bug. Pass `podman rm`'s
 
 ### D18. Unknown subcommands fall through to the payload path with a baffling error
 
+> **Status: FIXED — typos suggest the intended subcommand**
+
 ```
 $ factory contained frobnicate
 Error: no existing directory found in ['frobnicate']. `factory contained` materializes a workspace from a project already on this machine, for example:
@@ -722,6 +763,8 @@ and is within edit distance 2 of a subcommand, say `unknown subcommand 'lst' —
 
 ### D19. `--yes` is accepted after a subcommand while every other flag is rejected there
 
+> **Status: DOCUMENTED — --yes is stated as the exception**
+
 `factory contained rm rtarun --yes` works; `factory contained rm rtarun --target k8s` errors with
 "Runtime flags ... go before the subcommand". The doc states the rule absolutely: "anything
 flag-shaped after it is an error rather than a name." The exception is deliberate
@@ -730,6 +773,8 @@ teaches the rule is now teaching a rule with a silent exception. Either document
 accept all runtime flags in both positions.
 
 ### D20. `bundle` and `setup` invent a namespace, contradicting "never hardcoded"
+
+> **Status: FIXED — bundle requires a namespace and never invents one**
 
 ```
 $ factory contained bundle
@@ -746,6 +791,8 @@ place. Suggest: `bundle` should require `--namespace` when no context supplies o
 (or warn) when `--target` is `local`, since the output is meaningless there.
 
 ### D21. `k8s setup` without a cluster says "About to apply ... with your own oc credentials" when there are none, and contradicts itself in two adjacent lines
+
+> **Status: FIXED — cluster checked first; outcome stated before the YAML**
 
 ```
 $ factory contained --target k8s --namespace foo setup
