@@ -1,16 +1,12 @@
-"""Proving the runtime is about to read the files we think it is (spec §2.1a).
+"""Proving the runtime is about to read the files we think it is.
 
-Every check here corresponds to a failure that has already been paid for once, and every one of
-them fails *quietly* without it: a run that starts on the wrong files burns a full cycle and
-produces a plausible-looking result.
+A workspace can be missing, empty, stale, or read-only, and all four look identical until something
+is asserted. Each of these failures is silent: the run starts, the agent works on the wrong files,
+and the result looks plausible. So they are checked between provisioning and the first agent call,
+where a failure costs nothing.
 
 The probes are composed here and executed by the caller, so the same list can be wrapped in
 `podman exec` locally or `oc exec` in a pod.
-
-The `.gitignore` failure mode these were originally written against was specific to a transfer that
-filtered its input, which is why `.factory/` — gitignored by convention — used to vanish. A bind
-mount filters nothing, so locally that class of fault is gone. The checks stay because they are
-cheap, and because the k8s path still packs a file list, where the fault is live.
 """
 
 from __future__ import annotations
@@ -64,16 +60,22 @@ def provenance_probes(
     expect_git: bool,
     content: tuple[str, str] | None,
 ) -> list[Probe]:
-    """The assertions to run after the workspace is in place and before the factory starts."""
+    """The assertions to run after the workspace is in place and before the factory starts.
+
+    Each hint states the cause first and then what to do about it. The reason the check exists is
+    interesting to whoever maintains this and useless to whoever hit it: the reader wants to know
+    what to change.
+    """
     probes = [
         Probe(
             name="project_present",
             argv=["sh", "-lc", f'[ -d "{runtime_path}" ] && [ -n "$(ls -A "{runtime_path}")" ]'],
             hint=(
-                f"{runtime_path} is missing or empty inside the runtime. A mount whose destination "
-                "nests the tree one level deeper leaves the factory starting in an empty directory, "
-                "and on macOS a host path outside $HOME is not shared into the podman machine at "
-                "all."
+                f"The project directory is empty inside the runtime ({runtime_path}).\n"
+                "  On macOS this usually means the path is outside your home directory, which the "
+                "podman machine does not share by default.\n"
+                "  Try:  move the project under your home directory, or add its path with "
+                "`podman machine set --volume` and restart the machine."
             ),
         ),
     ]
@@ -83,11 +85,10 @@ def provenance_probes(
                 name="git_usable",
                 argv=["sh", "-lc", f'git -C "{runtime_path}" status --porcelain >/dev/null 2>&1'],
                 hint=(
-                    "git is not usable in the workspace. State detection then reports no_repo, the "
-                    "CEO silently drops to build mode, and the eventual error names a flag several "
-                    "steps away from the cause. For a git worktree this usually means the source "
-                    "repository's git directory is not mounted — a worktree's .git is a *file* "
-                    "pointing at it."
+                    "The workspace is not a usable git repository inside the runtime.\n"
+                    "  Most likely the repository this project belongs to was not mounted — a git "
+                    "worktree's .git is a file pointing at a directory elsewhere.\n"
+                    "  Try:  factory contained --mount <path-to-that-repository> -- <your command>"
                 ),
             )
         )
@@ -97,9 +98,10 @@ def provenance_probes(
                 name="factory_state",
                 argv=["test", "-f", f"{runtime_path}/.factory/config.json"],
                 hint=(
-                    ".factory/config.json did not arrive, though the host has one. The experiment "
-                    "history, eval profile and config are gone and the factory will boot as a "
-                    "fresh project and re-run discovery."
+                    ".factory/config.json did not reach the runtime, though this project has one.\n"
+                    "  Without it the run starts as though the project were brand new, and its "
+                    "history and scores are not available to it.\n"
+                    "  Try:  check that .factory/ exists and is readable in the project directory."
                 ),
             )
         )
@@ -114,10 +116,11 @@ def provenance_probes(
                 f'rm -f "{runtime_path}/.factory-write-probe"',
             ],
             hint=(
-                "The workspace is not writable by the runtime identity. A bind mount carries the "
-                "host's ownership through unchanged, so a container whose UID does not own the "
-                "mounted tree gets a silently read-only workspace — surfacing several steps later "
-                "as an agent unable to explain why its edits vanished."
+                "The workspace is read-only inside the runtime, so the agent's edits would be "
+                "silently discarded.\n"
+                "  The container runs as a user that does not own these files.\n"
+                "  Try:  `factory contained verify` to check the runtime image, and make sure the "
+                "project is owned by you."
             ),
         )
     )
@@ -131,9 +134,10 @@ def provenance_probes(
                     f'sha256sum "{runtime_path}/{relative}" 2>/dev/null | grep -q "^{digest} "',
                 ],
                 hint=(
-                    f"{relative} inside the runtime does not match the host's copy. The path exists "
-                    "but its content is stale or partial — the one check that catches a mount "
-                    "pointing at the wrong directory."
+                    f"{relative} inside the runtime does not match the copy on this machine, so the "
+                    "run would work on the wrong files.\n"
+                    "  The path is there but its contents differ — a stale or partial copy.\n"
+                    f"  Try:  factory contained rm <name>, then run again to rebuild the workspace."
                 ),
             )
         )

@@ -327,21 +327,43 @@ def build_run_command(
     return " && ".join(parts)
 
 
-def growth_context_warning(env: dict[str, str] | None = None) -> str | None:
-    """Return a warning when growth-dimension context is missing, or None when it is present.
+# Payloads that can produce an eval score. Warning about score comparability ahead of `backlog-list`
+# or `ls` trains the user to skip warnings, which costs them the one that matters.
+SCORING_COMMANDS = frozenset({"ceo", "run", "eval", "improve", "workflow", "refactory", "baseline"})
+
+
+def scores_something(factory_args: list[str]) -> bool:
+    """Whether this payload could produce an eval score.
+
+    Looks only at the first non-flag word — the subcommand. The host does not otherwise interpret
+    the payload, and it does not need to here either.
+    """
+    for token in factory_args:
+        if token.startswith("-"):
+            continue
+        return token in SCORING_COMMANDS
+    return False
+
+
+def growth_context_warning(
+    env: dict[str, str] | None = None, factory_args: list[str] | None = None
+) -> str | None:
+    """Warn that in-container scores will not be comparable — but only when scores are involved.
 
     Never an error. A container without this context still runs; its eval scores are simply not
     comparable to host scores, and the operator needs to know that before comparing them.
     """
+    if factory_args is not None and not scores_something(factory_args):
+        return None
     source = os.environ if env is None else env
     missing = [name for name in GROWTH_CONTEXT_VARS if not source.get(name, "").strip()]
     if not missing:
         return None
     return (
-        f"Growth context not configured: {', '.join(missing)} "
-        f"{'is' if len(missing) == 1 else 'are'} unset. Growth dimensions merge 50/50 into the "
-        "composite score, so eval scores computed in this container are NOT comparable to host "
-        "scores. Continuing anyway."
+        "Eval scores from this run will not be comparable to scores computed on this machine: "
+        f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} not set, and those directories "
+        "feed part of the score. Set them and pass them with --forward to make the numbers "
+        "comparable, or ignore this if you are not comparing scores."
     )
 
 

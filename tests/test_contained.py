@@ -532,3 +532,65 @@ def test_seeding_survives_a_corrupt_state_file(tmp_path: Path) -> None:
         env={**os.environ, "HOME": str(home)}, check=True,
     )
     assert json.loads((home / ".claude.json").read_text())["hasTrustDialogAccepted"] is True
+
+
+# ---------------------------------------------------------------------------------------------
+# Output is written for the person running the command
+# ---------------------------------------------------------------------------------------------
+
+
+def test_help_names_no_internal_documents() -> None:
+    """A citation the reader cannot follow is worse than no citation."""
+    parser = argparse.ArgumentParser(prog="factory")
+    sub = parser.add_subparsers(dest="command")
+    text = cli.build_contained_parser(sub).format_help()
+    assert "§" not in text
+    assert "spec" not in text.lower()
+
+
+def test_help_explains_the_targets_and_the_subcommands() -> None:
+    """A user reading --help first needs to know what the two targets are *for*, and what they can
+    type; the security comparison is not an orientation."""
+    parser = argparse.ArgumentParser(prog="factory")
+    sub = parser.add_subparsers(dest="command")
+    text = cli.build_contained_parser(sub).format_help()
+    for subcommand in ("setup", "verify", "ls", "attach", "sync", "rm", "bundle"):
+        assert f"  {subcommand}" in text, f"--help does not explain `{subcommand}`"
+    assert "--yes" in text
+    assert "FACTORY_CONTAINED_DRY_RUN" in text
+    # It says what contained is not, without jargon or alarm.
+    assert "not a security sandbox" in text
+    assert "SCC" not in text and "egress" not in text
+
+
+def test_provenance_hints_lead_with_the_fix_not_the_rationale() -> None:
+    from factory.contained.provenance import provenance_probes
+
+    for probe in provenance_probes("/w", expect_factory_state=True, expect_git=True,
+                                   content=("a.txt", "deadbeef")):
+        assert "Try:" in probe.hint or "Most likely" in probe.hint, probe.name
+        # Internal vocabulary a user has no way to interpret.
+        for jargon in ("no_repo", "the CEO", "state detection", "bind mount carries"):
+            assert jargon not in probe.hint, f"{probe.name} explains internals: {jargon}"
+
+
+def test_the_growth_warning_is_silent_for_payloads_that_compute_no_score() -> None:
+    """Warning about score comparability ahead of `backlog-list` trains users to skip warnings."""
+    from factory.podman import growth_context_warning
+
+    assert growth_context_warning({}, ["backlog-list", "/p"]) is None
+    assert growth_context_warning({}, ["ls"]) is None
+    assert growth_context_warning({}, ["ceo", "/p"]) is not None
+    assert growth_context_warning({}, ["run", "/p", "--loop"]) is not None
+
+
+def test_internal_event_names_do_not_print_at_info_level() -> None:
+    """`contained_path_rewritten` is an event identifier, not English."""
+    import subprocess as sp
+
+    source = Path(__file__).resolve().parents[1]
+    result = sp.run(
+        ["grep", "-rn", 'log.info("contained_', str(source / "factory")],
+        capture_output=True, text=True,
+    )
+    assert result.stdout == "", f"internal events still at info level:\n{result.stdout}"

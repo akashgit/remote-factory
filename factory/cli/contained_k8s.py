@@ -178,7 +178,7 @@ def _build_pod_plan(
 
     factory_argv, changes = rewrite_argv(args.factory_args, ws.source, project_dir)
     for before, after in changes:
-        log.info("contained_path_rewritten", before=before, after=after)
+        log.debug("contained_path_rewritten", before=before, after=after)
     inner = "factory " + " ".join(shlex.quote(token) for token in factory_argv)
 
     mcp_config: dict[str, object] | None = None
@@ -238,7 +238,7 @@ def _pack(ws: Workspace, run_id: str) -> Path:
 
     with tarfile.open(destination, "w:gz") as archive:
         archive.add(ws.path, arcname=ws.source.name, filter=_filter)
-    log.info("contained_packed", path=str(destination), bytes=destination.stat().st_size)
+    log.debug("contained_packed", path=str(destination), bytes=destination.stat().st_size)
     return destination
 
 
@@ -255,7 +255,7 @@ def _provision(plan: PodPlan, tarball: Path) -> None:
     else:
         # Already unpacked for *this* run — the pod restarted after a successful upload. The marker
         # is per-run, so this can never mean "a previous run's files are already here".
-        log.info("contained_workspace_already_present", pod=plan.name)
+        log.debug("contained_workspace_already_present", pod=plan.name)
     wait_for_container(plan.name, plan.namespace, FACTORY_CONTAINER)
 
 
