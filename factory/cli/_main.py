@@ -1154,6 +1154,7 @@ def build_parser() -> argparse.ArgumentParser:
     mp_browse.add_argument("--wing", help="Filter to a specific wing")
     mp_browse.add_argument("--room", help="Filter to a specific room (requires --wing)")
     mp_browse.add_argument("--drawer", help="Show full content of a specific drawer by ID")
+    mp_browse.add_argument("--all", action="store_true", help="Show all wings (default: only this project's wing)")
 
     return parser
 

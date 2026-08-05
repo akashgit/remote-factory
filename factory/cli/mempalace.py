@@ -41,6 +41,7 @@ def _do_browse(project_path: Path, args: argparse.Namespace) -> int:
     wing = getattr(args, "wing", None)
     room = getattr(args, "room", None)
     drawer_id = getattr(args, "drawer", None)
+    show_all = getattr(args, "all", False)
 
     try:
         from mempalace.palace import get_collection
@@ -83,6 +84,9 @@ def _do_browse(project_path: Path, args: argparse.Namespace) -> int:
     metas = all_results["metadatas"]
     docs = all_results["documents"]
     ids = all_results["ids"]
+
+    if not wing and not show_all:
+        wing = "project:" + get_project_name(project_path)
 
     if not wing:
         pn = get_project_name(project_path)
