@@ -290,7 +290,7 @@ The runtime image (`containers/factory/Containerfile`) is UBI9 + the factory whe
 
 Two cluster-side details that fail quietly: a PVC mounts root-owned, so the pod needs an `fsGroup` read from the namespace's allocated range (hardcoding one fails admission under a `MustRunAs` SCC); and the workspace unpack marker is **per-run**, because the PVC outlives the run that filled it and a shared marker makes the next run skip its own upload and execute against stale files.
 
-Design and evidence: `docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md`.
+User-facing guide with worked examples of every command: `docs/contained.md`. Design and evidence: `docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md`.
 
 ## Observability
 
