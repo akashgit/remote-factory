@@ -4403,7 +4403,7 @@ def plan_workflow() -> Workflow:
             "print(f'Seeded {len(phases)} backlog items from plan')"
             '"'
         ),
-        reads={".factory/strategy/current.md"},
+        reads={".factory/strategy/current.md", ".factory/strategy/github-issue-ref.txt"},
         writes={".factory/strategy/backlog.md"},
         notes=(
             "Extracts phase headers from the approved plan at current.md and appends them "
