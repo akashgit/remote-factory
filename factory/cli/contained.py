@@ -278,6 +278,23 @@ def _target_given(args: argparse.Namespace) -> bool:
     return any(token == "--target" or token.startswith("--target=") for token in sys.argv)
 
 
+def _validate_env_args(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, str]]:
+    """Check `--env` and `--forward` before anything is created.
+
+    Both cost nothing to validate and everything to validate late: by the time the plan is built the
+    workspace copy already exists and a container probe has run, so a typo would be reported after
+    real work — or masked by an unrelated failure in between.
+    """
+    extra = _parse_extra_env(args.extra_env)
+    forwarded: dict[str, str] = {}
+    for name in args.forward:
+        value = os.environ.get(name)
+        if value is None:
+            raise ContainedError(f"--forward {name}: not set in this environment")
+        forwarded[name] = value
+    return extra, forwarded
+
+
 def _parse_extra_env(pairs: list[str]) -> dict[str, str]:
     """Parse repeated `--env KEY=VALUE` into a mapping, rejecting anything malformed."""
     parsed: dict[str, str] = {}
@@ -357,21 +374,19 @@ def _machine_shared_paths() -> list[Path]:
     return [p for p in paths if p.is_absolute()]
 
 
-def _compose_env(args: argparse.Namespace, shape_env: dict[str, str]) -> dict[str, str]:
+def _compose_env(
+    shape_env: dict[str, str], forwarded: dict[str, str], extra: dict[str, str]
+) -> dict[str, str]:
     """`FACTORY_` by default, plus the backend variables, plus exactly what `--forward` names.
 
-    Nothing implicit. `--env` is applied last because it is the documented escape hatch
-    for backend quirks, and an escape hatch that loses to a computed default is not one.
+    Nothing implicit. `--env` is applied last because it is the documented escape hatch for backend
+    quirks, and an escape hatch that loses to a computed default is not one.
     """
     env = CONTAINED_ENV_POLICY.resolve(dict(os.environ))
     env["HOME"] = CONTAINER_HOME
     env.update(shape_env)
-    for name in args.forward:
-        value = os.environ.get(name)
-        if value is None:
-            raise ContainedError(f"--forward {name}: not set in this environment")
-        env[name] = value
-    env.update(_parse_extra_env(args.extra_env))
+    env.update(forwarded)
+    env.update(extra)
     return env
 
 
@@ -385,6 +400,8 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
     """
     warnings: list[str] = []
     image = args.image or resolve_image()
+
+    extra_env, forwarded = _validate_env_args(args)
 
     # The workspace is mounted at its own absolute path — identical inside and out. Not cosmetic:
     # the local division's builds are executed by an engine *outside* the container, which
@@ -462,7 +479,7 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
         name=name,
         image=image,
         workdir=str(ws.path),
-        env=_compose_env(args, shape.env),
+        env=_compose_env(shape.env, forwarded, extra_env),
         labels={
             LABEL_CONTAINED: "true",
             LABEL_PROJECT: project_hash(ws.source),
@@ -582,7 +599,11 @@ def _roll_back(ws: Workspace | None) -> None:
 
     try:
         release(ws, delete_branch=True)
-    except WorkspaceError as exc:
+        # `release` removes the copy; the run directory that held it is now empty and is ours.
+        run_dir = ws.path.parent
+        if run_dir.is_dir() and not any(run_dir.iterdir()):
+            run_dir.rmdir()
+    except (WorkspaceError, OSError) as exc:
         # Report rather than mask the original failure, and say exactly what is left over.
         from factory.contained.workspace import cleanup_hint
 
@@ -598,6 +619,7 @@ def _run_local(args: argparse.Namespace) -> int:
     ws: Workspace | None = None
     try:
         project = _resolve_project(args.factory_args)
+        _validate_env_args(args)          # before a copy is made, not after
         run_id = args.name or container_name(project)
         # Dry-run must not touch the host: no worktree, no branch, no rsync. `plan_workspace`
         # computes the same path/kind/branch `materialize` would, purely from path and git-repo
