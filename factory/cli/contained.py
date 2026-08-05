@@ -59,7 +59,7 @@ LIFECYCLE_SUBCOMMANDS = ("ls", "attach", "rm", "sync", "setup", "verify", "bundl
 
 # Flags whose meaning exists only for one runtime. Using one against the other is a mistake worth
 # naming: silently ignoring it makes a user believe a namespace or a mount took effect.
-_LOCAL_ONLY = ("mount", "live")
+_LOCAL_ONLY = ("mount",)
 _K8S_ONLY = ("namespace", "storage_class")
 
 # Flags are described here rather than in argparse's own listing: which target a flag belongs to is
@@ -154,7 +154,6 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
                    help=argparse.SUPPRESS)
     p.add_argument("--forward", action="append", default=[], metavar="VAR", help=argparse.SUPPRESS)
     p.add_argument("--mount", action="append", default=[], metavar="PATH", help=argparse.SUPPRESS)
-    p.add_argument("--live", action="store_true", default=False, help=argparse.SUPPRESS)
     p.add_argument("--namespace", default=None, help=argparse.SUPPRESS)
     p.add_argument("--storage-class", default=None, dest="storage_class", help=argparse.SUPPRESS)
     p.add_argument("--image", default=None, help=argparse.SUPPRESS)
@@ -562,14 +561,6 @@ def cmd_contained(args: argparse.Namespace) -> int:
         return 0
     if args.subcommand:
         return dispatch_lifecycle(args)
-
-    if args.live:
-        print(
-            "--live is reserved and not implemented. The workspace is a copy by choice, so the "
-            "host tree is untouched and nothing is left behind.",
-            file=sys.stderr,
-        )
-        return 2
 
     if args.target == "k8s":
         from factory.cli.contained_k8s import run_k8s
