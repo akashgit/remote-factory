@@ -226,12 +226,12 @@ factory contained sync <name>      # Prints the branch and the merge command —
 the pod. `--division` gives the agent a container-manufacturing plane so it can build an image, run
 it, read the failure and iterate.
 
-**Read the guarantees before trusting them.** The two targets share a command surface and an image,
-not a threat model. Neither confines agent-authored code, neither is a multi-tenant boundary, and
-neither replaces review — `contained` bounds *accidents* and gives runs a reproducible environment.
-The local target has no egress control and holds inference credentials inside the container;
-`--division` opens an unauthenticated container-control endpoint on localhost for the life of the
-run. All of this is deliberate and documented.
+**It is not a security sandbox.** `contained` makes a run reproducible and keeps it off your working
+tree. It does not restrict what the agent's code can do, it is not built for code or tenants you do
+not trust, and it does not replace reviewing the result. Locally, your inference credentials are
+inside the container because the agent needs them; `--division` additionally opens an
+unauthenticated build endpoint on every network interface for the length of the run, so avoid it on
+untrusted networks.
 
 Full guide, with worked examples of every command: **[docs/contained.md](docs/contained.md)**.
 

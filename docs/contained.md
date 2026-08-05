@@ -21,7 +21,7 @@ a mode of it, so the host never parses what you pass and cannot break when the C
 !!! warning "Read the guarantees before trusting them"
     `contained` bounds *accidents* and gives runs a reproducible environment. It does **not** confine
     agent-authored code, it is **not** a multi-tenant boundary, and it does **not** replace review.
-    See [What each target actually guarantees](#what-each-target-actually-guarantees).
+    See [What it does and does not protect you from](#what-it-does-and-does-not-protect-you-from).
 
 ---
 
@@ -42,28 +42,34 @@ You need `podman` (with its machine running on macOS), and inference credentials
 
 ---
 
-## What each target actually guarantees
-
-The two targets share a command surface and an image, **not a threat model**.
+## Choosing a target
 
 | | `--target local` | `--target k8s` |
 |---|---|---|
-| Runtime | podman container on your machine | plain pod on Kubernetes/OpenShift |
-| Syscall confinement | podman's default seccomp profile only | the container runtime's default only |
-| Filesystem | project is a **copy**, bind-mounted read-write; your *working* tree untouched — but the source repo's `.git` is writable | restricted SCC; workspace is a **copy** on a PVC |
-| Identity | non-root, matched to the mount's owner | restricted SCC, arbitrary namespace UID |
-| Egress | **none** — full network access | NetworkPolicy only |
-| Credentials | **inside the container** | a Secret in the namespace, mounted into the pod |
-| Division | full host podman engine | OpenShift `Build` + validation pods |
+| Where it runs | a podman container on your machine | a pod on a Kubernetes/OpenShift cluster |
+| Good for | everyday work; attaching and watching | long unattended runs; more CPU and memory than a laptop |
+| Needs | podman | a namespace, and a one-time setup you apply yourself |
+| Your project | a copy, bind-mounted from disk | a copy, uploaded to a volume that outlives the pod |
+| Credentials | taken from your shell, and they enter the container | a Secret you create in the namespace |
+| Survives a laptop closing | no | yes |
 
-Four honest admissions:
+### What it does and does not protect you from
 
-1. **Local is the weaker runtime.** It has no egress control and holds credentials directly.
-2. **The division is a hole by design.** Builds cannot happen inside either boundary, so both
-   divisions reach outward. Opt-in and separately named is the mitigation for the decision.
-3. **Neither replaces review.** A contained run does not make its diff trustworthy.
-4. **Neither is a multi-tenant boundary.** Both assume you own the machine or the namespace, and
-   that the code under improvement is yours.
+`contained` exists to make runs **reproducible** and to keep them **off your working tree**. Both
+targets do that well.
+
+It is **not a security sandbox**, and it is worth being concrete about what that means:
+
+- The agent's code runs with normal network access and can reach anything your machine can. Nothing
+  restricts what it writes or fetches.
+- Locally, your inference credentials are inside the container, because the agent needs them to work.
+- A contained run does not make its diff safe to merge. Review the result exactly as you would
+  review any other change.
+- Neither target is built for running code you do not trust, or for sharing a machine or namespace
+  with people you do not trust.
+
+The cluster target is the more constrained of the two — it runs under a restricted security context
+with namespace-scoped permissions — but the point above still stands for both.
 
 ---
 
@@ -91,7 +97,6 @@ factory contained {ls|attach|rm|sync|setup|verify|bundle} [name]
 | Flag | Meaning |
 |---|---|
 | `--mount PATH` | Additional host path bind-mounted in, repeatable |
-| `--live` | Reserved; not implemented |
 
 **K8s only**
 
@@ -242,16 +247,23 @@ Five assertions run between provisioning and the first agent call. A failure abo
 tokens are spent, names the likely cause, and leaves the runtime up so you can look:
 
 ```console
-$ factory contained -- ceo ~/code/rta
+$ factory contained --name rta-run -- ceo ~/code/rta
 contained: step 'assert:git_usable' failed
-  git is not usable in the workspace. State detection then reports no_repo, the CEO silently drops
-  to build mode, and the eventual error names a flag several steps away from the cause. For a git
-  worktree this usually means the source repository's git directory is not mounted — a worktree's
-  .git is a *file* pointing at it.
+  The workspace is not a usable git repository inside the runtime.
+  Most likely the repository this project belongs to was not mounted — a git worktree's .git is a
+  file pointing at a directory elsewhere.
+  Try:  factory contained --mount <path-to-that-repository> -- <your command>
   The container is still there for inspection:
     podman exec -it rta-run sh
     factory contained rm rta-run
+
+This run left a git worktree and a branch in your repository. Remove them with:
+  git -C ~/code/rta worktree remove ~/.factory-contained/rta-run/rta
+  git -C ~/code/rta branch -D contained/rta-run
 ```
+
+Each hint names the likely cause and what to try. The container is left running so you can look
+inside it before removing it.
 
 ### Composing without provisioning
 
@@ -292,38 +304,43 @@ $ FACTORY_CONTAINED_DRY_RUN=1 factory contained --forward GH_TOKEN -- study ~/co
 `--division` gives the contained agent your **host's** podman engine, so it can build an image, run
 it, read the failure and iterate.
 
-Builds happen outside the container because the container has no engine of its own, and giving it
-one means nested containerization — a privileged container or a user-namespace setup that is fragile
-on Linux and unavailable inside the macOS podman machine. So the division reaches outward, and it is
-opt-in and separately named for exactly that reason.
+Builds happen on your machine rather than inside the container: the container has no container
+engine of its own, and nesting one inside it is not workable on macOS. That is why this is a
+separate flag rather than something always on.
 
 ```console
-$ factory contained --division -- ceo ~/code/rta --focus "add a Containerfile"
+$ factory contained --division --name buildcycle -- ceo ~/code/rta --focus "add a Containerfile"
 
-  ┌─ DIVISION ENABLED ─────────────────────────────────────────────────────────────
-  │ podman-mcp-server is listening on port 8430 with NO AUTHENTICATION.
-  │ The container reaches it at http://host.containers.internal:8430/mcp.
-  │ Anything that can reach that port can build and run containers on this host —
-  │ outside the container boundary, by necessity.
+  ┌─ Container builds enabled (--division) ───────────────────────────────────────
+  │ Started podman-mcp-server so the agent can build and run container images.
+  │ The run reaches it at http://host.containers.internal:8430/mcp
   │
-  │ It outlives this command, because the run does. Stop it with:
+  │ It listens on 0.0.0.0:8430 — every network interface, not just this
+  │ machine — and it has no authentication. For as long as the run lasts, anyone
+  │ who can reach that port can build and run containers as you.
+  │
+  │ Avoid --division on untrusted networks.
+  │ It stops when the run is removed:
   │     factory contained rm buildcycle
-  └────────────────────────────────────────────────────────────────────────────────
+  └───────────────────────────────────────────────────────────────────────────────
 
-buildcycle
+Starting buildcycle
   attach:  factory contained attach buildcycle
   result:  factory contained sync buildcycle
+  stop:    factory contained rm buildcycle
+
+buildcycle is running.
 ```
 
 The endpoint lives as long as the run, not as long as the launching command — the launch returns
 immediately while the run continues for minutes or hours. `factory contained rm` stops it.
 
-!!! warning "It listens on every interface"
-    `podman-mcp-server` binds `0.0.0.0:8430` and has no authentication, so for the length of the run
-    anyone who can reach that port can build and run containers as you. Avoid `--division` on
-    untrusted networks. It cannot be bound to loopback: the container reaches the host through a
-    gateway address rather than through localhost, so a loopback bind would make the tools
-    unreachable rather than make them safe.
+It cannot be bound to loopback instead: the container reaches your machine through a gateway
+address rather than through localhost, so a loopback bind would make the build tools unreachable
+rather than make them safer.
+
+`FACTORY_CONTAINED_DRY_RUN=1` shows the same banner, marked as not started, so you can see what
+`--division` would do before doing it.
 
 The agent gets the podman tool surface plus a brief telling it these are capabilities it already
 has. Asked to name its tools, it answers with them rather than proposing to build a CLI wrapper:
@@ -467,17 +484,15 @@ cluster tools for launching validation pods and reading logs.
 
 ---
 
-## Things that fail quietly, and what the runtime does about them
+## Checks the runtime runs for you
 
-| Trap | What it looks like | What the runtime does |
-|---|---|---|
-| A container UID that does not own the mount | Agent edits vanish with no error | Probes a throwaway container for the mount's owner and matches the run to it |
-| A run that starts on the wrong files | A plausible-looking result from stale code | Five provenance assertions before the first agent call |
-| A `HEAD` checkout instead of your tree | Uncommitted work silently absent | The copy is a worktree with your working tree synced over it — `.factory/` included |
-| Claude Code's first-run dialogs | The run hangs at a menu nobody is watching | Trust, MCP approval and bypass-permissions answers are pre-recorded |
-| A root-owned PVC | `tar: Cannot mkdir: Permission denied` | `fsGroup` read from the namespace's allocated range |
-| A reused PVC | The next run executes against the previous run's files | The unpack marker is per-run |
-| Growth context missing | In-container eval scores silently incomparable | Loud warning at launch; never fails the run |
+Before the first agent call, the runtime asserts that the workspace it is about to use is the one
+you meant — that it is present and non-empty, that git works in it, that `.factory/` arrived if your
+project has one, that it is writable, and that a file's contents match the copy on your machine.
+
+Each of these can fail silently otherwise: a read-only workspace looks like an agent whose edits
+keep vanishing, and a stale copy produces a plausible result from the wrong code. A failed check
+stops the run before any tokens are spent and leaves the container up so you can look inside it.
 
 ---
 
@@ -488,13 +503,15 @@ cluster tools for launching validation pods and reading logs.
 | `FACTORY_CONTAINED_IMAGE` | Override the runtime image |
 | `FACTORY_CONTAINED_SIDECAR_IMAGE` | Override the k8s build sidecar's `oc` image |
 | `FACTORY_CONTAINED_HOME` | Where workspace copies live (default `~/.factory-contained`) |
-| `FACTORY_CONTAINED_DRY_RUN` | Compose commands, provision nothing |
+| `FACTORY_CONTAINED_DRY_RUN=1` | Print what would run; provision nothing |
+| `FACTORY_LOG_LEVEL=debug` | Show every command the runtime issues (quiet by default) |
 
-What crosses into the runtime is `FACTORY_` by default, plus exactly what `--forward` names, plus
-the backend variables the resolved credential shape requires. **Nothing implicit.** `~/.factory/` is
-mounted read-write so config, profiles, the registry and evolved playbooks work as on the host;
-`~/.claude/projects/`, `FACTORY_MANAGED_DIRS`, `FACTORY_VAULT_PATH` and `GH_TOKEN` are opt-in via
-`--mount` / `--forward`.
+**Nothing crosses into the runtime that you did not ask for.** Variables starting with `FACTORY_`
+go in, along with whatever `--forward` names and the variables your inference backend needs — and
+nothing else. Your `~/.factory/` is mounted read-write, so config, credential profiles, the project
+registry and evolved playbooks work exactly as they do outside. Anything else you want in there —
+`~/.claude/projects/`, `GH_TOKEN`, `FACTORY_MANAGED_DIRS`, `FACTORY_VAULT_PATH` — you pass explicitly
+with `--mount` or `--forward`.
 
 ---
 
@@ -503,12 +520,18 @@ mounted read-write so config, profiles, the registry and evolved playbooks work 
 **"podman is installed but its engine is not reachable"** — on macOS the machine stops quietly.
 `podman machine start`, or `factory contained setup`, which does it for you.
 
-**"the workspace is not writable by the runtime identity"** — the mount's owner and the container
-UID disagree. The message names the mount path, the UID and the owner.
+**"The workspace is read-only inside the runtime"** — the container runs as a user that does not own
+your files. Check that the project is owned by you, and that `factory contained verify` is green.
 
-**macOS: the workspace is empty inside** — the podman machine shares `$HOME` by default; a path
-outside it is not mounted at all rather than mounted empty. The launch warns when a mount source is
-outside `$HOME`.
+**"could not read ... from inside a container"** — usually the podman machine does not share that
+path. On macOS it shares your home directory; a project elsewhere is not mounted at all rather than
+mounted empty. Move it under your home directory, or add the path with `podman machine set --volume`
+and restart the machine. The launch warns about this before it happens.
+
+**"is not a path the podman machine shares"** — same cause, caught at launch. The message lists the
+paths that *are* shared.
+
+**A wall of output instead of three lines** — that is `FACTORY_LOG_LEVEL=debug`. Unset it.
 
 **"container 'x' already exists"** — a previous run left it. Attach to it, `rm` it, or pass `--name`.
 A container that is no longer running is reaped automatically and the run retried once.
@@ -534,6 +557,7 @@ that run first, or run this one without `--division`.
 | Container identity probe | `factory/contained/identity.py` |
 | Credential shape | `factory/contained/credentials.py` |
 | Local division | `factory/contained/division.py` |
+| Pre-answering Claude Code's first-run prompts | `factory/contained/claude_state.py` |
 | Cluster division | `factory/contained/k8s_division.py` |
 | Prereq bundle | `factory/contained/bundle.py` |
 | Secret scan | `factory/contained/secrets.py` |

@@ -428,10 +428,10 @@ def test_malformed_env_pair_is_rejected() -> None:
     assert cli._parse_extra_env(["EMPTY="]) == {"EMPTY": ""}
 
 
-def test_live_is_reserved_and_says_so(capsys: pytest.CaptureFixture[str]) -> None:
-    args = interpret(["--live", "--", "study", "/tmp"])
-    assert cli.cmd_contained(args) == 2
-    assert "reserved" in capsys.readouterr().err
+def test_an_unknown_flag_is_rejected_rather_than_ignored() -> None:
+    """A flag that does nothing is worse than no flag: it implies a behaviour that does not exist."""
+    with pytest.raises(SystemExit):
+        interpret(["--live", "--", "study", "/tmp"])
 
 
 def test_identity_is_projected_in_dry_run_without_starting_a_probe(tmp_path: Path) -> None:
