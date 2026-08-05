@@ -158,9 +158,9 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
         args.subcommand = rest[0]
         args.factory_args = []
         tail = rest[1:]
-        # `--yes` is the one trailing flag this REMAINDER split still honors — it gates `rm`
-        # deleting an active runtime (§2.3), so `rm foo --yes` has to reach `args.yes` rather than
-        # being silently dropped the way every other trailing flag is.
+        # `--yes` is the one trailing flag accepted here, because `rm <name> --yes` is the order
+        # people type it. It is documented as the exception; every other flag in this position is
+        # rejected below rather than silently dropped.
         if "--yes" in tail:
             args.yes = True
             tail = [token for token in tail if token != "--yes"]
@@ -183,6 +183,13 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
             args.name = tail[0]
     else:
         args.subcommand, args.factory_args = None, rest
+        _reject_subcommand_typo(parser, rest)
+
+    # `bundle` only ever emits cluster YAML, so it implies the cluster target. Without this the
+    # namespace flag it needs is rejected as out-of-scope for the default target, and the command
+    # the generated manifest tells you to run cannot be run.
+    if args.subcommand == "bundle":
+        args.target = "k8s"
 
     for dest in _LOCAL_ONLY:
         if getattr(args, dest) and args.target != "local":
@@ -199,6 +206,41 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
             "  factory contained -- ceo ~/code/rta\n"
             "  factory contained --division -- study ~/code/rta"
         )
+
+
+def _reject_subcommand_typo(parser: argparse.ArgumentParser, rest: list[str]) -> None:
+    """Catch `lst` for `ls` before it is treated as a factory command.
+
+    Without this the token falls through to the passthrough path and fails much later with "no
+    existing directory found in ['lst']" — a message about materializing workspaces, for what is
+    simply a typo.
+    """
+    if not rest:
+        return
+    first = rest[0]
+    if first.startswith("-") or Path(first).expanduser().exists():
+        return
+    close = [c for c in LIFECYCLE_SUBCOMMANDS if _within_one_edit(first, c)]
+    if close:
+        parser.error(
+            f"unknown subcommand {first!r} — did you mean {close[0]!r}?\n"
+            f"  factory contained {close[0]}"
+        )
+
+
+def _within_one_edit(a: str, b: str) -> bool:
+    """A cheap edit-distance-1 check: one substitution, insertion, or deletion."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+    for index in range(len(longer)):
+        if shorter == longer[:index] + longer[index + 1:]:
+            return True
+    return False
 
 
 def _target_given(args: argparse.Namespace) -> bool:
@@ -490,11 +532,32 @@ def cmd_contained(args: argparse.Namespace) -> int:
     return _run_local(args)
 
 
+def _roll_back(ws: Workspace | None) -> None:
+    """Undo a workspace this launch created, when the launch never got as far as running anything.
+
+    Only ever called on the failure path, and only for a copy this invocation made: a reattach to an
+    existing run reuses its workspace, and removing that would destroy live work.
+    """
+    if ws is None or not ws.path.exists():
+        return
+    from factory.contained.workspace import release
+
+    try:
+        release(ws, delete_branch=True)
+    except WorkspaceError as exc:
+        # Report rather than mask the original failure, and say exactly what is left over.
+        from factory.contained.workspace import cleanup_hint
+
+        print(f"Note: could not clean up the workspace ({exc}).\n{cleanup_hint(ws)}",
+              file=sys.stderr)
+
+
 def _run_local(args: argparse.Namespace) -> int:
     dry_run = dry_run_enabled()
     # Bound before the first `try` because the `finally` below has to be able to shut the division
     # down no matter which step raised — including one that raised before it was ever started.
     division = None
+    ws: Workspace | None = None
     try:
         project = _resolve_project(args.factory_args)
         run_id = args.name or container_name(project)
@@ -510,7 +573,11 @@ def _run_local(args: argparse.Namespace) -> int:
             plan = division.plan
     except (ContainedError, WorkspaceError, IdentityError) as exc:
         # A half-materialized run is worse than none: reporting and stopping here means the next
-        # attempt starts clean instead of layering on top of a plan already known bad.
+        # attempt starts clean instead of layering on top of a plan already known bad. That includes
+        # the worktree and branch this just added to the *user's* repository — the factory started
+        # nothing, so there is no work to lose, and leaving them behind means the user's own
+        # `git worktree list` grows by one on every failed attempt.
+        _roll_back(ws)
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 
@@ -554,9 +621,19 @@ def _run_local(args: argparse.Namespace) -> int:
                 f"{DRY_RUN_ENV}=1 to compose the commands without running them.",
                 file=sys.stderr,
             )
+            _roll_back(ws)
             return 1
 
-        code = _execute(plan, steps, probes)
+        code, created = _execute(plan, steps, probes)
+        if code != 0 and not created:
+            # Nothing was provisioned, so the workspace this launch made has no purpose and no
+            # contents worth keeping. When a container *was* created the workspace stays: it is what
+            # the user inspects.
+            _roll_back(ws)
+        elif code != 0:
+            from factory.contained.workspace import cleanup_hint
+
+            print(f"\n{cleanup_hint(ws)}", file=sys.stderr)
         if division is not None and code == 0:
             # The run outlives this command, so the endpoint it depends on has to as well. `rm`
             # stops it; the `finally` below only fires for a launch that never got that far.
@@ -568,7 +645,13 @@ def _run_local(args: argparse.Namespace) -> int:
             division.stop()
 
 
-def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> int:
+def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> tuple[int, bool]:
+    """Run the provisioning steps. Returns the exit code and whether a container now exists.
+
+    The caller needs the second value to decide whether the workspace is still worth keeping: a
+    failure before the container exists leaves nothing to inspect, and the copy it made is litter in
+    the user's repository.
+    """
     hints = {f"assert:{p.name}": p.hint for p in probes}
     created = False
     for step in steps:
@@ -581,7 +664,7 @@ def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> int
                 f"  podman stop {plan.name}",
                 file=sys.stderr,
             )
-            return 130
+            return 130, created
         create_hint = None
         if result.returncode != 0:
             result, create_hint = _handle_create_failure(step, result, plan)
@@ -597,7 +680,7 @@ def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> int
                     f"    factory contained rm {plan.name}",
                     file=sys.stderr,
                 )
-            return 1
+            return 1, created
         if step.name == "create":
             created = True
 
@@ -606,4 +689,4 @@ def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> int
     print(plan.name)
     print(f"  attach:  factory contained attach {plan.name}")
     print(f"  result:  factory contained sync {plan.name}")
-    return 0
+    return 0, created

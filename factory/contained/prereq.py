@@ -101,7 +101,12 @@ def _image_check() -> Check:
             if ok
             else f"{reference} is not present locally"
         ),
-        fix=None if ok else f"factory contained setup --target local  # pulls {reference}",
+        fix=(
+            None if ok else
+            f"factory contained setup   # pulls {reference}\n"
+            f"              or, if it is not published yet, point at one you have:\n"
+            f"              export FACTORY_CONTAINED_IMAGE=<your-image>"
+        ),
     )
 
 
@@ -115,7 +120,22 @@ def _inference_check() -> Check:
     return Check(name="inference", ok=shape.ok, detail=shape.detail, fix=shape.fix)
 
 
-def render_checks(checks: list[Check], *, ready_command: str | None = None) -> str:
+# Checks that `setup` can actually repair. Offering `setup` for anything else sends the user to a
+# command that will report the same failure — a loop with no exit.
+SETUP_CAN_FIX = frozenset({"container_engine", "runtime_image"})
+
+
+def render_checks(
+    checks: list[Check],
+    *,
+    ready_command: str | None = None,
+    setup_command: str | None = "factory contained setup",
+) -> str:
+    """Render the checks, then say what to do next — and only what will work.
+
+    `setup_command` is None when the caller *is* setup: telling someone to run the command that just
+    failed is worse than saying nothing.
+    """
     lines = []
     for check in checks:
         status = "ok  " if check.ok else "FAIL"
@@ -124,10 +144,19 @@ def render_checks(checks: list[Check], *, ready_command: str | None = None) -> s
             lines.append(f"         fix: {check.fix}")
     failures = [c for c in checks if not c.ok]
     lines.append("")
-    ready = ready_command or "factory contained -- ceo <path>"
-    lines.append(
-        f"All checks passed. Start a run with `{ready}`."
-        if not failures
-        else f"{len(failures)} check(s) failed. Fix them, or run `factory contained setup`."
-    )
+    if not failures:
+        ready = ready_command or "factory contained -- ceo <path>"
+        lines.append(f"All checks passed. Start a run with `{ready}`.")
+        return "\n".join(lines)
+
+    repairable = [c.name for c in failures if c.name in SETUP_CAN_FIX]
+    if setup_command and repairable:
+        lines.append(
+            f"{len(failures)} check(s) failed. `{setup_command}` can fix "
+            f"{', '.join(repairable)}; the rest need the fix shown above each one."
+        )
+    else:
+        lines.append(
+            f"{len(failures)} check(s) failed. Each one shows the command that fixes it above."
+        )
     return "\n".join(lines)

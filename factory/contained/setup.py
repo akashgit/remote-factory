@@ -45,7 +45,7 @@ def run_setup(
     if target in (None, "local", "both"):
         _setup_local()
         checks = local_checks()
-        print(render_checks(checks))
+        print(render_checks(checks, setup_command=None))
         code = 0 if all(c.ok for c in checks) else 1
 
     if target in ("k8s", "both"):
@@ -67,7 +67,13 @@ def _ask_target() -> str:
     print("  1) local  — a podman container on this machine")
     print("  2) k8s    — a pod on a cluster")
     print("  3) both")
-    choice = input("Choice [1]: ").strip() or "1"
+    try:
+        choice = input("Choice [1]: ").strip() or "1"
+    except EOFError:
+        # stdin closed before an answer arrived — a pipe, a CI job, or `< /dev/null`. The default
+        # is the documented one; an unanswered prompt must not become a bare `Error:`.
+        print("\nNo answer given; setting up the local runtime (the default).")
+        return "local"
     return {"1": "local", "2": "k8s", "3": "both"}.get(choice, "local")
 
 
@@ -90,10 +96,19 @@ def _setup_local() -> None:
         result = subprocess.run(build_pull_argv(image))
         if result.returncode != 0:
             print(
-                f"Pull failed. If {image} has not been published yet, build it locally:\n"
-                "  podman build -f containers/factory/Containerfile -t "
-                f"{image} .\n"
-                "or point the runtime at an image you already have with FACTORY_CONTAINED_IMAGE.",
+                f"\nCould not pull {image}.\n"
+                "That usually means the image is not published yet, or the registry needs a login "
+                "(`podman login ghcr.io`).\n"
+                "\n"
+                "Either way you have two options:\n"
+                "  1. Use an image you already have:\n"
+                "       export FACTORY_CONTAINED_IMAGE=<your-image-reference>\n"
+                "  2. Build one from a checkout of this repository:\n"
+                "       git clone https://github.com/akashgit/remote-factory\n"
+                "       cd remote-factory\n"
+                f"       podman build -f containers/factory/Containerfile -t {image} .\n"
+                "     (the Containerfile ships in the git repository, not in the installed "
+                "package)",
                 file=sys.stderr,
             )
 

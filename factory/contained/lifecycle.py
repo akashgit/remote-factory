@@ -22,7 +22,12 @@ from pathlib import Path
 
 import structlog
 
-from factory.contained.workspace import Workspace, contained_home, merge_hint
+from factory.contained.workspace import (
+    Workspace,
+    cleanup_hint,
+    contained_home,
+    merge_hint,
+)
 from factory.podman import (
     LABEL_CONTAINED,
     LABEL_PROJECT,
@@ -133,15 +138,20 @@ def local_runtimes() -> list[Runtime]:
     return runtimes
 
 
-def list_runtimes(target: str | None = None) -> tuple[list[Runtime], list[str]]:
+def list_runtimes(
+    target: str | None = None, namespace: str | None = None
+) -> tuple[list[Runtime], list[str], list[str]]:
     """Runtimes for one target, or both when `target` is None.
 
-    Returns the runtimes plus any notes about a target that could not be reached. A missing
-    cluster context is a note, not a failure: `ls` on a laptop with no kubeconfig must still list
-    the local containers.
+    Returns the runtimes, notes about a target that genuinely failed, and the names of targets that
+    were simply not configured. Those last two are different facts: "your cluster is unreachable" is
+    worth saying, "you have never used the cluster" is not, and `ls` on a laptop with no kubeconfig
+    must still list the local containers without complaining about a target the user never asked
+    for.
     """
     runtimes: list[Runtime] = []
     notes: list[str] = []
+    unconfigured: list[str] = []
     if target in (None, "local"):
         try:
             runtimes += local_runtimes()
@@ -151,20 +161,17 @@ def list_runtimes(target: str | None = None) -> tuple[list[Runtime], list[str]]:
             notes.append(f"local: {exc}")
     if target in (None, "k8s"):
         try:
-            from factory.contained.k8s import cluster_runtimes
+            from factory.contained.k8s import cluster_runtimes, has_cluster_context
 
-            runtimes += cluster_runtimes()
-        except ModuleNotFoundError:
-            # The cluster half is a separate phase (spec §13). `ls` with no target is the one
-            # command that spans both, and it must list what exists rather than fail on what does
-            # not — a laptop with no cluster support installed still has local containers to show.
-            if target == "k8s":
-                raise
+            if target is None and not has_cluster_context():
+                unconfigured.append("k8s")
+            else:
+                runtimes += cluster_runtimes(namespace)
         except LifecycleError as exc:
             if target == "k8s":
                 raise
             notes.append(f"k8s: {exc}")
-    return runtimes, notes
+    return runtimes, notes, unconfigured
 
 
 def _format_age(created: datetime | None) -> str:
@@ -185,12 +192,17 @@ def _format_age(created: datetime | None) -> str:
     return f"{seconds // 86400}d"
 
 
-def render_table(runtimes: list[Runtime], notes: list[str] | None = None) -> str:
+def render_table(
+    runtimes: list[Runtime],
+    notes: list[str] | None = None,
+    unconfigured: list[str] | None = None,
+) -> str:
     if not runtimes:
-        # "None" and "could not look" are different answers, and printing the first for the second
+        # Three different facts, and only one of them is a problem: nothing is running, something
+        # could not be reached, or a target was never set up. Reporting the second for the first
         # tells a user their fleet is empty when the engine is simply down.
         body = (
-            "Nothing could be listed — see the note(s) below."
+            "Could not list every runtime — see the note(s) below."
             if notes
             else "No contained runtimes. Start one with `factory contained -- ceo <path>`."
         )
@@ -224,14 +236,14 @@ def _not_ours(name: str) -> int:
     return 1
 
 
-def attach(name: str, target: str) -> int:
+def attach(name: str, target: str, namespace: str | None = None) -> int:
     """Attach to the run's tmux session, blocking until the user detaches or it ends.
 
     `subprocess.call` forks and waits rather than exec'ing — this process resumes when the tmux
     client exits — but for the user at the terminal, that client *is* their terminal in the
     meantime: `Ctrl-b d` detaches without stopping the run.
     """
-    runtimes, _ = list_runtimes(target)
+    runtimes, _, _ = list_runtimes(target, namespace)
     runtime = resolve_runtime(name, runtimes)
     if runtime is None:
         return _not_ours(name)
@@ -245,18 +257,21 @@ def attach(name: str, target: str) -> int:
     if runtime.target == "k8s":
         from factory.contained.k8s import build_pod_attach_argv
 
-        return subprocess.call(build_pod_attach_argv(name))
+        return subprocess.call(build_pod_attach_argv(name, namespace))
     return subprocess.call(build_attach_argv(name))
 
 
-def remove(name: str, target: str, *, assume_yes: bool, interactive: bool | None = None) -> int:
+def remove(
+    name: str, target: str, namespace: str | None = None, *,
+    assume_yes: bool, interactive: bool | None = None,
+) -> int:
     """Delete a factory-created runtime.
 
     Prompts before deleting one that is still active (spec §2.3: "Prompts if the run is still
     active" — not a hard refusal). `--yes` skips the prompt for automation. When stdin is not a TTY
     and `--yes` was not passed, this refuses rather than hanging on an answer that will never come.
     """
-    runtimes, _ = list_runtimes(target)
+    runtimes, _, _ = list_runtimes(target, namespace)
     runtime = resolve_runtime(name, runtimes)
     if runtime is None:
         return _not_ours(name)
@@ -278,12 +293,16 @@ def remove(name: str, target: str, *, assume_yes: bool, interactive: bool | None
     if runtime.target == "k8s":
         from factory.contained.k8s import remove_cluster_runtime
 
-        return remove_cluster_runtime(name, assume_yes=assume_yes)
+        return remove_cluster_runtime(name, namespace=namespace, assume_yes=assume_yes)
 
-    code = subprocess.call(build_rm_argv(name))
-    if code != 0:
-        log.warning("contained_remove_failed", name=name, exit_code=code)
-        return code
+    # podman echoes the name it removed; we print our own report on the next line, and the doubled
+    # name reads like a stutter.
+    removed = subprocess.run(build_rm_argv(name), capture_output=True, text=True)
+    if removed.returncode != 0:
+        log.warning("contained_remove_failed", name=name, exit_code=removed.returncode,
+                    stderr=removed.stderr.strip()[:200])
+        print(f"contained: removing {name} failed: {removed.stderr.strip()}", file=sys.stderr)
+        return removed.returncode
     log.info("contained_remove_completed", name=name)
     # The division server is a *host* process the run depends on, so removing the run is what ends
     # it. Nothing else does: it is deliberately detached from the command that started it.
@@ -293,8 +312,14 @@ def remove(name: str, target: str, *, assume_yes: bool, interactive: bool | None
         print(f"{name}: division endpoint stopped.")
     ws = workspace_for(name)
     if ws is not None:
-        print(f"{name}: deleted. Workspace copy remains at {ws.path}.")
+        print(f"{name}: deleted. Your work is kept — it is not removed with the runtime.")
         print(merge_hint(ws))
+        # The copy is a git worktree of the user's own repository, so it is registered in their
+        # repo and its branch is in their refs. Removing the container does not touch either, and a
+        # user who only deletes the directory leaves a stale registration that blocks the next run
+        # of the same name.
+        print()
+        print(cleanup_hint(ws))
     else:
         print(f"{name}: deleted.")
     return 0
@@ -321,9 +346,9 @@ def reap_stale(name: str) -> tuple[bool, str]:
         return False, f"{name} is not a runtime `factory contained` created"
     if runtime.active:
         return False, f"{name} is still active (state={runtime.state})"
-    code = subprocess.call(build_rm_argv(name))
-    if code != 0:
-        return False, f"removing stale container {name} failed (exit {code})"
+    removed = subprocess.run(build_rm_argv(name), capture_output=True, text=True)
+    if removed.returncode != 0:
+        return False, f"removing stale container {name} failed: {removed.stderr.strip()}"
     log.info("contained_stale_reaped", name=name, state=runtime.state)
     return True, f"removed stale container {name} (was {runtime.state})"
 
@@ -373,16 +398,16 @@ def workspace_for(name: str) -> Workspace | None:
     return Workspace(source=source, path=path, kind="worktree", branch=branch)
 
 
-def sync(name: str, target: str) -> int:
+def sync(name: str, target: str, namespace: str | None = None) -> int:
     """Report how to get the workspace back. Nothing is ever merged automatically."""
-    runtimes, _ = list_runtimes(target)
+    runtimes, _, _ = list_runtimes(target, namespace)
     runtime = resolve_runtime(name, runtimes)
     if runtime is None:
         return _not_ours(name)
     if runtime.target == "k8s":
         from factory.contained.k8s import sync_cluster_runtime
 
-        return sync_cluster_runtime(name)
+        return sync_cluster_runtime(name, namespace=namespace)
     ws = workspace_for(name)
     if ws is None:
         print(
@@ -401,12 +426,16 @@ def dispatch_lifecycle(args: argparse.Namespace) -> int:
     """Route a parsed `factory contained` lifecycle subcommand to its handler."""
     name = getattr(args, "name", None)
     target = getattr(args, "target", "local")
+    namespace = getattr(args, "namespace", None)
     try:
         if args.subcommand == "ls":
-            # No target filter: one table, both targets (spec §2.3).
-            runtimes, notes = list_runtimes(None)
-            print(render_table(runtimes, notes))
-            return 0
+            # No target filter: one table covering both, because a user asking "what is running?"
+            # does not want to ask it twice.
+            runtimes, notes, unconfigured = list_runtimes(None, namespace)
+            print(render_table(runtimes, notes, unconfigured))
+            # A target that failed to list is a failure, not an empty fleet — a script wrapping
+            # `ls` must not read a dead engine as "nothing running".
+            return 1 if notes else 0
         if args.subcommand in ("attach", "rm", "sync"):
             if not isinstance(name, str):
                 # `interpret()` already enforces this on the real CLI path; this is
@@ -417,15 +446,16 @@ def dispatch_lifecycle(args: argparse.Namespace) -> int:
                 )
                 return 2
             if args.subcommand == "attach":
-                return attach(name, target)
+                return attach(name, target, namespace)
             if args.subcommand == "rm":
                 return remove(
                     name,
                     target,
+                    namespace,
                     assume_yes=bool(getattr(args, "yes", False)),
                     interactive=sys.stdin.isatty(),
                 )
-            return sync(name, target)
+            return sync(name, target, namespace)
     except LifecycleError as exc:
         print(f"contained: {exc}", file=sys.stderr)
         return 1

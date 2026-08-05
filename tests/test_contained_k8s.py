@@ -106,8 +106,26 @@ def test_the_bundle_carries_the_secret_command_but_never_the_secret() -> None:
 
 
 def test_the_bundle_renders_with_no_cluster_reachable() -> None:
+    """An explicit namespace is all it needs — the cluster does not have to be up to print YAML."""
     with patch("factory.contained.k8s.current_namespace", side_effect=k8s.ClusterError("no cli")):
-        assert "kind: ServiceAccount" in render_bundle()
+        assert "kind: ServiceAccount" in render_bundle(namespace="ns")
+
+
+def test_the_bundle_never_invents_a_namespace() -> None:
+    """Cluster YAML pinned to a guessed name invites the user to apply it somewhere they did not
+    intend, and "it defaulted to `factory`" is not something they would think to check."""
+    from factory.contained.errors import ContainedError
+
+    with patch("factory.contained.k8s.current_namespace", return_value=None):
+        with pytest.raises(ContainedError, match="--namespace"):
+            render_bundle()
+
+
+def test_the_command_the_bundle_prints_is_one_the_cli_accepts() -> None:
+    """The generated header is copy-pasted; a flag after the subcommand is rejected by the parser."""
+    text = render_bundle(namespace="ns")
+    assert "factory contained --namespace ns bundle |" in text
+    assert "contained bundle --namespace" not in text
 
 
 # --------------------------------------------------------------------------------------------
@@ -342,7 +360,9 @@ def test_a_missing_object_names_the_command_that_restores_it() -> None:
         checks = k8s_setup.verify_k8s(namespace="ns")
     missing = [c for c in checks if not c.ok and SCC_ROLEBINDING in c.name]
     assert missing
-    assert "factory contained bundle" in (missing[0].fix or "")
+    # Flag before subcommand — the form the parser actually accepts.
+    assert "factory contained --namespace ns" in (missing[0].fix or "")
+    assert "bundle |" in (missing[0].fix or "")
 
 
 def test_permissions_are_checked_as_the_service_account_not_as_the_user() -> None:
@@ -416,14 +436,31 @@ def test_a_vertex_secret_is_accepted() -> None:
 def test_setup_applies_nothing_without_confirmation(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
          patch("factory.contained.k8s_setup.subprocess.run") as run:
         code = k8s_setup.setup_k8s(namespace="ns", division=False, interactive=False)
     run.assert_not_called()
     assert code == 1
-    out = capsys.readouterr().out
-    # It printed the full manifest — every object, not a summary — before asking.
-    assert "kind: ServiceAccount" in out and "kind: Role" in out and "kind: PersistentVolumeClaim" in out
-    assert "oc apply -f -" in out
+    captured = capsys.readouterr()
+    # The full manifest is still printed — every object, not a summary.
+    assert "kind: ServiceAccount" in captured.out
+    assert "kind: Role" in captured.out
+    assert "kind: PersistentVolumeClaim" in captured.out
+    # ...but the outcome is stated *before* it, so 80 lines of YAML cannot bury it.
+    assert "Nothing was applied" in captured.err
+
+
+def test_setup_says_so_when_no_cluster_is_selected(capsys: pytest.CaptureFixture[str]) -> None:
+    """"About to apply ... with your own credentials" is untrue when there are none."""
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("", returncode=1)), \
+         patch("factory.contained.k8s_setup.subprocess.run") as run:
+        code = k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True,
+                                   assume_yes=True)
+    run.assert_not_called()
+    assert code == 1
+    assert "No cluster is selected" in capsys.readouterr().err
 
 
 def test_setup_degrades_to_printing_when_apply_is_refused(
@@ -432,6 +469,7 @@ def test_setup_degrades_to_printing_when_apply_is_refused(
     """It never partially applies and reports success."""
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
          patch("factory.contained.k8s_setup.subprocess.run",
                return_value=_completed("", returncode=1)), \
          patch("factory.contained.k8s_setup.verify_k8s",

@@ -188,10 +188,38 @@ def merge_hint(ws: Workspace) -> str:
     )
 
 
-def release(ws: Workspace) -> None:
-    """Remove the copy. The branch survives a worktree removal, so nothing is lost."""
+def release(ws: Workspace, *, delete_branch: bool = False) -> None:
+    """Remove the copy, and optionally the branch that went with it.
+
+    The branch normally survives, because it is where the run's work is. `delete_branch` is for the
+    case where there is provably no work to lose — a launch that failed before the factory ever
+    started.
+    """
     if ws.kind == "worktree":
         _git(ws.source, ["worktree", "remove", "--force", str(ws.path)])
+        if delete_branch and ws.branch:
+            # Best effort: a branch that was never checked out anywhere is unremarkable to lose, and
+            # failing to delete it must not turn a cleanup into a second error.
+            subprocess.run(
+                ["git", "-C", str(ws.source), "branch", "-D", ws.branch],
+                capture_output=True, text=True,
+            )
     else:
         shutil.rmtree(ws.path, ignore_errors=True)
-    log.info("contained_workspace_released", path=str(ws.path), kind=ws.kind)
+    log.debug("contained_workspace_released", path=str(ws.path), kind=ws.kind)
+
+
+def cleanup_hint(ws: Workspace) -> str:
+    """The exact commands that remove what a run left in the *source* repository.
+
+    A worktree is registered in the source repo's git directory and its branch lives in the source
+    repo's refs, so removing the container is not the whole story. Deleting the copy's directory by
+    hand leaves a stale registration behind, which then blocks the next run of the same name.
+    """
+    if ws.kind != "worktree" or not ws.branch:
+        return f"Remove the copy with:  rm -rf {ws.path}"
+    return (
+        "This run left a git worktree and a branch in your repository. Remove them with:\n"
+        f"  git -C {ws.source} worktree remove {ws.path}\n"
+        f"  git -C {ws.source} branch -D {ws.branch}"
+    )
