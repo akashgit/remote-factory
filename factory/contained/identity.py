@@ -114,11 +114,14 @@ def resolve_identity(image: str, mount: Mount, *, dry_run: bool = False) -> Iden
     owner = mount_owner(image, mount)
     if owner is None:
         raise IdentityError(
-            f"could not determine who owns {mount.target} as seen from inside a container. The "
-            f"probe was: podman run --rm -v {mount.as_flag()} {image} stat -c '%u:%g' "
-            f"{mount.target}. Run it by hand — a failure here usually means the image is missing "
-            "(`factory contained setup`) or the podman machine is not running (`podman machine "
-            "start`)."
+            f"could not read {mount.target} from inside a container, so the run cannot start.\n"
+            "  Most likely one of:\n"
+            "    - the podman machine does not share this path (macOS shares your home directory "
+            "by default)\n"
+            f"    - the runtime image is missing — run `factory contained verify`\n"
+            "    - the podman machine is not running — run `podman machine start`\n"
+            f"  To see the failure yourself:\n"
+            f"    podman run --rm -v {mount.as_flag()} {image} stat -c '%u:%g' {mount.target}"
         )
     uid, gid = owner
     return Identity(

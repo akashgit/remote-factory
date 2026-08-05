@@ -1,7 +1,7 @@
 """`factory contained` — run any factory command inside a podman container or a cluster pod.
 
 The runtime is a place to run the factory, not a mode of the factory: everything after `--` is
-handed inward verbatim, except for path rewriting (spec §2.5).
+handed inward verbatim, except for path rewriting.
 """
 
 from __future__ import annotations
@@ -62,28 +62,54 @@ LIFECYCLE_SUBCOMMANDS = ("ls", "attach", "rm", "sync", "setup", "verify", "bundl
 _LOCAL_ONLY = ("mount", "live")
 _K8S_ONLY = ("namespace", "storage_class")
 
-# Printed as three tables rather than a flat argparse list: the target-scoping is the information a
-# user needs most, and a flat list hides it (spec §2.2).
+# Flags are described here rather than in argparse's own listing: which target a flag belongs to is
+# the thing a user most needs to know, and a flat alphabetical list hides it.
 _HELP_EPILOG = """\
+Run any factory command against a pinned toolchain and a copy of your project, so your
+working tree is untouched. Everything after `--` is passed through unchanged.
+
+  factory contained -- ceo ~/code/my-project
+
+Targets:
+  local   a podman container on this machine (the default). Fastest to start.
+  k8s     a pod on a Kubernetes/OpenShift cluster. For long, unattended runs.
+
+Subcommands:
+  setup                  Install what is missing, then check it
+  verify                 Check prerequisites; report the fix for each failure
+  ls                     List the runtimes this tool created
+  attach NAME            Watch a running run (Ctrl-b d detaches; the run continues)
+  sync NAME              Show how to get the run's work back
+  rm NAME                Delete a runtime
+  bundle                 Print the cluster prerequisites as YAML (k8s)
+
 Both targets:
   --target local|k8s     Which runtime                              (default: local)
-  --division             Enable the container-manufacturing plane for that target
-  --name NAME            Runtime name                               (default: derived)
-  --env KEY=VALUE        Extra environment for the runtime, repeatable
-  --forward VAR          Forward a named host variable, repeatable
-  --image REF            Override the runtime image
+  --division             Let the agent build container images
+  --name NAME            Name this run                              (default: derived)
+  --env KEY=VALUE        Extra environment for the run, repeatable
+  --forward VAR          Pass a variable from your shell inward, repeatable
+  --image REF            Use a different runtime image
+  --yes                  Skip confirmation prompts
 
 Local only:
-  --mount PATH           Additional host path bind-mounted in, repeatable
-  --live                 Reserved; mount the real working tree instead of a copy (not implemented)
+  --mount PATH           Also mount this host path, repeatable
 
 K8s only:
-  --namespace NS         Namespace                    (default: current kube context)
-  --storage-class SC     Workspace PVC storage class  (default: cluster default)
+  --namespace NS         Namespace                    (default: your current context)
+  --storage-class SC     Storage class for the workspace volume
 
-The two runtimes share a command surface and an image, not a threat model. Local has no egress
-control and holds credentials directly; k8s keeps a restricted SCC and a NetworkPolicy. Neither
-confines agent-authored code, and neither replaces review (spec §1.2).
+Environment:
+  FACTORY_CONTAINED_IMAGE          Runtime image to use
+  FACTORY_CONTAINED_HOME           Where workspace copies live (default ~/.factory-contained)
+  FACTORY_CONTAINED_DRY_RUN=1      Print what would run; provision nothing
+
+`contained` gives a run a reproducible environment and keeps it off your working tree.
+It is not a security sandbox: it does not restrict what the agent's code can do, and it
+does not replace reviewing the result. `--division` additionally opens an unauthenticated
+build endpoint on this machine for the length of the run.
+
+Full guide: https://akashgit.github.io/remote-factory/contained/
 """
 
 # Set by `build_contained_parser`, read by `cmd_contained`. `interpret` needs the parser itself (to
@@ -118,9 +144,8 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
     # One REMAINDER for everything positional, split afterwards by `interpret`. A declarative split
     # is not expressible: an optional positional carrying `choices` would try to match the first
     # word of the payload and reject it as an invalid choice.
-    # Every flag is SUPPRESSed from argparse's own listing and described in the epilog instead.
-    # A flat list hides the target-scoping, which is the information a user needs most (spec §2.2),
-    # and printing both renders each flag twice.
+    # Every flag is SUPPRESSed from argparse's own listing and described in the epilog instead:
+    # a flat list hides which target each flag belongs to, and printing both lists each flag twice.
     p.add_argument("rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     p.add_argument("--target", choices=["local", "k8s"], default="local", help=argparse.SUPPRESS)
     p.add_argument("--division", action="store_true", default=False, help=argparse.SUPPRESS)
@@ -133,8 +158,8 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
     p.add_argument("--namespace", default=None, help=argparse.SUPPRESS)
     p.add_argument("--storage-class", default=None, dest="storage_class", help=argparse.SUPPRESS)
     p.add_argument("--image", default=None, help=argparse.SUPPRESS)
-    # `rm` prompts before deleting an active runtime (§2.3) and the k8s upload prompts on a
-    # gitleaks finding (§4.5); `--yes` skips both for automation.
+    # `rm` prompts before deleting an active runtime and the cluster upload prompts on a secret-scan
+    # finding; `--yes` skips both, for automation.
     p.add_argument("--yes", action="store_true", default=False, help=argparse.SUPPRESS)
     _PARSER = p
     return p
@@ -282,7 +307,7 @@ def _resolve_project(factory_args: list[str]) -> Path:
             # The rule is generic — the first existing directory anywhere in the payload — so a
             # free-text value that coincidentally names one is picked silently otherwise. Logging it
             # is what keeps that visible.
-            log.info("contained_project_resolved", token=token, project=str(resolved))
+            log.debug("contained_project_resolved", argument=token, project=str(resolved))
             return resolved
     raise ContainedError(
         f"no existing directory found in {factory_args!r}. `factory contained` materializes a "
@@ -292,25 +317,45 @@ def _resolve_project(factory_args: list[str]) -> Path:
 
 
 def _macos_share_warning(mounts: list[Mount]) -> str | None:
-    """On macOS, a host path outside $HOME is not shared into the podman machine at all.
+    """On macOS a path the podman machine does not share is not mounted at all.
 
-    It does not fail at `podman run` — the mount is simply not there, which surfaces as an empty
-    directory inside and is exactly the failure the provenance probes exist to name. Warning at
-    launch turns a confusing probe failure into an expected one.
+    It does not fail at `podman run` — the mount is simply absent, which surfaces as an empty
+    directory inside. Checked against the machine's *actual* shared paths rather than against
+    `$HOME`: the user may have added their own with `podman machine set --volume`, and warning
+    about a path that in fact works teaches them to ignore the warning.
     """
     if platform.system() != "Darwin":
         return None
-    home = Path.home().resolve()
+    shared = _machine_shared_paths()
+    if not shared:
+        return None
     outside = [
-        str(m.source) for m in mounts if home != m.source and home not in m.source.parents
+        str(m.source) for m in mounts
+        if not any(root == m.source or root in m.source.parents for root in shared)
     ]
     if not outside:
         return None
+    roots = ", ".join(str(r) for r in shared)
     return (
-        f"macOS: {', '.join(outside)} is outside {home}. The podman machine shares $HOME by "
-        "default, so a path outside it is not mounted at all rather than mounted empty. Add it with "
-        "`podman machine set --volume` and restart the machine, or move the path under $HOME."
+        f"{', '.join(outside)} is not a path the podman machine shares (it shares: {roots}), so it "
+        "will be empty inside the container. Move the project under one of those paths, or add "
+        "this one with `podman machine set --volume` and restart the machine."
     )
+
+
+def _machine_shared_paths() -> list[Path]:
+    """The host paths the podman machine actually shares, or [] when that cannot be determined."""
+    try:
+        result = subprocess.run(
+            ["podman", "machine", "inspect", "--format", "{{range .Mounts}}{{.Source}}\n{{end}}"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    paths = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+    return [p for p in paths if p.is_absolute()]
 
 
 def _compose_env(args: argparse.Namespace, shape_env: dict[str, str]) -> dict[str, str]:
@@ -383,8 +428,10 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
     warnings.extend(shape.warnings)
     if not shape.ok:
         warnings.append(
-            f"inference is not configured ({shape.detail}). The run will start and every agent call "
-            "will fail. Fix: " + (shape.fix or "see `factory contained verify`")
+            "no inference credentials are configured, so every agent call in this run will fail.\n"
+            "  Set one of these before running, and pass it inward:\n"
+            "    export ANTHROPIC_API_KEY=...   then add:  --forward ANTHROPIC_API_KEY\n"
+            "  Run `factory contained verify` to check."
         )
     model_warning = vertex_model_warning(shape, args.factory_args)
     if model_warning:
@@ -401,14 +448,14 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
         warnings.append(share_warning)
 
     identity = resolve_identity(image, workspace_mount, dry_run=dry_run)
-    log.info("contained_identity", detail=identity.detail)
+    log.debug("contained_identity", detail=identity.detail)
 
     factory_argv, changes = rewrite_argv(args.factory_args, ws.source, ws.path)
     for before, after in changes:
         # The rewrite rule is generic — any payload token that resolves to an existing in-project
         # path gets translated, including a free-text value that coincidentally names one. Logging
         # every rewrite keeps that visible instead of silent.
-        log.info("contained_path_rewritten", before=before, after=after)
+        log.debug("contained_path_rewritten", before=before, after=after)
 
     inner = "factory " + " ".join(shlex.quote(token) for token in factory_argv)
     name = args.name or container_name(ws.source)
@@ -462,7 +509,7 @@ def _handle_create_failure(
         return result, None
     reaped, detail = reap_stale(plan.name)
     if reaped:
-        log.info("contained_create_retry_after_reap", name=plan.name, detail=detail)
+        log.debug("contained_create_retry_after_reap", name=plan.name, detail=detail)
         result = _run_step(step)
         if result.returncode == 0:
             return result, None
@@ -475,7 +522,7 @@ def _handle_create_failure(
 
 
 def _run_step(step: Step) -> subprocess.CompletedProcess[str]:
-    log.info("contained_step", step=step.name, argv=redact_argv(step.argv, CONTAINED_ENV_POLICY))
+    log.debug("contained_step", step=step.name, argv=redact_argv(step.argv, CONTAINED_ENV_POLICY))
     timeout = 300 if step.name == "create" else 120
     return subprocess.run(step.argv, capture_output=True, text=True, timeout=timeout, check=False)
 
@@ -606,9 +653,9 @@ def _run_local(args: argparse.Namespace) -> int:
         )
         steps = plan_steps(plan, probes)
 
-        # Warnings go to stderr and never change the exit code. Growth context in particular is a
-        # "your numbers are not comparable" problem, not a "this cannot run" problem.
-        for warning in (growth_context_warning(), *plan.warnings):
+        # Warnings go to stderr and never change the exit code. Ordered least to most consequential
+        # so the one that will actually break the run is the last thing on screen.
+        for warning in (growth_context_warning(factory_args=args.factory_args), *plan.warnings):
             if warning:
                 print(f"Warning: {warning}", file=sys.stderr)
 
@@ -624,6 +671,7 @@ def _run_local(args: argparse.Namespace) -> int:
             _roll_back(ws)
             return 1
 
+        _announce(plan)
         code, created = _execute(plan, steps, probes)
         if code != 0 and not created:
             # Nothing was provisioned, so the workspace this launch made has no purpose and no
@@ -643,6 +691,19 @@ def _run_local(args: argparse.Namespace) -> int:
     finally:
         if division is not None:
             division.stop()
+
+
+def _announce(plan: ContainerPlan) -> None:
+    """Print the run's identifier before provisioning starts.
+
+    It is knowable as soon as the plan exists, and it is the one line a user needs to keep: without
+    it they cannot attach to, sync, or remove the run they just started.
+    """
+    print(f"Starting {plan.name}")
+    print(f"  attach:  factory contained attach {plan.name}")
+    print(f"  result:  factory contained sync {plan.name}")
+    print(f"  stop:    factory contained rm {plan.name}")
+    print()
 
 
 def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> tuple[int, bool]:
@@ -684,9 +745,5 @@ def _execute(plan: ContainerPlan, steps: list[Step], probes: list[Probe]) -> tup
         if step.name == "create":
             created = True
 
-    # The identifier first, before anything else: a run whose name the user cannot see is a run
-    # they cannot manage (§3.1).
-    print(plan.name)
-    print(f"  attach:  factory contained attach {plan.name}")
-    print(f"  result:  factory contained sync {plan.name}")
+    print(f"{plan.name} is running.")
     return 0, created

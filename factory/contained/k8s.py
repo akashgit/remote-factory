@@ -508,7 +508,7 @@ def apply_manifest(manifest: str, namespace: str) -> None:
         raise ClusterError(f"applying the manifest failed: {exc}") from exc
     if result.returncode != 0:
         raise ClusterError(f"applying the manifest failed: {result.stderr.strip()}")
-    log.info("k8s_applied", namespace=namespace, output=result.stdout.strip()[:200])
+    log.debug("k8s_applied", namespace=namespace, output=result.stdout.strip()[:200])
 
 
 def wait_for_container(
@@ -580,7 +580,7 @@ def stream_workspace(tarball: Path, name: str, namespace: str) -> None:
     argv = build_pod_exec_argv(
         name, namespace, ["sh", "-c", unpack_command(name)], container=LOADER_CONTAINER
     )
-    log.info("k8s_streaming_workspace", pod=name, bytes=tarball.stat().st_size)
+    log.debug("k8s_streaming_workspace", pod=name, bytes=tarball.stat().st_size)
     with tarball.open("rb") as handle:
         result = subprocess.run(argv, stdin=handle, capture_output=True, text=True, timeout=1800)
     if result.returncode != 0:
@@ -609,6 +609,17 @@ def fetch_workspace(name: str, namespace: str, destination: Path) -> None:
 # ------------------------------------------------------------------------------------------------
 
 
+def _summarize(stderr: str) -> str:
+    """The last meaningful line of a CLI's error output, trimmed to something readable."""
+    lines = [
+        line.strip() for line in (stderr or "").splitlines()
+        if line.strip() and not line.startswith("E0") and "Unhandled Error" not in line
+    ]
+    if not lines:
+        return "no details given"
+    return lines[-1].removeprefix("error: ")[:160]
+
+
 def cluster_runtimes(namespace: str | None = None) -> list:
     """Factory-created pods in the namespace, as `lifecycle.Runtime` records."""
     from factory.contained.lifecycle import LifecycleError, Runtime
@@ -621,7 +632,9 @@ def cluster_runtimes(namespace: str | None = None) -> list:
     if result is None:
         raise LifecycleError("`oc`/`kubectl` is not usable; cluster runtimes cannot be listed")
     if result.returncode != 0:
-        raise LifecycleError(f"listing pods in {target} failed: {result.stderr.strip()}")
+        # kubectl prints a paragraph of retry noise for one expired token. A user running `ls` for
+        # their local containers wants one line about it, not six.
+        raise LifecycleError(f"cannot reach the cluster ({_summarize(result.stderr)})")
     try:
         payload = json.loads(result.stdout or "{}")
     except json.JSONDecodeError as exc:

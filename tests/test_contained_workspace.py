@@ -281,7 +281,8 @@ def test_reap_stale_removes_a_dead_one_of_ours() -> None:
     with patch(
         "factory.contained.lifecycle._podman_entries",
         return_value=[_entry("ours", state="exited")],
-    ), patch("factory.contained.lifecycle.subprocess.call", return_value=0):
+    ), patch("factory.contained.lifecycle.subprocess.run",
+             return_value=subprocess.CompletedProcess([], 0, "ours\n", "")):
         reaped, detail = lifecycle.reap_stale("ours")
     assert reaped
     assert "removed stale" in detail

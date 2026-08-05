@@ -289,7 +289,7 @@ def remove(
             print(f"contained: {name} was not deleted.", file=sys.stderr)
             return 1
 
-    log.info("contained_remove_requested", name=name, state=runtime.state, target=runtime.target)
+    log.debug("contained_remove_requested", name=name, state=runtime.state, target=runtime.target)
     if runtime.target == "k8s":
         from factory.contained.k8s import remove_cluster_runtime
 
@@ -303,7 +303,7 @@ def remove(
                     stderr=removed.stderr.strip()[:200])
         print(f"contained: removing {name} failed: {removed.stderr.strip()}", file=sys.stderr)
         return removed.returncode
-    log.info("contained_remove_completed", name=name)
+    log.debug("contained_remove_completed", name=name)
     # The division server is a *host* process the run depends on, so removing the run is what ends
     # it. Nothing else does: it is deliberately detached from the command that started it.
     from factory.contained.division import stop_recorded
@@ -349,7 +349,7 @@ def reap_stale(name: str) -> tuple[bool, str]:
     removed = subprocess.run(build_rm_argv(name), capture_output=True, text=True)
     if removed.returncode != 0:
         return False, f"removing stale container {name} failed: {removed.stderr.strip()}"
-    log.info("contained_stale_reaped", name=name, state=runtime.state)
+    log.debug("contained_stale_reaped", name=name, state=runtime.state)
     return True, f"removed stale container {name} (was {runtime.state})"
 
 

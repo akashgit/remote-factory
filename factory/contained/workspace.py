@@ -127,7 +127,7 @@ def _materialize_worktree(source: Path, destination: Path, run_id: str) -> Works
         # registrations whose directory is already gone.
         _git(source, ["worktree", "prune"])
         _git(source, ["worktree", "add", "--force", "-B", branch, str(destination), "HEAD"])
-        log.info("contained_worktree_created", path=str(destination), branch=branch)
+        log.debug("contained_worktree_created", path=str(destination), branch=branch)
     # A worktree carries committed state only. The point of a contained run is to exercise what is
     # *not* committed, so the working tree — modifications, untracked files, and the gitignored
     # .factory/ directory the whole experiment history lives in — is synced over the top.

@@ -133,14 +133,14 @@ class Division:
             return
         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
         self.pid_file.write_text(str(self.process.pid))
-        log.info("division_kept", pid=self.process.pid, pid_file=str(self.pid_file))
+        log.debug("division_kept", pid=self.process.pid, pid_file=str(self.pid_file))
 
     def stop(self) -> None:
         """Shut the server down. Used when the launch fails; `rm` uses `stop_recorded`."""
         if self.process is None:
             return
         if self.process.poll() is not None:
-            log.info("division_already_exited", returncode=self.process.returncode)
+            log.debug("division_already_exited", returncode=self.process.returncode)
             print("Division: podman-mcp-server had already exited.", file=sys.stderr)
             self.process = None
             return
@@ -149,7 +149,7 @@ class Division:
             self.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self.process.kill()
-        log.info("division_stopped", port=DIVISION_PORT)
+        log.debug("division_stopped", port=DIVISION_PORT)
         print(
             f"Division: podman-mcp-server stopped; nothing is listening on {DIVISION_PORT}.",
             file=sys.stderr,
@@ -189,7 +189,7 @@ def stop_recorded(run_id: str) -> bool:
         return False
     _kill_group(pid)
     pid_file.unlink(missing_ok=True)
-    log.info("division_stopped_by_lifecycle", run_id=run_id, pid=pid)
+    log.debug("division_stopped_by_lifecycle", run_id=run_id, pid=pid)
     return True
 
 
@@ -259,7 +259,7 @@ def probe_host_alias(image: str, candidates: tuple[str, ...] = HOST_CANDIDATES) 
         except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
             continue
         if result.returncode == 0:
-            log.info("division_host_resolved", host=host)
+            log.debug("division_host_resolved", host=host)
             return host
         log.debug("division_host_unreachable", host=host, stderr=result.stderr.strip()[:120])
     return None
@@ -370,7 +370,7 @@ def start_local_division(plan: ContainerPlan, *, dry_run: bool = False) -> Divis
             stderr=handle,
             start_new_session=True,
         )
-    log.info("division_started", pid=process.pid, port=DIVISION_PORT, log=str(log_path))
+    log.debug("division_started", pid=process.pid, port=DIVISION_PORT, log=str(log_path))
 
     if not wait_for_listening(DIVISION_PORT):
         division = Division(
