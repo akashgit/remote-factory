@@ -1,4 +1,4 @@
-"""`ls`, `attach`, `rm`, `sync` — over runtimes the factory created, and only those (spec §2.3).
+"""`ls`, `attach`, `rm`, `sync` — over runtimes the factory created, and only those.
 
 A tool that lists resources it did not create invites the user to assume it manages them too, so
 every subcommand here filters on the factory's own label and refuses a name that does not carry it.
@@ -267,7 +267,7 @@ def remove(
 ) -> int:
     """Delete a factory-created runtime.
 
-    Prompts before deleting one that is still active (spec §2.3: "Prompts if the run is still
+    Prompts before deleting one that is still active (spec: "Prompts if the run is still
     active" — not a hard refusal). `--yes` skips the prompt for automation. When stdin is not a TTY
     and `--yes` was not passed, this refuses rather than hanging on an answer that will never come.
     """

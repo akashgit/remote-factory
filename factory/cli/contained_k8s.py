@@ -1,12 +1,12 @@
-"""Running the factory in a cluster pod (spec §4).
+"""Running the factory in a cluster pod.
 
 The sequence, and why it is this sequence:
 
 1. **Materialize** the same workspace copy the local target uses — the run starts from the files on
-   this machine, uncommitted changes included (§2.1a), and that rule does not change because the
+   this machine, uncommitted changes included, and that rule does not change because the
    destination is remote.
-2. **Scan** it for secrets, because from here it leaves the machine (§4.5).
-3. **Pack** it into one tarball. `oc cp` of a tree is one API round trip per file (§4.4).
+2. **Scan** it for secrets, because from here it leaves the machine.
+3. **Pack** it into one tarball. `oc cp` of a tree is one API round trip per file.
 4. **Create** the pod, whose initContainer blocks waiting for the workspace.
 5. **Stream** the tarball into that initContainer, which unpacks it and exits.
 6. **Assert** provenance inside the pod, before the factory starts — the packer copies what it is
@@ -122,7 +122,7 @@ def run_k8s(args: argparse.Namespace) -> int:
 
 
 def _require_openshift(dry_run: bool) -> None:
-    """Refuse at launch, naming the reason (spec §6, §6.6 step 1).
+    """Refuse at launch, naming the reason (spec.6 step 1).
 
     Detected by API presence rather than by the `oc` binary. A run that gets as far as submitting a
     Build the cluster will never admit has already spent a workspace upload and a pod start.
@@ -143,7 +143,7 @@ def _require_openshift(dry_run: bool) -> None:
 
 def _project_dir(ws: Workspace) -> str:
     """Where the project lands in the pod. Unlike the local target this is not path-preserving —
-    nothing outside the pod resolves it (spec §2.5)."""
+    nothing outside the pod resolves it."""
     return f"{WORKSPACE_ROOT}/{ws.source.name}"
 
 
@@ -172,7 +172,7 @@ def _build_pod_plan(
     if any(_is_secretish(key) for key in env):
         warnings.append(
             "a credential-looking variable is being forwarded into the pod manifest, where it is "
-            "visible to anyone who can read pods in the namespace. The credentials Secret (§4.5) is "
+            "visible to anyone who can read pods in the namespace. The credentials Secret is "
             "the supported route."
         )
 
@@ -217,7 +217,7 @@ def _is_secretish(key: str) -> bool:
 
 
 def _scan_and_confirm(ws: Workspace, *, assume_yes: bool) -> bool:
-    """Nothing leaves the machine before this returns True (spec §4.5)."""
+    """Nothing leaves the machine before this returns True."""
     result = scan(ws.path)
     return confirm_upload(result, assume_yes=assume_yes)
 
@@ -247,7 +247,7 @@ def _provision(plan: PodPlan, tarball: Path) -> None:
     apply_manifest(render_pvc(plan.namespace, plan.storage_class), plan.namespace)
     apply_manifest(render_pod(plan), plan.namespace)
     # The identifier first, before any long-running work: a run whose name the user cannot see is a
-    # run they cannot manage (§3.1).
+    # run they cannot manage.
     print(plan.name)
     state = wait_for_container(plan.name, plan.namespace, LOADER_CONTAINER)
     if state == "running":

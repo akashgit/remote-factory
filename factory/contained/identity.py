@@ -1,4 +1,4 @@
-"""Which UID the container runs as, decided by measurement rather than by rule (spec §3.2).
+"""Which UID the container runs as, decided by measurement rather than by rule.
 
 Identity is the trap. A bind mount carries ownership through unchanged, so a container whose UID
 does not own the mounted tree gets a silently read-only workspace — a failure that surfaces several

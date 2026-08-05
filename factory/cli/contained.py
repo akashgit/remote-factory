@@ -296,9 +296,9 @@ def _parse_extra_env(pairs: list[str]) -> dict[str, str]:
 def _resolve_project(factory_args: list[str]) -> Path:
     """The first existing directory named in the payload — the project a run works on.
 
-    Everything after `--` is opaque to the host (§2.4): it is not parsed as `factory ceo`'s own
+    Everything after `--` is opaque to the host: it is not parsed as `factory ceo`'s own
     flags, so the one thing that can safely be assumed is that a contained run always starts from a
-    project already on this machine, somewhere in that payload (§2.1a).
+    project already on this machine, somewhere in that payload.
     """
     for token in factory_args:
         candidate = Path(token).expanduser()
@@ -361,7 +361,7 @@ def _machine_shared_paths() -> list[Path]:
 def _compose_env(args: argparse.Namespace, shape_env: dict[str, str]) -> dict[str, str]:
     """`FACTORY_` by default, plus the backend variables, plus exactly what `--forward` names.
 
-    Nothing implicit (spec §3.5). `--env` is applied last because it is the documented escape hatch
+    Nothing implicit. `--env` is applied last because it is the documented escape hatch
     for backend quirks, and an escape hatch that loses to a computed default is not one.
     """
     env = CONTAINED_ENV_POLICY.resolve(dict(os.environ))
@@ -381,14 +381,14 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
 
     The project is a bind mount, not an upload, so the plan carries no project transfer and none of
     the `.gitignore` handling a transfer needs. What replaces it is the provenance probe list
-    (§2.1a): a mount can be present, empty, stale, or read-only, and all four look identical until
+   : a mount can be present, empty, stale, or read-only, and all four look identical until
     something is asserted.
     """
     warnings: list[str] = []
     image = args.image or resolve_image()
 
     # The workspace is mounted at its own absolute path — identical inside and out. Not cosmetic:
-    # the local division's builds are executed by an engine *outside* the container (§5), which
+    # the local division's builds are executed by an engine *outside* the container, which
     # resolves the build-context path in its own filesystem namespace.
     workspace_mount = Mount(source=ws.path, target=str(ws.path))
     mounts: list[Mount] = [workspace_mount]
@@ -396,7 +396,7 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
     factory_home = Path("~/.factory").expanduser()
     if factory_home.is_dir():
         # Read-write: config, credential profiles, the registry and ACE-evolved playbooks work as on
-        # the host and keep accumulating (§3.3).
+        # the host and keep accumulating.
         mounts.append(Mount(factory_home, f"{CONTAINER_HOME}/.factory"))
 
     if ws.kind == "worktree":
@@ -404,9 +404,9 @@ def _build_plan(args: argparse.Namespace, ws: Workspace, *, dry_run: bool) -> Co
         # that store mounted, every git command inside fails on a path that exists on the host and
         # not in the container — and the `git_usable` probe is what catches it.
         #
-        # **Read-write, and the design said read-only.** Correcting §3.2 with what running it
+        # **Read-write, and the design said read-only.** Correcting.2 with what running it
         # showed: the CEO creates its own experiment worktrees at `<project>/.factory-worktrees/`
-        # (§3.3), and `git worktree add` writes into the *common* dir — a ref lock, a worktree
+        #, and `git worktree add` writes into the *common* dir — a ref lock, a worktree
         # registration, objects. Read-only, the first cycle dies on
         # "cannot lock ref ...: Read-only file system", which reads as a git bug rather than a mount
         # mode. Nothing else in the design works around it: the copy has to be a valid worktree
@@ -566,7 +566,7 @@ def cmd_contained(args: argparse.Namespace) -> int:
     if args.live:
         print(
             "--live is reserved and not implemented. The workspace is a copy by choice, so the "
-            "host tree is untouched and nothing is left behind (spec §2.2, §3.2).",
+            "host tree is untouched and nothing is left behind.",
             file=sys.stderr,
         )
         return 2

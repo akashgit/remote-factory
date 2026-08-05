@@ -1,4 +1,4 @@
-"""Cluster prerequisites: `verify` reports, `setup` fixes (spec §4.0, §4.0a).
+"""Cluster prerequisites: `verify` reports, `setup` fixes.
 
 **Every failed check carries its fix.** `verify` never reports a bare failure: each one names the
 exact command that resolves it — `factory contained bundle | oc apply -f -` for a missing object,
@@ -226,7 +226,7 @@ def _verb_checks(namespace: str, division: bool) -> list[Check]:
 
 
 def _no_exec_check(namespace: str) -> Check:
-    """`pods/exec` must be **absent** from the ServiceAccount (spec §6.3, §11).
+    """`pods/exec` must be **absent** from the ServiceAccount.
 
     This is the one check that fails when something *succeeds*. The build sidecar holds `oc` and the
     ServiceAccount token and the agent's container holds neither — but that is only a boundary
@@ -309,7 +309,7 @@ def _keys_of(raw: str) -> set[str]:
 
 
 def _inference_check(binary: str, namespace: str, image: str) -> Check:
-    """Can a pod in this namespace actually reach inference? (spec §4.0 check 6)
+    """Can a pod in this namespace actually reach inference? (spec.0 check 6)
 
     **From inside the cluster, not from here.** A host-side check proves nothing about the pod's
     egress: the laptop has a proxy, a VPN and a working DNS resolver that the namespace may not, and
@@ -454,7 +454,7 @@ def _gitleaks_check() -> Check:
 
 
 def _division_checks(namespace: str) -> list[Check]:
-    """The k8s division is OpenShift-only, detected by API presence rather than by `oc` (spec §6)."""
+    """The k8s division is OpenShift-only, detected by API presence rather than by `oc`."""
     result = _run(build_api_resources_argv("build.openshift.io"))
     present = result is not None and result.returncode == 0 and "builds" in result.stdout
     return [

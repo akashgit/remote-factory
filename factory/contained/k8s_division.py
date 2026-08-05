@@ -1,4 +1,4 @@
-"""The cluster container-manufacturing plane — `--target k8s --division` (spec §6).
+"""The cluster container-manufacturing plane — `--target k8s --division`.
 
 OpenShift only, detected by **API presence** rather than by the `oc` binary: a cluster is not
 OpenShift because someone installed a CLI, and the refusal has to name the reason at launch rather
@@ -13,9 +13,8 @@ account.
 
 **The agent reaches the cluster only through MCP.** `kubernetes-mcp-server` runs inside the pod over
 stdio, and `oc` is not in the image — which is what makes the tool allowlist a boundary rather than
-a decoration. Note the asymmetry with the local division (§5.2): here the boundary is real, because
-it is enforced by RBAC and by the absence of a shell path to the cluster, not by a filter the
-agent's own process could bypass. The k8s division is the better-confined of the two.
+a decoration. Unlike the local division, this boundary is enforced by RBAC and by the absence of any
+shell path to the cluster, rather than by a filter the agent's own process could bypass.
 
 **The build context reaches the Build through a sidecar.** A ConfigMap-carried context has a ~700KB
 ceiling that forces a wheel-only build; a sidecar sharing the PVC has none. The sidecar is a
@@ -80,7 +79,7 @@ deliberately not in this image.
    exited zero.
 3. **fix** — a build that fails tells you why in that log and nowhere else. Edit the Containerfile
    or the source and resubmit; resubmitting is cheap and is the intended way to iterate.
-5. **validate** — when the build succeeds, run a **validation pod** on the resulting image and read
+4. **validate** — when the build succeeds, run a **validation pod** on the resulting image and read
    its logs. A build that succeeds is not evidence that the image runs.
 
 ## What is true about this environment
@@ -100,7 +99,7 @@ deliberately not in this image.
 def openshift_available(runner=None) -> bool:
     """Whether this cluster serves the OpenShift Build API.
 
-    Detected by API presence, not by the `oc` binary (spec §6): `oc` against a vanilla cluster works
+    Detected by API presence, not by the `oc` binary: `oc` against a vanilla cluster works
     fine for everything except the one thing the division needs.
     """
     import subprocess
@@ -127,11 +126,10 @@ def sidecar_command() -> str:
     missing package.
 
     **The verdict comes from the Build's own phase, never from an exit code.** `oc start-build
-    --follow` exits 0 for a build that failed — observed directly: a build that died on `open
-    /tmp/build/inputs/Dockerfile: no such file or directory` was reported to the agent as "Build
-    succeeded". A false success is the worst possible answer here, because the agent goes on to
-    validate an image that was never produced. So the build is started, its logs are followed for
-    the transcript, and then `.status.phase` is read and required to be `Complete`.
+    --follow` exits 0 for a build that failed, so trusting it reports a build that produced no
+    image as succeeding — and the agent then validates something that does not exist. The build is
+    started, its logs are followed for the transcript, and then `.status.phase` is read and required
+    to be `Complete`.
 
     **The Containerfile path is set on the BuildConfig, not passed as a build argument.** Binary
     builds reject build args outright (`oc` warns and ignores them), so `--build-arg DOCKERFILE=`
@@ -184,7 +182,7 @@ def sidecar_command() -> str:
 
 
 def start_build_server_source() -> str:
-    """The one-tool stdio MCP server the factory ships, `start_build(dockerfile, tag)` (spec §6.3).
+    """The one-tool stdio MCP server the factory ships, `start_build(dockerfile, tag)`.
 
     Written to the workspace and registered alongside `kubernetes-mcp-server`. It is a *file drop*,
     not a cluster client: it writes a request onto the shared volume and polls for the sidecar's
@@ -197,7 +195,7 @@ def start_build_server_source() -> str:
     """
     return f'''\
 #!/usr/bin/env python3
-"""start_build — a one-tool stdio MCP server (spec §6.3).
+"""start_build — a one-tool stdio MCP server.
 
 Writes a build request onto the volume the build sidecar watches, then polls for its result. It
 holds no credentials and speaks to no cluster: the sidecar is the only thing that does.

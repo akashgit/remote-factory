@@ -1,17 +1,15 @@
-# The factory runtime image — one image for both `--target local` and `--target k8s` (spec §7).
+# The factory runtime image — one image for both `--target local` and `--target k8s`.
 #
 # `remote-factory` is not on PyPI, so a runtime cannot `pip install` it: the factory is baked in.
 # Built and published by CI (.github/workflows/runtime-image.yml) rather than on demand, because
 # building on demand adds minutes to every cold start. `factory contained setup` pulls; it does not
 # build.
 #
-# Sharing one image between the two targets is a direct consequence of the 2026-08-03 pivot: the
-# local runtime no longer needs a sandbox-specific base, a baked-in UID, or a workaround for an
-# ignored ENV. Sharing it means local behaviour is evidence about cluster behaviour, which it
-# previously was not.
+# One image serves both targets, so how it behaves locally is evidence about how it will behave on
+# the cluster.
 #
 # **Arbitrary UID is the load-bearing property.** Both targets run this image as a UID it was not
-# built with: locally, the UID that owns the bind-mounted workspace (spec §3.2); on OpenShift, a
+# built with: locally, the UID that owns the bind-mounted workspace; on OpenShift, a
 # UID the namespace picks. So every path the factory writes follows the arbitrary-UID convention —
 # group-owned by root (GID 0) with group permissions equal to user permissions — because GID 0 is
 # the one group both targets guarantee the process is in. A directory that is merely
@@ -25,7 +23,7 @@ ARG BASE_TAG=latest
 #
 # tmux holds the detached factory session. It is what makes attach/detach safe: without a
 # multiplexer the only route to the running process's stdio is the exec channel itself, and closing
-# that takes the run's visibility with it while the run keeps going (spec §3.4, §4.6). It is not
+# that takes the run's visibility with it while the run keeps going. It is not
 # optional, and it is not packaged: UBI's repository subset omits it, and EPEL deliberately does not
 # ship packages RHEL itself carries — so neither source has it and it is built here.
 #
@@ -72,7 +70,7 @@ ENV FACTORY_HOME=${FACTORY_HOME} \
 
 USER root
 
-# git is not optional; rsync and tar serve the k8s workspace transport (§4.4). `libevent` and
+# git is not optional; rsync and tar serve the k8s workspace transport. `libevent` and
 # `ncurses-libs` are what the tmux built in stage 1 links against — the compiler stays behind, the
 # shared libraries do not.
 RUN set -eux; \
@@ -122,9 +120,9 @@ RUN set -eux; \
 
 # Claude Code shows a first-run onboarding wizard — theme picker and all — when it finds no
 # completed-onboarding marker, and a contained run then sits at that prompt forever with real tokens
-# already spent getting there. Found by running §5.5 step 3, not by reading. The marker is a plain
-# config file, so it is seeded here rather than by mounting the developer's ~/.claude (which is
-# opt-in via --mount precisely because it carries credentials and history).
+# already spent getting there. The marker is a plain config file, so it is seeded here rather than
+# by mounting the developer's ~/.claude, which stays opt-in via --mount because it carries
+# credentials and history.
 #
 # Only the onboarding keys are set. Nothing here configures inference, an account, or a theme
 # preference beyond the default — a fresh container gets a working non-interactive Claude Code, not

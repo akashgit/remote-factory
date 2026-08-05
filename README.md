@@ -234,8 +234,6 @@ The local target has no egress control and holds inference credentials inside th
 run. All of this is deliberate and documented.
 
 Full guide, with worked examples of every command: **[docs/contained.md](docs/contained.md)**.
-Design and evidence:
-[the design spec](docs/superpowers/specs/2026-08-01-factory-contained-runtime-design.md).
 
 ---
 

@@ -1,4 +1,4 @@
-"""Getting a machine (or a namespace) ready to run `factory contained`, in one pass (spec §2.6).
+"""Getting a machine (or a namespace) ready to run `factory contained`, in one pass.
 
 `verify` reports; `setup` fixes. It ends in exactly one of two states — everything green with a
 runnable command printed, or the full list of what is still missing with the command for each.

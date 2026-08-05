@@ -252,7 +252,7 @@ factory contained ls | attach <name> | rm <name> | sync <name> | setup | verify 
 FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/rta   # compose, provision nothing
 ```
 
-**The two targets share a command surface and an image, not a threat model** (design §1.2). Neither confines agent-authored code, and neither replaces review. Local is the *weaker* of the two: no egress control, and credentials live inside the container. K8s keeps a restricted SCC and namespace-scoped RBAC. Anyone carrying the pre-2026-08-03 mental model of the local runtime as the confined one will over-trust it.
+**The two targets share a command surface and an image, not a threat model.** Neither confines agent-authored code, and neither replaces review. Local is the *weaker* of the two: no egress control, and credentials live inside the container. K8s keeps a restricted SCC and namespace-scoped RBAC. None of this reaches user-facing output in these terms — `--help` says "not a security sandbox" and leaves it there, because a security comparison is not an orientation.
 
 Six things are load-bearing and fail quietly if broken:
 

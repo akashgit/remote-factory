@@ -1,8 +1,6 @@
-"""What must be true before a contained run can work, and how to make it true (spec §3.0, §4.0).
+"""What must be true before a contained run can work, and how to make it true.
 
-Three checks locally, down from the seven the OpenShell runtime needed: container engine, runtime
-image, inference. The gateway, its certificates, its `gateway.toml` and the four settings in it that
-failed quietly are all gone with the pivot, and so is the class of trap they carried.
+Three checks locally: container engine, runtime image, inference.
 
 Every failing check carries the command that resolves it. A check that can detect a problem can
 almost always name its remedy; one that cannot says so explicitly.
@@ -45,7 +43,7 @@ def _run(argv: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[s
 
 
 def local_checks() -> list[Check]:
-    """The three local prerequisite checks (spec §3.0), always the same three, in spec order."""
+    """The three local prerequisite checks, always the same three, in spec order."""
     return [_engine_check(), _image_check(), _inference_check()]
 
 
@@ -111,7 +109,7 @@ def _image_check() -> Check:
 
 
 def _inference_check() -> Check:
-    """Report the resolved credential *shape* — never material (spec §3.5).
+    """Report the resolved credential *shape* — never material.
 
     Which backend, which model, which variable or file supplied it. A check whose purpose is
     configuration must not become a way to print a key.

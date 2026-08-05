@@ -197,7 +197,7 @@ def render_access_review(
     """A SubjectAccessReview asking whether a subject may do one thing in one namespace.
 
     **The API object, not `oc auth can-i`** — and the difference is not stylistic. Measured against
-    OpenShift 4.21 on 2026-08-04:
+    OpenShift 4.21:
 
     | asked                | SubjectAccessReview | `oc auth can-i --as` |
     |----------------------|---------------------|----------------------|
@@ -209,7 +209,7 @@ def render_access_review(
     The CLI collapses a subresource onto its parent when impersonating, so it answers "yes" for
     `pods/exec` on a ServiceAccount that RBAC plainly denies. That single wrong answer would make
     `_no_exec_check` — the one check standing between the k8s division's sidecar and an agent that
-    can exec into it — report the boundary as broken on *every* cluster, forever. Spec §8 says
+    can exec into it — report the boundary as broken on *every* cluster, forever. the design says
     "via `SelfSubjectAccessReview`", meaning this object; the shorthand is not a substitute.
 
     `subresource` is a field of its own here rather than a `resource/sub` string, which is exactly
@@ -269,7 +269,7 @@ def access_review(
 
 
 def build_api_resources_argv(api_group: str) -> list[str]:
-    """Detect an API by presence, not by which binary is installed (spec §6)."""
+    """Detect an API by presence, not by which binary is installed."""
     return [cli_binary(), "api-resources", "--api-group", api_group, "-o", "name"]
 
 
@@ -414,7 +414,7 @@ spec:
       workingDir: {plan.project_dir}
       # `sleep infinity` for the same reason the local target uses it: the factory is not a
       # well-behaved init, the run itself lives in tmux, and the pod has to outlast the run so a
-      # failure is still readable (spec §3.1, §3.4).
+      # failure is still readable.
       command: ["sh", "-lc", "sleep infinity"]
       env:
 {env}
@@ -433,7 +433,7 @@ spec:
 
 
 def _render_sidecar(plan: PodPlan) -> str:
-    """The build sidecar (spec §6.3) — a separate container, never a process beside the agent.
+    """The build sidecar — a separate container, never a process beside the agent.
 
     It is the only holder of a shell path to the cluster: it carries `oc` and the ServiceAccount
     token, and the agent's container carries neither. That separation is only a boundary because the
@@ -471,7 +471,7 @@ def _yaml_scalar(value: str) -> str:
 
 
 def render_pvc(namespace: str, storage_class: str | None, size: str = "10Gi") -> str:
-    """The workspace claim. RWO: one pod mounts it, and it survives that pod (spec §4.4)."""
+    """The workspace claim. RWO: one pod mounts it, and it survives that pod."""
     storage_class_line = (
         f"  storageClassName: {storage_class}\n" if storage_class else ""
     )
@@ -605,7 +605,7 @@ def fetch_workspace(name: str, namespace: str, destination: Path) -> None:
 
 
 # ------------------------------------------------------------------------------------------------
-# Lifecycle (spec §2.3), over pods the factory created and only those
+# Lifecycle, over pods the factory created and only those
 # ------------------------------------------------------------------------------------------------
 
 
@@ -673,7 +673,7 @@ def remove_cluster_runtime(name: str, *, namespace: str | None = None, assume_ye
     """
     target = resolve_namespace(namespace)
     # Sweep whatever the run labelled as its own first, so a failed pod delete does not leave them
-    # orphaned with nothing pointing at them (spec §6.4). Only the division creates any — validation
+    # orphaned with nothing pointing at them. Only the division creates any — validation
     # pods — but the sweep belongs here rather than there: "delete what this run labelled" is a
     # lifecycle concern, and a sweep that only exists when a feature is installed is a sweep that
     # silently stops happening.
@@ -700,7 +700,7 @@ def remove_cluster_runtime(name: str, *, namespace: str | None = None, assume_ye
 
 
 def sweep_argv(namespace: str, run_name: str) -> list[str]:
-    """Delete everything a run labelled as its own (spec §6.4).
+    """Delete everything a run labelled as its own.
 
     Selected by the run's own label, so a sweep can never reach a pod the run did not create. The
     ImageStream is deliberately not swept: it retains its tags, which is the point of having built
