@@ -9,8 +9,11 @@ factory contained -- ceo ~/code/my-project
 
 Two things make it worth using. The run happens against a **pinned toolchain** — a known Python, a
 known set of agent CLIs, a known set of build tools — rather than whatever your machine has
-accumulated. And it works on a **copy** of your project, so your working tree is untouched and
-nothing is left behind when the runtime is removed.
+accumulated. And it works on a **copy** of your project, so your working tree is never modified.
+
+The copy is a git worktree of your repository, which means two things survive a run on purpose: the
+copy itself, holding whatever the run produced, and a `contained/<name>` branch pointing at it.
+`rm` prints the two commands that remove both once you are done with them.
 
 Everything after `--` is handed inward **verbatim**. The runtime is a place to run the factory, not
 a mode of it, so the host never parses what you pass and cannot break when the CLI grows.
@@ -115,17 +118,23 @@ captured separately, so run names and ages differ between them.
 
 ```console
 $ factory contained verify
-[ok  ] container_engine: podman reachable (5.7.1, rootful)
-[ok  ] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest present locally
+[FAIL] container_engine: podman is installed but its engine is not reachable: Cannot connect to Podman...
+         fix: podman machine start
+[FAIL] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest is not present locally
+         fix: factory contained setup   # pulls ghcr.io/akashgit/remote-factory/factory-runtime:latest
+              or, if it is not published yet, point at one you have:
+              export FACTORY_CONTAINED_IMAGE=<your-image>
 [FAIL] inference: no inference configuration found: CLAUDE_CODE_USE_VERTEX is unset,
        ANTHROPIC_API_KEY is unset, and ~/.factory/config.toml defines no credential profiles
          fix: export ANTHROPIC_API_KEY=... and re-run with --forward ANTHROPIC_API_KEY, or
-              configure Vertex (CLAUDE_CODE_USE_VERTEX=1 CLOUD_ML_REGION=...
-              ANTHROPIC_VERTEX_PROJECT_ID=... plus `gcloud auth application-default login`), or
-              add a [credentials.<name>] section to ~/.factory/config.toml
+              configure Vertex (...), or add a [credentials.<name>] section to ~/.factory/config.toml
 
-1 check(s) failed. Fix them, or run `factory contained setup`.
+3 check(s) failed. `factory contained setup` can fix container_engine, runtime_image; the rest
+need the fix shown above each one.
 ```
+
+That is what a first run looks like on a machine with nothing set up. `setup` fixes the first two;
+the third is yours, because the factory never handles credential material.
 
 Inference is always reported by **shape** — which backend, which model, which variable or file
 supplied it — and never by printing material:
@@ -142,8 +151,24 @@ Runtime image already present: ghcr.io/akashgit/remote-factory/factory-runtime:l
 All checks passed. Start a run with `factory contained -- ceo <path>`.
 ```
 
-`setup` is idempotent — re-running changes nothing that is already correct, and it is the supported
-way to repair a partial setup.
+!!! note "If the image cannot be pulled"
+    The runtime image is published by CI. If the pull fails, `setup` prints two ways forward: point
+    `FACTORY_CONTAINED_IMAGE` at an image you already have, or build one from a checkout of the
+    repository — the Containerfile ships in git, not in the installed package.
+
+Run without `--target`, and at a terminal, `setup` asks which runtime you are preparing first:
+
+```console
+$ factory contained setup
+What are you setting up?
+  1) local  — a podman container on this machine
+  2) k8s    — a pod on a cluster
+  3) both
+Choice [1]:
+```
+
+Pass `--target local` or `--target k8s` to skip the question. `setup` is idempotent — re-running
+changes nothing that is already correct, and it is the supported way to repair a partial setup.
 
 ### Starting a run
 
@@ -151,26 +176,31 @@ The runtime's identifier is printed **first**, before any long-running work. A r
 cannot see is a run you cannot manage.
 
 ```console
-$ factory contained -- ceo ~/code/rta
-Warning: Growth context not configured: FACTORY_MANAGED_DIRS, FACTORY_VAULT_PATH are unset.
-Growth dimensions merge 50/50 into the composite score, so eval scores computed in this container
-are NOT comparable to host scores. Continuing anyway.
-rta-8ac57c
-  attach:  factory contained attach rta-8ac57c
-  result:  factory contained sync rta-8ac57c
+$ factory contained --name rta-run -- backlog-list ~/code/rta
+Warning: no inference credentials are configured, so every agent call in this run will fail.
+  Set one of these before running, and pass it inward:
+    export ANTHROPIC_API_KEY=...   then add:  --forward ANTHROPIC_API_KEY
+  Run `factory contained verify` to check.
+Starting rta-run
+  attach:  factory contained attach rta-run
+  result:  factory contained sync rta-run
+  stop:    factory contained rm rta-run
+
+rta-run is running.
 ```
 
-The command returns as soon as the run is going; the run itself continues in tmux inside the
-container.
+That is the whole output. The command returns as soon as the run is going; the run itself continues
+in tmux inside the container. Set `FACTORY_LOG_LEVEL=debug` if you want to see every command the
+runtime issued.
 
 ### Watching, detaching, coming back
 
 ```console
 $ factory contained ls
 NAME                              TARGET  PROJECT       AGE   STATE
-rta-8ac57c                        local   8ac57cfe4ab6  1m    running
+rta-run                           local   e06e95065606  1s    running
 
-$ factory contained attach rta-8ac57c
+$ factory contained attach rta-run
 ```
 
 That drops you into the live session. `Ctrl-b d` detaches and **leaves the run going** — the tmux
@@ -181,26 +211,30 @@ prefix, because the run lives in tmux precisely so that detaching is safe.
 Nothing is ever merged for you.
 
 ```console
-$ factory contained sync rta-8ac57c
-rta-8ac57c: the workspace is already on this machine — a bind mount, not a transfer.
-Work is on branch contained/rta-8ac57c in ~/.factory-contained/rta-8ac57c/rta.
-  Review:  git -C ~/.factory-contained/rta-8ac57c/rta status && git -C ... diff
-  Merge:   git -C ~/code/rta merge contained/rta-8ac57c
+$ factory contained sync rta-run
+rta-run: the workspace is already on this machine — a bind mount, not a transfer.
+Work is on branch contained/rta-run in ~/.factory-contained/rta-run/rta.
+  Review:  git -C ~/.factory-contained/rta-run/rta status && git -C ... diff
+  Merge:   git -C ~/code/rta merge contained/rta-run
 ```
 
 ### Tearing down
 
 ```console
-$ factory contained rm rta-8ac57c
-rta-8ac57c
-rta-8ac57c: deleted. Workspace copy remains at ~/.factory-contained/rta-8ac57c/rta.
-Work is on branch contained/rta-8ac57c in ~/.factory-contained/rta-8ac57c/rta.
-  Review:  git -C ~/.factory-contained/rta-8ac57c/rta status && git -C ... diff
-  Merge:   git -C ~/code/rta merge contained/rta-8ac57c
+$ factory contained rm rta-run
+rta-run: deleted. Your work is kept — it is not removed with the runtime.
+Work is on branch contained/rta-run in ~/.factory-contained/rta-run/rta.
+  Review:  git -C ~/.factory-contained/rta-run/rta status && git -C ... diff
+  Merge:   git -C ~/code/rta merge contained/rta-run
+
+This run left a git worktree and a branch in your repository. Remove them with:
+  git -C ~/code/rta worktree remove ~/.factory-contained/rta-run/rta
+  git -C ~/code/rta branch -D contained/rta-run
 ```
 
 The container **persists** until you remove it. Nothing is auto-reaped, because a failed run is
-exactly when its state is worth reading.
+exactly when its state is worth reading. A launch that fails *before* the container exists cleans
+its own workspace up, so only runs that actually started leave anything behind.
 
 ### When the workspace is wrong
 
@@ -215,8 +249,8 @@ contained: step 'assert:git_usable' failed
   worktree this usually means the source repository's git directory is not mounted — a worktree's
   .git is a *file* pointing at it.
   The container is still there for inspection:
-    podman exec -it rta-8ac57c sh
-    factory contained rm rta-8ac57c
+    podman exec -it rta-run sh
+    factory contained rm rta-run
 ```
 
 ### Composing without provisioning
@@ -226,23 +260,23 @@ nothing:
 
 ```console
 $ FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/rta
-DRY RUN — rta-8ac57c (ghcr.io/…/factory-runtime:latest); nothing is provisioned.
-[create] podman run -d --init --name rta-8ac57c --label factory.contained=true …
-[assert:project_present] podman exec rta-8ac57c sh -lc '[ -d "…" ] && [ -n "$(ls -A "…")" ]'
-[assert:git_usable] podman exec rta-8ac57c sh -lc 'git -C "…" status --porcelain >/dev/null 2>&1'
-[assert:factory_state] podman exec rta-8ac57c test -f …/.factory/config.json
-[assert:writable] podman exec rta-8ac57c sh -lc 'touch "…/.factory-write-probe" && rm -f …'
-[assert:content_hash] podman exec rta-8ac57c sh -lc 'sha256sum "…" | grep -q "^<digest> "'
-[run] podman exec rta-8ac57c sh -lc 'tmux new-session -d -s factory -c … '
+DRY RUN — rta-run (ghcr.io/…/factory-runtime:latest); nothing is provisioned.
+[create] podman run -d --init --name rta-run --label factory.contained=true …
+[assert:project_present] podman exec rta-run sh -lc '[ -d "…" ] && [ -n "$(ls -A "…")" ]'
+[assert:git_usable] podman exec rta-run sh -lc 'git -C "…" status --porcelain >/dev/null 2>&1'
+[assert:factory_state] podman exec rta-run test -f …/.factory/config.json
+[assert:writable] podman exec rta-run sh -lc 'touch "…/.factory-write-probe" && rm -f …'
+[assert:content_hash] podman exec rta-run sh -lc 'sha256sum "…" | grep -q "^<digest> "'
+[run] podman exec rta-run sh -lc 'tmux new-session -d -s factory -c … '
+      […the run line is ~45 lines: it embeds the Claude Code state seeding verbatim…]
 ```
 
 Which assertions appear depends on what your project actually has: `factory_state` only when the
-host has a `.factory/config.json`, `git_usable` only when it is a git repository. Asserting
-unconditionally would blame a transfer fault for a project that was simply never initialized.
+project has a `.factory/config.json`, `git_usable` only when it is a git repository.
 
-The `[run]` line is long — it carries the Claude Code state seeding described above, verbatim,
-because dry-run's contract is to print *the same argv the real path runs* rather than a tidier
-rendering that could drift from it.
+The `[run]` line really is that long, and it will look like line noise. Dry-run's contract is to
+print *the same commands the real path runs*, so it is not trimmed — a tidier rendering could drift
+from what actually executes, which would defeat the point of previewing.
 
 Secret-looking values are redacted anywhere a command is printed:
 
@@ -283,6 +317,13 @@ buildcycle
 
 The endpoint lives as long as the run, not as long as the launching command — the launch returns
 immediately while the run continues for minutes or hours. `factory contained rm` stops it.
+
+!!! warning "It listens on every interface"
+    `podman-mcp-server` binds `0.0.0.0:8430` and has no authentication, so for the length of the run
+    anyone who can reach that port can build and run containers as you. Avoid `--division` on
+    untrusted networks. It cannot be bound to loopback: the container reaches the host through a
+    gateway address rather than through localhost, so a loopback bind would make the tools
+    unreachable rather than make them safe.
 
 The agent gets the podman tool surface plus a brief telling it these are capabilities it already
 has. Asked to name its tools, it answers with them rather than proposing to build a CLI wrapper:
@@ -361,7 +402,7 @@ All checks passed. Start a run with `factory contained --target k8s --namespace 
 ```
 
 Before setup, the same command lists what is missing with the command that restores each — e.g.
-`factory contained bundle --namespace factory-contained | oc apply -f -`.
+`factory contained --namespace factory-contained bundle | oc apply -f -`.
 
 ### Running
 
