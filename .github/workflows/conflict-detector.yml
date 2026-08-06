@@ -68,33 +68,95 @@ jobs:
           if not latest_ts:
               sys.exit(0)
 
-          events = []
+          repo = os.environ.get('GITHUB_REPOSITORY', '')
+          if not repo:
+              print('GITHUB_REPOSITORY not set', file=sys.stderr)
+              sys.exit(1)
+
+          all_prs = set()
+          current_conflicts = {}
           with open('conflicts.jsonl') as f:
               for line in f:
                   line = line.strip()
                   if not line:
                       continue
                   ev = json.loads(line)
+                  all_prs.add(ev['pr_number'])
                   if ev['timestamp'] == latest_ts:
-                      events.append(ev)
+                      current_conflicts[ev['pr_number']] = ev['conflict_files']
 
-          for ev in events:
-              pr = ev['pr_number']
-              files = ev['conflict_files']
+          def make_marker(pr):
+              return f'<!-- conflict-detector-bot-pr-{pr} -->'
+
+          def find_bot_comment(pr):
+              marker = make_marker(pr)
+              r = subprocess.run(
+                  ['gh', 'api', f'repos/{repo}/issues/{pr}/comments?per_page=100'],
+                  capture_output=True, text=True
+              )
+              if r.returncode != 0:
+                  return None, None
+              try:
+                  comments = json.loads(r.stdout)
+              except (json.JSONDecodeError, TypeError):
+                  return None, None
+              for c in comments:
+                  if marker in c.get('body', ''):
+                      return c['id'], c['body']
+              return None, None
+
+          def upsert_comment(pr, body):
+              cid, existing = find_bot_comment(pr)
+              if cid is not None:
+                  if existing.strip() == body.strip():
+                      print(f'Comment unchanged for PR #{pr}')
+                      return
+                  r = subprocess.run(
+                      ['gh', 'api', f'repos/{repo}/issues/comments/{cid}',
+                       '--method', 'PATCH', '-f', f'body={body}'],
+                      capture_output=True, text=True
+                  )
+                  if r.returncode == 0:
+                      print(f'Updated comment on PR #{pr}')
+                  else:
+                      print(f'Failed to update comment on PR #{pr}: {r.stderr}', file=sys.stderr)
+              else:
+                  r = subprocess.run(
+                      ['gh', 'pr', 'comment', str(pr), '--body', body],
+                      capture_output=True, text=True
+                  )
+                  if r.returncode == 0:
+                      print(f'Commented on PR #{pr}')
+                  else:
+                      print(f'Failed to comment on PR #{pr}: {r.stderr}', file=sys.stderr)
+
+          for pr, files in current_conflicts.items():
               body = (
+                  make_marker(pr) + '\n'
                   '⚠️ **Merge conflict detected** with \`main\`\n\n'
                   'The following files conflict:\n'
                   + '\n'.join(f'- \`{f}\`' for f in files)
                   + '\n\nPlease rebase or merge \`main\` to resolve.'
               )
-              result = subprocess.run(
-                  ['gh', 'pr', 'comment', str(pr), '--body', body],
-                  capture_output=True, text=True
-              )
-              if result.returncode == 0:
-                  print(f'Commented on PR #{pr}')
-              else:
-                  print(f'Failed to comment on PR #{pr}: {result.stderr}', file=sys.stderr)
+              upsert_comment(pr, body)
+
+          for pr in all_prs - set(current_conflicts):
+              cid, existing = find_bot_comment(pr)
+              if cid is not None and '✅ **Conflicts resolved**' not in (existing or ''):
+                  body = (
+                      make_marker(pr) + '\n'
+                      '✅ **Conflicts resolved**\n\n'
+                      'This PR no longer has merge conflicts with \`main\`.'
+                  )
+                  r = subprocess.run(
+                      ['gh', 'api', f'repos/{repo}/issues/comments/{cid}',
+                       '--method', 'PATCH', '-f', f'body={body}'],
+                      capture_output=True, text=True
+                  )
+                  if r.returncode == 0:
+                      print(f'Updated PR #{pr}: conflicts resolved')
+                  else:
+                      print(f'Failed to update resolved comment on PR #{pr}: {r.stderr}', file=sys.stderr)
           "
 
       - name: Generate summary dashboard
