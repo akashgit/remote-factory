@@ -14,24 +14,36 @@ import structlog
 
 log = structlog.get_logger()
 
-try:
-    from langfuse import Langfuse
-    from langfuse.types import TraceContext
-    _HAS_LANGFUSE = True
-except ImportError:
-    Langfuse = None  # type: ignore[assignment,misc]
-    TraceContext = None  # type: ignore[assignment,misc]
-    _HAS_LANGFUSE = False
+_HAS_LANGFUSE: bool | None = None  # None = not yet checked
+Langfuse: Any = None
+TraceContext: Any = None
 
 _client: object | None = None
 _observations: dict[str, Any] = {}
+
+
+def _ensure_langfuse_imported() -> bool:
+    """Attempt to import langfuse on first call, cache result."""
+    global _HAS_LANGFUSE, Langfuse, TraceContext
+    if _HAS_LANGFUSE is not None:
+        return _HAS_LANGFUSE
+    try:
+        from langfuse import Langfuse as _Langfuse
+        from langfuse.types import TraceContext as _TraceContext
+        Langfuse = _Langfuse
+        TraceContext = _TraceContext
+        _HAS_LANGFUSE = True
+    except ImportError:
+        _HAS_LANGFUSE = False
+    return _HAS_LANGFUSE
+
 
 def is_enabled() -> bool:
     """Check if Langfuse is configured and lazily initialise the client."""
     global _client
     if _client is not None:
         return True
-    if not _HAS_LANGFUSE:
+    if not _ensure_langfuse_imported():
         return False
     host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
     if not host:

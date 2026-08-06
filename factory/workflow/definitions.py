@@ -60,10 +60,12 @@ __all__ = [
     "parallel_improve_workflow",
     "founder_workflow",
     "frontend_design_workflow",
+    "frontend_design_discover_workflow",
     "frontend_design_scan_workflow",
     "evolve_workflow",
     "plan_workflow",
     "register_all",
+    "_get_builtin_registry",
 ]
 
 DOC_FRESHNESS_GATE_PROMPT = (
@@ -3764,6 +3766,66 @@ def evolve_workflow() -> Workflow:
 
 # ── Registry ─────────────────────────────────────────────────────
 
+_BUILTIN_REGISTRY: dict[str, Any] | None = None
+
+
+def _get_builtin_registry() -> dict[str, Any]:
+    """Return the lazy-callable registry, building it on first access."""
+    global _BUILTIN_REGISTRY
+    if _BUILTIN_REGISTRY is not None:
+        return _BUILTIN_REGISTRY
+    _BUILTIN_REGISTRY = {
+        "build": build_workflow,
+        "design": design_workflow,
+        "discover": discover_workflow,
+        "review": review_workflow,
+        "improve": improve_workflow,
+        "research": research_workflow,
+        "meta": meta_workflow,
+        "refine": refine_workflow,
+        "create": create_workflow,
+        "skill-refine": skill_refine_workflow,
+        "doc-generate": doc_generate_workflow,
+        "doc-update": doc_update_workflow,
+        "spec-generate": spec_generate_workflow,
+        "spec-update": spec_update_workflow,
+        "founder": founder_workflow,
+        "frontend-design": frontend_design_workflow,
+        "frontend-design-discover": frontend_design_discover_workflow,
+        "frontend-design-scan": frontend_design_scan_workflow,
+        "parallel-improve": parallel_improve_workflow,
+        "plan": plan_workflow,
+        "evolve": evolve_workflow,
+        "deep-qa": lambda: __import__(
+            "factory.workflow.deep_qa", fromlist=["workflow"]
+        ).workflow(),
+        "swebench": lambda: __import__(
+            "factory.workflow.contributed.swebench", fromlist=["workflow"]
+        ).workflow(),
+        "legacybench": lambda: __import__(
+            "factory.workflow.contributed.legacybench", fromlist=["workflow"]
+        ).workflow(),
+        "featurebench": lambda: __import__(
+            "factory.workflow.contributed.featurebench", fromlist=["workflow"]
+        ).workflow(),
+        "programbench": lambda: __import__(
+            "factory.workflow.contributed.programbench", fromlist=["workflow"]
+        ).workflow(),
+        "terminalbench": lambda: __import__(
+            "factory.workflow.contributed.terminalbench", fromlist=["workflow"]
+        ).workflow(),
+        "tomswe": lambda: __import__(
+            "factory.workflow.contributed.tomswe", fromlist=["workflow"]
+        ).workflow(),
+        "salitrap": lambda: __import__(
+            "factory.workflow.contributed.salitrap", fromlist=["workflow"]
+        ).workflow(),
+        "swebenchifyhard": lambda: __import__(
+            "factory.workflow.contributed.swebenchifyhard", fromlist=["workflow"]
+        ).workflow(),
+    }
+    return _BUILTIN_REGISTRY
+
 
 # ── W₁₂: Parallel Improve Mode ─────────────────────────────────
 
@@ -4489,47 +4551,10 @@ def plan_workflow() -> Workflow:
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all workflow definitions."""
-    from factory.workflow.deep_qa import workflow as deep_qa_workflow
-    from factory.workflow.contributed.legacybench import workflow as legacybench_workflow
-    from factory.workflow.contributed.swebench import workflow as swebench_workflow
-    from factory.workflow.contributed.featurebench import workflow as featurebench_workflow
-    from factory.workflow.contributed.programbench import workflow as programbench_workflow
-    from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
-    from factory.workflow.contributed.tomswe import workflow as tomswe_workflow
-    from factory.workflow.contributed.salitrap import workflow as salitrap_workflow
-    from factory.workflow.contributed.swebenchifyhard import workflow as swebenchifyhard_workflow
+    """Build and return all workflow definitions.
 
-    return {
-        "build": build_workflow(),
-        "design": design_workflow(),
-        "discover": discover_workflow(),
-        "review": review_workflow(),
-        "improve": improve_workflow(),
-        "parallel-improve": parallel_improve_workflow(),
-
-        "deep-qa": deep_qa_workflow(),
-        "legacybench": legacybench_workflow(),
-        "featurebench": featurebench_workflow(),
-        "programbench": programbench_workflow(),
-        "swebench": swebench_workflow(),
-        "terminalbench": terminalbench_workflow(),
-        "tomswe": tomswe_workflow(),
-        "salitrap": salitrap_workflow(),
-        "research": research_workflow(),
-        "meta": meta_workflow(),
-        "refine": refine_workflow(),
-        "create": create_workflow(),
-        "skill-refine": skill_refine_workflow(),
-        "doc-generate": doc_generate_workflow(),
-        "doc-update": doc_update_workflow(),
-        "spec-generate": spec_generate_workflow(),
-        "spec-update": spec_update_workflow(),
-        "founder": founder_workflow(),
-        "plan": plan_workflow(),
-        "frontend-design": frontend_design_workflow(),
-        "frontend-design-discover": frontend_design_discover_workflow(),
-        "frontend-design-scan": frontend_design_scan_workflow(),
-        "evolve": evolve_workflow(),
-        "swebenchifyhard": swebenchifyhard_workflow(),
-    }
+    Uses _get_builtin_registry() internally — each callable is invoked
+    to construct the Workflow object.  Kept for backward compatibility.
+    """
+    registry = _get_builtin_registry()
+    return {name: fn() for name, fn in registry.items()}
