@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from factory.agents.runner import begin_cycle_session, complete_cycle_session
-from factory.cli import _start_ceo_tailer, _stop_ceo_tailer
+from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.models import AgentRunResult, AgentUsage
 from factory.telemetry import TranscriptTailer
 

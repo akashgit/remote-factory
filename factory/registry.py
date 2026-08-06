@@ -126,14 +126,28 @@ def list_projects(registry_path: Path | None = None) -> list[ProjectEntry]:
     return registry.projects
 
 
+def discover_projects(projects_dir: Path) -> list[Path]:
+    """Find all factory-managed projects by scanning for .factory/results.tsv."""
+    if not projects_dir.exists():
+        log.debug("discover_projects_skip", reason="dir_not_found", path=str(projects_dir))
+        return []
+    projects: list[Path] = []
+    for child in sorted(projects_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        tsv = child / ".factory" / "results.tsv"
+        if tsv.exists():
+            projects.append(child)
+    log.info("discover_projects_complete", count=len(projects), dir=str(projects_dir))
+    return projects
+
+
 def populate_from_directory(projects_dir: Path, registry_path: Path | None = None) -> int:
     """Auto-populate registry by scanning a directory for .factory/results.tsv.
 
     Used as migration path from discover_projects() to the registry.
     Returns the number of newly registered projects.
     """
-    from factory.insights import discover_projects
-
     existing = _load_registry(registry_path)
     existing_paths = {e.path for e in existing.projects}
 

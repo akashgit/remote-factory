@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from factory.spec.ops import _parse_verdict, validate_spec
+from factory.spec.ops import (
+    _parse_verdict,
+    validate_spec,
+)
 from factory.workflow.definitions import (
     improve_workflow,
     spec_update_workflow,
@@ -395,12 +398,24 @@ class TestSpecUpdateWorkflow:
         assert spec_update_workflow().name == "spec-update"
 
     def test_start_node(self) -> None:
-        assert spec_update_workflow().start_node == "diff_scope"
+        assert spec_update_workflow().start_node == "graph_update"
 
     def test_has_required_nodes(self) -> None:
         wf = spec_update_workflow()
-        expected = {"diff_scope", "patch", "gate_patch", "revalidate", "gate_revalidate"}
+        expected = {
+            "graph_update",
+            "diff_scope",
+            "patch",
+            "gate_patch",
+            "revalidate",
+            "gate_revalidate",
+        }
         assert expected == set(wf.nodes.keys())
+
+    def test_graph_update_is_fn(self) -> None:
+        node = spec_update_workflow().nodes["graph_update"]
+        assert isinstance(node, FnNode)
+        assert "factory graph update" in node.command
 
     def test_diff_scope_is_fn(self) -> None:
         node = spec_update_workflow().nodes["diff_scope"]
@@ -455,6 +470,51 @@ class TestImproveWorkflowSpecUpdate:
         assert issues == [], f"improve workflow has issues: {issues}"
 
 
+# ── _run_spec_workflow ──────────────────────────────────────────
+
+
+class TestRunSpecWorkflow:
+    @patch("factory.workflow.executor.WorkflowExecutor")
+    def test_generate_success(self, mock_cls: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.spec import _run_spec_workflow
+
+        mock_result = MagicMock(success=True)
+        mock_cls.return_value.execute = AsyncMock(return_value=mock_result)
+        rc, reason = _run_spec_workflow("spec-generate", tmp_path)
+        assert rc == 0
+        assert reason == ""
+
+    @patch("factory.workflow.executor.WorkflowExecutor")
+    def test_update_success(self, mock_cls: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.spec import _run_spec_workflow
+
+        mock_result = MagicMock(success=True)
+        mock_cls.return_value.execute = AsyncMock(return_value=mock_result)
+        rc, reason = _run_spec_workflow("spec-update", tmp_path)
+        assert rc == 0
+        assert reason == ""
+
+    @patch("factory.workflow.executor.WorkflowExecutor")
+    def test_failure_returns_1_with_reason(self, mock_cls: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.spec import _run_spec_workflow
+
+        mock_result = MagicMock(success=False, halt_reason="gate rejected")
+        mock_cls.return_value.execute = AsyncMock(return_value=mock_result)
+        rc, reason = _run_spec_workflow("spec-generate", tmp_path)
+        assert rc == 1
+        assert reason == "gate rejected"
+
+    @patch("factory.workflow.executor.WorkflowExecutor")
+    def test_failure_without_reason(self, mock_cls: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.spec import _run_spec_workflow
+
+        mock_result = MagicMock(success=False, halt_reason=None)
+        mock_cls.return_value.execute = AsyncMock(return_value=mock_result)
+        rc, reason = _run_spec_workflow("spec-generate", tmp_path)
+        assert rc == 1
+        assert reason == "unknown error"
+
+
 # ── CLI spec subcommands ────────────────────────────────────────
 
 
@@ -465,20 +525,16 @@ class TestCmdSpecGenerate:
         args = argparse.Namespace(path="/nonexistent/path")
         assert cmd_spec_generate(args) == 1
 
-    @patch("factory.spec.generate.generate_spec", new_callable=AsyncMock)
-    def test_success(self, mock_gen: AsyncMock, tmp_path: Path) -> None:
+    @patch("factory.cli.spec._run_spec_workflow", return_value=(0, ""))
+    def test_success(self, mock_wf: MagicMock, tmp_path: Path) -> None:
         from factory.cli.spec import cmd_spec_generate
 
-        spec_path = tmp_path / "SPEC.md"
-        mock_gen.return_value = spec_path
         args = argparse.Namespace(path=str(tmp_path))
         assert cmd_spec_generate(args) == 0
+        mock_wf.assert_called_once_with("spec-generate", tmp_path.resolve())
 
-    @patch(
-        "factory.spec.generate.generate_spec",
-        new_callable=lambda: AsyncMock(side_effect=ValueError("No source files")),
-    )
-    def test_error(self, mock_gen: AsyncMock, tmp_path: Path) -> None:
+    @patch("factory.cli.spec._run_spec_workflow", return_value=(1, "gate rejected"))
+    def test_error(self, mock_wf: MagicMock, tmp_path: Path) -> None:
         from factory.cli.spec import cmd_spec_generate
 
         args = argparse.Namespace(path=str(tmp_path))
@@ -541,20 +597,14 @@ class TestCmdSpecUpdate:
         args = argparse.Namespace(path=str(tmp_path))
         assert cmd_spec_update(args) == 1
 
-    @patch(
-        "factory.spec.ops.scope_diff",
-        new_callable=lambda: AsyncMock(return_value=SCOPE_REPORT),
-    )
-    @patch(
-        "factory.agents.runner.invoke_agent",
-        new_callable=lambda: AsyncMock(return_value=("patched", 0)),
-    )
-    def test_success(self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path) -> None:
+    @patch("factory.cli.spec._run_spec_workflow", return_value=(0, ""))
+    def test_success(self, mock_wf: MagicMock, tmp_path: Path) -> None:
         from factory.cli.spec import cmd_spec_update
 
         project = _setup_fixture_project(tmp_path)
         args = argparse.Namespace(path=str(project))
         assert cmd_spec_update(args) == 0
+        mock_wf.assert_called_once_with("spec-update", project.resolve())
 
 
 class TestCmdSpecImpact:

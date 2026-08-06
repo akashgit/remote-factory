@@ -247,11 +247,14 @@ class TestCountVerdictsWithResultsTsv:
         """Without since_ts, all verdicts are counted."""
         from factory.ceo_completion import _count_verdicts
 
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
-            {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": "keep"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
+                {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": "keep"},
+            ],
+        )
 
         count = _count_verdicts(tmp_path)
         assert count == 3
@@ -261,11 +264,14 @@ class TestCountVerdictsWithResultsTsv:
         from factory.ceo_completion import _count_verdicts
 
         # Two old rows from a previous cycle, one new row from current cycle
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
-            {"id": "3", "timestamp": "2026-04-29T14:00:00+00:00", "verdict": "keep"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
+                {"id": "3", "timestamp": "2026-04-29T14:00:00+00:00", "verdict": "keep"},
+            ],
+        )
 
         # Filter to only count after noon on Apr 29
         since = datetime(2026, 4, 29, 12, 0, 0, tzinfo=timezone.utc)
@@ -276,11 +282,14 @@ class TestCountVerdictsWithResultsTsv:
         """Rows without keep/revert/error verdict are not counted."""
         from factory.ceo_completion import _count_verdicts
 
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "pending"},
-            {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": ""},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "pending"},
+                {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": ""},
+            ],
+        )
 
         count = _count_verdicts(tmp_path)
         assert count == 1
@@ -289,10 +298,13 @@ class TestCountVerdictsWithResultsTsv:
         """Error verdicts are counted (they are finalized experiments)."""
         from factory.ceo_completion import _count_verdicts
 
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "error"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "error"},
+            ],
+        )
 
         count = _count_verdicts(tmp_path)
         assert count == 2
@@ -301,10 +313,13 @@ class TestCountVerdictsWithResultsTsv:
         """Timestamps without timezone are treated as UTC."""
         from factory.ceo_completion import _count_verdicts
 
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T10:00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-29T14:00:00", "verdict": "keep"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T10:00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-29T14:00:00", "verdict": "keep"},
+            ],
+        )
 
         since = datetime(2026, 4, 29, 12, 0, 0, tzinfo=timezone.utc)
         count = _count_verdicts(tmp_path, since_ts=since)
@@ -316,15 +331,18 @@ class TestCountVerdictsWithResultsTsv:
 
         # Old cycle started at 2026-04-28T08:00:00
         # Current cycle started at 2026-04-29T10:00:00
-        self._write_results_tsv(tmp_path, [
-            # Old cycle experiments
-            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "revert"},
-            {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
-            # Current cycle experiments
-            {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
-            {"id": "5", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                # Old cycle experiments
+                {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "revert"},
+                {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
+                # Current cycle experiments
+                {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+                {"id": "5", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
+            ],
+        )
 
         # Current cycle started at 10:00 on Apr 29
         current_cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
@@ -368,12 +386,15 @@ class TestDetectIncompleteWithTimestampFiltering:
         )
 
         # 3 old verdicts from previous cycle, 1 from current cycle
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
-            {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
+                {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+            ],
+        )
 
         # Current cycle started at 10:00 on Apr 29 — only 1 verdict should count
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
@@ -397,11 +418,14 @@ class TestDetectIncompleteWithTimestampFiltering:
         )
 
         # 1 old verdict, 2 current-cycle verdicts
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
-            {"id": "3", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+                {"id": "3", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
+            ],
+        )
 
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
         gap = _detect_incomplete(tmp_path, "improve", cycle_started_at=cycle_start)
@@ -421,11 +445,14 @@ class TestDetectIncompleteWithTimestampFiltering:
         )
 
         # 2 old verdicts, 1 current
-        self._write_results_tsv(tmp_path, [
-            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
-            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
-            {"id": "3", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
-        ])
+        self._write_results_tsv(
+            tmp_path,
+            [
+                {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+                {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+                {"id": "3", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+            ],
+        )
 
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
         gap = _detect_incomplete(tmp_path, "build", cycle_started_at=cycle_start)
@@ -563,7 +590,11 @@ class TestBuildContinuationTask:
 
     def test_continuation_includes_mode_directive(self) -> None:
         """Continuation task includes explicit mode directive to prevent flip."""
-        from factory.ceo_completion import _build_continuation_task, IncompleteGap, create_cycle_state
+        from factory.ceo_completion import (
+            _build_continuation_task,
+            IncompleteGap,
+            create_cycle_state,
+        )
 
         gap = IncompleteGap(
             mode="build",
@@ -997,7 +1028,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_returns_cycle_mode_when_inflight(self, tmp_path: Path) -> None:
         """_auto_detect_mode returns cycle mode when cycle.json exists."""
-        from factory.cli import _auto_detect_mode
+        from factory.cli._mode_handlers import _auto_detect_mode
         from factory.ceo_completion import create_cycle_state, write_cycle_state
 
         # Create a git repo so state detection doesn't return NO_REPO
@@ -1013,7 +1044,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_ignores_cycle_when_force_fresh(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores cycle.json when force_fresh=True."""
-        from factory.cli import _auto_detect_mode
+        from factory.cli._mode_handlers import _auto_detect_mode
         from factory.ceo_completion import create_cycle_state, write_cycle_state
 
         # Create a git repo
@@ -1029,7 +1060,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_detects_normally_when_no_cycle(self, tmp_path: Path) -> None:
         """_auto_detect_mode detects from project state when no cycle.json."""
-        from factory.cli import _auto_detect_mode
+        from factory.cli._mode_handlers import _auto_detect_mode
 
         # Create a git repo
         (tmp_path / ".git").mkdir()
@@ -1040,7 +1071,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_detects_normally_when_cycle_stale(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores stale cycle.json."""
-        from factory.cli import _auto_detect_mode
+        from factory.cli._mode_handlers import _auto_detect_mode
         from factory.ceo_completion import CYCLE_STALENESS_HOURS, _cycle_state_path
 
         # Create a git repo
@@ -1117,10 +1148,12 @@ class TestCeoPromptResearchMode:
     def test_monotonic_improvement_policy(self, research_skill: str) -> None:
         """Research skill or definitions reference monotonic improvement."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         research_wf = wfs["research"]
         node_prompts = " ".join(
-            n.prompt_template for n in research_wf.nodes.values()
+            n.prompt_template
+            for n in research_wf.nodes.values()
             if hasattr(n, "prompt_template") and n.prompt_template
         )
         assert "previous" in node_prompts.lower() or "baseline" in node_prompts.lower()
@@ -1128,6 +1161,7 @@ class TestCeoPromptResearchMode:
     def test_termination_conditions(self, research_skill: str) -> None:
         """Research workflow has evaluator and gate nodes for verdict."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         research_wf = wfs["research"]
         gate_ids = [nid for nid, n in research_wf.nodes.items() if hasattr(n, "evaluator_type")]
@@ -1149,14 +1183,17 @@ class TestCeoPromptResearchMode:
     def test_leakage_guards_in_research_mode(self, research_skill: str) -> None:
         """Research workflow includes leakage-related concepts."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         research_wf = wfs["research"]
         gate_prompts = " ".join(
-            n.gate_prompt for n in research_wf.nodes.values()
+            n.gate_prompt
+            for n in research_wf.nodes.values()
             if hasattr(n, "gate_prompt") and n.gate_prompt
         )
         node_prompts = " ".join(
-            n.prompt_template for n in research_wf.nodes.values()
+            n.prompt_template
+            for n in research_wf.nodes.values()
             if hasattr(n, "prompt_template") and n.prompt_template
         )
         combined = gate_prompts + node_prompts
@@ -1194,7 +1231,9 @@ class TestCeoCompletionBackgroundBypass:
             return_value=("bg output", 0),
         ) as mock_invoke:
             stdout, code = await run_ceo_with_completion_guard(
-                tmp_path, "initial task", mode="improve",
+                tmp_path,
+                "initial task",
+                mode="improve",
                 background=True,
             )
 
@@ -1203,3 +1242,137 @@ class TestCeoCompletionBackgroundBypass:
         mock_invoke.assert_called_once()
         call_kwargs = mock_invoke.call_args.kwargs
         assert call_kwargs["background"] is True
+
+
+class TestPrintResumeHint:
+    """Tests for print_resume_hint()."""
+
+    def test_prints_hint_when_session_exists(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Resume hint is printed to stderr when session.json exists."""
+        from factory.ceo_completion import print_resume_hint, write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "abc-123", mode="improve")
+        print_resume_hint(tmp_path)
+
+        captured = capsys.readouterr()
+        assert "Session: abc-123" in captured.err
+        assert f"Resume with: factory resume {tmp_path}" in captured.err
+
+    def test_no_hint_when_session_cleaned_up(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """No resume hint when session.json was deleted (cycle completed)."""
+        from factory.ceo_completion import (
+            delete_cycle_state,
+            print_resume_hint,
+            write_ceo_session_id,
+        )
+
+        write_ceo_session_id(tmp_path, "abc-123", mode="improve")
+        delete_cycle_state(tmp_path)
+        print_resume_hint(tmp_path)
+
+        captured = capsys.readouterr()
+        assert "Session:" not in captured.err
+        assert "Resume with:" not in captured.err
+
+    def test_no_hint_when_no_session_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """No resume hint when session.json never existed."""
+        from factory.ceo_completion import print_resume_hint
+
+        print_resume_hint(tmp_path)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+
+class TestResumeHintInCompletionGuard:
+    """Tests for resume hint printing in run_ceo_with_completion_guard."""
+
+    @pytest.fixture(autouse=True)
+    def enable_respawn(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("FACTORY_CEO_RESPAWN_DISABLED", raising=False)
+
+    async def test_hint_printed_on_respawn_cap_hit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Resume hint is printed when respawn cap is exhausted."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, write_ceo_session_id
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n")
+        (tmp_path / ".factory" / "experiments").mkdir()
+
+        write_ceo_session_id(tmp_path, "test-session-id", mode="improve")
+        mock_invoke = AsyncMock(return_value=("Incomplete", 0))
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Initial task",
+                mode="improve",
+                runner_name="claude",
+                max_respawns=0,
+            )
+
+        captured = capsys.readouterr()
+        assert "Session: test-session-id" in captured.err
+        assert f"Resume with: factory resume {tmp_path}" in captured.err
+
+    async def test_no_hint_on_clean_completion(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """No resume hint when cycle completes successfully."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, write_ceo_session_id
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n")
+        exp_dir = tmp_path / ".factory" / "experiments" / "001"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+
+        write_ceo_session_id(tmp_path, "test-session-id", mode="improve")
+        mock_invoke = AsyncMock(return_value=("Done", 0))
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Initial task",
+                mode="improve",
+                runner_name="claude",
+            )
+
+        captured = capsys.readouterr()
+        assert "Session:" not in captured.err
+
+    async def test_hint_printed_on_user_interrupt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Resume hint is printed when user interrupts with Ctrl+C."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, write_ceo_session_id
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n")
+        (tmp_path / ".factory" / "experiments").mkdir()
+
+        write_ceo_session_id(tmp_path, "interrupt-session", mode="improve")
+        mock_invoke = AsyncMock(return_value=("Interrupted", 130))
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Initial task",
+                mode="improve",
+                runner_name="claude",
+            )
+
+        captured = capsys.readouterr()
+        assert "Session: interrupt-session" in captured.err
+        assert f"Resume with: factory resume {tmp_path}" in captured.err

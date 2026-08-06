@@ -39,7 +39,7 @@ pytestmark = [
 
 class TestTmuxSessionNameCollision:
     def test_different_paths_same_basename(self, tmp_path: Path) -> None:
-        from factory.cli import _tmux_session_name
+        from factory.cli._tmux_commands import _tmux_session_name
 
         p1 = tmp_path / "a" / "myapp"
         p2 = tmp_path / "b" / "myapp"

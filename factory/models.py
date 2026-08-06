@@ -518,13 +518,26 @@ class CycleState(BaseModel):
     cycle_id: str
     started_at: datetime
     mode: Literal[
-        "build", "create", "deep-qa", "design", "discover",
-        "founder", "improve", "meta", "parallel-improve",
-        "refine", "research", "review", "swebench",
+        "build",
+        "create",
+        "deep-qa",
+        "design",
+        "discover",
+        "founder",
+        "improve",
+        "meta",
+        "parallel-improve",
+        "plan",
+        "qa",
+        "refine",
+        "research",
+        "review",
+        "swebench",
     ]
     initial_prompt: str = ""
     respawns: int = 0
     runner_name: str | None = None
+    claude_session_id: str | None = None
 
 
 # ── ACE pipeline data ────────────────────────────────────────────
@@ -648,6 +661,8 @@ class AgentRunRequest(BaseModel):
     skip_permissions: bool = True
     role: str = "unknown"
     session_name: str | None = None
+    session_id: str | None = None
+    resume_session_id: str | None = None
     project_path: Path | None = None
     extras: dict[str, object] = {}
 

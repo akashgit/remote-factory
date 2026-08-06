@@ -16,10 +16,10 @@ log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
 
-CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "design", "interactive", "parallel-improve", "research", "review", "deep-qa", "create", "swebench"]
+CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "design", "interactive", "parallel-improve", "plan", "research", "review", "deep-qa", "create", "swebench", "frontend-design", "frontend-design-discover", "frontend-design-scan", "evolve"]
 
 
-RUN_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "parallel-improve", "research", "swebench"]
+RUN_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "parallel-improve", "research", "swebench", "frontend-design-scan"]
 
 
 DEPRECATED_MODES: frozenset[str] = frozenset({

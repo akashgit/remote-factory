@@ -223,7 +223,7 @@ class TestResolveModel:
     def test_flag_takes_precedence_over_env(self, monkeypatch):
         """CLI flag overrides FACTORY_MODEL env var."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.setenv("FACTORY_MODEL", "claude-sonnet-4-6")
         args = argparse.Namespace(model="claude-opus-4-6")
@@ -232,7 +232,7 @@ class TestResolveModel:
     def test_env_var_used_when_no_flag(self, monkeypatch):
         """FACTORY_MODEL env var is used when --model is not set."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.setenv("FACTORY_MODEL", "claude-opus-4-6")
         args = argparse.Namespace(model=None)
@@ -241,7 +241,7 @@ class TestResolveModel:
     def test_returns_none_when_neither_set(self, monkeypatch):
         """Returns None when neither flag nor env var is set."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.delenv("FACTORY_MODEL", raising=False)
         args = argparse.Namespace(model=None)
@@ -250,7 +250,7 @@ class TestResolveModel:
     def test_empty_string_flag_falls_through_to_env(self, monkeypatch):
         """Empty string flag falls through to env var."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.setenv("FACTORY_MODEL", "claude-opus-4-6")
         args = argparse.Namespace(model="")
@@ -259,7 +259,7 @@ class TestResolveModel:
     def test_whitespace_only_flag_falls_through_to_env(self, monkeypatch):
         """Whitespace-only flag falls through to env var."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.setenv("FACTORY_MODEL", "claude-opus-4-6")
         args = argparse.Namespace(model="   ")
@@ -268,7 +268,7 @@ class TestResolveModel:
     def test_missing_model_attr_returns_none(self, monkeypatch):
         """No model attribute on args returns None."""
         import argparse
-        from factory.cli import _resolve_model
+        from factory.cli._mode_handlers import _resolve_model
 
         monkeypatch.delenv("FACTORY_MODEL", raising=False)
         args = argparse.Namespace()
@@ -557,7 +557,7 @@ class TestBackgroundDispatch:
         """_resolve_background resolves CLI flag correctly."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_background
+        from factory.cli._mode_handlers import _resolve_background
 
         monkeypatch.delenv("FACTORY_BG", raising=False)
         monkeypatch.setattr(factory.user_config, "_cached_config", {})
@@ -572,7 +572,7 @@ class TestBackgroundDispatch:
         """_resolve_background resolves FACTORY_BG env var."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_background
+        from factory.cli._mode_handlers import _resolve_background
 
         monkeypatch.setattr(factory.user_config, "_cached_config", {})
         monkeypatch.setenv("FACTORY_BG", "1")
@@ -600,7 +600,7 @@ class TestBgAgents:
         """_resolve_bg_agents resolves CLI flag correctly."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_bg_agents
 
         monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)
         monkeypatch.setattr(factory.user_config, "_cached_config", {})
@@ -615,7 +615,7 @@ class TestBgAgents:
         """_resolve_bg_agents resolves FACTORY_BG_AGENTS env var."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_bg_agents
 
         monkeypatch.setattr(factory.user_config, "_cached_config", {})
         monkeypatch.setenv("FACTORY_BG_AGENTS", "1")
@@ -626,7 +626,7 @@ class TestBgAgents:
         """--bg and --bg-agents cannot be used together."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_background, _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_background, _resolve_bg_agents
 
         monkeypatch.delenv("FACTORY_BG", raising=False)
         monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)
@@ -660,7 +660,7 @@ class TestBgAgents:
         """In cmd_run flow, bg_agents=True forces background=False."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_background, _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_background, _resolve_bg_agents
 
         monkeypatch.delenv("FACTORY_BG", raising=False)
         monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)
@@ -686,7 +686,7 @@ class TestBgAgents:
 
         # We can't run cmd_ceo to completion without mocking many things,
         # but we can verify the _resolve_bg_agents + env-setting logic directly
-        from factory.cli import _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_bg_agents
 
         args = argparse.Namespace(bg_agents=True)
         result = _resolve_bg_agents(args)
@@ -697,7 +697,7 @@ class TestBgAgents:
         """When bg_agents=True, background should be forced to False."""
         import argparse
         import factory.user_config
-        from factory.cli import _resolve_background, _resolve_bg_agents
+        from factory.cli._mode_handlers import _resolve_background, _resolve_bg_agents
 
         monkeypatch.delenv("FACTORY_BG", raising=False)
         monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)

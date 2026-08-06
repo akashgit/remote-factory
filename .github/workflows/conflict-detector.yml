@@ -1,0 +1,139 @@
+name: PR Conflict Detector
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: conflict-detector
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch all remote branches
+        run: git fetch --all
+
+      - name: Load historical conflict data from conflict-data branch
+        run: |
+          git fetch origin conflict-data || true
+          git show origin/conflict-data:conflicts.jsonl > conflicts.jsonl 2>/dev/null || true
+          if [ -f conflicts.jsonl ]; then
+            echo "Loaded existing conflicts.jsonl from conflict-data branch"
+          else
+            echo "No existing conflicts.jsonl found, starting fresh"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run conflict detection
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/conflict_detector.py detect --data-file conflicts.jsonl || true
+
+      - name: Post comments on conflicting PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f conflicts.jsonl ]; then
+            echo "No conflicts.jsonl found, skipping."
+            exit 0
+          fi
+
+          # Read the last detection run's events (same timestamp)
+          export LATEST_TS=$(tail -1 conflicts.jsonl | python3 -c "import sys,json; print(json.load(sys.stdin)['timestamp'])" 2>/dev/null || echo "")
+          if [ -z "$LATEST_TS" ]; then
+            echo "No events to process."
+            exit 0
+          fi
+
+          python3 -c "
+          import json, subprocess, sys, os
+
+          latest_ts = os.environ.get('LATEST_TS', '')
+          if not latest_ts:
+              sys.exit(0)
+
+          events = []
+          with open('conflicts.jsonl') as f:
+              for line in f:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  ev = json.loads(line)
+                  if ev['timestamp'] == latest_ts:
+                      events.append(ev)
+
+          for ev in events:
+              pr = ev['pr_number']
+              files = ev['conflict_files']
+              body = (
+                  '⚠️ **Merge conflict detected** with \`main\`\n\n'
+                  'The following files conflict:\n'
+                  + '\n'.join(f'- \`{f}\`' for f in files)
+                  + '\n\nPlease rebase or merge \`main\` to resolve.'
+              )
+              result = subprocess.run(
+                  ['gh', 'pr', 'comment', str(pr), '--body', body],
+                  capture_output=True, text=True
+              )
+              if result.returncode == 0:
+                  print(f'Commented on PR #{pr}')
+              else:
+                  print(f'Failed to comment on PR #{pr}: {result.stderr}', file=sys.stderr)
+          "
+
+      - name: Generate summary dashboard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/conflict_detector.py summary --days 30 --top 10 --data-file conflicts.jsonl >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit conflicts.jsonl to conflict-data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes to conflicts.jsonl
+          if [ ! -f conflicts.jsonl ]; then
+            echo "No conflicts.jsonl file to commit"
+            exit 0
+          fi
+
+          # Save the updated conflicts.jsonl before switching branches
+          cp conflicts.jsonl /tmp/conflicts.jsonl.updated
+
+          # Checkout or create conflict-data branch
+          git fetch origin conflict-data || true
+          if git show-ref --verify --quiet refs/remotes/origin/conflict-data; then
+            git checkout -b conflict-data origin/conflict-data
+          else
+            git checkout --orphan conflict-data
+            git rm -rf . 2>/dev/null || true
+          fi
+
+          # Restore the updated file
+          cp /tmp/conflicts.jsonl.updated conflicts.jsonl
+
+          # Commit and push if there are changes
+          git add conflicts.jsonl
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: update conflicts.jsonl [skip ci]"
+          git push origin conflict-data

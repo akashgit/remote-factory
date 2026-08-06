@@ -14,9 +14,9 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '@ceo-review') &&
-      contains(fromJSON('["akashgit", "xukai92", "colehurwitz", "shivchander", "osilkin98", "gx-ai-architect", "RobotSail"]'), github.event.comment.user.login)
+      contains(fromJSON('["akashgit", "xukai92", "colehurwitz", "shivchander", "osilkin98", "gx-ai-architect", "RobotSail", "mihirathale98", "lukeinglis", "nehamalepati", "abhi1092"]'), github.event.comment.user.login)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - name: React with eyes

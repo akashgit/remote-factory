@@ -25,6 +25,7 @@ class RunnerMeta:
     supports_streaming: bool = True
     supports_usage_telemetry: bool = False
     supports_session_name: bool = False
+    supports_session_resume: bool = False
     supports_background: bool = False
     custom_auth_check: Callable[[], bool] | None = None
 
@@ -41,6 +42,7 @@ class RunnerMeta:
         if self.custom_auth_check is not None:
             return self.custom_auth_check()
         import os
+
         return all(os.environ.get(v) for v in self.required_env_vars)
 
 
@@ -54,7 +56,9 @@ class Runner(Protocol):
         """Return metadata about this runner."""
         ...
 
-    def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+    def build_command(
+        self, request: AgentRunRequest
+    ) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for a headless invocation."""
         ...
 

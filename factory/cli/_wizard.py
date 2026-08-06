@@ -407,16 +407,7 @@ def _warn_wizard_deprecated() -> None:
     )
 
 
-def _welcome_wizard() -> int:
-    """Interactive welcome: banner -> input -> classify -> present -> dispatch."""
-    from factory.cli.ceo import cmd_ceo
-
-    no_color = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
-
-    _warn_wizard_deprecated()
-
-    _print_banner("welcome")
-
+def _collect_user_input(no_color: bool) -> str | int | None:
     if no_color:
         print("\n  What do you want to do?", file=sys.stderr)
         print("  Paste an idea, a file path, a GitHub URL, or describe what you need.\n", file=sys.stderr)
@@ -429,7 +420,7 @@ def _welcome_wizard() -> int:
     try:
         user_input = input("  > ").strip()
     except EOFError:
-        return 0
+        return None
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130
@@ -441,14 +432,17 @@ def _welcome_wizard() -> int:
         try:
             user_input = input("  > ").strip()
         except EOFError:
-            return 0
+            return None
         except KeyboardInterrupt:
             print(file=sys.stderr)
             return 130
         if not user_input:
-            return 0
+            return None
 
-    # -- long-input redirect -----------------------------------------------
+    return user_input
+
+
+def _handle_long_input_redirect(user_input: str) -> str:
     _expanded_check = Path(user_input).expanduser()
     if (
         len(user_input) > 200
@@ -460,9 +454,13 @@ def _welcome_wizard() -> int:
         wizard_file.parent.mkdir(parents=True, exist_ok=True)
         wizard_file.write_text(user_input)
         log.info("wizard.long_input_redirect", file=str(wizard_file), length=len(user_input))
-        user_input = str(wizard_file)
+        return str(wizard_file)
+    return user_input
 
-    # -- classification ---------------------------------------------------
+
+def _get_suggestions(
+    user_input: str,
+) -> tuple[list[dict[str, object]], list[dict[str, str]] | None]:
     follow_ups: list[dict[str, object]] = []
     suggestions: list[dict[str, str]] | None = _quick_classify(user_input)
 
@@ -476,19 +474,34 @@ def _welcome_wizard() -> int:
     if not suggestions:
         print(file=sys.stderr)
         print(_CLI_REF, file=sys.stderr)
-        return 1
+        return ([], None)
 
-    # -- follow-ups -------------------------------------------------------
-    if follow_ups:
-        answers = _ask_follow_ups(follow_ups, no_color)
-        if answers is None:
-            return 0
-        suggestions = _substitute_answers(suggestions, answers)
-        if not suggestions:
-            print("\n  No commands available after follow-up (required info missing).", file=sys.stderr)
-            return 1
+    return (follow_ups, suggestions)
 
-    # -- present suggestions ----------------------------------------------
+
+def _handle_follow_ups(
+    follow_ups: list[dict[str, object]],
+    suggestions: list[dict[str, str]],
+    no_color: bool,
+) -> tuple[list[dict[str, str]], int] | None:
+    if not follow_ups:
+        return (suggestions, 0)
+
+    answers = _ask_follow_ups(follow_ups, no_color)
+    if answers is None:
+        return None
+
+    suggestions = _substitute_answers(suggestions, answers)
+    if not suggestions:
+        print("\n  No commands available after follow-up (required info missing).", file=sys.stderr)
+        return ([], 1)
+
+    return (suggestions, 0)
+
+
+def _display_suggestions(
+    suggestions: list[dict[str, str]], no_color: bool,
+) -> str | None:
     print(file=sys.stderr)
 
     tip = None
@@ -517,17 +530,25 @@ def _welcome_wizard() -> int:
         if no_color:
             print(f"  Tip: {tip}", file=sys.stderr)
         else:
+            d = "\033[2m"
+            r = "\033[0m"
             print(f"  {d}Tip: {tip}{r}", file=sys.stderr)
         print(file=sys.stderr)
 
+    return tip
+
+
+def _get_user_choice(
+    suggestions: list[dict[str, str]],
+) -> tuple[int, dict[str, str] | None]:
     prompt_text = f"  Pick [1-{len(suggestions)}], or Enter for [1]: "
     try:
         choice_raw = input(prompt_text).strip()
     except EOFError:
-        return 0
+        return (0, None)
     except KeyboardInterrupt:
         print(file=sys.stderr)
-        return 130
+        return (130, None)
 
     if not choice_raw:
         choice_idx = 0
@@ -536,18 +557,22 @@ def _welcome_wizard() -> int:
             choice_idx = int(choice_raw) - 1
         except ValueError:
             print(f"\n  Invalid choice: {choice_raw}", file=sys.stderr)
-            return 1
+            return (1, None)
 
     if choice_idx < 0 or choice_idx >= len(suggestions):
         print(f"\n  Invalid choice: {choice_raw}", file=sys.stderr)
-        return 1
+        return (1, None)
 
-    selected = suggestions[choice_idx]
-    command = selected.get("command", "")
+    return (0, suggestions[choice_idx])
+
+
+def _dispatch_command(command: str) -> int:
+    from factory.cli._main import build_parser
+    from factory.cli.admin import cmd_study
+    from factory.cli.ceo import cmd_ceo
 
     print(f"\n  Running: {command}\n", file=sys.stderr)
 
-    from factory.cli._main import build_parser
     parser = build_parser()
     try:
         parts = shlex.split(command)
@@ -565,11 +590,45 @@ def _welcome_wizard() -> int:
         return 1
 
     if ns.command in ("ceo", "study"):
-        from factory.cli.admin import cmd_study
-
         handler = cmd_ceo if ns.command == "ceo" else cmd_study
         if handler is not None:
             return handler(ns)
 
     print(f"  Error: unexpected command type: {ns.command}", file=sys.stderr)
     return 1
+
+
+def _welcome_wizard() -> int:
+    """Interactive welcome: banner -> input -> classify -> present -> dispatch."""
+    no_color = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
+
+    _warn_wizard_deprecated()
+
+    _print_banner("welcome")
+
+    collected = _collect_user_input(no_color)
+    if collected is None:
+        return 0
+    if isinstance(collected, int):
+        return collected
+
+    user_input = _handle_long_input_redirect(collected)
+
+    follow_ups, suggestions = _get_suggestions(user_input)
+    if suggestions is None:
+        return 1
+
+    result = _handle_follow_ups(follow_ups, suggestions, no_color)
+    if result is None:
+        return 0
+    suggestions, err = result
+    if err:
+        return err
+
+    _display_suggestions(suggestions, no_color)
+
+    exit_code, selected = _get_user_choice(suggestions)
+    if selected is None:
+        return exit_code
+
+    return _dispatch_command(selected.get("command", ""))

@@ -352,3 +352,130 @@ class TestErrorHandling:
 
         assert result.halted
         assert "failed" in result.halt_reason.lower()
+
+
+# ── Auto-approve ────────────────────────────────────────────────
+
+
+class TestAutoApprove:
+    async def test_executor_auto_approve_logs(self, tmp_project: Path) -> None:
+        """WorkflowExecutor(auto_approve=True) logs gate.auto_approved for user gates."""
+        wf = Workflow(
+            name="auto_approve_test",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, auto_approve=True)
+        result = await executor.execute()
+
+        assert result.success
+        gate_events = [e for e in result.events if e["type"] == "gate.verdict"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
+
+    async def test_executor_default_still_proceeds(self, tmp_project: Path) -> None:
+        """WorkflowExecutor(auto_approve=False) still proceeds through user gates."""
+        wf = Workflow(
+            name="default_user_gate",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, auto_approve=False)
+        result = await executor.execute()
+
+        assert result.success
+        gate_events = [e for e in result.events if e["type"] == "gate.verdict"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
+
+    async def test_auto_approve_emits_structured_log(self, tmp_project: Path) -> None:
+        """auto_approve=True emits gate.auto_approved with gate_id and workflow name (non-dry-run)."""
+        import structlog
+
+        wf = Workflow(
+            name="log_check_wf",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        captured: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            captured.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False, auto_approve=True)
+            result = await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert result.success
+        auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
+        assert len(auto_approved) == 1
+        assert auto_approved[0]["gate_id"] == "gate"
+        assert auto_approved[0]["workflow"] == "log_check_wf"
+
+    async def test_auto_approve_false_no_log(self, tmp_project: Path) -> None:
+        """auto_approve=False does not emit gate.auto_approved log for user gates."""
+        import structlog
+
+        wf = Workflow(
+            name="no_log_wf",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        captured: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            captured.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False, auto_approve=False)
+            result = await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert result.success
+        auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
+        assert len(auto_approved) == 0

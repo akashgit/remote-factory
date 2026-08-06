@@ -36,6 +36,58 @@ def _cycle_state_path(project_path: Path) -> Path:
     return project_path / ".factory" / "state" / "cycle.json"
 
 
+def _session_state_path(project_path: Path) -> Path:
+    """Return the path to .factory/state/session.json."""
+    return project_path / ".factory" / "state" / "session.json"
+
+
+def read_ceo_session_id(project_path: Path) -> str | None:
+    """Read the CEO session ID from .factory/state/session.json."""
+    path = _session_state_path(project_path)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        return data.get("session_id")
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def read_ceo_session(project_path: Path) -> dict | None:
+    """Read the full CEO session metadata from .factory/state/session.json.
+
+    Returns dict with keys: session_id, created, interactive, mode.
+    Returns None if the file doesn't exist or is malformed.
+    """
+    path = _session_state_path(project_path)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def write_ceo_session_id(
+    project_path: Path,
+    session_id: str,
+    *,
+    interactive: bool = False,
+    mode: str = "",
+) -> None:
+    """Write a CEO session ID and metadata to .factory/state/session.json."""
+    path = _session_state_path(project_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "session_id": session_id,
+        "created": datetime.now(timezone.utc).isoformat(),
+        "interactive": interactive,
+        "mode": mode,
+    }
+    path.write_text(json.dumps(data, indent=2))
+    log.info("ceo_session_id_written", session_id=session_id, interactive=interactive, mode=mode)
+
+
 def read_cycle_state(project_path: Path) -> CycleState | None:
     """Read in-flight cycle state if it exists and is non-stale.
 
@@ -81,17 +133,41 @@ def write_cycle_state(project_path: Path, state: CycleState) -> None:
     # Use model_dump with mode="json" for proper datetime serialization
     data = state.model_dump(mode="json")
     path.write_text(json.dumps(data, indent=2))
-    log.info("cycle_state_written", cycle_id=state.cycle_id, mode=state.mode, respawns=state.respawns)
+    log.info(
+        "cycle_state_written", cycle_id=state.cycle_id, mode=state.mode, respawns=state.respawns
+    )
 
 
 def delete_cycle_state(project_path: Path) -> bool:
-    """Delete cycle.json on cycle completion. Returns True if deleted."""
+    """Delete cycle.json and session.json on cycle completion. Returns True if deleted."""
     path = _cycle_state_path(project_path)
+    deleted = False
     if path.exists():
         path.unlink()
         log.info("cycle_state_deleted", path=str(path))
-        return True
-    return False
+        deleted = True
+
+    session_path = _session_state_path(project_path)
+    if session_path.exists():
+        session_path.unlink()
+        log.info("session_state_deleted", path=str(session_path))
+        deleted = True
+
+    return deleted
+
+
+def print_resume_hint(project_path: Path) -> None:
+    """Print session ID and resume instructions to stderr if the session is still active.
+
+    Only prints when session.json still exists — if delete_cycle_state() already
+    cleaned it up (cycle completed normally), this is a no-op.
+    """
+    import sys
+
+    sid = read_ceo_session_id(project_path)
+    if sid:
+        print(f"\nSession: {sid}", file=sys.stderr)
+        print(f"Resume with: factory resume {project_path}", file=sys.stderr)
 
 
 def create_cycle_state(
@@ -297,8 +373,7 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
 
     if cycle_state:
         mode_directive += (
-            f"Cycle ID: {cycle_state.cycle_id}\n"
-            f"Respawn count: {cycle_state.respawns}\n\n"
+            f"Cycle ID: {cycle_state.cycle_id}\nRespawn count: {cycle_state.respawns}\n\n"
         )
 
     if gap.mode == "research":
@@ -376,6 +451,17 @@ factory ceo /path/to/project --headless
     log.warning("cycle_incomplete", reason=reason, gap=gap)
 
 
+def _extract_session_id(project_path: Path) -> str | None:
+    """Extract the session_id from the most recent agent.completed event."""
+    events = load_events(project_path)
+    for event in reversed(events):
+        if event.get("type") == "agent.completed" and event.get("agent") == "ceo":
+            sid = event.get("data", {}).get("session_id")
+            if isinstance(sid, str) and sid:
+                return sid
+    return None
+
+
 async def run_ceo_with_completion_guard(
     project_path: Path,
     initial_task: str,
@@ -386,6 +472,7 @@ async def run_ceo_with_completion_guard(
     timeout: float = 3600.0,
     max_respawns: int | None = None,
     session_name: str | None = None,
+    session_id: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
     background: bool = False,
@@ -419,9 +506,15 @@ async def run_ceo_with_completion_guard(
     if background:
         log.info("ceo_background_dispatch", reason="--bg: single dispatch, no respawn loop")
         return await invoke_agent(
-            "ceo", initial_task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
-            background=True, session_name=session_name, use_profile=use_profile,
+            "ceo",
+            initial_task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
+            background=True,
+            session_name=session_name,
+            use_profile=use_profile,
             workflow_mode=workflow_mode,
             settings_file=settings_file,
         )
@@ -432,8 +525,12 @@ async def run_ceo_with_completion_guard(
     if resolve("ceo_respawn_disabled", env_var="FACTORY_CEO_RESPAWN_DISABLED") == "1":
         log.info("ceo_respawn_disabled", reason="FACTORY_CEO_RESPAWN_DISABLED=1")
         return await invoke_agent(
-            "ceo", initial_task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
+            "ceo",
+            initial_task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
@@ -443,7 +540,11 @@ async def run_ceo_with_completion_guard(
 
     if max_respawns is None:
         max_respawns = int(
-            resolve("ceo_max_respawns", env_var="FACTORY_CEO_MAX_RESPAWNS", default=str(DEFAULT_MAX_RESPAWNS))
+            resolve(
+                "ceo_max_respawns",
+                env_var="FACTORY_CEO_MAX_RESPAWNS",
+                default=str(DEFAULT_MAX_RESPAWNS),
+            )
             or DEFAULT_MAX_RESPAWNS
         )
 
@@ -470,14 +571,24 @@ async def run_ceo_with_completion_guard(
     task = initial_task
     final_output = ""
     gap: IncompleteGap | None = None
+    captured_session_id: str | None = None
 
     for attempt in range(max_respawns + 1):
         log.info("ceo_spawn", attempt=attempt, task_preview=task[:100], mode=mode)
 
+        resume_sid = captured_session_id if attempt > 0 else None
+        spawn_sid = session_id if attempt == 0 else None
+
         result, code = await invoke_agent(
-            "ceo", task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
+            "ceo",
+            task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
             session_name=session_name,
+            session_id=spawn_sid,
+            resume_session_id=resume_sid,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
             workflow_mode=workflow_mode,
@@ -485,9 +596,16 @@ async def run_ceo_with_completion_guard(
         )
         final_output = result
 
+        returned_sid = _extract_session_id(project_path)
+        if returned_sid and returned_sid != captured_session_id:
+            captured_session_id = returned_sid
+            cycle_state.claude_session_id = returned_sid
+            write_cycle_state(project_path, cycle_state)
+
         # User interrupt — respect it (but don't delete cycle state for later resume)
         if code in (130, 143) or code > 128:
             log.info("ceo_user_interrupt", code=code)
+            print_resume_hint(project_path)
             return result, code
 
         # Explicit ABORT — respect it and clean up cycle state
@@ -509,6 +627,7 @@ async def run_ceo_with_completion_guard(
         if not _budget_allows_respawn(runner_name, project_path):
             log.warning("ceo_budget_exceeded", gap=gap)
             _write_cycle_incomplete(project_path, gap, "budget_exceeded")
+            print_resume_hint(project_path)
             return result, 1
 
         # Update cycle state with incremented respawn count
@@ -540,4 +659,5 @@ async def run_ceo_with_completion_guard(
         log.warning("ceo_respawn_cap_hit", attempts=max_respawns + 1, gap=gap)
         _write_cycle_incomplete(project_path, gap, "respawn_cap_hit")
 
+    print_resume_hint(project_path)
     return final_output, 1

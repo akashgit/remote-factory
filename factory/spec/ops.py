@@ -10,6 +10,11 @@ import structlog
 
 log = structlog.get_logger()
 
+GRAPH_HINT = (
+    "If a code knowledge graph exists at {project_path}/graph.json, "
+    "read it for dependency and structural context."
+)
+
 # ── Validate ────────────────────────────────────────────────────
 
 VALIDATE_PROMPT = """\
@@ -26,6 +31,10 @@ Validate this SPEC.md against the project at {project_path}.
 Design Philosophy, Configuration, Security, Extension Points, Implementation Checklist
 5. For entity names in the Domain Model section, verify matching classes exist in source
 6. Check that module behavioral specs use RFC 2119 normative language (MUST, SHOULD, etc.)
+7. If the spec contains [[graph:...]] entity references, verify they resolve to actual \
+nodes in the code knowledge graph
+
+{graph_hint}
 
 ## Output
 Write a Markdown validation report with sections for Errors and Warnings.
@@ -62,6 +71,7 @@ async def validate_spec(project_path: Path) -> tuple[str, bool]:
     prompt = VALIDATE_PROMPT.format(
         project_path=project_path,
         spec_content=spec_content,
+        graph_hint=GRAPH_HINT.format(project_path=project_path),
     )
 
     result_text, code = await invoke_agent(
@@ -105,6 +115,8 @@ Analyze this git diff against the repo spec and identify which spec modules are 
 
 ## Git Diff
 {diff_text}
+
+{graph_hint}
 
 ## Output
 Write a Markdown summary of the affected scope:
@@ -187,7 +199,11 @@ async def scope_diff(project_path: Path, experiment_id: int | None = None) -> st
 
     diff_text = _get_diff_text(project_path, experiment_id, spec_rel)
 
-    prompt = SCOPE_PROMPT.format(spec_content=spec_content, diff_text=diff_text)
+    prompt = SCOPE_PROMPT.format(
+        spec_content=spec_content,
+        diff_text=diff_text,
+        graph_hint=GRAPH_HINT.format(project_path=project_path),
+    )
 
     result_text, code = await invoke_agent(
         "researcher",
@@ -265,6 +281,8 @@ Extract an impact analysis for the module "{module_name}" from this repo spec.
 ## SPEC.md
 {spec_content}
 
+{graph_hint}
+
 ## Output
 Produce a compact Markdown snippet covering:
 1. Module path, role, and classification
@@ -281,6 +299,9 @@ Keep the output under 30 lines. Return ONLY the Markdown snippet.
 async def get_impact(module_name: str, project_path: Path) -> str:
     """Extract the subgraph centered on a named module from the repo spec.
 
+    Uses an agent to read the spec and (when available) the code knowledge
+    graph at graph.json for dependency information.
+
     Returns a compact Markdown snippet sized for agent context inclusion.
     Raises FileNotFoundError if the spec file does not exist.
     """
@@ -292,6 +313,7 @@ async def get_impact(module_name: str, project_path: Path) -> str:
     prompt = IMPACT_PROMPT.format(
         module_name=module_name,
         spec_content=spec_content,
+        graph_hint=GRAPH_HINT.format(project_path=project_path),
     )
 
     result, code = await invoke_agent(

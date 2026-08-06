@@ -470,7 +470,7 @@ class TestTranscriptTailerOnLine:
         import time
         from unittest.mock import patch
 
-        from factory.cli import _start_ceo_tailer
+        from factory.cli._ceo_dispatch import _start_ceo_tailer
 
         project = tmp_path / "proj"
         project.mkdir()

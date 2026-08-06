@@ -465,7 +465,7 @@ def test_finalize_auto_cost_from_events(tmp_path: Path) -> None:
 
 def test_emit_cli_event_exception_swallowed(tmp_path: Path) -> None:
     """_emit_cli_event silently swallows emit_event failures."""
-    from factory.cli import _emit_cli_event
+    from factory.cli._helpers import _emit_cli_event
 
     project = tmp_path / "proj"
     project.mkdir()

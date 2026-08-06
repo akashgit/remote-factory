@@ -9,7 +9,7 @@ from pathlib import Path
 
 from factory.cli._helpers import _emit_cli_event, _run
 from factory.cli._helpers import _resolve_runner
-from factory.cli.ceo import _resolve_background, _resolve_model, _resolve_tmux_persist
+from factory.cli._mode_handlers import _resolve_background, _resolve_model, _resolve_tmux_persist
 
 log = structlog.get_logger()
 

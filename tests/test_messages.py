@@ -138,7 +138,7 @@ class TestMessageCLI:
 
 class TestMessageInjection:
     def test_build_ceo_task_includes_messages(self, tmp_path: Path) -> None:
-        from factory.cli import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -152,7 +152,7 @@ class TestMessageInjection:
         assert "HIGH PRIORITY" in task
 
     def test_build_ceo_task_no_messages(self, tmp_path: Path) -> None:
-        from factory.cli import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -160,7 +160,7 @@ class TestMessageInjection:
         assert "User Messages" not in task
 
     def test_build_ceo_task_does_not_mark_read(self, tmp_path: Path) -> None:
-        from factory.cli import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         project = tmp_path / "proj"
         project.mkdir()

@@ -14,7 +14,7 @@
 
 <p align="center">📖 <b><a href="https://akashgit.github.io/remote-factory/">Full Documentation</a></b></p>
 
-**Describe what you want — re:factory designs and builds it.** Brainstorm an idea from scratch, refine a plan for an existing project, or create entirely new factory modes. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
+**Describe what you want — re:factory designs and builds it.** Brainstorm an idea from scratch, refine a plan for an existing project, or create entirely new factory modes.
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
@@ -22,9 +22,7 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 
 ## How It Works
 
-A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning.
-
-**The experiment cycle:** observe → hypothesize → build → review → measure → decide (keep or revert) → archive. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
+A CEO agent orchestrates specialists agents like Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst, each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning.
 
 ---
 
@@ -41,7 +39,9 @@ uv run factory ceo "distributed eval runner" --mode design
 uv run factory ceo "Build a REST API for bookmark management" --mode design
 ```
 
-**From a spec file** — read and discuss before building:
+**From a spec file** — for longer, more detailed descriptions, write your idea to a `.md` file and pass the path:
+
+> **Tip:** For detailed ideas with multiple paragraphs, requirements, or research notes, use a spec file instead of a quoted string. There's no length limit on file content.
 
 ```bash
 uv run factory ceo ~/ideas/weather-dashboard.md --mode design
@@ -61,6 +61,29 @@ uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 uv run factory ceo ~/my-app --mode design --focus 42                       # GitHub issue
 uv run factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shorthand
 ```
+
+---
+
+## Create Your Own Factory/Mode
+
+Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
+
+```bash
+factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
+```
+
+To update an existing mode, prefix `--focus` with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:
+
+```bash
+factory ceo /path/to/factory --mode create --focus "improve: add plateau detection after 3 consecutive reverts"
+factory ceo /path/to/factory --mode create --focus "build: add a code review gate after the builder"
+```
+
+Without a colon, `--focus` always creates a new mode.
+
+The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
+
+Point it at the factory repo itself to extend re:factory with custom pipelines.
 
 ---
 
@@ -160,29 +183,6 @@ re:factory has shipped something every day for the last 30 days — products, re
 | **re:factory itself** | re:factory runs on itself — its own agent playbooks are evolved from its own experiment outcomes |
 
 Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
-
----
-
-## Create New Modes
-
-Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
-
-```bash
-factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
-```
-
-To update an existing mode, prefix `--focus` with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:
-
-```bash
-factory ceo /path/to/factory --mode create --focus "improve: add plateau detection after 3 consecutive reverts"
-factory ceo /path/to/factory --mode create --focus "build: add a code review gate after the builder"
-```
-
-Without a colon, `--focus` always creates a new mode.
-
-The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
-
-Point it at the factory repo itself to extend re:factory with custom pipelines.
 
 ---
 

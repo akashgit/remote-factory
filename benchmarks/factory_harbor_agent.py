@@ -598,6 +598,24 @@ class HarborIndexFactoryCeo(FactoryCeo):
         return "harbor-index-factory-ceo"
 
 
+class SalitrapFactoryCeo(FactoryCeo):
+    """Runs the deterministic salitrap workflow."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "salitrap-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run salitrap . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
 class TomsweFactoryCeo(FactoryCeo):
     """Runs the deterministic tomswe workflow with user-profile injection.
 

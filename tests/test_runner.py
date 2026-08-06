@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from factory.agents.runner import _save_review, resolve_prompt
 
 
@@ -63,34 +65,34 @@ class TestResolvePromptWithWorkflowMode:
         prompt = resolve_prompt("researcher", tmp_path, workflow_mode="improve")
         assert "# Workflow Playbook" not in prompt
 
-    def test_missing_skill_file_no_error(self, tmp_path: Path) -> None:
-        prompt = resolve_prompt("ceo", tmp_path, workflow_mode="nonexistent")
-        assert "# Workflow Playbook" not in prompt
+    def test_missing_skill_file_raises_error(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="SKILL.md not found"):
+            resolve_prompt("ceo", tmp_path, workflow_mode="nonexistent")
 
 
 class TestBuildCeoTaskNoSkillRead:
     def test_improve_mode_no_skill_read_instruction(self, tmp_path: Path) -> None:
-        from factory.cli.ceo import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "improve")
         assert "read `skills/workflow-" not in task
         assert "playbook" in task.lower()
 
     def test_build_mode_no_skill_read_instruction(self, tmp_path: Path) -> None:
-        from factory.cli.ceo import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "build")
         assert "read `skills/workflow-" not in task
 
     def test_create_mode_no_skill_read_instruction(self, tmp_path: Path) -> None:
-        from factory.cli.ceo import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "create")
         assert "read `skills/workflow-" not in task
         assert "skills/workflow-create/SKILL.md" not in task
 
     def test_research_mode_no_skill_read_instruction(self, tmp_path: Path) -> None:
-        from factory.cli.ceo import _build_ceo_task
+        from factory.cli._task_builder import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "research")
         assert "read `skills/workflow-" not in task
