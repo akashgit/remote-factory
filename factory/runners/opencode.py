@@ -218,13 +218,18 @@ class OpenCodeRunner:
         agents_md_path.write_text(request.prompt)
         temp_files: list[Path] = [agents_md_path]
 
-        cmd = ["opencode", "--prompt", request.task, str(request.cwd)]
+        cmd = ["opencode", "--prompt", request.task]
+
+        if request.skip_permissions:
+            cmd.append("--auto")
 
         if request.model:
             cmd.extend(["--model", request.model])
 
         if request.resume_session_id:
             cmd.extend(["--session", request.resume_session_id])
+
+        cmd.append(str(request.cwd))
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         return cmd, env, temp_files

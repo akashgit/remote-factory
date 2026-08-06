@@ -333,6 +333,7 @@ class TestBuildInteractiveCommand:
                 task="Start session",
                 cwd=tmp_path,
                 role="ceo",
+                skip_permissions=False,
             )
         )
         assert cmd[0] == "opencode"
@@ -363,6 +364,32 @@ class TestBuildInteractiveCommand:
             )
         )
         assert "--title" not in cmd
+
+    def test_interactive_auto_with_skip_permissions(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=True,
+            )
+        )
+        assert "--auto" in cmd
+
+    def test_interactive_no_auto_without_skip_permissions(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=False,
+            )
+        )
+        assert "--auto" not in cmd
 
     def test_interactive_model_override(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
