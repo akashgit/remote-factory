@@ -233,7 +233,7 @@ inside the container because the agent needs them; `--division` additionally ope
 unauthenticated build endpoint on every network interface for the length of the run, so avoid it on
 untrusted networks.
 
-Full guide, with worked examples of every command: **[docs/contained.md](docs/contained.md)**.
+Full guide, with worked examples of every command: **[docs/contained/](docs/contained/index.md)**.
 
 ---
 
