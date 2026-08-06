@@ -323,6 +323,24 @@ class SwebenchFactoryCeo(FactoryCeo):
         )
 
 
+class MiniSwebenchFactoryCeo(FactoryCeo):
+    """Runs the mini-swebench workflow (bash-only agent, mini-SWE-agent style)."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "mini-swebench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run mini-swebench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
 class LegacybenchFactoryCeo(FactoryCeo):
     """Runs the deterministic legacybench workflow instead of generic factory ceo."""
 

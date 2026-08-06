@@ -7,6 +7,7 @@ import sys
 
 _ADAPTERS = {
     "swebench": "factory.skillopt.adapters.swebench:SwebenchAdapter",
+    "mini-swebench": "factory.skillopt.adapters.mini_swebench:MiniSwebenchAdapter",
     "searchqa": "factory.skillopt.adapters.searchqa:SearchQAAdapter",
     "featurebench": "factory.skillopt.adapters.featurebench:FeaturebenchAdapter",
     "programbench": "factory.skillopt.adapters.programbench:ProgrambenchAdapter",
