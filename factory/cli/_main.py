@@ -339,9 +339,7 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
         ).cmd_workflow(a),
-<<<<<<< HEAD
         "mempalace": _cli.cmd_mempalace,
-=======
         "graph": lambda a: {
             "extract": _cli.cmd_graph_extract,
             "update": _cli.cmd_graph_update,
@@ -350,7 +348,6 @@ def main(argv: list[str] | None = None) -> int:
             str(getattr(a, "graph_command", "")),
             lambda args: print("Usage: factory graph {extract,update,status}") or 1,
         )(a),
->>>>>>> main
     }
 
     try:
