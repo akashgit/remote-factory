@@ -101,7 +101,7 @@ jobs:
               except (json.JSONDecodeError, TypeError):
                   return None, None
               for c in comments:
-                  if marker in c.get('body', ''):
+                  if marker in (c.get('body') or ''):
                       return c['id'], c['body']
               return None, None
 
