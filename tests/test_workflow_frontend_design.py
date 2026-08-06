@@ -33,11 +33,11 @@ class TestFrontendDesignValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_workflow()
-        assert len(wf.nodes) == 24
+        assert len(wf.nodes) == 26
 
     def test_start_node(self) -> None:
         wf = frontend_design_workflow()
-        assert wf.start_node == "fork_design_research"
+        assert wf.start_node == "gate_design_system"
 
     def test_registered(self) -> None:
         all_wf = register_all()
@@ -59,6 +59,69 @@ class TestFrontendDesignTrigger:
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+
+
+# ── Phase 0: Design System Existence Check ─────────────────────
+
+
+class TestDesignSystemGate:
+    def test_gate_exists(self) -> None:
+        wf = frontend_design_workflow()
+        assert "gate_design_system" in wf.nodes
+
+    def test_gate_is_fn(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_design_system"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_gate_checks_files(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_design_system"]
+        assert "design-baseline.json" in gate.evaluator_command
+        assert "rules.md" in gate.evaluator_command
+        assert "infra-context.md" in gate.evaluator_command
+
+    def test_proceed_goes_to_staleness_checker(self) -> None:
+        wf = frontend_design_workflow()
+        proceed = [
+            e
+            for e in wf.edges
+            if e.source == "gate_design_system" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed) == 1
+        assert proceed[0].target == "staleness_checker"
+
+    def test_reloop_goes_to_fork(self) -> None:
+        wf = frontend_design_workflow()
+        reloop = [
+            e
+            for e in wf.edges
+            if e.source == "gate_design_system" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "fork_design_research"
+
+    def test_staleness_checker_is_researcher(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["staleness_checker"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+
+    def test_staleness_checker_writes_report(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["staleness_checker"]
+        assert ".factory/design-system/staleness-report.md" in node.writes
+
+    def test_staleness_checker_to_spec_writer(self) -> None:
+        wf = frontend_design_workflow()
+        edges = [
+            e
+            for e in wf.edges
+            if e.source == "staleness_checker" and e.condition is None
+        ]
+        assert len(edges) == 1
+        assert edges[0].target == "spec_writer"
 
 
 # ── Phase 1: Design Research ────────────────────────────────────
@@ -455,6 +518,7 @@ class TestEdgeCompleteness:
     def test_every_reloop_gate_has_reloop_edge(self) -> None:
         wf = frontend_design_workflow()
         gates_with_reloop = [
+            "gate_design_system",
             "gate_research",
             "gate_audit",
             "gate_spec",

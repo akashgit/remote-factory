@@ -411,6 +411,123 @@ class TestCmdCeoDesign:
         task = cmd[dsp_idx + 1]
         assert "## Plan Loop (Interactive)" in task
 
+    def test_auto_approve_rejected_without_design_mode(self, capsys):
+        """--auto-approve without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+    def test_auto_approve_accepted_with_design_mode(self, tmp_path):
+        """--auto-approve with --mode design succeeds and runs headless."""
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch("factory.worktree.create_worktree",
+                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+        assert result == 0
+
+    def test_auto_approve_forces_headless(self):
+        """--auto-approve with --mode design forces headless=True in the validation tuple."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="an idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=True,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve = validated
+        assert headless is True
+        assert auto_approve is True
+
+    def test_auto_approve_false_by_default(self):
+        """auto_approve defaults to False when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        *_, auto_approve = validated
+        assert auto_approve is False
+
+
+class TestRunAutoApprove:
+    def test_run_auto_approve_rejected_without_design(self, capsys):
+        """cmd_run rejects --auto-approve when mode is not design."""
+        result = main(["run", "/some/path", "--mode", "improve", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+    def test_run_auto_approve_rejected_default_mode(self, capsys):
+        """cmd_run rejects --auto-approve when mode is the default (auto)."""
+        result = main(["run", "/some/path", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+
+class TestAutoApproveEvent:
+    def test_execute_ceo_emits_auto_approve_event(self, tmp_path):
+        """_execute_ceo calls _emit_cli_event with 'auto_approve.enabled' when flag is set."""
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch("factory.worktree.create_worktree",
+                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._emit_cli_event") as mock_emit,
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+        assert result == 0
+        mock_emit.assert_any_call(tmp_path, "auto_approve.enabled", {"mode": "design"})
+
+    def test_execute_ceo_no_event_without_flag(self, tmp_path):
+        """_execute_ceo does not emit auto_approve.enabled when --auto-approve is absent."""
+        with (
+            _mock_foreground(),
+            patch("factory.cli._ceo_helpers._emit_cli_event") as mock_emit,
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design"])
+        assert result == 0
+        auto_approve_calls = [
+            c for c in mock_emit.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "auto_approve.enabled"
+        ]
+        assert len(auto_approve_calls) == 0
+
 
 def _make_config(*, research_target: dict | None = None) -> dict:
     """Build a valid FactoryConfig dict for testing."""

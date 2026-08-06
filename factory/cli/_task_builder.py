@@ -45,6 +45,19 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "run --mode improve afterward to harden what works. "
             "The full step-by-step playbook is in your system prompt above."
         ),
+        "plan": (
+            "\n\nRun Plan mode: prior plan check + research + strategy + optional GitHub publishing "
+            "with NO implementation. "
+            "First check GitHub issues (plan label) and .factory/archive/ for prior plans matching "
+            "the focus topic — if found, ask the user whether to continue an existing plan or start fresh. "
+            "Run 3 parallel researchers (domain, practices, constraints), CEO review gate, then "
+            "synthesize a phased plan via the Strategist, then a single user approval gate: "
+            "'Keep this plan? Approving will publish it as a comment on the GitHub issue "
+            "and seed the backlog with plan phases.' "
+            "RELOOP re-runs the Strategist with user feedback. HALT exits without publishing. "
+            "Do NOT transition to build or improve mode — plan mode is terminal. "
+            "If the user previously ran plan mode, check for prior plans before researching.\n"
+        ),
     }
     if mode == "discover":
         if discover_only:
@@ -85,6 +98,8 @@ def _build_ceo_task(
     messages: list[Message] | None = None,
     issue_number: int | None = None,
     issue_url: str | None = None,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
     refine_request: str | None = None,
     clean_pr: bool = False,
     display_mode: str | None = None,
@@ -211,9 +226,23 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
+    _issue_numbers = issue_numbers or []
+    _issue_urls = issue_urls or []
     if focus and not create_description:
         task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
-        if issue_number:
+        if _issue_numbers:
+            issue_labels = []
+            for i, num in enumerate(_issue_numbers):
+                label = f"#{num}"
+                if i < len(_issue_urls) and _issue_urls[i]:
+                    label += f" ({_issue_urls[i]})"
+                issue_labels.append(label)
+            task += (
+                f"These targets are from issues {', '.join(issue_labels)}. "
+                f"All issue specs have been written to `.factory/strategy/current.md`. "
+                f"Read it for the complete requirements.\n\n"
+            )
+        elif issue_number:
             issue_label = f"#{issue_number}"
             if issue_url:
                 issue_label += f" ({issue_url})"
@@ -229,7 +258,15 @@ def _build_ceo_task(
             "After this single experiment completes (keep or revert), skip to final archival. "
             "Do not loop back for more hypotheses.\n"
         )
-        if issue_number:
+        if _issue_numbers:
+            nums_str = ", ".join(f"#{n}" for n in _issue_numbers)
+            finalize_flags = " ".join(f"--issue {n}" for n in _issue_numbers)
+            task += (
+                f"\n## Issue Tracking\n\n"
+                f"This cycle is working on issues {nums_str}. "
+                f"When finalizing, pass `{finalize_flags}` to `factory finalize`."
+            )
+        elif issue_number:
             task += (
                 f"\n## Issue Tracking\n\n"
                 f"This cycle is working on issue #{issue_number}. "

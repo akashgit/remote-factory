@@ -13,6 +13,7 @@ from pathlib import Path
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
+    _emit_cli_event,
     _ensure_dashboard,
     _print_banner,
     _read_target_branch,
@@ -51,7 +52,7 @@ log = structlog.get_logger()
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
@@ -66,6 +67,11 @@ def _validate_ceo_flags(
     prompt_file: str | None = getattr(args, "prompt", None)
     focus: str | None = getattr(args, "focus", None)
     dir_name: str | None = getattr(args, "dir", None)
+    auto_approve: bool = getattr(args, "auto_approve", False)
+
+    if auto_approve and mode != "design":
+        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+        return 1
 
     raw_path = getattr(args, "path", None)
     if not raw_path:
@@ -102,7 +108,9 @@ def _validate_ceo_flags(
     )
 
     if mode == "design":
-        if headless:
+        if auto_approve:
+            headless = True
+        elif headless:
             flag = "--bg" if bg else "--headless"
             print(
                 f"Error: --mode design requires foreground mode (incompatible with {flag})",
@@ -149,7 +157,7 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request)
+    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve)
 
 
 # ── project resolution ────────────────────────────────────────
@@ -211,7 +219,7 @@ def _resolve_ceo_project(
         design_existing = True
     elif mode == "design":
         resolved_file = Path(raw_path).expanduser()
-        if resolved_file.is_file():
+        if _safe_is_file(resolved_file):
             design_idea = resolved_file.read_text()
             slug = (
                 _slugify(dir_name)
@@ -308,9 +316,10 @@ def _validate_late_flags(
         )
         return 1
 
-    if focus and mode not in ("improve", "research", "create", "frontend-design") and not design_existing:
+    if focus and mode not in ("improve", "research", "create", "evolve", "frontend-design", "frontend-design-discover", "plan") and not design_existing:
         print(
-            f"Error: --focus (targeted mode) only works in improve, research, create, or frontend-design mode, "
+            f"Error: --focus (targeted mode) only works in improve, research, create, evolve, frontend-design, "
+            f"frontend-design-discover, or plan mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,
         )
@@ -344,8 +353,10 @@ def _execute_ceo(
     refine_request: str | None,
     issue_number: int | None,
     issue_url: str | None,
-    no_github: bool,
-    raw_path: str,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
+    no_github: bool = False,
+    raw_path: str = "",
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
     from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
@@ -397,6 +408,10 @@ def _execute_ceo(
         wt_branch = None
     else:
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+
+    auto_approve = getattr(args, "auto_approve", False)
+    if auto_approve:
+        _emit_cli_event(wt_path, "auto_approve.enabled", {"mode": mode})
 
     from factory.skill_cache import ensure_skills
 
@@ -466,6 +481,8 @@ def _execute_ceo(
         messages=pending,
         issue_number=issue_number,
         issue_url=issue_url,
+        issue_numbers=issue_numbers,
+        issue_urls=issue_urls,
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,
