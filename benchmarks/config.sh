@@ -4,7 +4,7 @@
 # benchmark_all_names, and benchmark_instance_id.
 
 benchmark_all_names() {
-    echo "swebench featurebench terminalbench programbench searchqa"
+    echo "swebench mini-swebench featurebench terminalbench programbench searchqa"
 }
 
 benchmark_config() {
@@ -51,6 +51,12 @@ benchmark_config() {
         legacybench)
             BENCH_DATASET="factory-ai/legacy-bench"
             BENCH_AGENT_CLASS="factory_harbor_agent:LegacybenchFactoryCeo"
+            BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
+            BENCH_FILTER_STYLE="glob"
+            ;;
+        mini-swebench)
+            BENCH_DATASET="swe-bench/swe-bench-verified"
+            BENCH_AGENT_CLASS="factory_harbor_agent:MiniSwebenchFactoryCeo"
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
             BENCH_FILTER_STYLE="glob"
             ;;

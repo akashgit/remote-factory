@@ -4561,6 +4561,7 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.contributed.programbench import workflow as programbench_workflow
     from factory.workflow.contributed.searchqa import workflow as searchqa_workflow
     from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
+    from factory.workflow.contributed.mini_swebench import workflow as mini_swebench_workflow
 
     return {
         "build": build_workflow(),
@@ -4574,6 +4575,7 @@ def register_all() -> dict[str, Workflow]:
         "programbench": programbench_workflow(),
         "searchqa": searchqa_workflow(),
         "swebench": swebench_workflow(),
+        "mini-swebench": mini_swebench_workflow(),
         "terminalbench": terminalbench_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
