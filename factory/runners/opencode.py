@@ -212,7 +212,7 @@ class OpenCodeRunner:
         """Build the CLI command for interactive (TUI) mode."""
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
-        cmd = ["opencode", full_prompt, "--dir", str(request.cwd)]
+        cmd = ["opencode", "--prompt", full_prompt, "--dir", str(request.cwd)]
 
         if request.model:
             cmd.extend(["--model", request.model])

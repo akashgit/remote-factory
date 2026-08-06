@@ -337,6 +337,7 @@ class TestBuildInteractiveCommand:
         assert "run" not in cmd
         assert "--format" not in cmd
         assert "--auto" not in cmd
+        assert "--prompt" in cmd
         assert "--dir" in cmd
         assert str(tmp_path) in cmd
 

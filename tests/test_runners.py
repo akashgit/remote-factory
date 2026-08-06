@@ -1524,7 +1524,7 @@ class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
     def test_interactive_run_passes_prompt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -p with the prompt to OpenCode."""
+        """interactive_run() passes --prompt flag with the prompt to OpenCode."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1540,14 +1540,16 @@ class TestOpenCodeInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            # v1.x uses positional prompt (cmd[1]), not -p flag
-            full_prompt = cmd[1]
+            # v1.x uses --prompt flag, not positional arg
+            assert "--prompt" in cmd
+            prompt_idx = cmd.index("--prompt")
+            full_prompt = cmd[prompt_idx + 1]
             assert "You are the CEO." in full_prompt
             assert "Start session" in full_prompt
             assert "## Current Task" in full_prompt
 
     def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -c with the cwd."""
+        """interactive_run() passes --dir with the cwd."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -2102,8 +2104,10 @@ class TestOpenCodeBuildInteractiveCommand:
         ))
 
         assert cmd[0] == "opencode"
-        # v1.x uses positional prompt (cmd[1]), not -p flag
-        full_prompt = cmd[1]
+        # v1.x uses --prompt flag, not positional arg
+        assert "--prompt" in cmd
+        prompt_idx = cmd.index("--prompt")
+        full_prompt = cmd[prompt_idx + 1]
         assert "You are the CEO." in full_prompt
         assert "Start session" in full_prompt
         assert "--dir" in cmd
