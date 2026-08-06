@@ -109,9 +109,10 @@ def has_cluster_context() -> bool:
     """Whether a cluster is configured at all.
 
     `ls` spans both targets, and a laptop that has never touched a cluster should not be told its
-    cluster is broken. This separates "not set up" from "set up and unreachable".
+    cluster is broken. This separates "not set up" from "set up and unreachable". Reading the
+    kubeconfig is local and cannot hang.
     """
-    result = _run([cli_binary(), "config", "current-context"], timeout=15)
+    result = _run([cli_binary(), "config", "current-context"], timeout=10)
     return result is not None and result.returncode == 0 and bool(result.stdout.strip())
 
 
@@ -152,11 +153,18 @@ def build_apply_argv(namespace: str) -> list[str]:
     return [cli_binary(), "apply", "-n", namespace, "-f", "-"]
 
 
+# Listing is an interactive operation — a user waiting at a prompt — so it gets a short client-side
+# deadline as well as a subprocess timeout. Without `--request-timeout` kubectl retries internally
+# and an unreachable cluster blocks for minutes before the outer timeout can fire.
+LIST_TIMEOUT_SECONDS = 10
+
+
 def build_get_pods_argv(namespace: str) -> list[str]:
     """Every pod the factory created in this namespace — and nothing else."""
     return [
         cli_binary(), "get", "pods", "-n", namespace,
         "-l", f"{LABEL_CONTAINED}=true", "-o", "json",
+        f"--request-timeout={LIST_TIMEOUT_SECONDS}s",
     ]
 
 
@@ -628,9 +636,11 @@ def cluster_runtimes(namespace: str | None = None) -> list:
         target = resolve_namespace(namespace)
     except ClusterError as exc:
         raise LifecycleError(str(exc)) from exc
-    result = _run(build_get_pods_argv(target))
+    result = _run(build_get_pods_argv(target), timeout=LIST_TIMEOUT_SECONDS + 5)
     if result is None:
-        raise LifecycleError("`oc`/`kubectl` is not usable; cluster runtimes cannot be listed")
+        raise LifecycleError(
+            f"the cluster did not answer within {LIST_TIMEOUT_SECONDS}s"
+        )
     if result.returncode != 0:
         # kubectl prints a paragraph of retry noise for one expired token. A user running `ls` for
         # their local containers wants one line about it, not six.

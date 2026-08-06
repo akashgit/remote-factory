@@ -41,14 +41,18 @@ def run_setup(
     if target is None and interactive:
         target = _ask_target()
 
+    from factory.contained.usage import record_target
+
     code = 0
     if target in (None, "local", "both"):
+        record_target("local")
         _setup_local()
         checks = local_checks()
         print(render_checks(checks, setup_command=None))
         code = 0 if all(c.ok for c in checks) else 1
 
     if target in ("k8s", "both"):
+        record_target("k8s")
         from factory.contained.k8s_setup import setup_k8s
 
         k8s_code = setup_k8s(

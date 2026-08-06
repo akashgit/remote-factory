@@ -33,6 +33,7 @@ from factory.podman import (
     LABEL_PROJECT,
     LABEL_SOURCE,
     build_attach_argv,
+    build_pane_liveness_argv,
     build_ps_argv,
     build_rm_argv,
 )
@@ -75,7 +76,7 @@ def _podman_entries() -> list[dict[str, object]]:
             "`factory contained verify` for the full list of prerequisites."
         ) from exc
     if result.returncode != 0:
-        raise LifecycleError(f"listing containers failed: {result.stderr.strip()}")
+        raise LifecycleError(f"cannot reach podman ({_first_line(result.stderr)})")
     try:
         payload = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
@@ -83,6 +84,15 @@ def _podman_entries() -> list[dict[str, object]]:
             f"`podman ps` returned output that isn't JSON: {result.stdout.strip()[:200]!r}"
         ) from exc
     return payload if isinstance(payload, list) else []
+
+
+def _first_line(stderr: str) -> str:
+    """The first meaningful line of a CLI error. podman's connection failure runs to five."""
+    for line in (stderr or "").splitlines():
+        text = line.strip()
+        if text:
+            return text.removeprefix("Error: ")[:140]
+    return "no details given"
 
 
 def _labels_of(entry: dict[str, object]) -> dict[str, object]:
@@ -125,17 +135,41 @@ def local_runtimes() -> list[Runtime]:
         labels = _labels_of(entry)
         if str(labels.get(LABEL_CONTAINED, "")).lower() != "true":
             continue
+        name = _name_of(entry)
+        container_state = str(entry.get("State", "unknown"))
         runtimes.append(
             Runtime(
-                name=_name_of(entry),
+                name=name,
                 target="local",
                 project=str(labels.get(LABEL_PROJECT, "")),
-                state=str(entry.get("State", "unknown")),
+                state=_run_state(name, container_state),
                 created=_created_of(entry),
                 source=str(labels.get(LABEL_SOURCE, "")) or None,
             )
         )
     return runtimes
+
+
+def _run_state(name: str, container_state: str) -> str:
+    """What the *run* is doing, which is not the same as what the container is doing.
+
+    The container's PID 1 outlives the run on purpose, so a container whose run has finished still
+    reports `running` — which is why a user is told a run is live and then finds nothing to attach
+    to. When the container is up, the session is what says whether the run is.
+    """
+    if container_state.strip().lower() != "running":
+        return container_state
+    try:
+        result = subprocess.run(
+            build_pane_liveness_argv(name), capture_output=True, text=True, timeout=10
+        )
+    except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
+        return container_state
+    if result.returncode != 0:
+        return "finished"                       # no session left at all
+    # `0` marks a pane whose process is still alive. All-dead means the run is over even though the
+    # session is deliberately still there for its output.
+    return "running" if "0" in result.stdout.split() else "finished"
 
 
 def list_runtimes(
@@ -160,17 +194,25 @@ def list_runtimes(
                 raise
             notes.append(f"local: {exc}")
     if target in (None, "k8s"):
-        try:
-            from factory.contained.k8s import cluster_runtimes, has_cluster_context
+        from factory.contained.usage import uses
 
-            if target is None and not has_cluster_context():
-                unconfigured.append("k8s")
-            else:
-                runtimes += cluster_runtimes(namespace)
-        except LifecycleError as exc:
-            if target == "k8s":
-                raise
-            notes.append(f"k8s: {exc}")
+        # Only reach for the cluster when there is reason to think it is wanted. Asking an
+        # unreachable one costs a multi-second timeout and then reports an error about a target the
+        # user may never have used — which is the common case for anyone who set up `local` only.
+        if target is None and not uses("k8s"):
+            unconfigured.append("k8s")
+        else:
+            try:
+                from factory.contained.k8s import cluster_runtimes, has_cluster_context
+
+                if target is None and not has_cluster_context():
+                    unconfigured.append("k8s")
+                else:
+                    runtimes += cluster_runtimes(namespace)
+            except LifecycleError as exc:
+                if target == "k8s":
+                    raise
+                notes.append(f"k8s: {exc}")
     return runtimes, notes, unconfigured
 
 
@@ -249,8 +291,23 @@ def attach(name: str, target: str, namespace: str | None = None) -> int:
         return _not_ours(name)
     if not runtime.active:
         print(
-            f"contained: {name} is {runtime.state}; there is no live session to attach to. "
-            f"Its output is still readable with `podman logs {name}`.",
+            f"contained: {name} is {runtime.state} — the container is not running, so there is "
+            f"nothing to attach to.\n"
+            f"  Its workspace is still on disk; `factory contained sync {name}` shows where.\n"
+            f"  Remove it with:  factory contained rm {name}",
+            file=sys.stderr,
+        )
+        return 1
+    if runtime.target == "local" and runtime.state == "finished":
+        # The container is up but the run's session is gone — usually the run ended, or a stray
+        # Ctrl-D closed it. Sessions created by current versions survive that; older ones do not,
+        # and either way "no sessions" from tmux is not an answer a user can act on.
+        print(
+            f"contained: {name}'s run has finished and its session is gone, so there is nothing to "
+            f"attach to.\n"
+            f"  Look inside anyway:  podman exec -it {name} bash\n"
+            f"  Get the work back:   factory contained sync {name}\n"
+            f"  Remove it:           factory contained rm {name}",
             file=sys.stderr,
         )
         return 1

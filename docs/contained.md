@@ -208,8 +208,17 @@ rta-run                           local   e06e95065606  1s    running
 $ factory contained attach rta-run
 ```
 
+`ls` covers both targets, but it only asks the cluster once you have actually used one — otherwise
+a laptop that has only ever run locally would wait on a network timeout and then be told about a
+cluster it never set up. `--target k8s ls` always asks.
+
 That drops you into the live session. `Ctrl-b d` detaches and **leaves the run going** — the tmux
 prefix, because the run lives in tmux precisely so that detaching is safe.
+
+Typing `exit` is safe too. It ends the shell inside the session and returns you to your own
+terminal; the session and everything it printed stay, and attaching again gives you a fresh shell in
+the same window. `ls` shows such a run as `finished` rather than `running`, because the container
+deliberately outlives the run inside it.
 
 ### Getting the work back
 
