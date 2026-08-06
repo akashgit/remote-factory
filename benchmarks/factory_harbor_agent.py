@@ -808,3 +808,21 @@ class TomsweFactoryCeo(FactoryCeo):
             ),
             env=env,
         )
+
+
+class SwebenchifyHardFactoryCeo(FactoryCeo):
+    """Runs the swebenchifyhard workflow for SWE-benchify-hard benchmark."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "swebenchifyhard-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run swebenchifyhard . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
