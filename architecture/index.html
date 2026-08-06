@@ -1,0 +1,1690 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A harness for agentic software evolution — detect, delegate, evaluate, archive">
+      
+      
+      
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/architecture/">
+      
+      
+        <link rel="prev" href="../configuration/">
+      
+      
+        <link rel="next" href="../eval/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Architecture - re:factory</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            re:factory
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    re:factory
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#three-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three Layers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Three Layers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-python-cli-factory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: Python CLI (factory/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-ceo-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: CEO Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-specialist-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3: Specialist Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#state-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State Machine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discovery-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ideation-pipeline-design-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ideation Pipeline (Design Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-pipeline-research-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Research Pipeline (Research Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#experiment-loop-improve-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experiment Loop (Improve Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adversarial-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adversarial Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eval Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-flow_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#experiment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experiment Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Modules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#factory-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .factory/ Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagrams
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self-improvement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACE Playbook Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../full-eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Eval
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#three-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Three Layers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Three Layers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-python-cli-factory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: Python CLI (factory/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-ceo-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: CEO Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-specialist-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3: Specialist Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#state-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State Machine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discovery-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ideation-pipeline-design-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ideation Pipeline (Design Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-pipeline-research-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Research Pipeline (Research Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#experiment-loop-improve-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experiment Loop (Improve Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adversarial-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adversarial Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eval Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-flow_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#experiment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experiment Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Modules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#factory-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .factory/ Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagrams
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<p>re:factory is a three-layer system with strict separation between tooling, orchestration, and execution.</p>
+<h2 id="three-layers">Three Layers<a class="headerlink" href="#three-layers" title="Permanent link">&para;</a></h2>
+<h3 id="layer-1-python-cli-factory">Layer 1: Python CLI (<code>factory/</code>)<a class="headerlink" href="#layer-1-python-cli-factory" title="Permanent link">&para;</a></h3>
+<p>Pure tools that don't make decisions. The CLI provides measurement, storage, and project introspection — never deciding <em>what</em> to change or <em>whether</em> to keep a change.</p>
+<p>Entry point: <code>factory/cli.py</code> → <code>factory.cli:main</code> (registered as <code>factory</code> in pyproject.toml). Each subcommand is a <code>cmd_*</code> function dispatched via a handler dict.</p>
+<h3 id="layer-2-ceo-agent">Layer 2: CEO Agent<a class="headerlink" href="#layer-2-ceo-agent" title="Permanent link">&para;</a></h3>
+<p>A dedicated Claude Code agent that owns the full workflow. Spawned via <code>factory ceo &lt;path&gt;</code> or <code>factory run &lt;path&gt;</code>. The CEO:</p>
+<ul>
+<li>Detects project state and routes to the appropriate mode</li>
+<li>Spawns specialist agents as subprocesses</li>
+<li>Makes keep/revert decisions based on eval scores</li>
+<li>Ensures mandatory archival after every cycle</li>
+<li>Reads event log and <code>.factory/</code> state directly for crash-resilient resume</li>
+</ul>
+<p>Prompt: <code>factory/agents/prompts/ceo.md</code></p>
+<h3 id="layer-3-specialist-agents">Layer 3: Specialist Agents<a class="headerlink" href="#layer-3-specialist-agents" title="Permanent link">&para;</a></h3>
+<p>Nine specialist Claude Code subprocesses, each with a narrow responsibility:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Role</th>
+<th>Invoked via</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Researcher</strong></td>
+<td>Observe code, search for best practices, read prior knowledge</td>
+<td><code>factory agent researcher --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Strategist</strong></td>
+<td>Generate ranked hypotheses using FEEC priority</td>
+<td><code>factory agent strategist --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Builder</strong></td>
+<td>Implement a single hypothesis, open a PR</td>
+<td><code>factory agent builder --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Reviewer</strong></td>
+<td>Guard rules + structured code review</td>
+<td><code>factory agent reviewer --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Evaluator</strong></td>
+<td>Run evals, compare before/after scores</td>
+<td><code>factory agent evaluator --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Archivist</strong></td>
+<td>Write learnings to <code>.factory/archive/</code>, update performance reports</td>
+<td><code>factory agent archivist --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Strategist (Design mode)</strong></td>
+<td>Synthesize research + raw idea into a buildable project plan during ideation</td>
+<td><code>factory agent strategist --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Refiner</strong></td>
+<td>Classify and scope post-cycle refinement requests (T1/T2/T3 tiers)</td>
+<td><code>factory agent refiner --task "..."</code></td>
+</tr>
+<tr>
+<td><strong>Failure Analyst</strong></td>
+<td>Classify run failures by root cause (research mode only)</td>
+<td><code>factory agent failure_analyst --task "..."</code></td>
+</tr>
+</tbody>
+</table>
+<p>Agent prompts are resolved via two-tier lookup in <code>factory/agents/runner.py</code>:
+1. Project-specific override: <code>&lt;project&gt;/.factory/agents/&lt;role&gt;.md</code>
+2. re:factory default: <code>factory/agents/prompts/&lt;role&gt;.md</code></p>
+<p>Evolved playbooks from ACE are auto-injected at runtime.</p>
+<h2 id="state-machine">State Machine<a class="headerlink" href="#state-machine" title="Permanent link">&para;</a></h2>
+<p>The CEO detects project state and routes to the appropriate mode:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Condition</th>
+<th>Mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>no_repo</code></td>
+<td>No git repo</td>
+<td><strong>Build</strong> — scaffold from spec</td>
+</tr>
+<tr>
+<td><code>incomplete</code></td>
+<td>Repo exists, missing structure</td>
+<td><strong>Build</strong> — complete scaffold</td>
+</tr>
+<tr>
+<td><code>no_factory</code></td>
+<td>Code exists, no <code>.factory/</code></td>
+<td><strong>Discover</strong> — introspect + generate evals</td>
+</tr>
+<tr>
+<td><code>evals_pending_review</code></td>
+<td>Evals generated, not reviewed</td>
+<td><strong>Review</strong> — human approval gate</td>
+</tr>
+<tr>
+<td><code>has_factory</code></td>
+<td>Everything initialized</td>
+<td><strong>Improve</strong> — run experiment loop</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Additional modes</strong> (selected explicitly, not auto-detected):</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Mode</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--focus "item"</code></td>
+<td><strong>Targeted</strong></td>
+<td>Pins one backlog item, one hypothesis, one experiment, then exits</td>
+</tr>
+<tr>
+<td><code>--mode design</code></td>
+<td><strong>Design</strong></td>
+<td>Research → Strategist plan → user feedback loop → build</td>
+</tr>
+<tr>
+<td><code>--mode research</code></td>
+<td><strong>Research</strong></td>
+<td>Failure analysis → targeted research → hypothesis → build → metric evaluation with leakage guards and monotonic improvement</td>
+</tr>
+<tr>
+<td><code>--mode meta</code></td>
+<td><strong>Meta</strong></td>
+<td>Full Improve loop on re:factory itself, then ACE playbook evolution</td>
+</tr>
+<tr>
+<td><code>--refine "request"</code></td>
+<td><strong>Refine</strong></td>
+<td>Refiner scopes → Builder implements → full review pipeline → keep/revert</td>
+</tr>
+</tbody>
+</table>
+<p>State detection logic lives in <code>factory/state.py</code>.</p>
+<p><img alt="State Machine" src="../diagrams/state-machine.svg" /></p>
+<blockquote>
+<p><strong>Note:</strong> Explicit flags (<code>--mode design</code>, <code>--mode research</code>, <code>--mode meta</code>, <code>--focus</code>) override auto-detection. <code>--mode interactive</code> remains accepted as a backward-compatible alias. All modes return to <code>has_factory</code> on completion.</p>
+</blockquote>
+<h2 id="data-flow">Data Flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h2>
+<h3 id="discovery-pipeline">Discovery Pipeline<a class="headerlink" href="#discovery-pipeline" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>factory/discovery/introspect.py   → Detect language, framework, project type
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>factory/discovery/profile.py      → Build EvalProfile with dimensions and weights
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>factory/discovery/generate.py     → Generate eval/score.py script
+</code></pre></div>
+<h3 id="ideation-pipeline-design-mode">Ideation Pipeline (Design Mode)<a class="headerlink" href="#ideation-pipeline-design-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>1. Researcher surveys   → .factory/strategy/research.md (domain landscape)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>2. Strategist synthesizes → phased build plan (features, architecture, phased execution)
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>3. CEO presents draft    → user reviews, gives feedback
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>4. Iterate (2-3)         → Strategist revises, optional follow-up research
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>5. User approves         → spec persisted to .factory/strategy/current.md
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>6. Transition            → proceed to Build mode
+</code></pre></div>
+<h3 id="research-pipeline-research-mode">Research Pipeline (Research Mode)<a class="headerlink" href="#research-pipeline-research-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>1. Baseline        → Evaluator runs run_command, records starting metric
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>2. Failure Analyst → Classifies failures (per-instance root cause + aggregated categories)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>3. Researcher      → Web search for targeted solutions to dominant failure patterns
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>4. Strategist      → 1-3 hypotheses targeting dominant failure modes
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>   └─ CEO gate: mutable_surfaces check + leakage scan
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>5. Builder         → Implements hypothesis (mutable surfaces only)
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>   └─ CEO gate: fixed_surfaces check + leakage scan
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>6. Run             → Re-executes run_command, extracts new metric
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>7. Verdict         → Keep if metric &gt;= previous_best AND hygiene intact; else revert
+</code></pre></div>
+<p>Key differences from Improve mode:
+- <strong>Failure Analyst</strong> replaces the standard Researcher observation step
+- <strong>Mutable/fixed surfaces</strong> enforce strict file-level access control
+- <strong>Leakage guards</strong> scan hypotheses and diffs for ground truth contamination (token overlap, negation hints, specific values)
+- <strong>Monotonic improvement</strong> — the metric must never regress below the previous best
+- <strong>Precheck</strong> adds fixed surface guard + leakage detector on top of standard checks</p>
+<h3 id="experiment-loop-improve-mode">Experiment Loop (Improve Mode)<a class="headerlink" href="#experiment-loop-improve-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>1. Researcher observes  → .factory/strategy/observations.md
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>2. Strategist ranks     → .factory/strategy/current.md (FEEC-prioritized hypotheses)
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>3. Builder implements   → experiment branch + PR
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>4. Evaluator measures   → eval_before.json, eval_after.json
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>5. CEO decides          → keep (merge) or revert (close PR)
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>6. Archivist records    → .factory/archive/ notes, performance report
+</code></pre></div>
+<h3 id="adversarial-pipeline">Adversarial Pipeline<a class="headerlink" href="#adversarial-pipeline" title="Permanent link">&para;</a></h3>
+<p>For projects with an <code>## Adversarial</code> section in <code>factory.md</code>, re:factory alternates between optimizing two competing components (generator and discriminator):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>1. Check active phase  → load .factory/adversarial_state.json
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>2. Run active eval     → generator or discriminator eval_command
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>3. Record result       → update streak counters, check hysteresis
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>4. Phase switch?       → if consecutive_above &gt;= hysteresis, flip active role
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>5. Convergence?        → if both per-role streaks &gt;= convergence_window, mark converged
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>6. Save state          → persist to .factory/adversarial_state.json
+</code></pre></div>
+<p>Key properties:
+- <strong>Hysteresis</strong> prevents oscillation — N consecutive above-threshold rounds required before switching (default 3)
+- <strong>Per-role streak counters freeze</strong> when that role is inactive — only the active role's counter changes
+- <strong>Convergence</strong> requires both sides to independently sustain above-threshold performance</p>
+<p>State management: <code>factory/adversarial.py</code>. Configuration: <a href="../configuration/#adversarial">Adversarial</a>.</p>
+<h3 id="eval-pipeline">Eval Pipeline<a class="headerlink" href="#eval-pipeline" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>factory/eval/hygiene.py   → 6 mandatory dimensions (tests, lint, types, coverage, guards, config)
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>factory/eval/growth.py    → 5 universal dimensions (capability, diversity, observability, research, effectiveness)
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>factory/eval/runner.py    → Three-tier merge: hygiene (50%) + growth (50%), or hygiene + growth + project
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>factory/eval/scorer.py    → Weighted composite score computation
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>factory/eval/guards.py    → Guard rule enforcement (scope, immutability)
+</code></pre></div>
+<p><img alt="Eval System" src="../diagrams/eval-system.svg" /></p>
+<h3 id="data-flow_1">Data Flow<a class="headerlink" href="#data-flow_1" title="Permanent link">&para;</a></h3>
+<p><img alt="Core Pipeline" src="../diagrams/dataflow-core.svg" /></p>
+<p>For research projects and ACE self-improvement, additional data flows manage mutable/fixed surfaces, leakage guards, and playbook evolution:</p>
+<p><img alt="Research &amp; Self-Improvement" src="../diagrams/dataflow-research.svg" /></p>
+<h3 id="experiment-lifecycle">Experiment Lifecycle<a class="headerlink" href="#experiment-lifecycle" title="Permanent link">&para;</a></h3>
+<p>Each experiment follows three phases. <strong>Phase 1</strong> observes the project and generates hypotheses:</p>
+<p><img alt="Observe &amp; Plan" src="../diagrams/lifecycle-observe.svg" /></p>
+<p><strong>Phase 2</strong> executes the approved hypothesis — building, reviewing, and evaluating:</p>
+<p><img alt="Execute" src="../diagrams/lifecycle-execute.svg" /></p>
+<p><strong>Phase 3</strong> runs a non-overridable precheck gate and makes the keep/revert decision:</p>
+<p><img alt="Decision" src="../diagrams/lifecycle-decide.svg" /></p>
+<p>In standard mode, the cycle loops back to the next hypothesis. In targeted mode (<code>--focus</code>), it exits after one decision.</p>
+<h3 id="strategy">Strategy<a class="headerlink" href="#strategy" title="Permanent link">&para;</a></h3>
+<p><code>factory/strategy.py</code> implements FEEC priority: <strong>Fix</strong> &gt; <strong>Exploit</strong> &gt; <strong>Explore</strong> &gt; <strong>Combine</strong>.</p>
+<ul>
+<li>Fix: broken tests, failing lint, regressions</li>
+<li>Exploit: improve existing working features</li>
+<li>Explore: add new capabilities</li>
+<li>Combine: cross-cutting improvements</li>
+</ul>
+<p>Stuck detection activates after 3+ consecutive same-category reverts, forcing category rotation.</p>
+<h2 id="key-modules">Key Modules<a class="headerlink" href="#key-modules" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>factory/cli.py</code></td>
+<td>CLI entry point, argparse subcommands</td>
+</tr>
+<tr>
+<td><code>factory/models.py</code></td>
+<td>Pydantic v2 models (strict mode)</td>
+</tr>
+<tr>
+<td><code>factory/state.py</code></td>
+<td>Project state detection (5 states)</td>
+</tr>
+<tr>
+<td><code>factory/store.py</code></td>
+<td><code>.factory/</code> filesystem store</td>
+</tr>
+<tr>
+<td><code>factory/events.py</code></td>
+<td>Event system (JSONL append-only log)</td>
+</tr>
+<tr>
+<td><code>factory/strategy.py</code></td>
+<td>FEEC priority heuristic</td>
+</tr>
+<tr>
+<td><code>factory/study.py</code></td>
+<td>Interaction log analysis</td>
+</tr>
+<tr>
+<td><code>factory/insights.py</code></td>
+<td>Cross-project pattern analysis</td>
+</tr>
+<tr>
+<td><code>factory/checkpoint.py</code></td>
+<td>CEO checkpoint save/load (legacy, debugging)</td>
+</tr>
+<tr>
+<td><code>factory/analysis.py</code></td>
+<td>Experiment comparison (diff, explain)</td>
+</tr>
+<tr>
+<td><code>factory/registry.py</code></td>
+<td>Global project registry (<code>~/.factory/registry.json</code>)</td>
+</tr>
+<tr>
+<td><code>factory/report.py</code></td>
+<td>Performance report generation and loading</td>
+</tr>
+<tr>
+<td><code>factory/adversarial.py</code></td>
+<td>GAN-style adversarial eval loop state machine</td>
+</tr>
+<tr>
+<td><code>factory/agents/runner.py</code></td>
+<td>Agent subprocess spawner + event emission</td>
+</tr>
+</tbody>
+</table>
+<h2 id="factory-directory"><code>.factory/</code> Directory<a class="headerlink" href="#factory-directory" title="Permanent link">&para;</a></h2>
+<p>Generated at runtime — not checked into version control:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>.factory/
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>├── config.json              # Parsed from factory.md
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>├── eval_profile.json        # Discovered eval dimensions
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>├── results.tsv              # Append-only experiment history
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>├── events.jsonl             # Structured event log
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>├── performance_report.json  # Aggregated verdicts, observations, experiment stats
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>├── experiments/
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>│   └── 001/
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>│       ├── hypothesis.md
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>│       ├── eval_before.json
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>│       ├── eval_after.json
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>│       ├── changes.diff
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>│       └── verdict.json
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>├── strategy/
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>│   ├── current.md           # Active hypotheses
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>│   ├── observations.md      # Researcher findings
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>│   ├── backlog.md           # Unified backlog (features, deferred items, issues)
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>│   └── insights.md          # Cross-project patterns
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>├── reviews/
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>│   ├── &lt;role&gt;-latest.md
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>│   └── ceo-verdict-&lt;role&gt;.md
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>├── adversarial_state.json   # Adversarial loop state (phase, streaks, history)
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>├── archive/                 # Archivist notes (institutional memory)
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>│   ├── experiments/         # Per-experiment notes
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>│   ├── strategies/          # Strategy snapshots
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>│   ├── sources/             # Research source notes
+<a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>│   └── patterns/            # Cross-project patterns
+<a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a>└── agents/                  # Per-project prompt overrides
+</code></pre></div>
+<h2 id="diagrams">Diagrams<a class="headerlink" href="#diagrams" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../diagrams/state-machine.svg">State Machine</a></li>
+<li><a href="../diagrams/architecture.svg">Architecture Overview</a></li>
+<li><a href="../diagrams/eval-system.svg">Eval System</a></li>
+<li><a href="../diagrams/dataflow-core.svg">Data Flow — Core Pipeline</a></li>
+<li><a href="../diagrams/dataflow-research.svg">Data Flow — Research &amp; Self-Improvement</a></li>
+<li><a href="../diagrams/lifecycle-observe.svg">Experiment Lifecycle — Observe &amp; Plan</a></li>
+<li><a href="../diagrams/lifecycle-execute.svg">Experiment Lifecycle — Execute</a></li>
+<li><a href="../diagrams/lifecycle-decide.svg">Experiment Lifecycle — Decide</a></li>
+</ul>
+<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../self-improvement/">Self-Improvement Loop</a> — How the CEO tracks agents, cross-project learning, and autonomous playbook evolution</li>
+<li><a href="../ace/">ACE Playbook Evolution</a> — The Reflect → Curate → Inject playbook evolution mechanics</li>
+<li><a href="../eval/">Eval System</a> — Three-tier scoring, guards, and precheck gates</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
