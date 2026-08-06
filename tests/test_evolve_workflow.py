@@ -1,14 +1,42 @@
 """Tests for the evolve workflow definition."""
 
+from __future__ import annotations
+
+import warnings
+from pathlib import Path
+
+import pytest
+
+from factory.inner_loop import InnerLoop
 from factory.workflow.definitions import evolve_workflow, register_all
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    Edge,
     FnNode,
     GateNode,
     VerdictType,
+    Workflow,
 )
 from factory.models import ProjectState
+
+
+def _make_workflow(*node_ids: str) -> Workflow:
+    """Create a minimal workflow with the given node IDs for testing."""
+    nodes: dict[str, AgentNode] = {
+        nid: AgentNode(id=nid, role=AgentRole.RESEARCHER)
+        for nid in node_ids
+    }
+    edges = [
+        Edge(source=node_ids[i], target=node_ids[i + 1])
+        for i in range(len(node_ids) - 1)
+    ] if len(node_ids) > 1 else []
+    return Workflow(
+        name="test",
+        nodes=nodes,
+        edges=edges,
+        start_node=node_ids[0] if node_ids else "",
+    )
 
 
 class TestEvolveWorkflowStructure:
@@ -259,3 +287,106 @@ class TestEvolveWorkflowSkillExport:
         skill_md = workflow_to_skill_md(wf)
         assert skill_md.startswith("---")
         assert "workflow-evolve" in skill_md
+
+
+# ── frozen_nodes tests ─────────────────────────────────────────
+
+
+class TestFrozenNodesValidation:
+    def test_invalid_ids_raise_value_error(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        with pytest.raises(ValueError, match="frozen_nodes contains IDs not in workflow.nodes"):
+            InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["x", "y"]))
+
+    def test_empty_is_valid(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset())
+        assert loop.frozen_nodes == frozenset()
+
+    def test_workflow_none_skips_validation(self, tmp_path: Path) -> None:
+        loop = InnerLoop(tmp_path, frozen_nodes=frozenset(["nonexistent"]))
+        assert loop.frozen_nodes == frozenset(["nonexistent"])
+
+    def test_valid_ids_pass(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a", "b"]))
+        assert loop.frozen_nodes == frozenset(["a", "b"])
+
+
+class TestFrozenNodesOverFreeze:
+    def test_all_nodes_frozen_emits_warning(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        with pytest.warns(UserWarning, match="All nodes are frozen"):
+            InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a", "b"]))
+
+    def test_partial_freeze_no_warning(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a"]))
+
+
+class TestIsMutable:
+    def test_unfrozen_is_mutable(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a"]))
+        assert loop.is_mutable("b") is True
+
+    def test_frozen_is_not_mutable(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a"]))
+        assert loop.is_mutable("a") is False
+
+    def test_unknown_raises_value_error(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf)
+        with pytest.raises(ValueError, match="Unknown node ID"):
+            loop.is_mutable("zzz")
+
+    def test_workflow_none_returns_true(self, tmp_path: Path) -> None:
+        loop = InnerLoop(tmp_path)
+        assert loop.is_mutable("anything") is True
+
+
+class TestMutableNodes:
+    def test_correct_set_difference(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a"]))
+        assert loop.mutable_nodes() == {"b", "c"}
+
+    def test_empty_when_workflow_none(self, tmp_path: Path) -> None:
+        loop = InnerLoop(tmp_path)
+        assert loop.mutable_nodes() == set()
+
+    def test_empty_when_all_frozen(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        with pytest.warns(UserWarning):
+            loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a", "b"]))
+        assert loop.mutable_nodes() == set()
+
+
+class TestImmutableNodes:
+    def test_returns_set_copy(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a", "b"]))
+        result = loop.immutable_nodes()
+        assert result == {"a", "b"}
+        assert isinstance(result, set)
+
+    def test_empty_when_none_frozen(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf)
+        assert loop.immutable_nodes() == set()
+
+
+class TestFrozenNodesDefault:
+    def test_default_is_empty_frozenset(self, tmp_path: Path) -> None:
+        loop = InnerLoop(tmp_path)
+        assert loop.frozen_nodes == frozenset()
+        assert isinstance(loop.frozen_nodes, frozenset)
+
+    def test_backward_compatible_construction(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf)
+        assert loop.frozen_nodes == frozenset()
+        assert loop.workflow is wf
