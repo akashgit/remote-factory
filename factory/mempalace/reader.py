@@ -134,8 +134,7 @@ def mp_read(project_path: Path, task_hint: str | None = None) -> str:
         except Exception:
             outcomes.write_text("")
 
-        ctx = memory_dir / "context.md"
-        ctx.write_text(
+        content = (
             "## Episodic Memory (Task-Relevant)\n" + ep.read_text()
             + "\n\n## Past QA Findings\n" + reviews_f.read_text()
             + "\n\n## Design Rationale\n" + decisions_f.read_text()
@@ -144,4 +143,6 @@ def mp_read(project_path: Path, task_hint: str | None = None) -> str:
             + "\n\n## Timeline\n" + tl_f.read_text()
             + "\n\n## Experiment Outcomes\n" + outcomes.read_text()
         )
-    return "MemPalace study complete for " + pn
+        ctx = memory_dir / "context.md"
+        ctx.write_text(content)
+    return content

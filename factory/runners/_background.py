@@ -87,6 +87,7 @@ async def run_in_background(
 
     env = dict(os.environ)
     env["FACTORY_BG"] = "1"
+    env["PROJECT_PATH"] = str(Path(cwd).resolve())
 
     try:
         result = subprocess.run(

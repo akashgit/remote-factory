@@ -120,6 +120,8 @@ class ClaudeRunner:
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.model:
             env["FACTORY_MODEL"] = request.model
+        if request.cwd:
+            env["PROJECT_PATH"] = str(Path(request.cwd).resolve())
 
         return cmd, env, [prompt_path]
 
@@ -258,6 +260,8 @@ class ClaudeRunner:
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.model:
             env["FACTORY_MODEL"] = request.model
+        if request.cwd:
+            env["PROJECT_PATH"] = str(Path(request.cwd).resolve())
 
         return cmd, env, temp_files
 
