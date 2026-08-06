@@ -304,7 +304,7 @@ def test_attach_goes_through_tmux_with_a_tty() -> None:
     argv = build_attach_argv("rta-abc123")
     assert argv[:2] == ["podman", "exec"]
     assert "-t" in argv
-    assert argv[-4:] == ["tmux", "attach", "-t", "factory"]
+    assert argv[-1].endswith("exec tmux attach -t factory")
 
 
 def test_tmux_launch_is_detached_and_survives_the_factory_exiting() -> None:
@@ -607,3 +607,53 @@ def test_bad_arguments_are_caught_before_a_workspace_is_made(
     assert code == 2
     assert "not KEY=VALUE" in capsys.readouterr().err
     assert not home.exists(), "a workspace was created before the arguments were checked"
+
+
+def test_ls_does_not_reach_for_a_cluster_the_user_has_never_used(tmp_path: Path) -> None:
+    """Asking an unreachable cluster costs a multi-second timeout and reports an error about a
+    target someone who chose `local` never asked for."""
+    from factory.contained import lifecycle
+
+    home = tmp_path / "contained-home"
+    with patch.dict(os.environ, {"FACTORY_CONTAINED_HOME": str(home)}, clear=False), \
+         patch("factory.contained.lifecycle.local_runtimes", return_value=[]), \
+         patch("factory.contained.k8s.cluster_runtimes") as cluster:
+        runtimes, notes, unconfigured = lifecycle.list_runtimes(None)
+    cluster.assert_not_called()
+    assert unconfigured == ["k8s"]
+    assert notes == []
+    assert runtimes == []
+
+
+def test_ls_does_reach_for_a_cluster_once_it_has_been_used(tmp_path: Path) -> None:
+    from factory.contained import lifecycle
+    from factory.contained.usage import record_target
+
+    home = tmp_path / "contained-home"
+    with patch.dict(os.environ, {"FACTORY_CONTAINED_HOME": str(home)}, clear=False):
+        record_target("k8s")
+        with patch("factory.contained.lifecycle.local_runtimes", return_value=[]), \
+             patch("factory.contained.k8s.has_cluster_context", return_value=True), \
+             patch("factory.contained.k8s.cluster_runtimes", return_value=[]) as cluster:
+            lifecycle.list_runtimes(None)
+    cluster.assert_called_once()
+
+
+def test_an_explicit_target_is_always_honoured(tmp_path: Path) -> None:
+    """`--target k8s` means ask the cluster, whether or not it has been used before."""
+    from factory.contained import lifecycle
+
+    home = tmp_path / "contained-home"
+    with patch.dict(os.environ, {"FACTORY_CONTAINED_HOME": str(home)}, clear=False), \
+         patch("factory.contained.k8s.cluster_runtimes", return_value=[]) as cluster:
+        lifecycle.list_runtimes("k8s")
+    cluster.assert_called_once()
+
+
+def test_listing_the_cluster_cannot_hang() -> None:
+    """kubectl retries internally; without a client deadline an unreachable cluster blocks for
+    minutes at an interactive prompt."""
+    from factory.contained.k8s import LIST_TIMEOUT_SECONDS, build_get_pods_argv
+
+    assert f"--request-timeout={LIST_TIMEOUT_SECONDS}s" in build_get_pods_argv("ns")
+    assert LIST_TIMEOUT_SECONDS <= 15

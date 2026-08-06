@@ -684,6 +684,9 @@ def _run_local(args: argparse.Namespace) -> int:
             _roll_back(ws)
             return 1
 
+        from factory.contained.usage import record_target
+
+        record_target("local")
         _announce(plan)
         code, created = _execute(plan, steps, probes)
         if code != 0 and not created:

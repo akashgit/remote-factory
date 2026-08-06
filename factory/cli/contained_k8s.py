@@ -113,6 +113,9 @@ def run_k8s(args: argparse.Namespace) -> int:
     try:
         if not _scan_and_confirm(ws, assume_yes=args.yes):
             return 1
+        from factory.contained.usage import record_target
+
+        record_target("k8s")
         tarball = _pack(ws, run_id)
         _provision(plan, tarball)
         return _start(plan, ws, project)

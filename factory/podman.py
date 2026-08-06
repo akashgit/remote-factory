@@ -191,8 +191,30 @@ def build_attach_argv(name: str, *, session: str = TMUX_SESSION) -> list[str]:
     tmux has no network protocol — its client-server link is a Unix socket — so an `exec` with a
     TTY is the transport. The multiplexer is what makes detaching safe: without it, `podman attach`
     is the only route to the running process's stdio and `Ctrl-C` sends SIGINT to the factory.
+
+    Revives a dead pane before attaching. The session is created with `remain-on-exit`, so a run
+    that has finished — or a shell the user typed `exit` into — leaves the pane dead rather than
+    destroying the session. Attaching to a dead pane would show a frozen screen and accept no
+    input, so it is respawned into a shell first, which keeps the scrollback and gives the user
+    somewhere to type.
     """
-    return build_exec_argv(name, ["tmux", "attach", "-t", session], tty=True)
+    revive = (
+        f'if [ "$(tmux list-panes -t {shlex.quote(session)} -F "#{{pane_dead}}" 2>/dev/null '
+        f'| head -1)" = "1" ]; then tmux respawn-pane -t {shlex.quote(session)} "exec sh -i"; fi; '
+        f"exec tmux attach -t {shlex.quote(session)}"
+    )
+    return build_exec_argv(name, ["sh", "-lc", revive], tty=True)
+
+
+def build_pane_liveness_argv(name: str, *, session: str = TMUX_SESSION) -> list[str]:
+    """Ask whether anything in the run's session is still alive.
+
+    Session *existence* is the wrong question: the session is deliberately kept after the run ends
+    so its output stays readable, so asking `has-session` reports a finished run as running. What
+    distinguishes them is whether any pane still has a live process — `#{pane_dead}` is `0` for one
+    that does.
+    """
+    return build_exec_argv(name, ["tmux", "list-panes", "-t", session, "-F", "#{pane_dead}"])
 
 
 def build_start_argv(plan: ContainerPlan) -> list[str]:
@@ -279,9 +301,20 @@ def build_tmux_launch(workdir: str, command: str, *, session: str = TMUX_SESSION
     inspectable — the case where its state is most worth reading.
     """
     inner = f"{command}; printf '\\n[factory exited %s]\\n' \"$?\"; exec sh -i"
+    # `remain-on-exit` is what stops one stray Ctrl-D from destroying the run's session for good.
+    # Without it, exiting the shell closes the last pane, which closes the window, which ends the
+    # session and takes the entire scrollback with it — leaving a container that `ls` still calls
+    # running and an `attach` that answers "no sessions" with no way back.
+    quoted = shlex.quote(session)
     return (
-        f"tmux new-session -d -s {shlex.quote(session)} -c {shlex.quote(workdir)} "
-        f"{shlex.quote(inner)}"
+        f"tmux new-session -d -s {quoted} -c {shlex.quote(workdir)} {shlex.quote(inner)}; "
+        # `remain-on-exit` is what stops one stray Ctrl-D from destroying the session for good, and
+        # the hook is what stops that from stranding whoever pressed it: without it the client stays
+        # attached to a pane that is dead and accepts no input, so the only way out is to know the
+        # tmux detach key. Together: the session and its scrollback survive, and exiting returns you
+        # to your own shell.
+        f"tmux set-option -t {quoted} remain-on-exit on; "
+        f"tmux set-hook -t {quoted} pane-died detach-client"
     )
 
 

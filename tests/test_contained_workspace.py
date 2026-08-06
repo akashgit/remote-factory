@@ -331,3 +331,63 @@ def test_resolve_runtime_matches_by_name() -> None:
 def test_dispatch_requires_a_name_for_name_taking_subcommands() -> None:
     args = argparse.Namespace(subcommand="attach", name=None, target="local")
     assert lifecycle.dispatch_lifecycle(args) == 2
+
+
+# ---------------------------------------------------------------------------------------------
+# A run's state is not its container's state
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_finished_run_is_not_reported_as_running() -> None:
+    """The container's PID 1 outlives the run on purpose, so container state says nothing about
+    whether there is anything left to attach to."""
+    alive = subprocess.CompletedProcess([], 0, "0\n", "")
+    dead = subprocess.CompletedProcess([], 0, "1\n", "")
+    gone = subprocess.CompletedProcess([], 1, "", "no server running")
+
+    with patch("factory.contained.lifecycle.subprocess.run", return_value=alive):
+        assert lifecycle._run_state("x", "running") == "running"
+    with patch("factory.contained.lifecycle.subprocess.run", return_value=dead):
+        assert lifecycle._run_state("x", "running") == "finished"
+    with patch("factory.contained.lifecycle.subprocess.run", return_value=gone):
+        assert lifecycle._run_state("x", "running") == "finished"
+    # A stopped container needs no probe at all.
+    with patch("factory.contained.lifecycle.subprocess.run") as run:
+        assert lifecycle._run_state("x", "exited") == "exited"
+    run.assert_not_called()
+
+
+def test_the_session_survives_a_stray_exit() -> None:
+    """One Ctrl-D used to destroy the session, the scrollback and any way back into the run."""
+    from factory.podman import build_tmux_launch
+
+    launch = build_tmux_launch("/w", "factory study /w")
+    assert "remain-on-exit on" in launch
+    # ...and exiting must still return the user to their own shell rather than stranding them in a
+    # pane that is dead and accepts no input.
+    assert "pane-died detach-client" in launch
+
+
+def test_attach_revives_a_dead_pane_before_attaching() -> None:
+    from factory.podman import build_attach_argv
+
+    command = " ".join(build_attach_argv("x"))
+    assert "pane_dead" in command
+    assert "respawn-pane" in command
+    assert "tmux attach" in command
+
+
+def test_attach_explains_a_finished_run_instead_of_saying_no_sessions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.lifecycle.list_runtimes",
+               return_value=([Runtime(name="x", target="local", project="p", state="finished")],
+                             [], [])), \
+         patch("factory.contained.lifecycle.subprocess.call") as call:
+        code = lifecycle.attach("x", "local")
+    call.assert_not_called()
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "has finished" in err
+    assert "podman exec -it x bash" in err
+    assert "factory contained rm x" in err
