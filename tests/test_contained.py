@@ -51,7 +51,7 @@ def interpret(argv: list[str]) -> argparse.Namespace:
 
 
 # --------------------------------------------------------------------------------------------
-# Command surface (§2.1, §2.2, §2.3)
+# Command surface
 # --------------------------------------------------------------------------------------------
 
 
@@ -125,7 +125,7 @@ def test_help_lists_flags_by_target_not_as_a_flat_list() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Path translation (§2.5)
+# Path translation
 # --------------------------------------------------------------------------------------------
 
 
@@ -168,7 +168,7 @@ def test_rewrite_is_a_no_op_when_the_paths_coincide(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Credential shape and the forwarding policy (§3.5)
+# Credential shape and the forwarding policy
 # --------------------------------------------------------------------------------------------
 
 
@@ -256,7 +256,7 @@ def test_secret_values_are_redacted_in_a_composed_command() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Podman command composition (§3.1, §3.4, §5.3)
+# Podman command composition
 # --------------------------------------------------------------------------------------------
 
 
@@ -335,7 +335,7 @@ def test_container_name_keeps_the_hash_when_the_stem_is_long() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Dry run (§12) — composes the same argv the real path runs, and provisions nothing
+# Dry run — composes the same argv the real path runs, and provisions nothing
 # --------------------------------------------------------------------------------------------
 
 

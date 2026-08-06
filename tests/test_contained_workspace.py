@@ -46,7 +46,7 @@ def contained_root(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------------------------
-# The workspace is a copy (§3.2), and it always starts from the local tree (§2.1a)
+# The workspace is a copy, and it always starts from the local tree
 # --------------------------------------------------------------------------------------------
 
 
@@ -150,7 +150,7 @@ def test_contained_home_is_not_nested_under_factory_home() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Provenance (§2.1a)
+# Provenance
 # --------------------------------------------------------------------------------------------
 
 
@@ -199,7 +199,7 @@ def test_content_probe_skips_rather_than_fakes_an_empty_tree(tmp_path: Path) -> 
 
 
 # --------------------------------------------------------------------------------------------
-# Lifecycle acts only on factory-created runtimes (§2.3)
+# Lifecycle acts only on factory-created runtimes
 # --------------------------------------------------------------------------------------------
 
 

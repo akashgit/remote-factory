@@ -1,19 +1,13 @@
 # `factory contained` — defects found and fixed
 
-A record of every defect found in this feature, what caused it, and where the fix lives. Written as
-a handover: if you are picking this up, **read [Still outstanding](#still-outstanding) first**, then
+Known issues in `factory contained`, and the defects already fixed in it. Written for whoever
+maintains this next: **read [Still outstanding](#still-outstanding) first**, then
 [Decisions that look like defects](#decisions-that-look-like-defects) so you do not undo them.
 
-Defects came from three places, and the source matters because it predicts what each one costs to
-find:
-
-| Where they came from | Count | What that kind of testing catches |
-|---|---|---|
-| Running the design's own verification blocks against real targets | 19 | Environment facts. Invisible to reading and to unit tests. |
-| A first-run review from a clean install, working only from the docs | 22 | Everything a new user hits in their first hour. |
-| Actual use | 3 | What survives both of the above. |
-
-Unit tests caught none of them. They are all in `tests/test_contained*.py` now, as regression cover.
+Every defect below was found by running the feature — against a real podman host, a real OpenShift
+cluster, or a clean install driven only from the documentation. None was found by reading the code
+or by unit tests, which is the most useful thing this record says about where to spend effort.
+All of them now have regression cover in `tests/test_contained*.py`.
 
 ---
 
@@ -69,19 +63,20 @@ chmod +x $CR/ENTER.sh
 $CR/ENTER.sh factory contained verify
 ```
 
-Two traps in the clean room itself, both of which cost a cycle:
+Two traps in the clean room itself:
 
 - **`HOME` must be under the real `$HOME`.** The podman machine shares your home directory and
   nothing else, so a clean room under `/tmp` makes every mount silently empty — which looks like a
   product defect and is not.
-- **Do not link `~/.kube` in** unless you mean to. Without it the reviewer cannot touch a cluster,
-  which is usually what you want.
+- **Do not link `~/.kube` in** unless you mean to. Without it nothing can touch a cluster, which is
+  usually what you want when testing the local target.
 
 ---
 
-## Found by running the verification blocks
+## Environment defects
 
-These are environment facts. Each presents as something other than what it is.
+Facts about podman, OpenShift and the runtime image. Each one presents as something other than what
+it is, which is why they are worth writing down.
 
 ### The workspace and the host
 
@@ -185,10 +180,9 @@ id — so MCP approval is given as `enableAllProjectMcpServers`.
 
 ---
 
-## Found by the first-run review
+## Command-surface defects
 
-A reviewer with a clean install and only the published guide found 22. Full transcripts are in
-[the first-run review](first-run-review.md); the substance:
+Found by driving every documented command from a clean install:
 
 ### Broken behaviour
 
@@ -226,7 +220,7 @@ your own credentials" when there were none, and contradicted itself in adjacent 
 
 ---
 
-## Found in real use
+## Defects found in use
 
 **U1 — `ls` reached for a cluster the user never set up.** Someone who answers "local" at setup, and
 has a kubeconfig entry pointing at an unreachable cluster, waited on a multi-second i/o timeout on
@@ -252,8 +246,8 @@ Plus: `ls` now reports what the *run* is doing (the container's PID 1 outlives i
 "running" was never a claim about the run), and `attach` on a finished run says so and offers a
 shell, `sync` and `rm`.
 
-**U3 — an orphaned division endpoint would be silently adopted.** Found while checking that a test
-run had cleaned up after itself; it had not. Removing a container with `podman rm` instead of
+**U3 — an orphaned division endpoint would be silently adopted.** Removing a container with
+`podman rm` instead of
 `factory contained rm` — or deleting `~/.factory-contained` — orphans the server with no PID file.
 The ownership check consulted only the factory's own records, so the next `--division` run found no
 recorded owner, saw the port answering, and would have handed the agent someone else's server. It

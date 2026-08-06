@@ -61,7 +61,7 @@ def _plan(tmp_path: Path, *, division: bool = False) -> PodPlan:
 
 
 # --------------------------------------------------------------------------------------------
-# The bundle (§8)
+# The bundle
 # --------------------------------------------------------------------------------------------
 
 
@@ -77,7 +77,7 @@ def test_the_bundle_is_valid_yaml_and_namespace_scoped() -> None:
 
 
 def test_the_bundle_never_grants_pods_exec() -> None:
-    """The build sidecar is a boundary only because the agent cannot exec into it (§6.3, §11)."""
+    """The build sidecar is a boundary only because the agent cannot exec into it."""
     for division in (False, True):
         docs = [d for d in yaml.safe_load_all(render_bundle(namespace="ns", division=division)) if d]
         role = next(d for d in docs if d["kind"] == "Role")
@@ -98,7 +98,7 @@ def test_the_division_adds_build_verbs_and_nothing_else() -> None:
 
 
 def test_the_bundle_carries_the_secret_command_but_never_the_secret() -> None:
-    """The factory references the Secret by name and never handles the material (§4.5)."""
+    """The factory references the Secret by name and never handles the material."""
     text = render_bundle(namespace="ns")
     assert "oc create secret generic factory-credentials" in text
     docs = [d for d in yaml.safe_load_all(text) if d]
@@ -129,7 +129,7 @@ def test_the_command_the_bundle_prints_is_one_the_cli_accepts() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# The pod (§4.1, §4.4)
+# The pod
 # --------------------------------------------------------------------------------------------
 
 
@@ -226,7 +226,7 @@ def test_the_project_lands_where_the_payload_was_rewritten_to(tmp_path: Path) ->
 
 
 # --------------------------------------------------------------------------------------------
-# Lifecycle over factory-created pods only (§2.3)
+# Lifecycle over factory-created pods only
 # --------------------------------------------------------------------------------------------
 
 
@@ -272,7 +272,7 @@ def test_rm_leaves_the_pvc_alone(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# The secret scan (§4.5)
+# The secret scan
 # --------------------------------------------------------------------------------------------
 
 
@@ -325,7 +325,7 @@ def test_a_scan_never_raises_when_gitleaks_is_absent(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# verify (§4.0) — every failure carries its fix
+# verify — every failure carries its fix
 # --------------------------------------------------------------------------------------------
 
 
@@ -400,7 +400,7 @@ def test_an_unreachable_review_is_unknown_not_denied() -> None:
 
 
 def test_pods_exec_being_granted_is_itself_a_failure() -> None:
-    """The one check that fails when something succeeds (§6.3, §11)."""
+    """The one check that fails when something succeeds."""
     with patch("factory.contained.k8s_setup.access_review", return_value=True):
         check = k8s_setup._no_exec_check("ns")
     assert not check.ok

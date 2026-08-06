@@ -1,6 +1,6 @@
 name: Contained runtime image
 
-# The image `factory contained` runs, for both targets (spec §7).
+# The image `factory contained` runs, for both the local and cluster targets.
 #
 # Built and published here rather than on demand: on-demand building is slow for every cold start,
 # and it is circular for the cluster target, whose whole point is that the laptop is not the build
