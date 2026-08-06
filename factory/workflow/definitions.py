@@ -4319,10 +4319,26 @@ def plan_workflow() -> Workflow:
             'set -e; '
             'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
             'if ! gh auth status >/dev/null 2>&1; then '
-            '  echo "SKIP: gh not authenticated"; exit 0; '
+            '  echo "SKIP: gh not authenticated — plan saved locally only"; exit 0; '
+            'fi; '
+            'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then '
+            '  echo "SKIP: not inside a git repository"; exit 0; '
             'fi; '
             'if ! git remote -v 2>/dev/null | grep -q .; then '
-            '  echo "SKIP: no git remote configured"; exit 0; '
+            '  SLUG=$(basename "{project_path}"); '
+            '  echo "Creating private GitHub repository: $SLUG..."; '
+            '  if gh repo create "$SLUG" --private --source=. --remote=origin --push 2>&1; then '
+            '    REPO_URL=$(gh repo view "$SLUG" --json url -q .url 2>/dev/null || echo ""); '
+            '    echo "GitHub repository created: ${REPO_URL:-$SLUG}"; '
+            '  elif gh repo view "$SLUG" >/dev/null 2>&1; then '
+            '    echo "Repository $SLUG already exists on GitHub, linking as remote..."; '
+            '    REMOTE_URL=$(gh repo view "$SLUG" --json sshUrl -q .sshUrl 2>/dev/null || '
+            '      gh repo view "$SLUG" --json url -q .url); '
+            '    git remote add origin "$REMOTE_URL" 2>/dev/null || true; '
+            '    git push -u origin HEAD 2>/dev/null || true; '
+            '  else '
+            '    echo "SKIP: could not create GitHub repo — plan saved locally only"; exit 0; '
+            '  fi; '
             'fi; '
             'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
             'FOCUS="${FOCUS:-}"; '
@@ -4349,12 +4365,15 @@ def plan_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
         writes={".factory/strategy/github-issue-ref.txt"},
         notes=(
-            "Publishes the approved plan to a GitHub issue. Two cases: "
-            "if --focus is an issue number, posts as a comment on that issue and adds the plan label. "
-            "Otherwise, creates a new issue titled 'Plan: <focus>'. "
-            "Writes the issue number to github-issue-ref.txt for downstream use by seed_backlog. "
-            "Graceful degradation: if gh is not authenticated or no git remote exists, "
-            "writes 'none' and exits cleanly."
+            "Publishes the approved plan to a GitHub issue. If no git remote exists, "
+            "auto-creates a private GitHub repository via 'gh repo create --private "
+            "--source=. --remote=origin --push'. If the repo name already exists on "
+            "GitHub, links it as a remote instead. After ensuring a remote exists, "
+            "publishes the plan: if --focus is an issue number, posts as a comment; "
+            "otherwise creates a new issue titled 'Plan: <focus>'. "
+            "Writes the issue number to github-issue-ref.txt for downstream use by "
+            "seed_backlog. Graceful degradation: if gh is not authenticated, not in "
+            "a git repo, or repo creation fails, writes 'none' and exits cleanly."
         ),
     )
 
