@@ -146,11 +146,11 @@ def test_plan_publish_github_auto_creates_repo(wf):
     assert "gh repo create" in node.command
 
 
-def test_plan_publish_github_creates_private_repo(wf):
-    """Verify publish_github creates private repos by default."""
+def test_plan_publish_github_creates_public_repo(wf):
+    """Verify publish_github creates public repos by default."""
     node = wf.nodes["publish_github"]
     assert isinstance(node, FnNode)
-    assert "--private" in node.command
+    assert "--public" in node.command
 
 
 def test_plan_publish_github_handles_existing_repo(wf):
@@ -179,7 +179,7 @@ def test_plan_publish_github_user_facing_messages(wf):
     """Verify publish_github echoes clear user-facing messages."""
     node = wf.nodes["publish_github"]
     assert isinstance(node, FnNode)
-    assert "Creating private GitHub repository:" in node.command
+    assert "Creating GitHub repository:" in node.command
     assert "GitHub repository created:" in node.command
     assert "plan saved locally only" in node.command
     assert "already exists on GitHub, linking as remote" in node.command

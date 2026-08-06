@@ -4326,8 +4326,8 @@ def plan_workflow() -> Workflow:
             'fi; '
             'if ! git remote -v 2>/dev/null | grep -q .; then '
             '  SLUG=$(basename "{project_path}"); '
-            '  echo "Creating private GitHub repository: $SLUG..."; '
-            '  if gh repo create "$SLUG" --private --source=. --remote=origin --push 2>&1; then '
+            '  echo "Creating GitHub repository: $SLUG..."; '
+            '  if gh repo create "$SLUG" --public --source=. --remote=origin --push 2>&1; then '
             '    REPO_URL=$(gh repo view "$SLUG" --json url -q .url 2>/dev/null || echo ""); '
             '    echo "GitHub repository created: ${REPO_URL:-$SLUG}"; '
             '  elif gh repo view "$SLUG" >/dev/null 2>&1; then '
@@ -4366,7 +4366,7 @@ def plan_workflow() -> Workflow:
         writes={".factory/strategy/github-issue-ref.txt"},
         notes=(
             "Publishes the approved plan to a GitHub issue. If no git remote exists, "
-            "auto-creates a private GitHub repository via 'gh repo create --private "
+            "auto-creates a public GitHub repository via 'gh repo create --public "
             "--source=. --remote=origin --push'. If the repo name already exists on "
             "GitHub, links it as a remote instead. After ensuring a remote exists, "
             "publishes the plan: if --focus is an issue number, posts as a comment; "
