@@ -67,9 +67,7 @@ nav:
       - Eval System: eval.md
       - Self-Improvement Loop: self-improvement.md
       - ACE Playbook Evolution: ace.md
-  - Contained Runtimes:
-      - Guide: contained/index.md
-      - Known issues: contained/DEFECTS.md
+  - Contained Runtimes: contained/index.md
   - Benchmarks: benchmarks.md
   - Full Eval: full-eval.md
   - Contributing: contributing.md

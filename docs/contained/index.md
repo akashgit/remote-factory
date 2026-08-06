@@ -557,9 +557,6 @@ that run first, or run this one without `--division`.
 
 ## Implementation
 
-Known defects, their causes, what is still outstanding, and decisions that look like defects but are
-not: [Defects found and fixed](DEFECTS.md). Read it before changing this feature.
-
 | Concern | Module |
 |---|---|
 | All podman CLI knowledge | `factory/podman.py` |
