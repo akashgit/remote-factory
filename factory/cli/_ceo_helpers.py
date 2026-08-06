@@ -30,6 +30,7 @@ from factory.cli._mode_handlers import (
     _resolve_tmux_persist,
 )
 from factory.cli._path_resolver import (
+    PlanSource,
     _dedupe_project_path,
     _derive_session_name,
     _extract_project_name,
@@ -427,12 +428,15 @@ def _execute_ceo(
     if auto_approve:
         _emit_cli_event(wt_path, "auto_approve.enabled", {"mode": mode})
 
-    resolved_plan: str | None = None
+    resolved_plan: PlanSource | None = None
     if from_plan:
         resolved_plan = _resolve_plan_source(from_plan, project_path)
         strategy_dir = wt_path / ".factory" / "strategy"
         strategy_dir.mkdir(parents=True, exist_ok=True)
-        (strategy_dir / "current.md").write_text(resolved_plan)
+        (strategy_dir / "current.md").write_text(resolved_plan.plan)
+        if resolved_plan.feedback:
+            feedback_text = "\n\n---\n\n".join(resolved_plan.feedback)
+            (strategy_dir / "thread-feedback.md").write_text(feedback_text)
 
     from factory.skill_cache import ensure_skills
 
@@ -509,7 +513,8 @@ def _execute_ceo(
         display_mode=banner_mode,
         create_description=create_description,
         update_existing_mode=update_existing_mode,
-        from_plan=resolved_plan,
+        from_plan=resolved_plan.plan if resolved_plan else None,
+        from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
     )
 
     session_name = _derive_session_name(

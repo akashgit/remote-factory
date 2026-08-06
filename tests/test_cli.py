@@ -2823,14 +2823,16 @@ class TestResolvePlanSource:
     """Tests for _resolve_plan_source()."""
 
     def test_resolve_plan_source_local_file(self, tmp_path):
-        """Local file path is read and returned as plan content."""
+        """Local file path returns PlanSource with plan content and no feedback."""
         from factory.cli._path_resolver import _resolve_plan_source
 
         plan_file = tmp_path / "my-plan.md"
         plan_file.write_text("## Phase 1\nBuild the scaffold")
-        content = _resolve_plan_source(str(plan_file), tmp_path)
-        assert "## Phase 1" in content
-        assert "Build the scaffold" in content
+        result = _resolve_plan_source(str(plan_file), tmp_path)
+        assert "## Phase 1" in result.plan
+        assert "Build the scaffold" in result.plan
+        assert result.feedback == []
+        assert result.source == "my-plan.md"
 
     def test_resolve_plan_source_relative_file(self, tmp_path):
         """Relative file path is resolved relative to project_path."""
@@ -2838,11 +2840,11 @@ class TestResolvePlanSource:
 
         plan_file = tmp_path / "plan.md"
         plan_file.write_text("## Phase 1\nDo things")
-        content = _resolve_plan_source("plan.md", tmp_path)
-        assert "## Phase 1" in content
+        result = _resolve_plan_source("plan.md", tmp_path)
+        assert "## Phase 1" in result.plan
 
     def test_resolve_plan_source_issue_number(self, tmp_path):
-        """Issue number triggers fetch_issue path."""
+        """Issue number triggers fetch_issue path and returns PlanSource."""
         from factory.cli._path_resolver import _resolve_plan_source
 
         (tmp_path / ".git").mkdir()
@@ -2867,11 +2869,12 @@ class TestResolvePlanSource:
                 stdout="comment body 1\ncomment body 2",
                 returncode=0,
             )
-            content = _resolve_plan_source("42", tmp_path)
-        assert "plan body" in content
+            result = _resolve_plan_source("42", tmp_path)
+        assert result.plan == "plan body"
+        assert result.feedback == ["comment body 1", "comment body 2"]
 
     def test_resolve_plan_source_fuzzy_search(self, tmp_path):
-        """Non-file, non-issue string triggers fuzzy search."""
+        """Non-file, non-issue string triggers fuzzy search and returns PlanSource."""
         from factory.cli._path_resolver import _resolve_plan_source
 
         (tmp_path / ".git").mkdir()
@@ -2899,11 +2902,11 @@ class TestResolvePlanSource:
                 MagicMock(stdout=search_result, returncode=0),
                 MagicMock(stdout="", returncode=0),
             ]
-            content = _resolve_plan_source("my cool plan", tmp_path)
-        assert "fuzzy plan body" in content
+            result = _resolve_plan_source("my cool plan", tmp_path)
+        assert result.plan == "fuzzy plan body"
 
     def test_resolve_plan_source_includes_comments(self, tmp_path):
-        """Issue fetch includes body + all comments concatenated."""
+        """Issue fetch separates body (plan) from comments (feedback)."""
         from factory.cli._path_resolver import _resolve_plan_source
 
         from factory.issue import IssueSpec
@@ -2918,10 +2921,10 @@ class TestResolvePlanSource:
                 stdout="first comment\nsecond comment",
                 returncode=0,
             )
-            content = _resolve_plan_source("10", tmp_path)
-        assert "issue body" in content
-        assert "first comment" in content
-        assert "second comment" in content
+            result = _resolve_plan_source("10", tmp_path)
+        assert result.plan == "issue body"
+        assert result.feedback == ["first comment", "second comment"]
+        assert result.source == "issue #10"
 
 
 class TestBuildCeoTaskFromPlan:
@@ -2932,7 +2935,6 @@ class TestBuildCeoTaskFromPlan:
         task = _build_ceo_task(tmp_path, "design", from_plan="## Phase 1\nBuild it")
         assert "## Plan Loop (From Existing Plan)" in task
         assert "Skip the Research phase" in task
-        assert "Strategy approval point" in task
 
     def test_build_ceo_task_no_from_plan(self, tmp_path):
         """Without from_plan, the section is not emitted."""
@@ -2943,3 +2945,99 @@ class TestBuildCeoTaskFromPlan:
         """from_plan=None does not emit the section."""
         task = _build_ceo_task(tmp_path, "design", from_plan=None)
         assert "## Plan Loop (From Existing Plan)" not in task
+
+    def test_build_ceo_task_from_plan_with_feedback_includes_reconciliation(self, tmp_path):
+        """from_plan with feedback includes Strategist reconciliation instructions."""
+        task = _build_ceo_task(
+            tmp_path, "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=["Please add auth", "Also need caching"],
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "thread-feedback.md" in task
+        assert "Reconcile" in task
+        assert "Strategist" in task
+        assert "RECONCILED" in task
+
+    def test_build_ceo_task_from_plan_without_feedback_skips_strategist(self, tmp_path):
+        """from_plan without feedback skips the Strategist step."""
+        task = _build_ceo_task(
+            tmp_path, "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=[],
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "No thread feedback exists" in task
+        assert "no Strategist needed" in task
+        assert "RECONCILED" not in task
+
+    def test_build_ceo_task_from_plan_feedback_none_skips_strategist(self, tmp_path):
+        """from_plan with feedback=None behaves like no feedback."""
+        task = _build_ceo_task(
+            tmp_path, "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=None,
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "No thread feedback exists" in task
+
+
+class TestFromPlanFeedbackWritesFile:
+    """Tests for thread feedback file writing in _execute_ceo."""
+
+    def test_from_plan_with_feedback_writes_thread_feedback_file(self, tmp_path):
+        """When plan source has feedback, thread-feedback.md is written."""
+        from factory.cli._path_resolver import PlanSource
+
+        plan_source = PlanSource(
+            plan="## Phase 1\nBuild it",
+            feedback=["Add auth flow", "Need caching layer"],
+            source="issue #42",
+        )
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch("factory.worktree.create_worktree",
+                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--from-plan", "42", "--auto-approve"])
+        assert result == 0
+        feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
+        assert feedback_file.exists()
+        content = feedback_file.read_text()
+        assert "Add auth flow" in content
+        assert "Need caching layer" in content
+
+    def test_from_plan_without_feedback_no_thread_feedback_file(self, tmp_path):
+        """When plan source has no feedback, thread-feedback.md is not written."""
+        from factory.cli._path_resolver import PlanSource
+
+        plan_source = PlanSource(
+            plan="## Phase 1\nBuild it",
+            feedback=[],
+            source="my-plan.md",
+        )
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch("factory.worktree.create_worktree",
+                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--from-plan", "plan.md", "--auto-approve"])
+        assert result == 0
+        feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
+        assert not feedback_file.exists()

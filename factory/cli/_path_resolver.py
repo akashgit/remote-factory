@@ -6,12 +6,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import structlog
 
 from factory.cli._helpers import _is_github_url, _safe_is_dir, _safe_is_file
 
 log = structlog.get_logger()
+
+
+class PlanSource(NamedTuple):
+    plan: str
+    feedback: list[str]
+    source: str
 
 
 _FILLER_WORDS = frozenset({
@@ -311,13 +318,13 @@ def _derive_session_name(
     return f"{prefix}{mode} {proj_name}"[:max_len]
 
 
-def _resolve_plan_source(from_plan: str, project_path: Path) -> str:
-    """Resolve a plan source to its content string.
+def _resolve_plan_source(from_plan: str, project_path: Path) -> PlanSource:
+    """Resolve a plan source to a :class:`PlanSource`.
 
     Resolution order:
-    1. Issue ref (URL, number, owner/repo#N) → fetch issue body + all comments
-    2. Local file path → read file content
-    3. Fuzzy search → ``gh issue list --label plan --search`` → pick top result, fetch body + comments
+    1. Issue ref (URL, number, owner/repo#N) → fetch issue body + thread comments
+    2. Local file path → read file content (no feedback)
+    3. Fuzzy search → ``gh issue list --label plan --search`` → pick top result
     """
     from factory.issue import is_issue_ref
 
@@ -333,21 +340,20 @@ def _resolve_plan_source(from_plan: str, project_path: Path) -> str:
             print(f"Error: plan file is empty: {plan_path}", file=sys.stderr)
             sys.exit(1)
         print(f"  Plan: {plan_path.name} → .factory/strategy/current.md", file=sys.stderr)
-        return content
+        return PlanSource(plan=content, feedback=[], source=plan_path.name)
 
     return _fuzzy_search_plan(from_plan, project_path)
 
 
-def _fetch_plan_from_issue(ref: str, project_path: Path) -> str:
-    """Fetch a GitHub issue body + all comments as plan content."""
+def _fetch_plan_from_issue(ref: str, project_path: Path) -> PlanSource:
+    """Fetch a GitHub issue body as plan content and comments as thread feedback."""
     from factory.issue import fetch_issue, parse_issue_ref
 
     issue = fetch_issue(ref, project_path)
     forge, owner_repo, number = parse_issue_ref(ref, project_path)
 
-    parts: list[str] = []
-    if issue.body:
-        parts.append(issue.body)
+    plan_body = issue.body or ""
+    feedback: list[str] = []
 
     if forge == "github":
         try:
@@ -359,20 +365,19 @@ def _fetch_plan_from_issue(ref: str, project_path: Path) -> str:
             for comment_body in result.stdout.strip().split("\n"):
                 comment_body = comment_body.strip()
                 if comment_body:
-                    parts.append(comment_body)
+                    feedback.append(comment_body)
         except (subprocess.CalledProcessError, FileNotFoundError):
             log.debug("plan_comments_fetch_failed", ref=ref)
 
-    content = "\n\n---\n\n".join(parts)
-    if not content.strip():
+    if not plan_body.strip():
         print(f"Error: issue #{number} has no content", file=sys.stderr)
         sys.exit(1)
 
     print(f"  Plan: issue #{number} → .factory/strategy/current.md", file=sys.stderr)
-    return content
+    return PlanSource(plan=plan_body, feedback=feedback, source=f"issue #{number}")
 
 
-def _fuzzy_search_plan(query: str, project_path: Path) -> str:
+def _fuzzy_search_plan(query: str, project_path: Path) -> PlanSource:
     """Search GitHub issues with the 'plan' label for a matching plan."""
     from factory.issue import infer_remote
 
