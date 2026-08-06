@@ -231,6 +231,7 @@ class TestBuildCommand:
 
         assert cmd[0] == "opencode"
         assert cmd[1] == "run"
+        assert cmd[2] == "Run experiment"
         assert "--format" in cmd
         assert "json" in cmd
         assert "--dir" in cmd
@@ -239,11 +240,12 @@ class TestBuildCommand:
         assert "-p" not in cmd
         assert "-c" not in cmd
         assert "-q" not in cmd
-        full_prompt = cmd[2]
-        assert "You are the CEO." in full_prompt
-        assert "Run experiment" in full_prompt
-        assert temp_files == []
         assert "VIRTUAL_ENV" not in env
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are the CEO."
 
     def test_model_override(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
@@ -325,10 +327,10 @@ class TestBuildCommand:
 class TestBuildInteractiveCommand:
     def test_interactive_no_run_subcommand(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        cmd, _, _ = runner.build_interactive_command(
+        cmd, _, temp_files = runner.build_interactive_command(
             AgentRunRequest(
-                prompt="test",
-                task="test",
+                prompt="You are a test agent.",
+                task="Start session",
                 cwd=tmp_path,
                 role="ceo",
             )
@@ -338,8 +340,15 @@ class TestBuildInteractiveCommand:
         assert "--format" not in cmd
         assert "--auto" not in cmd
         assert "--prompt" in cmd
+        prompt_idx = cmd.index("--prompt")
+        assert cmd[prompt_idx + 1] == "Start session"
         assert "--dir" in cmd
         assert str(tmp_path) in cmd
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are a test agent."
 
     def test_interactive_model_override(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()

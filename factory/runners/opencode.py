@@ -186,9 +186,12 @@ class OpenCodeRunner:
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode v1.x CLI command for headless execution."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        cwd = Path(request.cwd)
+        agents_md_path = cwd / "AGENTS.md"
+        agents_md_path.write_text(request.prompt)
+        temp_files: list[Path] = [agents_md_path]
 
-        cmd = ["opencode", "run", full_prompt, "--format", "json", "--dir", str(request.cwd)]
+        cmd = ["opencode", "run", request.task, "--format", "json", "--dir", str(request.cwd)]
 
         if request.skip_permissions:
             cmd.append("--auto")
@@ -206,13 +209,16 @@ class OpenCodeRunner:
             cmd.append("--continue")
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        return cmd, env, []
+        return cmd, env, temp_files
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command for interactive (TUI) mode."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        cwd = Path(request.cwd)
+        agents_md_path = cwd / "AGENTS.md"
+        agents_md_path.write_text(request.prompt)
+        temp_files: list[Path] = [agents_md_path]
 
-        cmd = ["opencode", "--prompt", full_prompt, "--dir", str(request.cwd)]
+        cmd = ["opencode", "--prompt", request.task, "--dir", str(request.cwd)]
 
         if request.model:
             cmd.extend(["--model", request.model])
@@ -224,7 +230,7 @@ class OpenCodeRunner:
             cmd.extend(["--session", request.resume_session_id])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        return cmd, env, []
+        return cmd, env, temp_files
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode v1.x invocation."""
@@ -261,22 +267,26 @@ class OpenCodeRunner:
             self._emit_ceiling_event(project_path, e)
             return AgentRunResult(stdout=str(e), return_code=1)
 
-        cmd, env, _ = self.build_command(request)
+        cmd, env, temp_files = self.build_command(request)
 
         log.info("opencode_headless", cwd=str(request.cwd), role=request.role, model=request.model)
 
         start_time = time.monotonic()
 
-        result = await run_subprocess(
-            cmd, cwd=str(request.cwd), env=env,
-            timeout=request.timeout, runner_name="opencode", role=request.role,
-            sanitize=True,
-        )
+        try:
+            result = await run_subprocess(
+                cmd, cwd=str(request.cwd), env=env,
+                timeout=request.timeout, runner_name="opencode", role=request.role,
+                sanitize=True,
+            )
 
-        duration = time.monotonic() - start_time
-        log_usage(project_path, request.role, request.cwd, duration, result.return_code, dry_run=False, runner_name=_RUNNER_NAME)
+            duration = time.monotonic() - start_time
+            log_usage(project_path, request.role, request.cwd, duration, result.return_code, dry_run=False, runner_name=_RUNNER_NAME)
 
-        return result
+            return result
+        finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode v1.x session as a subprocess."""
@@ -295,12 +305,16 @@ class OpenCodeRunner:
             print(f"ERROR: {e}")
             return 1
 
-        cmd, env, _ = self.build_interactive_command(request)
+        cmd, env, temp_files = self.build_interactive_command(request)
 
         log.info("opencode_interactive", cwd=str(request.cwd))
 
-        result = subprocess.run(cmd, cwd=request.cwd, env=env)
-        return result.returncode
+        try:
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
+            return result.returncode
+        finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
 
     def _find_project_path(self, cwd: Path) -> Path:
         """Find the project root (directory containing .factory/)."""
