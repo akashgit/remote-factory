@@ -311,6 +311,116 @@ def _derive_session_name(
     return f"{prefix}{mode} {proj_name}"[:max_len]
 
 
+def _resolve_plan_source(from_plan: str, project_path: Path) -> str:
+    """Resolve a plan source to its content string.
+
+    Resolution order:
+    1. Issue ref (URL, number, owner/repo#N) → fetch issue body + all comments
+    2. Local file path → read file content
+    3. Fuzzy search → ``gh issue list --label plan --search`` → pick top result, fetch body + comments
+    """
+    from factory.issue import is_issue_ref
+
+    if is_issue_ref(from_plan):
+        return _fetch_plan_from_issue(from_plan, project_path)
+
+    plan_path = Path(from_plan).expanduser()
+    if not plan_path.is_absolute():
+        plan_path = project_path / plan_path
+    if plan_path.is_file():
+        content = plan_path.read_text().strip()
+        if not content:
+            print(f"Error: plan file is empty: {plan_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"  Plan: {plan_path.name} → .factory/strategy/current.md", file=sys.stderr)
+        return content
+
+    return _fuzzy_search_plan(from_plan, project_path)
+
+
+def _fetch_plan_from_issue(ref: str, project_path: Path) -> str:
+    """Fetch a GitHub issue body + all comments as plan content."""
+    from factory.issue import fetch_issue, parse_issue_ref
+
+    issue = fetch_issue(ref, project_path)
+    forge, owner_repo, number = parse_issue_ref(ref, project_path)
+
+    parts: list[str] = []
+    if issue.body:
+        parts.append(issue.body)
+
+    if forge == "github":
+        try:
+            result = subprocess.run(
+                ["gh", "api", f"repos/{owner_repo}/issues/{number}/comments",
+                 "--jq", ".[].body"],
+                capture_output=True, text=True, check=True,
+            )
+            for comment_body in result.stdout.strip().split("\n"):
+                comment_body = comment_body.strip()
+                if comment_body:
+                    parts.append(comment_body)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            log.debug("plan_comments_fetch_failed", ref=ref)
+
+    content = "\n\n---\n\n".join(parts)
+    if not content.strip():
+        print(f"Error: issue #{number} has no content", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  Plan: issue #{number} → .factory/strategy/current.md", file=sys.stderr)
+    return content
+
+
+def _fuzzy_search_plan(query: str, project_path: Path) -> str:
+    """Search GitHub issues with the 'plan' label for a matching plan."""
+    from factory.issue import infer_remote
+
+    try:
+        forge, owner_repo = infer_remote(project_path)
+    except RuntimeError:
+        print(
+            f"Error: no git remote found and '{query}' is not a file or issue ref. "
+            "Cannot search for plans.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if forge != "github":
+        print(
+            f"Error: fuzzy plan search is only supported for GitHub repos, not {forge}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "list", "-R", owner_repo, "--label", "plan",
+             "--search", query, "--json", "number,title", "--limit", "1"],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        print(f"Error: failed to search for plans: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    import json
+
+    issues = json.loads(result.stdout)
+    if not issues:
+        print(
+            f"Error: no plan issues found matching '{query}' in {owner_repo}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    top = issues[0]
+    print(
+        f"  Plan: matched issue #{top['number']} ({top['title']})",
+        file=sys.stderr,
+    )
+    return _fetch_plan_from_issue(str(top["number"]), project_path)
+
+
 def _has_research_target(project_path: Path) -> bool:
     """Check if project already has research_target configured."""
     import json

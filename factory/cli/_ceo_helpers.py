@@ -39,6 +39,7 @@ from factory.cli._path_resolver import (
     _materialize_project,
     _read_prompt_file,
     _resolve_input,
+    _resolve_plan_source,
     _slugify,
 )
 from factory.cli._task_builder import _build_ceo_task
@@ -52,7 +53,7 @@ log = structlog.get_logger()
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool, str | None] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
@@ -68,10 +69,22 @@ def _validate_ceo_flags(
     focus: str | None = getattr(args, "focus", None)
     dir_name: str | None = getattr(args, "dir", None)
     auto_approve: bool = getattr(args, "auto_approve", False)
+    from_plan: str | None = getattr(args, "from_plan", None)
 
     if auto_approve and mode != "design":
         print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
         return 1
+
+    if from_plan:
+        if mode != "design":
+            print("Error: --from-plan requires --mode design", file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --from-plan and --focus are mutually exclusive.", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --from-plan and --prompt are mutually exclusive.", file=sys.stderr)
+            return 1
 
     raw_path = getattr(args, "path", None)
     if not raw_path:
@@ -157,7 +170,7 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve)
+    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan)
 
 
 # ── project resolution ────────────────────────────────────────
@@ -357,6 +370,7 @@ def _execute_ceo(
     issue_urls: list[str] | None = None,
     no_github: bool = False,
     raw_path: str = "",
+    from_plan: str | None = None,
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
     from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
@@ -412,6 +426,13 @@ def _execute_ceo(
     auto_approve = getattr(args, "auto_approve", False)
     if auto_approve:
         _emit_cli_event(wt_path, "auto_approve.enabled", {"mode": mode})
+
+    resolved_plan: str | None = None
+    if from_plan:
+        resolved_plan = _resolve_plan_source(from_plan, project_path)
+        strategy_dir = wt_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "current.md").write_text(resolved_plan)
 
     from factory.skill_cache import ensure_skills
 
@@ -488,6 +509,7 @@ def _execute_ceo(
         display_mode=banner_mode,
         create_description=create_description,
         update_existing_mode=update_existing_mode,
+        from_plan=resolved_plan,
     )
 
     session_name = _derive_session_name(

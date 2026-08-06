@@ -53,9 +53,10 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         "description": (
             "Interactive design mode — identical to build but with a user approval "
             "gate at strategy. Use when the user says 'design X', 'plan X', "
-            "'let's discuss what to build', or wants to review the strategy before building."
+            "'let's discuss what to build', or wants to review the strategy before building. "
+            "Supports --from-plan to load an existing plan and skip research."
         ),
-        "argument_hint": "<project_path> [idea or spec]",
+        "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>]",
     },
     "improve": {
         "description": (

@@ -446,6 +446,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                          "(e.g. 'skip adversarial testing', 'add a lint step after build')")
     p.add_argument("--auto-approve", action="store_true", default=False,
                     help="Auto-approve user gates in design mode (skip interactive strategy review)")
+    p.add_argument("--from-plan", default=None, metavar="PLAN_SOURCE", dest="from_plan",
+                    help="Load an existing plan into design mode instead of running research. "
+                         "Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string. "
+                         "Requires --mode design; mutually exclusive with --focus and --prompt")
 
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
