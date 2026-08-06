@@ -223,9 +223,6 @@ class OpenCodeRunner:
         if request.model:
             cmd.extend(["--model", request.model])
 
-        if request.session_name:
-            cmd.extend(["--title", request.session_name])
-
         if request.resume_session_id:
             cmd.extend(["--session", request.resume_session_id])
 

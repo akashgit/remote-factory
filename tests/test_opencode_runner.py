@@ -350,6 +350,20 @@ class TestBuildInteractiveCommand:
         assert agents_md.exists()
         assert agents_md.read_text() == "You are a test agent."
 
+    def test_interactive_no_title_flag(self, tmp_path: Path) -> None:
+        """--title is only valid for 'opencode run', not the base TUI command."""
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                session_name="factory: discover run-123",
+            )
+        )
+        assert "--title" not in cmd
+
     def test_interactive_model_override(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
         cmd, _, _ = runner.build_interactive_command(
