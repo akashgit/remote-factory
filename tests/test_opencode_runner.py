@@ -342,8 +342,8 @@ class TestBuildInteractiveCommand:
         assert "--prompt" in cmd
         prompt_idx = cmd.index("--prompt")
         assert cmd[prompt_idx + 1] == "Start session"
-        assert "--dir" in cmd
-        assert str(tmp_path) in cmd
+        assert "--dir" not in cmd
+        assert cmd[-1] == str(tmp_path)
 
         agents_md = tmp_path / "AGENTS.md"
         assert agents_md in temp_files
@@ -567,7 +567,8 @@ class TestOpenCodeInteractive:
                 cmd = mock_run.call_args[0][0]
                 assert cmd[0] == "opencode"
                 assert "run" not in cmd
-                assert "--dir" in cmd
+                assert "--dir" not in cmd
+                assert cmd[-1] == str(tmp_path)
                 assert "-p" not in cmd
                 assert "-c" not in cmd
 

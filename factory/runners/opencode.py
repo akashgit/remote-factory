@@ -218,7 +218,7 @@ class OpenCodeRunner:
         agents_md_path.write_text(request.prompt)
         temp_files: list[Path] = [agents_md_path]
 
-        cmd = ["opencode", "--prompt", request.task, "--dir", str(request.cwd)]
+        cmd = ["opencode", "--prompt", request.task, str(request.cwd)]
 
         if request.model:
             cmd.extend(["--model", request.model])

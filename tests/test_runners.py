@@ -1560,9 +1560,8 @@ class TestOpenCodeInteractive:
             ))
 
             cmd = mock_run.call_args[0][0]
-            assert "--dir" in cmd
-            dir_idx = cmd.index("--dir")
-            assert cmd[dir_idx + 1] == str(tmp_path)
+            assert "--dir" not in cmd
+            assert cmd[-1] == str(tmp_path)
 
     def test_interactive_run_dry_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -2104,9 +2103,8 @@ class TestOpenCodeBuildInteractiveCommand:
         assert "--prompt" in cmd
         prompt_idx = cmd.index("--prompt")
         assert cmd[prompt_idx + 1] == "Start session"
-        assert "--dir" in cmd
-        dir_idx = cmd.index("--dir")
-        assert cmd[dir_idx + 1] == str(tmp_path)
+        assert "--dir" not in cmd
+        assert cmd[-1] == str(tmp_path)
         assert "-q" not in cmd
 
         agents_md = tmp_path / "AGENTS.md"
