@@ -357,16 +357,18 @@ def _fetch_plan_from_issue(ref: str, project_path: Path) -> PlanSource:
 
     if forge == "github":
         try:
+            import json as _json
+
             result = subprocess.run(
                 ["gh", "api", f"repos/{owner_repo}/issues/{number}/comments",
-                 "--jq", ".[].body"],
+                 "--jq", "[.[].body]"],
                 capture_output=True, text=True, check=True,
             )
-            for comment_body in result.stdout.strip().split("\n"):
-                comment_body = comment_body.strip()
-                if comment_body:
-                    feedback.append(comment_body)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            comments = _json.loads(result.stdout)
+            for comment_body in comments:
+                if comment_body and comment_body.strip():
+                    feedback.append(comment_body.strip())
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
             log.debug("plan_comments_fetch_failed", ref=ref)
 
     if not plan_body.strip():

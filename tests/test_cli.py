@@ -2866,7 +2866,7 @@ class TestResolvePlanSource:
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
-                stdout="comment body 1\ncomment body 2",
+                stdout=json.dumps(["comment body 1", "comment body 2"]),
                 returncode=0,
             )
             result = _resolve_plan_source("42", tmp_path)
@@ -2900,7 +2900,7 @@ class TestResolvePlanSource:
         ):
             mock_run.side_effect = [
                 MagicMock(stdout=search_result, returncode=0),
-                MagicMock(stdout="", returncode=0),
+                MagicMock(stdout="[]", returncode=0),
             ]
             result = _resolve_plan_source("my cool plan", tmp_path)
         assert result.plan == "fuzzy plan body"
@@ -2918,13 +2918,35 @@ class TestResolvePlanSource:
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
-                stdout="first comment\nsecond comment",
+                stdout=json.dumps(["first comment", "second comment"]),
                 returncode=0,
             )
             result = _resolve_plan_source("10", tmp_path)
         assert result.plan == "issue body"
         assert result.feedback == ["first comment", "second comment"]
         assert result.source == "issue #10"
+
+    def test_resolve_plan_source_multiline_comments(self, tmp_path):
+        """Multi-line comments are preserved as single entries, not split on newlines."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        from factory.issue import IssueSpec
+
+        multiline_comment = "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good."
+        mock_issue = IssueSpec(number=10, title="Plan", body="issue body", url="", forge="github")
+        with (
+            patch("factory.issue.fetch_issue", return_value=mock_issue),
+            patch("factory.issue.parse_issue_ref", return_value=("github", "owner/repo", 10)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout=json.dumps([multiline_comment, "short comment"]),
+                returncode=0,
+            )
+            result = _resolve_plan_source("10", tmp_path)
+        assert len(result.feedback) == 2
+        assert "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good." in result.feedback[0]
+        assert result.feedback[1] == "short comment"
 
 
 class TestBuildCeoTaskFromPlan:
@@ -2980,6 +3002,27 @@ class TestBuildCeoTaskFromPlan:
         )
         assert "## Plan Loop (From Existing Plan)" in task
         assert "No thread feedback exists" in task
+
+    def test_build_ceo_task_from_plan_excludes_design_existing(self, tmp_path):
+        """from_plan takes precedence over design_existing — no contradictory directives."""
+        task = _build_ceo_task(
+            tmp_path, "design",
+            from_plan="## Phase 1\nBuild it",
+            design_existing=True,
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "## Plan Loop (Interactive)" not in task
+
+    def test_build_ceo_task_from_plan_excludes_design_idea(self, tmp_path):
+        """from_plan takes precedence over design_idea — no contradictory directives."""
+        task = _build_ceo_task(
+            tmp_path, "design",
+            from_plan="## Phase 1\nBuild it",
+            design_idea="Build a weather CLI",
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "## Plan Loop (Interactive)" not in task
+        assert "Raw idea from user" not in task
 
 
 class TestFromPlanFeedbackWritesFile:
