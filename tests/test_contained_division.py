@@ -84,6 +84,7 @@ def test_the_server_is_detached_into_its_own_process_group(
     process.poll.return_value = None
     with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
          patch("factory.contained.division.subprocess.Popen", return_value=process) as popen, \
+         patch("factory.contained.division.port_in_use", return_value=False), \
          patch("factory.contained.division.wait_for_listening", return_value=True), \
          patch("factory.contained.division.probe_host_alias", return_value="host.containers.internal"):
         start_local_division(_plan(tmp_path))
@@ -128,6 +129,7 @@ def test_no_reachable_candidate_stops_the_run_and_stops_the_server(
     process.pid = 4242
     with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
          patch("factory.contained.division.subprocess.Popen", return_value=process), \
+         patch("factory.contained.division.port_in_use", return_value=False), \
          patch("factory.contained.division.wait_for_listening", return_value=True), \
          patch("factory.contained.division.probe_host_alias", return_value=None), \
          patch("factory.contained.division._kill_group") as kill:
@@ -153,6 +155,7 @@ def test_the_plan_gains_the_registration_and_the_brief(tmp_path: Path, contained
     process.poll.return_value = None
     with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
          patch("factory.contained.division.subprocess.Popen", return_value=process), \
+         patch("factory.contained.division.port_in_use", return_value=False), \
          patch("factory.contained.division.wait_for_listening", return_value=True), \
          patch("factory.contained.division.probe_host_alias", return_value="192.168.127.254"):
         result = start_local_division(_plan(tmp_path))
@@ -185,6 +188,7 @@ def test_launch_warns_that_the_endpoint_is_unauthenticated(
     process.poll.return_value = None
     with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
          patch("factory.contained.division.subprocess.Popen", return_value=process), \
+         patch("factory.contained.division.port_in_use", return_value=False), \
          patch("factory.contained.division.wait_for_listening", return_value=True), \
          patch("factory.contained.division.probe_host_alias", return_value="host.containers.internal"):
         start_local_division(_plan(tmp_path))
@@ -294,6 +298,7 @@ def test_a_server_that_never_binds_is_reported_as_that_not_as_unreachable(
     process.pid = 4242
     with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
          patch("factory.contained.division.subprocess.Popen", return_value=process), \
+         patch("factory.contained.division.port_in_use", return_value=False), \
          patch("factory.contained.division.wait_for_listening", return_value=False), \
          patch("factory.contained.division.probe_host_alias") as probe, \
          patch("factory.contained.division._kill_group"):
@@ -332,3 +337,17 @@ def test_a_stale_pid_file_does_not_block_a_new_division(
     pid_file.write_text("999999")            # a PID that cannot exist
     assert division.port_owner() is None
     assert not pid_file.exists()             # and the stale record is cleaned up
+
+
+def test_an_untracked_listener_on_the_port_stops_the_run(
+    tmp_path: Path, contained_root: Path
+) -> None:
+    """A container removed with `podman rm` instead of `factory contained rm` orphans its endpoint
+    with no PID file, and the ownership check alone would then wave the next run straight into it."""
+    with patch("factory.contained.division.shutil.which", return_value="/usr/bin/npx"), \
+         patch("factory.contained.division.port_owner", return_value=None), \
+         patch("factory.contained.division.port_in_use", return_value=True), \
+         patch("factory.contained.division.subprocess.Popen") as popen:
+        with pytest.raises(ContainedError, match="not a run this factory is tracking"):
+            start_local_division(_plan(tmp_path))
+    popen.assert_not_called()
