@@ -15,6 +15,18 @@ from factory.mempalace.helpers import (
 )
 
 
+@pytest.fixture()
+def isolated_palace(tmp_path: Path, monkeypatch):
+    """Redirect MemPalace storage to a temp directory so tests don't pollute ~/.mempalace."""
+    palace_dir = tmp_path / "test-palace"
+    palace_dir.mkdir()
+    _fake = lambda: str(palace_dir)
+    monkeypatch.setattr("factory.mempalace.helpers.get_palace_path", _fake)
+    monkeypatch.setattr("factory.mempalace.writer.get_palace_path", _fake)
+    monkeypatch.setattr("factory.mempalace.reader.get_palace_path", _fake)
+    return str(palace_dir)
+
+
 class TestHelpers:
     def test_get_palace_path_returns_string(self) -> None:
         result = get_palace_path()
@@ -78,14 +90,14 @@ class TestMpRead:
         result = mp_read(tmp_path, task_hint="add structured logging")
         assert isinstance(result, str)
 
-    def test_creates_memory_dir(self, tmp_path: Path) -> None:
+    def test_creates_memory_dir(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.reader import mp_read
 
         mp_read(tmp_path)
         assert (tmp_path / ".factory/archive/memory").exists()
 
-    def test_task_hint_used_as_query(self, tmp_path: Path) -> None:
+    def test_task_hint_used_as_query(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.reader import mp_read
 
@@ -105,7 +117,7 @@ class TestMpRead:
         assert "## Knowledge Graph Facts" in ctx
         assert "## Experiment Outcomes" in ctx
 
-    def test_no_task_hint_falls_back_to_observations(self, tmp_path: Path) -> None:
+    def test_no_task_hint_falls_back_to_observations(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.reader import mp_read
 
@@ -118,7 +130,7 @@ class TestMpRead:
         assert "## Design Rationale" in ctx
         assert "## Anti-Patterns & Past Failures" in ctx
 
-    def test_new_output_files_created(self, tmp_path: Path) -> None:
+    def test_new_output_files_created(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.reader import mp_read
 
@@ -173,7 +185,7 @@ class TestMempalaceBrowse:
         result = _do_browse(tmp_path, args)
         assert result == 1
 
-    def test_browse_empty_palace(self, tmp_path: Path) -> None:
+    def test_browse_empty_palace(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.cli.mempalace import _do_browse
 
@@ -183,15 +195,14 @@ class TestMempalaceBrowse:
         result = _do_browse(tmp_path, args)
         assert result in (0, 1)
 
-    def test_browse_with_data(self, tmp_path: Path, capsys) -> None:
+    def test_browse_with_data(self, tmp_path: Path, isolated_palace, capsys) -> None:
         pytest.importorskip("mempalace")
         from factory.cli.mempalace import _do_browse
-        from factory.mempalace.helpers import get_palace_path, get_project_name, store_drawer
+        from factory.mempalace.helpers import get_project_name, store_drawer
 
-        palace = get_palace_path()
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(palace, wing=wing, room="experiments", content="test content", source_file="test.md")
+        store_drawer(isolated_palace, wing=wing, room="experiments", content="test content", source_file="test.md")
 
         args = argparse.Namespace(
             project_path=str(tmp_path), wing=None, room=None, drawer=None,
@@ -202,15 +213,14 @@ class TestMempalaceBrowse:
         assert "Wing:" in captured.out
         assert "experiments" in captured.out
 
-    def test_browse_wing_filter(self, tmp_path: Path, capsys) -> None:
+    def test_browse_wing_filter(self, tmp_path: Path, isolated_palace, capsys) -> None:
         pytest.importorskip("mempalace")
         from factory.cli.mempalace import _do_browse
-        from factory.mempalace.helpers import get_palace_path, get_project_name, store_drawer
+        from factory.mempalace.helpers import get_project_name, store_drawer
 
-        palace = get_palace_path()
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(palace, wing=wing, room="reviews", content="review data", source_file="review.md")
+        store_drawer(isolated_palace, wing=wing, room="reviews", content="review data", source_file="review.md")
 
         args = argparse.Namespace(
             project_path=str(tmp_path), wing=wing, room=None, drawer=None,
@@ -220,22 +230,21 @@ class TestMempalaceBrowse:
         captured = capsys.readouterr()
         assert "Room:" in captured.out
 
-    def test_browse_drawer_by_id(self, tmp_path: Path, capsys) -> None:
+    def test_browse_drawer_by_id(self, tmp_path: Path, isolated_palace, capsys) -> None:
         pytest.importorskip("mempalace")
         from factory.cli.mempalace import _do_browse
-        from factory.mempalace.helpers import get_palace_path, get_project_name, store_drawer
+        from factory.mempalace.helpers import get_project_name, store_drawer
 
         from mempalace.palace import get_collection
 
-        palace = get_palace_path()
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
         content = "full drawer content for browse test"
-        store_drawer(palace, wing=wing, room="decisions", content=content, source_file="verdict.json")
+        store_drawer(isolated_palace, wing=wing, room="decisions", content=content, source_file="verdict.json")
 
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         all_items = collection.get(
-            where={"wing": wing, "room": "decisions"}, include=["documents"],
+            where={"$and": [{"wing": wing}, {"room": "decisions"}]}, include=["documents"],
         )
         assert all_items["ids"], "Expected at least one drawer"
         drawer_id = all_items["ids"][0]
@@ -251,10 +260,10 @@ class TestMempalaceBrowse:
 
 
 class TestMpWriteRooms:
-    def test_experiments_room(self, tmp_path: Path) -> None:
+    def test_experiments_room(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.writer import mp_write
-        from factory.mempalace.helpers import get_palace_path, get_project_name
+        from factory.mempalace.helpers import get_project_name
 
         from mempalace.palace import get_collection
 
@@ -265,19 +274,18 @@ class TestMpWriteRooms:
 
         mp_write(tmp_path)
 
-        palace = get_palace_path()
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         pn = get_project_name(tmp_path)
         results = collection.get(
-            where={"room": "experiments", "wing": "project:" + pn},
+            where={"$and": [{"room": "experiments"}, {"wing": "project:" + pn}]},
             include=["documents", "metadatas"],
         )
         assert len(results["ids"]) >= 1
 
-    def test_failures_room(self, tmp_path: Path) -> None:
+    def test_failures_room(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.writer import mp_write
-        from factory.mempalace.helpers import get_palace_path, get_project_name
+        from factory.mempalace.helpers import get_project_name
 
         from mempalace.palace import get_collection
 
@@ -288,19 +296,18 @@ class TestMpWriteRooms:
 
         mp_write(tmp_path)
 
-        palace = get_palace_path()
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         pn = get_project_name(tmp_path)
         results = collection.get(
-            where={"room": "failures", "wing": "project:" + pn},
+            where={"$and": [{"room": "failures"}, {"wing": "project:" + pn}]},
             include=["documents", "metadatas"],
         )
         assert len(results["ids"]) >= 1
 
-    def test_reviews_room(self, tmp_path: Path) -> None:
+    def test_reviews_room(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.writer import mp_write
-        from factory.mempalace.helpers import get_palace_path, get_project_name
+        from factory.mempalace.helpers import get_project_name
 
         from mempalace.palace import get_collection
 
@@ -311,19 +318,18 @@ class TestMpWriteRooms:
 
         mp_write(tmp_path)
 
-        palace = get_palace_path()
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         pn = get_project_name(tmp_path)
         results = collection.get(
-            where={"room": "reviews", "wing": "project:" + pn},
+            where={"$and": [{"room": "reviews"}, {"wing": "project:" + pn}]},
             include=["documents", "metadatas"],
         )
         assert len(results["ids"]) >= 1
 
-    def test_decisions_room(self, tmp_path: Path) -> None:
+    def test_decisions_room(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
         from factory.mempalace.writer import mp_write
-        from factory.mempalace.helpers import get_palace_path, get_project_name
+        from factory.mempalace.helpers import get_project_name
 
         from mempalace.palace import get_collection
 
@@ -334,53 +340,50 @@ class TestMpWriteRooms:
 
         mp_write(tmp_path)
 
-        palace = get_palace_path()
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         pn = get_project_name(tmp_path)
         results = collection.get(
-            where={"room": "decisions", "wing": "project:" + pn},
+            where={"$and": [{"room": "decisions"}, {"wing": "project:" + pn}]},
             include=["documents", "metadatas"],
         )
         assert len(results["ids"]) >= 1
 
 
 class TestContentAddressedDrawers:
-    def test_same_content_deduplicates(self, tmp_path: Path) -> None:
+    def test_same_content_deduplicates(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
-        from factory.mempalace.helpers import get_palace_path, get_project_name, store_drawer
+        from factory.mempalace.helpers import get_project_name, store_drawer
 
         from mempalace.palace import get_collection
 
-        palace = get_palace_path()
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
 
-        store_drawer(palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
-        store_drawer(palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
+        store_drawer(isolated_palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
+        store_drawer(isolated_palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
 
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         results = collection.get(
-            where={"wing": wing, "room": "experiments"},
+            where={"$and": [{"wing": wing}, {"room": "experiments"}]},
             include=["documents"],
         )
         assert len(results["ids"]) == 1
 
-    def test_different_content_accumulates(self, tmp_path: Path) -> None:
+    def test_different_content_accumulates(self, tmp_path: Path, isolated_palace) -> None:
         pytest.importorskip("mempalace")
-        from factory.mempalace.helpers import get_palace_path, get_project_name, store_drawer
+        from factory.mempalace.helpers import get_project_name, store_drawer
 
         from mempalace.palace import get_collection
 
-        palace = get_palace_path()
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
 
-        store_drawer(palace, wing=wing, room="experiments", content="content alpha", source_file="a.md")
-        store_drawer(palace, wing=wing, room="experiments", content="content beta", source_file="a.md")
+        store_drawer(isolated_palace, wing=wing, room="experiments", content="content alpha", source_file="a.md")
+        store_drawer(isolated_palace, wing=wing, room="experiments", content="content beta", source_file="a.md")
 
-        collection = get_collection(palace)
+        collection = get_collection(isolated_palace)
         results = collection.get(
-            where={"wing": wing, "room": "experiments"},
+            where={"$and": [{"wing": wing}, {"room": "experiments"}]},
             include=["documents"],
         )
         assert len(results["ids"]) == 2
