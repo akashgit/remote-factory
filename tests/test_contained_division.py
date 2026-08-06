@@ -56,7 +56,7 @@ def _completed(returncode: int = 0) -> subprocess.CompletedProcess[str]:
 
 
 # --------------------------------------------------------------------------------------------
-# The server (§5.1)
+# The server
 # --------------------------------------------------------------------------------------------
 
 
@@ -100,7 +100,7 @@ def test_missing_npx_fails_before_anything_is_spawned(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Reachability is probed, never assumed (§5.1, open item F6)
+# Reachability is probed, never assumed
 # --------------------------------------------------------------------------------------------
 
 
@@ -139,7 +139,7 @@ def test_no_reachable_candidate_stops_the_run_and_stops_the_server(
 
 
 # --------------------------------------------------------------------------------------------
-# Registration and brief (§5.4)
+# Registration and brief
 # --------------------------------------------------------------------------------------------
 
 
@@ -177,7 +177,7 @@ def test_the_brief_says_this_is_a_capability_not_a_thing_to_build() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Warning at start, guaranteed shutdown at exit (§5.1, §11)
+# Warning at start, guaranteed shutdown at exit
 # --------------------------------------------------------------------------------------------
 
 
@@ -251,7 +251,7 @@ def test_dry_run_starts_nothing_and_still_composes_the_registration(tmp_path: Pa
 
 
 # --------------------------------------------------------------------------------------------
-# The division is genuinely opt-in (§5.5 step 4)
+# The division is genuinely opt-in
 # --------------------------------------------------------------------------------------------
 
 

@@ -69,8 +69,7 @@ nav:
       - ACE Playbook Evolution: ace.md
   - Contained Runtimes:
       - Guide: contained/index.md
-      - Defects found and fixed: contained/DEFECTS.md
-      - First-run review: contained/first-run-review.md
+      - Known issues: contained/DEFECTS.md
   - Benchmarks: benchmarks.md
   - Full Eval: full-eval.md
   - Contributing: contributing.md
