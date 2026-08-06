@@ -1483,17 +1483,15 @@ class TestCeilingAccumulationAcrossInvocations:
 class TestRunnerBgWarnings:
     """Tests for background warning messages from non-claude runners."""
 
-    async def test_opencode_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """OpenCodeRunner logs a warning when extras['background']=True."""
-        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
-
+    async def test_opencode_bg_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenCodeRunner returns error when extras['background']=True."""
         runner = OpenCodeRunner()
-        with patch("factory.runners.opencode.log") as mock_log:
-            await runner.headless(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-                role="researcher", extras={"background": True},
-            ))
-            mock_log.warning.assert_any_call("opencode_bg_not_supported", hint="--bg is a claude-only feature")
+        result = await runner.headless(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+            role="researcher", extras={"background": True},
+        ))
+        assert result.return_code == 1
+        assert "--bg is not supported" in result.stdout
 
     async def test_bob_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """BobRunner logs a warning when extras['background']=True."""
@@ -1542,9 +1540,8 @@ class TestOpenCodeInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            assert "-p" in cmd
-            p_idx = cmd.index("-p")
-            full_prompt = cmd[p_idx + 1]
+            # v1.x uses positional prompt (cmd[1]), not -p flag
+            full_prompt = cmd[1]
             assert "You are the CEO." in full_prompt
             assert "Start session" in full_prompt
             assert "## Current Task" in full_prompt
@@ -1564,9 +1561,9 @@ class TestOpenCodeInteractive:
             ))
 
             cmd = mock_run.call_args[0][0]
-            assert "-c" in cmd
-            c_idx = cmd.index("-c")
-            assert cmd[c_idx + 1] == str(tmp_path)
+            assert "--dir" in cmd
+            dir_idx = cmd.index("--dir")
+            assert cmd[dir_idx + 1] == str(tmp_path)
 
     def test_interactive_run_dry_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -2105,14 +2102,13 @@ class TestOpenCodeBuildInteractiveCommand:
         ))
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        p_idx = cmd.index("-p")
-        full_prompt = cmd[p_idx + 1]
+        # v1.x uses positional prompt (cmd[1]), not -p flag
+        full_prompt = cmd[1]
         assert "You are the CEO." in full_prompt
         assert "Start session" in full_prompt
-        assert "-c" in cmd
-        c_idx = cmd.index("-c")
-        assert cmd[c_idx + 1] == str(tmp_path)
+        assert "--dir" in cmd
+        dir_idx = cmd.index("--dir")
+        assert cmd[dir_idx + 1] == str(tmp_path)
         assert "-q" not in cmd
 
     def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

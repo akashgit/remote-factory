@@ -172,10 +172,22 @@ CODEX_API_KEY = "..."
 Then run: `factory ceo /path/to/project --profile codex`
 
 **OpenCode specifics:**
-- Requires `OPENAI_API_KEY` environment variable
-- The factory targets `opencode-ai/opencode` v0.x (uses `-p`, `-q`, `-c` flags). Install from source: `go install github.com/opencode-ai/opencode@latest`, or via the [GitHub release tarball](https://github.com/opencode-ai/opencode/releases)
-- Do NOT use the `curl` installer at `opencode.ai/install` — it installs the `anomalyco/opencode` fork (v1.x) which has an incompatible CLI interface
+- The factory targets `anomalyco/opencode` v1.x (TypeScript/Bun). Install via: `curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`
+- Auth: run `opencode auth login` (interactive), or set a provider env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AWS_ACCESS_KEY_ID`, etc.)
+- Headless mode uses `opencode run '<prompt>' --format json --dir <cwd> --auto`
+- Model selection via `--model` flag (e.g., `anthropic/claude-sonnet-4-20250514`)
+- Session management: `--title <name>` (name a session), `--session <id>` (resume by ID), `--continue` (continue last session)
 - Dry-run mode: `FACTORY_OPENCODE_DRY_RUN=1`
+- Token guardrails: `FACTORY_OPENCODE_MAX_INVOCATIONS_PER_CYCLE` (default: 8), logged to `.factory/opencode_usage.jsonl`
+- Unsupported: `--bg` (no background mode), `--tmux-persist` (returns explicit error), CEO message events (no JSON streaming equivalent)
+
+**OpenCode config profile example** (`~/.factory/config.toml`):
+```toml
+[credentials.opencode]
+FACTORY_RUNNER = "opencode"
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+Then run: `factory ceo /path/to/project --profile opencode`
 
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
 
