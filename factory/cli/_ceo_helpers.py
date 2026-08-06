@@ -219,7 +219,7 @@ def _resolve_ceo_project(
         design_existing = True
     elif mode == "design":
         resolved_file = Path(raw_path).expanduser()
-        if resolved_file.is_file():
+        if _safe_is_file(resolved_file):
             design_idea = resolved_file.read_text()
             slug = (
                 _slugify(dir_name)

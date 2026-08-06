@@ -188,6 +188,7 @@ factory ceo "Build a weather CLI" --dir my-app  # Explicit dir name override
 factory ceo ~/ideas/spec.md                     # Spec file → new project
 factory ceo https://github.com/user/repo        # Clone and improve
 factory ceo "distributed eval runner" --mode design  # Brainstorm → build
+factory ceo ~/ideas/detailed-spec.md --mode design   # Long idea from file (no length limit)
 factory ceo /path/to/project --mode design           # Discuss what to work on → improve
 factory ceo /path/to/project --mode design --focus "auth"  # Discuss a specific topic
 factory ceo "weather CLI" --mode design --auto-approve  # Design without user approval gate

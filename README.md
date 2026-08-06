@@ -39,7 +39,9 @@ uv run factory ceo "distributed eval runner" --mode design
 uv run factory ceo "Build a REST API for bookmark management" --mode design
 ```
 
-**From a spec file** — read and discuss before building:
+**From a spec file** — for longer, more detailed descriptions, write your idea to a `.md` file and pass the path:
+
+> **Tip:** For detailed ideas with multiple paragraphs, requirements, or research notes, use a spec file instead of a quoted string. There's no length limit on file content.
 
 ```bash
 uv run factory ceo ~/ideas/weather-dashboard.md --mode design
