@@ -765,7 +765,7 @@ class TestCmdCeoMultiIssue:
             patch("factory.cli.ceo._execute_ceo", return_value=0) as mock_exec,
         ):
             mock_validate.return_value = (
-                "improve", False, False, False, None, "111 and 112", None, None, False,
+                "improve", False, False, False, None, "111 and 112", None, None, False, None,
             )
             mock_resolve.return_value = (
                 Path("/tmp/fake"), None, None, None,
@@ -821,7 +821,7 @@ class TestCmdCeoMultiIssue:
             patch("factory.cli.ceo._execute_ceo", return_value=0) as mock_exec,
         ):
             mock_validate.return_value = (
-                "improve", False, False, False, None, "42", None, None, False,
+                "improve", False, False, False, None, "42", None, None, False, None,
             )
             mock_resolve.return_value = (
                 Path("/tmp/fake"), None, None, None,
@@ -858,7 +858,7 @@ class TestCmdCeoMultiIssue:
             patch("factory.cli.ceo._resolve_ceo_project") as mock_resolve,
         ):
             mock_validate.return_value = (
-                "improve", False, False, False, None, "111 and 112", None, None, False,
+                "improve", False, False, False, None, "111 and 112", None, None, False, None,
             )
             mock_resolve.return_value = (
                 Path("/tmp/fake"), None, None, None,
