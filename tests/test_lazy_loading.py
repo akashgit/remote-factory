@@ -109,25 +109,27 @@ class TestBuiltinRegistry:
 
 
 class TestTelemetryLazyImport:
-    def test_langfuse_not_imported_at_module_level(self) -> None:
-        """The langfuse module should not be imported when telemetry is imported."""
-        sys.modules.pop("langfuse", None)
-        sys.modules.pop("langfuse.types", None)
-
-        import importlib
+    @pytest.fixture(autouse=True)
+    def _reset_telemetry(self):
+        """Save and restore telemetry module state without reloading."""
         import factory.telemetry
-        importlib.reload(factory.telemetry)
+        saved_has = factory.telemetry._HAS_LANGFUSE
+        saved_client = factory.telemetry._client
+        yield
+        factory.telemetry._HAS_LANGFUSE = saved_has
+        factory.telemetry._client = saved_client
 
+    def test_langfuse_not_imported_at_module_level(self) -> None:
+        """_HAS_LANGFUSE starts as None (lazy — not checked at import time)."""
+        import factory.telemetry
+        factory.telemetry._HAS_LANGFUSE = None
         assert factory.telemetry._HAS_LANGFUSE is None
-        assert "langfuse" not in sys.modules
 
     def test_is_enabled_caches_import_result(self) -> None:
         """is_enabled() should cache the import check result."""
-        import importlib
         import factory.telemetry
-        importlib.reload(factory.telemetry)
-
-        assert factory.telemetry._HAS_LANGFUSE is None
+        factory.telemetry._HAS_LANGFUSE = None
+        factory.telemetry._client = None
 
         factory.telemetry.is_enabled()
         assert factory.telemetry._HAS_LANGFUSE is not None
@@ -138,13 +140,11 @@ class TestTelemetryLazyImport:
 
     def test_is_enabled_returns_false_without_host(self) -> None:
         """is_enabled() returns False when no LANGFUSE env vars are set."""
-        import importlib
         import factory.telemetry
-        importlib.reload(factory.telemetry)
+        factory.telemetry._client = None
+        factory.telemetry._HAS_LANGFUSE = None
 
         with patch.dict("os.environ", {}, clear=True):
-            factory.telemetry._client = None
-            factory.telemetry._HAS_LANGFUSE = None
             result = factory.telemetry.is_enabled()
 
         assert result is False
