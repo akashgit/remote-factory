@@ -207,6 +207,17 @@ def server_argv(port: int = DIVISION_PORT) -> list[str]:
     return ["sh", "-c", f"tail -f /dev/null | npx -y {MCP_SERVER_PACKAGE} --port {port}"]
 
 
+def port_in_use(port: int) -> bool:
+    """Whether anything is listening right now. One connect, no waiting.
+
+    Distinct from `wait_for_listening`, which asks the opposite question — "has *our* server come up
+    yet" — and is allowed to block. This one runs before anything is started, so it must not.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
 def wait_for_listening(port: int, timeout: float | None = None) -> bool:
     """Block until something accepts on `port`, or the timeout expires.
 
@@ -353,6 +364,19 @@ def start_local_division(plan: ContainerPlan, *, dry_run: bool = False) -> Divis
             f"server: starting a second would silently drive {owner}'s endpoint, and stopping "
             "either would pull the tools out from under the other. Finish or remove that run first "
             f"(`factory contained rm {owner}`), or run this one without --division."
+        )
+    if owner is None and port_in_use(DIVISION_PORT):
+        # Something holds the port that this factory has no record of — an endpoint orphaned by a
+        # container removed with `podman rm` instead of `factory contained rm`, or by a deleted
+        # workspace directory. Proceeding would look like success and then quietly hand the agent
+        # somebody else's server, which is the very thing the ownership check exists to prevent.
+        raise ContainedError(
+            f"something is already listening on port {DIVISION_PORT}, and it is not a run this "
+            "factory is tracking — most likely a server orphaned by a container removed outside "
+            "`factory contained rm`.\n"
+            f"  See what it is:  lsof -nP -iTCP:{DIVISION_PORT} -sTCP:LISTEN\n"
+            f"  Stop it:         kill $(lsof -t -iTCP:{DIVISION_PORT} -sTCP:LISTEN)\n"
+            "  Or run this one without --division."
         )
 
     log_dir = contained_home() / plan.name
