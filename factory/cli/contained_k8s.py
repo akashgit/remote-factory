@@ -43,7 +43,11 @@ from factory.contained.k8s import (
     build_pod_exec_argv,
     render_pod,
     render_pvc,
+    ADC_PATH,
+    ADC_SECRET_KEY,
+    SECRET_NAME,
     namespace_fs_group,
+    secret_keys,
     resolve_sidecar_image,
     resolve_namespace,
     stream_workspace,
@@ -192,6 +196,12 @@ def _build_pod_plan(
         mcp_config = k8s_division.mcp_config(namespace)
         files = k8s_division.division_files(namespace, run_id)
 
+    # A Google credential has to arrive as a file, so the launch has to know whether one is there.
+    # Keys only — the value never leaves the cluster.
+    adc = ADC_SECRET_KEY in secret_keys(SECRET_NAME, namespace)
+    if adc:
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = ADC_PATH
+
     return PodPlan(
         name=run_id,
         namespace=namespace,
@@ -209,6 +219,7 @@ def _build_pod_plan(
         division=args.division,
         fs_group=namespace_fs_group(namespace),
         sidecar_image=resolve_sidecar_image(),
+        adc=adc,
         warnings=tuple(warnings),
     )
 

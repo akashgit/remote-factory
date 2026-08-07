@@ -48,6 +48,20 @@ SERVICE_ACCOUNT = "factory"
 PVC_NAME = "factory-workspace"
 SECRET_NAME = "factory-credentials"
 
+# Google Application Default Credentials are a *file*, and `GOOGLE_APPLICATION_CREDENTIALS` is a
+# *path* to one — which is why `envFrom` alone cannot carry them: it would set the variable to the
+# JSON text and the auth library would try to open a file named `{"type": "authorized_user"...}`.
+# So the Secret is mounted as a directory as well as being read as environment, and the variable is
+# pointed at the resulting file.
+#
+# The key is named like an environment variable rather than like a filename on purpose. `envFrom`
+# maps every key to a variable and skips the ones that are not legal names — a key called
+# `application_default_credentials.json` is not, so the pod would start with an
+# `InvalidEnvironmentVariableNames` event attached to it, which reads as a fault and is not one.
+ADC_SECRET_KEY = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+CREDENTIALS_MOUNT = "/var/run/factory/credentials"
+ADC_PATH = f"{CREDENTIALS_MOUNT}/{ADC_SECRET_KEY}"
+
 # The build sidecar runs a different image from the agent's container, and that is the whole point:
 # it is the only holder of `oc` and the ServiceAccount token, and the runtime image deliberately has
 # neither. Using one image for both collapses that separation — and fails at the first build with
@@ -198,6 +212,30 @@ def context_details(name: str) -> ClusterContext:
     return next(
         (entry for entry in list_contexts() if entry.context == name), ClusterContext(context=name)
     )
+
+
+def secret_keys(name: str, namespace: str) -> set[str]:
+    """The Secret's key *names* — never its values. Empty when it cannot be read.
+
+    The launch needs this to know whether a Google credential file is present, because that decides
+    whether the pod mounts one. Keys only: a function that reads a Secret to decide a mount must not
+    become a way to print one.
+    """
+    try:
+        binary = cli_binary()
+    except ClusterError:
+        return set()
+    result = _run(cli(binary, "get", "secret", name, "-n", namespace, "-o", "jsonpath={.data}"),
+                  timeout=30)
+    if result is None or result.returncode != 0:
+        return set()
+    raw = (result.stdout or "").strip()
+    if not raw.startswith("{"):
+        return set()
+    try:
+        return set(json.loads(raw).keys())
+    except json.JSONDecodeError:
+        return set()
 
 
 def use_context(name: str) -> tuple[bool, str]:
@@ -482,6 +520,8 @@ class PodPlan:
     division: bool = False
     fs_group: int | None = None
     sidecar_image: str = ""
+    adc: bool = False
+    """Whether the Secret carries a Google credential file that has to be mounted as one."""
     warnings: tuple[str, ...] = field(default=())
 
 
@@ -533,6 +573,19 @@ def render_pod(plan: PodPlan) -> str:
     # Omitted rather than guessed when the cluster does not publish a range: an fsGroup outside an
     # SCC's `MustRunAs` range fails admission, which is worse than the default the cluster picks.
     fs_group = f"\n    fsGroup: {plan.fs_group}" if plan.fs_group is not None else ""
+    # The whole Secret, not selected `items`: a volume that names a key the Secret does not have
+    # leaves the pod Pending on "couldn't find key", and `optional` covers a missing *Secret*, not a
+    # missing key. Mounting all of it means the file is simply absent when the key is, which is a
+    # condition the auth library reports plainly.
+    credentials_volume = f"""
+    - name: credentials
+      secret:
+        secretName: {plan.secret_name}
+        defaultMode: 0400""" if plan.adc else ""
+    credentials_mount = f"""
+        - name: credentials
+          mountPath: {CREDENTIALS_MOUNT}
+          readOnly: true""" if plan.adc else ""
     return f"""\
 apiVersion: v1
 kind: Pod
@@ -551,7 +604,7 @@ spec:
   volumes:
     - name: workspace
       persistentVolumeClaim:
-        claimName: {PVC_NAME}
+        claimName: {PVC_NAME}{credentials_volume}
   initContainers:
     - name: {LOADER_CONTAINER}
       image: {plan.image}
@@ -579,7 +632,7 @@ spec:
             optional: false
       volumeMounts:
         - name: workspace
-          mountPath: {WORKSPACE_ROOT}
+          mountPath: {WORKSPACE_ROOT}{credentials_mount}
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:

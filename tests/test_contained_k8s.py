@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from factory.contained.k8s import (
     LABEL_CONTAINED,
     LOADER_CONTAINER,
     PVC_NAME,
+    SECRET_NAME,
     SERVICE_ACCOUNT,
     WORKSPACE_ROOT,
     PodPlan,
@@ -702,6 +704,79 @@ def test_cluster_context_degrades_to_empty_on_junk() -> None:
     with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s._run", return_value=_completed("not json")):
         assert k8s.cluster_context() == k8s.ClusterContext()
+
+
+def test_a_google_credential_is_mounted_as_a_file_not_an_env_var(tmp_path: Path) -> None:
+    """`GOOGLE_APPLICATION_CREDENTIALS` is a *path*. Passing the JSON as its value cannot work.
+
+    Verified against a live cluster: without this the pod got the variable set to the credential's
+    text, and the auth library tried to open a file named `{"type": "authorized_user"…}`.
+    """
+    plan = _plan(tmp_path)
+    plan = replace(plan, adc=True, env={**plan.env, "GOOGLE_APPLICATION_CREDENTIALS": k8s.ADC_PATH})
+    doc = yaml.safe_load(render_pod(plan))
+
+    volume = next(v for v in doc["spec"]["volumes"] if v["name"] == "credentials")
+    assert volume["secret"]["secretName"] == SECRET_NAME
+    assert volume["secret"]["defaultMode"] == 0o400
+    # No `items:` — a volume naming a key the Secret lacks leaves the pod Pending on "couldn't
+    # find key", and `optional` covers a missing Secret, not a missing key.
+    assert "items" not in volume["secret"]
+
+    factory = next(c for c in doc["spec"]["containers"] if c["name"] == FACTORY_CONTAINER)
+    mount = next(m for m in factory["volumeMounts"] if m["name"] == "credentials")
+    assert mount["mountPath"] == k8s.CREDENTIALS_MOUNT
+    assert mount["readOnly"] is True
+    env = {e["name"]: e["value"] for e in factory["env"]}
+    assert env["GOOGLE_APPLICATION_CREDENTIALS"] == f"{k8s.CREDENTIALS_MOUNT}/{k8s.ADC_SECRET_KEY}"
+
+
+def test_no_credential_volume_when_the_secret_carries_no_file(tmp_path: Path) -> None:
+    """An API-key run must not grow a mount it has no use for."""
+    doc = yaml.safe_load(render_pod(_plan(tmp_path)))
+    assert [v["name"] for v in doc["spec"]["volumes"]] == ["workspace"]
+    factory = next(c for c in doc["spec"]["containers"] if c["name"] == FACTORY_CONTAINER)
+    assert [m["name"] for m in factory["volumeMounts"]] == ["workspace"]
+
+
+def test_the_adc_key_is_a_legal_environment_variable_name() -> None:
+    """`envFrom` maps every key to a variable and skips illegal names.
+
+    A key called `application_default_credentials.json` would attach an
+    `InvalidEnvironmentVariableNames` event to a pod that is in fact fine.
+    """
+    assert k8s.ADC_SECRET_KEY.replace("_", "a").isalnum()
+    assert not k8s.ADC_SECRET_KEY[0].isdigit()
+
+
+def test_vertex_configuration_without_a_credential_is_not_enough() -> None:
+    """The three config variables only say which endpoint to talk to; none authenticates."""
+    config_only = json.dumps({
+        k: "x" for k in
+        ("CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID")
+    })
+    with patch("factory.contained.k8s_setup._run", return_value=_completed(config_only)):
+        assert not k8s_setup._secret_check("oc", "ns").ok
+    # With the credential file, it passes.
+    complete = json.dumps({k: "x" for k in k8s_setup.VERTEX_KEYS})
+    with patch("factory.contained.k8s_setup._run", return_value=_completed(complete)):
+        assert k8s_setup._secret_check("oc", "ns").ok
+
+
+def test_secret_keys_reads_names_and_never_values() -> None:
+    payload = json.dumps({"ANTHROPIC_API_KEY": "c2stYW50LXNlY3JldA==",
+                          k8s.ADC_SECRET_KEY: "eyJ0eXBlIjogImF1dGhvcml6ZWRfdXNlciJ9"})
+    with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s._run", return_value=_completed(payload)):
+        keys = k8s.secret_keys(SECRET_NAME, "ns")
+    assert keys == {"ANTHROPIC_API_KEY", k8s.ADC_SECRET_KEY}
+
+
+def test_secret_keys_degrades_to_empty_rather_than_raising() -> None:
+    for outcome in (None, _completed("", 1), _completed("not json")):
+        with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
+             patch("factory.contained.k8s._run", return_value=outcome):
+            assert k8s.secret_keys(SECRET_NAME, "ns") == set()
 
 
 def test_verify_reports_each_check_as_it_lands() -> None:
