@@ -15,20 +15,29 @@ study:
   - target: solver
     condition: null
 solver:
-  type: AgentNode
+  type: LLMNode
   id: solver
-  role: builder
-  blocking: 'true'
-  reads:
-  - .factory/reviews/study-output.md
-  writes:
-  - .factory/reviews/builder-latest.md
+  model: opus
+  provider: vertex
+  tools: '[bash]'
+  max_turns: '100'
+  timeout: '7200'
   edges_out:
   - target: gate_verify
     condition: null
   slots:
-    task_prompt_solver: 'You are a helpful assistant that can interact with a computer
+    max_turns_solver: '100'
+    timeout_solver: '7200'
+    system_prompt_solver: You are a helpful assistant that can interact with a computer
       shell to solve programming tasks.
+    instance_prompt_solver: '<pr_description>
+
+      Consider the following PR description:
+
+
+      Read the task instruction from the study output below.
+
+      </pr_description>
 
 
       <instructions>
@@ -42,12 +51,12 @@ solver:
       You''re a software engineer interacting continuously with a computer by submitting
       commands.
 
-      You''ll be helping implement necessary changes to meet requirements in the task
-      instruction.
+      You''ll be helping implement necessary changes to meet requirements in the PR
+      description.
 
       Your task is specifically to make changes to non-test files in the current directory
-      in order to fix the issue described in the task instruction in a way that is
-      general and consistent with the codebase.
+      in order to fix the issue described in the PR description in a way that is general
+      and consistent with the codebase.
 
       This is an interactive process where you will think and issue AT LEAST ONE command,
       see the result, then think and issue your next command(s).
@@ -165,17 +174,7 @@ solver:
       Do NOT leave temporary test or reproduction scripts in the repo — remove them
       before committing.
 
-      </instructions>
-
-
-      Read: .factory/reviews/study-output.md
-
-      Write output to: .factory/reviews/builder-latest.md
-
-      Read: .factory/reviews/study-output.md
-
-      Write output to: .factory/reviews/builder-latest.md'
-    timeout_solver: '7200'
+      </instructions>'
 gate_verify:
   type: GateNode
   id: gate_verify

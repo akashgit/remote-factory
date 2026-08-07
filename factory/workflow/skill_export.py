@@ -25,6 +25,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    LLMNode,
     Study,
     VerdictType,
     Workflow,
@@ -283,6 +284,41 @@ def _agent_to_instruction(
 
     if not node.blocking:
         lines.append("*(fire-and-forget — CEO continues immediately)*")
+
+    return "\n".join(lines)
+
+
+def _llm_to_instruction(node: LLMNode, workflow: Workflow) -> str:
+    """Convert an LLMNode to a direct API call instruction with template slots."""
+    nid = node.id
+    out_edges = _outgoing_edges(workflow, node.id)
+    tools_str = ", ".join(t.name for t in node.tools) or "none"
+
+    system = emit(f"system_prompt_{nid}", node.system_prompt)
+    instance = emit(f"instance_prompt_{nid}", node.instance_prompt)
+
+    lines = [
+        f"<!-- node: LLMNode id={nid} model={node.model} provider={node.provider}"
+        f" tools=[{tools_str}] max_turns={node.max_turns} timeout={node.timeout} -->",
+        f"<!-- edges: {_format_edges(out_edges)} -->",
+        "",
+        f"**Model:** {node.model} | **Provider:** {node.provider}"
+        f" | **Tools:** {tools_str}"
+        f" | **Max turns:** {emit(f'max_turns_{nid}', str(node.max_turns))}"
+        f" | **Timeout:** {emit(f'timeout_{nid}', str(node.timeout))}s",
+        "",
+        "**System prompt:**",
+        system,
+        "",
+        "**Instance prompt:**",
+        instance,
+    ]
+
+    if node.reads:
+        lines.append("")
+        lines.append(f"**Reads:** {', '.join(sorted(node.reads))}")
+    if node.writes:
+        lines.append(f"**Writes:** {', '.join(sorted(node.writes))}")
 
     return "\n".join(lines)
 
@@ -603,6 +639,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
                 section_title = f"{role_title} — {node_title}"
             sections.append(f"## Phase {phase_num}: {section_title}\n")
             sections.append(_agent_to_instruction(node, workflow))
+            phase_num += 1
+
+        elif isinstance(node, LLMNode):
+            node_title = nid.replace("_", " ").title()
+            sections.append(f"## Phase {phase_num}: {node_title} (LLM API)\n")
+            sections.append(_llm_to_instruction(node, workflow))
             phase_num += 1
 
         elif isinstance(node, FnNode):

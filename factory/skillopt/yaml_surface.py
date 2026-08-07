@@ -35,13 +35,16 @@ def load_yaml(path: str | Path) -> dict:
 
 
 def extract_prompt_slots(surface: dict) -> dict[str, str]:
-    """Extract {slot_name: value} for all task_prompt_* slots across all nodes."""
+    """Extract {slot_name: value} for all prompt slots across all nodes.
+
+    Recognizes task_prompt_* (AgentNode), system_prompt_* and instance_prompt_* (LLMNode).
+    """
     slots: dict[str, str] = {}
     for node_id, node in surface.items():
         if not isinstance(node, dict):
             continue
         for k, v in node.get("slots", {}).items():
-            if k.startswith("task_prompt_"):
+            if k.startswith(("task_prompt_", "system_prompt_", "instance_prompt_")):
                 slots[k] = v
     return slots
 
@@ -146,7 +149,7 @@ def yaml_to_workflow(
     If *workflow* is provided, it is used as the base (deep-copied) instead of
     looking up *workflow_name* in ``register_all()``.
     """
-    from factory.workflow.primitives import AgentNode, GateNode
+    from factory.workflow.primitives import AgentNode, GateNode, LLMNode
 
     surface = load_yaml(yaml_path)
 
@@ -172,11 +175,20 @@ def yaml_to_workflow(
         for slot_name, slot_value in slots.items():
             if slot_name.startswith("task_prompt_"):
                 updates["prompt_template"] = _strip_exporter_suffix(str(slot_value))
+            elif slot_name.startswith("system_prompt_"):
+                if isinstance(pydantic_node, LLMNode):
+                    updates["system_prompt"] = str(slot_value)
+            elif slot_name.startswith("instance_prompt_"):
+                if isinstance(pydantic_node, LLMNode):
+                    updates["instance_prompt"] = _strip_exporter_suffix(str(slot_value))
             elif slot_name.startswith("timeout_"):
                 updates["timeout"] = int(slot_value)
             elif slot_name.startswith("max_iterations_"):
                 if isinstance(pydantic_node, AgentNode):
                     updates["max_iterations"] = int(slot_value)
+            elif slot_name.startswith("max_turns_"):
+                if isinstance(pydantic_node, LLMNode):
+                    updates["max_turns"] = int(slot_value)
             elif slot_name.startswith("gate_prompt_"):
                 if isinstance(pydantic_node, GateNode):
                     updates["gate_prompt"] = str(slot_value)

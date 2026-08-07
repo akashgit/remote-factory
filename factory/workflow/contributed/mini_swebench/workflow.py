@@ -1,8 +1,8 @@
-"""mini-SWE-bench workflow — bash-only solver replicating mini-SWE-agent's approach.
+"""mini-SWE-bench workflow — bash-only solver via direct LLM API calls.
 
 4-node pipeline: study → solver → gate_verify → auto_merge
-Same graph structure as swebench workflow, but the solver uses mini-SWE-agent's
-prompt template (bash-only tool use, stateless subshells, structured workflow).
+The solver node uses LLMNode (direct Anthropic API) with a single bash tool,
+replicating mini-SWE-agent's architecture without Claude Code overhead.
 
 Prompt override: set FACTORY_WORKFLOW_YAML_B64 env var with base64-encoded
 YAML annotations to override slot values (prompt, timeout, etc.) at runtime.
@@ -12,12 +12,12 @@ import os
 from typing import Any
 
 from factory.models import ProjectState
+from factory.workflow.llm_tools import BASH_TOOL
 from factory.workflow.primitives import (
-    AgentNode,
-    AgentRole,
     Edge,
     FnNode,
     GateNode,
+    LLMNode,
     VerdictType,
     Workflow,
 )
@@ -25,14 +25,22 @@ from factory.workflow.primitives import (
 meta = {
     "name": "mini-swebench",
     "description": (
-        "mini-SWE-agent style SWE-bench solver — bash-only agent loop "
-        "replicating mini-SWE-agent's prompt and constraints. "
-        "study → solver → gate_verify → auto_merge."
+        "mini-SWE-agent style SWE-bench solver — direct LLM API calls with "
+        "bash-only tool use. study → solver (LLMNode) → gate_verify → auto_merge."
     ),
 }
 
-_DEFAULT_PROMPT = """\
-You are a helpful assistant that can interact with a computer shell to solve programming tasks.
+_SYSTEM_PROMPT = (
+    "You are a helpful assistant that can interact with a computer shell "
+    "to solve programming tasks."
+)
+
+_INSTANCE_PROMPT = """\
+<pr_description>
+Consider the following PR description:
+
+Read the task instruction from the study output below.
+</pr_description>
 
 <instructions>
 # Task Instructions
@@ -40,9 +48,9 @@ You are a helpful assistant that can interact with a computer shell to solve pro
 ## Overview
 
 You're a software engineer interacting continuously with a computer by submitting commands.
-You'll be helping implement necessary changes to meet requirements in the task instruction.
+You'll be helping implement necessary changes to meet requirements in the PR description.
 Your task is specifically to make changes to non-test files in the current directory in order \
-to fix the issue described in the task instruction in a way that is general and consistent with the codebase.
+to fix the issue described in the PR description in a way that is general and consistent with the codebase.
 This is an interactive process where you will think and issue AT LEAST ONE command, see the result, \
 then think and issue your next command(s).
 
@@ -110,18 +118,21 @@ Run `git commit -m "Fix: <brief description of the fix>"`.
 
 Do NOT create branches or PRs. Commit directly on the current branch.
 Do NOT leave temporary test or reproduction scripts in the repo — remove them before committing.
-</instructions>
-
-Read: .factory/reviews/study-output.md
-Write output to: .factory/reviews/builder-latest.md"""
+</instructions>"""
 
 
 def _resolve_model() -> str:
     return os.environ.get("FACTORY_STUDENT_MODEL", "opus")
 
 
+def _resolve_provider() -> str:
+    if os.environ.get("CLAUDE_CODE_USE_VERTEX") or os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID"):
+        return "vertex"
+    return "anthropic"
+
+
 def workflow() -> Workflow:
-    """Build the mini-SWE-bench workflow."""
+    """Build the mini-SWE-bench workflow with LLMNode solver."""
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
@@ -145,13 +156,16 @@ def workflow() -> Workflow:
         writes={".factory/reviews/study-output.md"},
     )
 
-    nodes["solver"] = AgentNode(
+    nodes["solver"] = LLMNode(
         id="solver",
-        role=AgentRole.BUILDER,
+        system_prompt=_SYSTEM_PROMPT,
+        instance_prompt=_INSTANCE_PROMPT,
         model=_resolve_model(),
+        provider=_resolve_provider(),
+        tools=[BASH_TOOL],
+        max_turns=100,
+        max_tokens=8192,
         timeout=7200,
-        max_iterations=3,
-        prompt_template=_DEFAULT_PROMPT,
         reads={".factory/reviews/study-output.md"},
         writes={".factory/reviews/builder-latest.md"},
     )

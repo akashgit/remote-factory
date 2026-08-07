@@ -15,10 +15,19 @@ The user wants: **$ARGUMENTS**
 mkdir -p $PROJECT_PATH/.factory/reviews && cd $PROJECT_PATH && (echo '=== Repository Structure ===' && find . -type f -name '*.py' | head -200 && echo '\n=== Test Files ===' && find . -type f -name 'test_*.py' -o -name '*_test.py' | head -50 && echo '\n=== Configuration Files ===' && ls -la setup.py setup.cfg pyproject.toml tox.ini conftest.py 2>/dev/null || true && echo '\n=== Task Instruction ===' && cat /tmp/task-instruction.md 2>/dev/null || echo 'No task instruction file found at /tmp/task-instruction.md') > .factory/reviews/study-output.md 2>&1
 ```
 
-## Phase 1: Builder — Solver
+## Phase 1: Solver (LLM API)
 
-```bash
-factory agent builder --task "You are a helpful assistant that can interact with a computer shell to solve programming tasks.
+**Model:** opus | **Provider:** vertex | **Tools:** bash | **Max turns:** 100 | **Timeout:** 7200s
+
+**System prompt:**
+You are a helpful assistant that can interact with a computer shell to solve programming tasks.
+
+**Instance prompt:**
+<pr_description>
+Consider the following PR description:
+
+Read the task instruction from the study output below.
+</pr_description>
 
 <instructions>
 # Task Instructions
@@ -26,8 +35,8 @@ factory agent builder --task "You are a helpful assistant that can interact with
 ## Overview
 
 You're a software engineer interacting continuously with a computer by submitting commands.
-You'll be helping implement necessary changes to meet requirements in the task instruction.
-Your task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the task instruction in a way that is general and consistent with the codebase.
+You'll be helping implement necessary changes to meet requirements in the PR description.
+Your task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.
 This is an interactive process where you will think and issue AT LEAST ONE command, see the result, then think and issue your next command(s).
 
 For each response:
@@ -93,11 +102,8 @@ Do NOT create branches or PRs. Commit directly on the current branch.
 Do NOT leave temporary test or reproduction scripts in the repo — remove them before committing.
 </instructions>
 
-Read: .factory/reviews/study-output.md
-Write output to: .factory/reviews/builder-latest.md
-Read: .factory/reviews/study-output.md
-Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 7200
-```
+**Reads:** .factory/reviews/study-output.md
+**Writes:** .factory/reviews/builder-latest.md
 
 ### Gate — Verify (Automated)
 

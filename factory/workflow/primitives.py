@@ -173,6 +173,39 @@ class Study(FnNode):
     focus: str | None = None
 
 
+class ToolDef(BaseModel):
+    """A tool available to the LLM during a tool-use loop."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    description: str = ""
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    executor: Literal["bash", "file_read", "file_write", "file_edit"] = "bash"
+
+
+class LLMNode(Node):
+    """Node that makes direct LLM API calls with a configurable tool-use loop.
+
+    Unlike AgentNode (full CLI subprocess), this runs the API loop in-process
+    with a minimal, configurable tool set.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    system_prompt: str = ""
+    instance_prompt: str = ""
+    model: str = "sonnet"
+    provider: Literal["anthropic", "vertex", "litellm"] = "anthropic"
+    max_tokens: int = 8192
+    max_turns: int = 50
+    temperature: float = 0.0
+    stop_sequences: list[str] = Field(default_factory=list)
+    tools: list[ToolDef] = Field(default_factory=list)
+    tool_choice: Literal["auto", "any", "none"] = "auto"
+    timeout: int = 600
+
+
 # ── edges ────────────────────────────────────────────────────────
 
 
@@ -189,7 +222,7 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | Study
+NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | Study | LLMNode
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]
