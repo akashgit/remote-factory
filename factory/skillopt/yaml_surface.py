@@ -50,7 +50,7 @@ def extract_prompt_slots(surface: dict) -> dict[str, str]:
 
 
 def validate_only_prompts_changed(original: dict, proposed: dict) -> list[str]:
-    """Return violations if anything other than task_prompt_* slots changed."""
+    """Return violations if anything other than prompt slots changed."""
     violations: list[str] = []
     if set(original.keys()) != set(proposed.keys()):
         violations.append(f"Node IDs changed: {set(original.keys())} vs {set(proposed.keys())}")
@@ -68,7 +68,7 @@ def validate_only_prompts_changed(original: dict, proposed: dict) -> list[str]:
         orig_slots = orig.get("slots", {})
         prop_slots = prop.get("slots", {})
         for k in set(orig_slots) | set(prop_slots):
-            if not k.startswith("task_prompt_"):
+            if not k.startswith(_PROMPT_SLOT_PREFIXES):
                 if orig_slots.get(k) != prop_slots.get(k):
                     violations.append(f"{node_id}.slots.{k} changed (not a prompt slot)")
         for field in ("evaluator_command", "command", "evaluator_type", "role", "blocking"):
@@ -228,6 +228,9 @@ def workflow_to_yaml(wf: Workflow, output_path: str | Path) -> dict:
     return annotations
 
 
+_PROMPT_SLOT_PREFIXES = ("task_prompt_", "system_prompt_", "instance_prompt_")
+
+
 def format_prompt_slots_for_llm(surface: dict) -> str:
     """Format prompt slots as readable text for the LLM analyst."""
     sections: list[str] = []
@@ -235,7 +238,7 @@ def format_prompt_slots_for_llm(surface: dict) -> str:
         if not isinstance(node, dict):
             continue
         slots = node.get("slots", {})
-        prompt_slots = {k: v for k, v in slots.items() if k.startswith("task_prompt_")}
+        prompt_slots = {k: v for k, v in slots.items() if k.startswith(_PROMPT_SLOT_PREFIXES)}
         if not prompt_slots:
             continue
         for slot_name, slot_value in prompt_slots.items():
