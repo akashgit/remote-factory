@@ -204,6 +204,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
         "workflow_name": workflow_name,
         "session_id": uuid.uuid4().hex[:12],
         "original_project": str(_resolve_original_project(project_path)),
+        "started_at": int(time.time()),
         "topo_order": order,
         "pointer_idx": 0,
         "completed": {},
@@ -267,7 +268,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
     return str(session_dir)
 
 
-def tool_next(project_path: Path) -> str:
+def tool_next(project_path: Path, dry_run: bool = False) -> str:
     """Get the next node to execute.
 
     Auto-submits any pending node whose artifacts exist:
@@ -278,8 +279,15 @@ def tool_next(project_path: Path) -> str:
 
     The CEO never calls submit for agent/fn nodes — just next repeatedly.
     Submit is only needed for gate verdicts.
+
+    When dry_run=True, runs the auto-submit scan but does not persist state
+    changes or emit events.
     """
+    import copy
+
     state = _load_state(project_path)
+    if dry_run:
+        state = copy.deepcopy(state)
 
     if state["status"] != "active":
         finalize_msg = tool_finalize(project_path)
@@ -297,7 +305,9 @@ def tool_next(project_path: Path) -> str:
             continue
 
         node = wf.nodes[nid]
-        artifact = _detect_artifact(nid, node, project_path)
+        artifact = _detect_artifact(
+            nid, node, project_path, session_start=state.get("started_at", 0.0),
+        )
 
         if artifact is not None:
             state["completed"][nid] = artifact
@@ -308,7 +318,8 @@ def tool_next(project_path: Path) -> str:
                     if not out.exists():
                         out.write_text(artifact)
             log.info("tool.auto_submit", node=nid)
-            _emit_event(project_path, "workflow.tool.auto_submit", node=nid)
+            if not dry_run:
+                _emit_event(project_path, "workflow.tool.auto_submit", node=nid)
             idx += 1
             state["pointer_idx"] = idx
 
@@ -327,13 +338,15 @@ def tool_next(project_path: Path) -> str:
                         return gate_result
                     idx = state["pointer_idx"]
 
-            _save_state(project_path, state)
+            if not dry_run:
+                _save_state(project_path, state)
             continue
 
         break
 
     state["pointer_idx"] = idx
-    _save_state(project_path, state)
+    if not dry_run:
+        _save_state(project_path, state)
 
     if idx >= len(order):
         finalize_msg = tool_finalize(project_path)
@@ -342,7 +355,8 @@ def tool_next(project_path: Path) -> str:
     nid = order[idx]
     node = wf.nodes[nid]
 
-    _emit_event(project_path, "workflow.tool.next", node=nid, node_type=type(node).__name__)
+    if not dry_run:
+        _emit_event(project_path, "workflow.tool.next", node=nid, node_type=type(node).__name__)
 
     if isinstance(node, GateNode) and node.evaluator_type == "agent":
         return f"GATE\n{_format_gate_task(nid, node, state, project_path)}"
@@ -398,7 +412,7 @@ def tool_submit(project_path: Path, node_id: str, output: str) -> str:
     return "CONTINUE"
 
 
-def tool_status(project_path: Path) -> str:
+def tool_status(project_path: Path, fmt: str = "linear") -> str:
     """Get current session status."""
     state_path = project_path / ".factory" / "tool_session" / "state.json"
     if not state_path.exists():
@@ -411,6 +425,13 @@ def tool_status(project_path: Path) -> str:
     completed_count = len(state["completed"])
     total = len(order)
 
+    try:
+        wf = _get_workflow_cached(state["workflow_name"], project_path)
+    except Exception:
+        wf = None
+
+    current_nid = current if current != "DONE" else None
+
     lines = [
         f"Workflow: {state['workflow_name']}",
         f"Session:  {state['session_id']}",
@@ -422,13 +443,8 @@ def tool_status(project_path: Path) -> str:
     if state["gate_results"]:
         lines.append(f"Gates:    {json.dumps(state['gate_results'])}")
 
-    if state["completed"]:
-        lines.append("")
-        lines.append("Completed nodes:")
-        for nid in order:
-            if nid in state["completed"]:
-                preview = state["completed"][nid][:80].replace("\n", " ")
-                lines.append(f"  [{nid}] {preview}")
+    lines.append("")
+    lines.append(_format_progress(state, wf, project_path, current_nid, fmt=fmt))
 
     return "\n".join(lines)
 
@@ -448,7 +464,9 @@ def tool_finalize(project_path: Path) -> str:
         if nid in state["completed"]:
             continue
         node = wf.nodes[nid]
-        artifact = _detect_artifact(nid, node, project_path)
+        artifact = _detect_artifact(
+            nid, node, project_path, session_start=state.get("started_at", 0.0),
+        )
         if artifact is not None:
             state["completed"][nid] = artifact
             finalized.append(nid)
@@ -470,7 +488,96 @@ def tool_finalize(project_path: Path) -> str:
     return f"No pending nodes to finalize. Progress: {len(state['completed'])}/{len(order)}"
 
 
+def tool_overview(project_path: Path, fmt: str = "linear") -> str:
+    """Render the full workflow map with completion markers. Does NOT advance."""
+    state = _load_state(project_path)
+    wf = _get_workflow_cached(state["workflow_name"], project_path)
+    order = state["topo_order"]
+    idx = state["pointer_idx"]
+    current_nid = order[idx] if idx < len(order) else None
+    return _format_progress(state, wf, project_path, current_nid, fmt=fmt)
+
+
+def tool_curr(project_path: Path) -> str:
+    """Show current node details without advancing or auto-submitting."""
+    state = _load_state(project_path)
+    wf = _get_workflow_cached(state["workflow_name"], project_path)
+    order = state["topo_order"]
+    idx = state["pointer_idx"]
+
+    if idx >= len(order):
+        return "DONE\nAll nodes completed."
+
+    nid = order[idx]
+    node = wf.nodes[nid]
+    return _format_node_task(nid, node, wf, state, project_path)
+
+
 # ── helpers ─────────────────────────────────────────────────────
+
+
+def _phase_label(nid: str, node: object) -> str:
+    """Generate a human-readable phase label from node id and type."""
+    name = nid.replace("_", " ").title()
+
+    if isinstance(node, AgentNode):
+        role = node.role.value.replace("_", " ").title()
+        return role if role.lower() in name.lower() else f"{role} — {name}"
+    elif isinstance(node, GateNode):
+        gate_name = nid.replace("gate_", "").replace("_", " ").title()
+        return f"Gate — {gate_name}"
+    elif isinstance(node, Study):
+        return f"Observe ({nid})"
+    elif isinstance(node, ForkNode):
+        return f"Fork ({', '.join(node.targets)})"
+    elif isinstance(node, FnNode):
+        return name
+    return name
+
+
+def _format_progress(
+    state: dict,
+    wf: Workflow | None,
+    project_path: Path,
+    current_nid: str | None,
+    fmt: str = "linear",
+) -> str:
+    """Build a progress view of the workflow with completion markers."""
+    order = state["topo_order"]
+    completed = state["completed"]
+    lines: list[str] = []
+
+    for i, nid in enumerate(order):
+        node = wf.nodes.get(nid) if wf else None
+        is_current = nid == current_nid
+        is_done = nid in completed
+
+        if is_done:
+            marker = "✓"
+        elif is_current:
+            marker = "▶"
+        else:
+            marker = "○"
+
+        if fmt == "phased":
+            label = _phase_label(nid, node) if node else nid.replace("_", " ").title()
+            line = f"{marker} Phase {i + 1}: {label}"
+        else:
+            line = f"{marker} {nid}"
+
+        if is_current:
+            line += "    ← CURRENT"
+
+        lines.append(line)
+
+        if is_current and node is not None and wf is not None:
+            details = _format_node_task(nid, node, wf, state, project_path)
+            for detail_line in details.split("\n"):
+                if detail_line.startswith("Node:"):
+                    continue
+                lines.append(f"  {detail_line}")
+
+    return "\n".join(lines)
 
 
 def _format_node_task(
@@ -557,28 +664,37 @@ def _format_gate_task(
     return "\n".join(lines)
 
 
-def _detect_artifact(nid: str, node: object, project_path: Path) -> str | None:
-    """Check if a node's output artifact exists. Returns content or None."""
+def _detect_artifact(
+    nid: str, node: object, project_path: Path, session_start: float = 0.0,
+) -> str | None:
+    """Check if a node's output artifact exists. Returns content or None.
+
+    When session_start > 0, files with mtime before that timestamp are
+    treated as stale leftovers from a prior run and ignored.
+    """
     reviews_dir = project_path / ".factory" / "reviews"
+
+    def _fresh(f: Path) -> bool:
+        return session_start <= 0 or f.stat().st_mtime >= session_start
 
     if isinstance(node, AgentNode):
         role = node.role.value
         tag = nid.replace(f"{role}_", "").replace(role, "")
         if tag and tag != nid:
             tagged_file = reviews_dir / f"{role}-{tag}-latest.md"
-            if tagged_file.exists():
+            if tagged_file.exists() and _fresh(tagged_file):
                 content = tagged_file.read_text().strip()
                 if content:
                     return content
         review_file = reviews_dir / f"{role}-latest.md"
-        if review_file.exists():
+        if review_file.exists() and _fresh(review_file):
             content = review_file.read_text().strip()
             if content:
                 return content
         if node.writes:
             for wp in node.writes:
                 f = project_path / wp
-                if f.exists():
+                if f.exists() and _fresh(f):
                     content = f.read_text().strip()
                     if content:
                         return content
@@ -586,7 +702,7 @@ def _detect_artifact(nid: str, node: object, project_path: Path) -> str | None:
 
     elif isinstance(node, Study):
         obs_file = project_path / ".factory" / "strategy" / "observations.md"
-        if obs_file.exists():
+        if obs_file.exists() and _fresh(obs_file):
             content = obs_file.read_text().strip()
             if content and len(content) > 50:
                 return content
@@ -594,7 +710,10 @@ def _detect_artifact(nid: str, node: object, project_path: Path) -> str | None:
 
     elif isinstance(node, FnNode):
         if node.writes:
-            all_exist = all((project_path / wp).exists() for wp in node.writes)
+            all_exist = all(
+                (project_path / wp).exists() and _fresh(project_path / wp)
+                for wp in node.writes
+            )
             if all_exist:
                 parts = []
                 for wp in node.writes:
