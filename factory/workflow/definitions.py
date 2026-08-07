@@ -4109,6 +4109,11 @@ def frontend_design_refresh_workflow() -> Workflow:
             target="refresh_differ",
             condition=VerdictType.RELOOP,
         ),
+        Edge(
+            source="gate_refresh_approve",
+            target="archivist_refresh",
+            condition=VerdictType.HALT,
+        ),
         # Apply → archivist
         Edge(source="refresh_applier", target="archivist_refresh"),
     ]
