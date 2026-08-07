@@ -444,9 +444,39 @@ def build_workflow() -> Workflow:
 def design_workflow() -> Workflow:
     """W₂: Design Mode — W₁ with user gate at strategy approval.
 
-    W₂ = W₁[gate_strategy ← GateNode(user)]
+    W₂ = W₁[gate_strategy ← GateNode(user), +gate_has_factory, +study]
+
+    Existing projects (HAS_FACTORY) route through study before research.
+    New projects (NO_REPO, REPO_INCOMPLETE) skip study and go direct to fork_research.
     """
     wf = build_workflow()
+
+    # Conditional entry: existing projects get study, new projects skip it
+    wf.nodes["gate_has_factory"] = GateNode(
+        id="gate_has_factory",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            'from pathlib import Path; '
+            'exists = Path(\"{project_path}/.factory/config.json\").exists(); '
+            'print(\"PROCEED\" if exists else \"HALT\")'
+            '"'
+        ),
+    )
+
+    wf.nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    wf.edges.extend([
+        Edge(source="gate_has_factory", target="study", condition=VerdictType.PROCEED),
+        Edge(source="gate_has_factory", target="fork_research", condition=VerdictType.HALT),
+        Edge(source="study", target="fork_research"),
+    ])
+
+    wf.start_node = "gate_has_factory"
 
     wf.nodes["gate_strategy"] = GateNode(
         id="gate_strategy",
@@ -457,7 +487,7 @@ def design_workflow() -> Workflow:
     wf.name = "design"
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE} and ctx.get(
+        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE, ProjectState.HAS_FACTORY} and ctx.get(
             "interactive", False
         )
 
