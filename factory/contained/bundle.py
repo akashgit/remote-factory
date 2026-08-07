@@ -18,7 +18,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from factory.contained.errors import ContainedError
-from factory.contained.k8s import PVC_NAME, SECRET_NAME, SERVICE_ACCOUNT, render_pvc
+from factory.contained.k8s import (
+    ADC_SECRET_KEY,
+    PVC_NAME,
+    SECRET_NAME,
+    SERVICE_ACCOUNT,
+    render_pvc,
+)
 
 ROLE_NAME = "factory-runtime"
 SCC_ROLEBINDING = "factory-scc"
@@ -258,12 +264,13 @@ def render_bundle(
 # Then create the inference credentials Secret yourself — the factory never handles the material:
 #     oc create secret generic {SECRET_NAME} -n {target} \\
 #         --from-literal=ANTHROPIC_API_KEY=...
-#   or, for Vertex:
+#   or, for Vertex — the credential is a *file*, so it is `--from-file` under this exact key,
+#   which the pod mounts and points GOOGLE_APPLICATION_CREDENTIALS at:
 #     oc create secret generic {SECRET_NAME} -n {target} \\
 #         --from-literal=CLAUDE_CODE_USE_VERTEX=1 \\
 #         --from-literal=CLOUD_ML_REGION=us-east5 \\
 #         --from-literal=ANTHROPIC_VERTEX_PROJECT_ID=... \\
-#         --from-file=GOOGLE_APPLICATION_CREDENTIALS=...
+#         --from-file={ADC_SECRET_KEY}=$HOME/.config/gcloud/application_default_credentials.json
 #
 {image_note}# Everything below is namespace-scoped. Nothing here creates an SCC or a ClusterRole.
 {body}"""

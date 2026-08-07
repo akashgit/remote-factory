@@ -32,6 +32,7 @@ import structlog
 from factory.contained import style
 from factory.contained.bundle import BundleObject, bundle_objects, render_bundle
 from factory.contained.k8s import (
+    ADC_SECRET_KEY,
     LABEL_CONTAINED,
     SECRET_NAME,
     SERVICE_ACCOUNT,
@@ -62,7 +63,12 @@ _K8S_STEPS = 3
 
 # The keys a credentials Secret must carry for at least one supported backend.
 ANTHROPIC_KEYS = ("ANTHROPIC_API_KEY",)
-VERTEX_KEYS = ("CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID")
+# The three configuration variables *and* the credential file. The credential is the point: the
+# first three only say which endpoint to talk to, so a Secret carrying just those was reported as
+# "carries the Vertex configuration" while holding nothing that could authenticate.
+VERTEX_KEYS = (
+    "CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", ADC_SECRET_KEY,
+)
 
 # The verbs the pod's ServiceAccount needs. Checked as the ServiceAccount, not as the user: a
 # namespace where *you* can create pods but the pod cannot read its own logs fails on the agent's
@@ -329,8 +335,15 @@ def _secret_check(binary: str, namespace: str) -> Check:
     result = _run(cli(binary, "get", "secret", SECRET_NAME, "-n", namespace,
                       "-o", "jsonpath={.data}"))
     create_line = (
-        f"{binary} create secret generic {SECRET_NAME} -n {namespace} "
-        "--from-literal=ANTHROPIC_API_KEY=..."
+        f"{binary} create secret generic {SECRET_NAME} -n {namespace} \\\n"
+        f"      --from-literal=ANTHROPIC_API_KEY=...\n"
+        f"  or, for Vertex:\n"
+        f"      {binary} create secret generic {SECRET_NAME} -n {namespace} \\\n"
+        f"      --from-literal=CLAUDE_CODE_USE_VERTEX=1 \\\n"
+        f"      --from-literal=CLOUD_ML_REGION=<region> \\\n"
+        f"      --from-literal=ANTHROPIC_VERTEX_PROJECT_ID=<project> \\\n"
+        f"      --from-file={ADC_SECRET_KEY}=$HOME/.config/gcloud/"
+        f"application_default_credentials.json"
     )
     if result is None or result.returncode != 0:
         return Check(
