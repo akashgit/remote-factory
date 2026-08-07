@@ -6,12 +6,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import structlog
 
 from factory.cli._helpers import _is_github_url, _safe_is_dir, _safe_is_file
 
 log = structlog.get_logger()
+
+
+class PlanSource(NamedTuple):
+    plan: str
+    feedback: list[str]
+    source: str
 
 
 _FILLER_WORDS = frozenset({
@@ -309,6 +316,116 @@ def _derive_session_name(
 
     proj_name = project_path.resolve().name
     return f"{prefix}{mode} {proj_name}"[:max_len]
+
+
+def _resolve_plan_source(from_plan: str, project_path: Path) -> PlanSource:
+    """Resolve a plan source to a :class:`PlanSource`.
+
+    Resolution order:
+    1. Issue ref (URL, number, owner/repo#N) → fetch issue body + thread comments
+    2. Local file path → read file content (no feedback)
+    3. Fuzzy search → ``gh issue list --label plan --search`` → pick top result
+    """
+    from factory.issue import is_issue_ref
+
+    if is_issue_ref(from_plan):
+        return _fetch_plan_from_issue(from_plan, project_path)
+
+    plan_path = Path(from_plan).expanduser()
+    if not plan_path.is_absolute():
+        plan_path = project_path / plan_path
+    if plan_path.is_file():
+        content = plan_path.read_text().strip()
+        if not content:
+            print(f"Error: plan file is empty: {plan_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"  Plan: {plan_path.name} → .factory/strategy/current.md", file=sys.stderr)
+        return PlanSource(plan=content, feedback=[], source=plan_path.name)
+
+    return _fuzzy_search_plan(from_plan, project_path)
+
+
+def _fetch_plan_from_issue(ref: str, project_path: Path) -> PlanSource:
+    """Fetch a GitHub issue body as plan content and comments as thread feedback."""
+    from factory.issue import fetch_issue, parse_issue_ref
+
+    issue = fetch_issue(ref, project_path)
+    forge, owner_repo, number = parse_issue_ref(ref, project_path)
+
+    plan_body = issue.body or ""
+    feedback: list[str] = []
+
+    if forge == "github":
+        try:
+            import json as _json
+
+            result = subprocess.run(
+                ["gh", "api", f"repos/{owner_repo}/issues/{number}/comments",
+                 "--jq", "[.[].body]"],
+                capture_output=True, text=True, check=True,
+            )
+            comments = _json.loads(result.stdout)
+            for comment_body in comments:
+                if comment_body and comment_body.strip():
+                    feedback.append(comment_body.strip())
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            log.debug("plan_comments_fetch_failed", ref=ref)
+
+    if not plan_body.strip():
+        print(f"Error: issue #{number} has no content", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  Plan: issue #{number} → .factory/strategy/current.md", file=sys.stderr)
+    return PlanSource(plan=plan_body, feedback=feedback, source=f"issue #{number}")
+
+
+def _fuzzy_search_plan(query: str, project_path: Path) -> PlanSource:
+    """Search GitHub issues with the 'plan' label for a matching plan."""
+    from factory.issue import infer_remote
+
+    try:
+        forge, owner_repo = infer_remote(project_path)
+    except RuntimeError:
+        print(
+            f"Error: no git remote found and '{query}' is not a file or issue ref. "
+            "Cannot search for plans.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if forge != "github":
+        print(
+            f"Error: fuzzy plan search is only supported for GitHub repos, not {forge}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "list", "-R", owner_repo, "--label", "plan",
+             "--search", query, "--json", "number,title", "--limit", "1"],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        print(f"Error: failed to search for plans: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    import json
+
+    issues = json.loads(result.stdout)
+    if not issues:
+        print(
+            f"Error: no plan issues found matching '{query}' in {owner_repo}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    top = issues[0]
+    print(
+        f"  Plan: matched issue #{top['number']} ({top['title']})",
+        file=sys.stderr,
+    )
+    return _fetch_plan_from_issue(str(top["number"]), project_path)
 
 
 def _has_research_target(project_path: Path) -> bool:

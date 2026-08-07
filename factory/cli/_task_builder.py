@@ -105,6 +105,8 @@ def _build_ceo_task(
     display_mode: str | None = None,
     create_description: str | None = None,
     update_existing_mode: str | None = None,
+    from_plan: str | None = None,
+    from_plan_feedback: list[str] | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -117,7 +119,37 @@ def _build_ceo_task(
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
 
-    if design_existing:
+    if from_plan:
+        task += (
+            "\n\n## Plan Loop (From Existing Plan)\n\n"
+            "An existing plan has been loaded via `--from-plan`.\n"
+            "The plan content is at `.factory/strategy/current.md`.\n\n"
+            "**Skip the Research phase.** But DO run the Strategist in reconciliation mode.\n\n"
+        )
+        if from_plan_feedback:
+            task += (
+                "Thread feedback exists (saved at `.factory/strategy/thread-feedback.md`):\n\n"
+                "1. Read the plan at `.factory/strategy/current.md`\n"
+                "2. Read the thread feedback at `.factory/strategy/thread-feedback.md`\n"
+                "3. Run the Strategist with task: "
+                "'Reconcile this plan with the following thread feedback. "
+                "Update the plan to address the feedback. "
+                "Write the reconciled plan to .factory/strategy/current.md.'\n"
+                "4. Present the RECONCILED plan to the user for approval\n"
+                "5. On approval → proceed to Builder\n\n"
+            )
+        else:
+            task += (
+                "No thread feedback exists.\n\n"
+                "1. Read the plan at `.factory/strategy/current.md`\n"
+                "2. Present it to the user for approval (no Strategist needed)\n"
+                "3. On approval → proceed to Builder\n\n"
+            )
+        task += (
+            "Do NOT run parallel researchers. Do NOT regenerate the plan from scratch. "
+            "The plan content has already been resolved and persisted.\n"
+        )
+    elif design_existing:
         task += (
             f"\n\n## Plan Loop (Interactive)\n\n"
             f"**existing_project: true**\n\n"

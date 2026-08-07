@@ -139,6 +139,52 @@ def test_plan_publish_github_graceful_degradation(wf):
     assert "gh auth status" in node.command
 
 
+def test_plan_publish_github_auto_creates_repo(wf):
+    """Verify publish_github contains gh repo create for auto-creating repos."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert "gh repo create" in node.command
+
+
+def test_plan_publish_github_creates_public_repo(wf):
+    """Verify publish_github creates public repos by default."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert "--public" in node.command
+
+
+def test_plan_publish_github_handles_existing_repo(wf):
+    """Verify publish_github handles 'already exists' case."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert "already exists" in node.command
+    assert "git remote add origin" in node.command
+
+
+def test_plan_publish_github_checks_git_worktree(wf):
+    """Verify publish_github checks git rev-parse --is-inside-work-tree."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert "git rev-parse --is-inside-work-tree" in node.command
+
+
+def test_plan_publish_github_exits_zero_on_all_failures(wf):
+    """Verify publish_github exits 0 on all failure paths."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert node.command.count("exit 0") >= 3
+
+
+def test_plan_publish_github_user_facing_messages(wf):
+    """Verify publish_github echoes clear user-facing messages."""
+    node = wf.nodes["publish_github"]
+    assert isinstance(node, FnNode)
+    assert "Creating GitHub repository:" in node.command
+    assert "GitHub repository created:" in node.command
+    assert "plan saved locally only" in node.command
+    assert "already exists on GitHub, linking as remote" in node.command
+
+
 def test_plan_publish_github_body_file(wf):
     """Verify publish_github uses --body-file, not --body."""
     node = wf.nodes["publish_github"]

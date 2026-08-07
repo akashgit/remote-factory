@@ -1,0 +1,148 @@
+name: Close stale issues without linked PRs
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  close-stale-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const STALE_DAYS = 4;
+            const EXEMPT_LABELS = new Set([
+              'pinned',
+              'security',
+              'help-wanted',
+              'good-first-issue',
+              'bug',
+            ]);
+            const MS_PER_DAY = 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const cutoff = new Date(now - STALE_DAYS * MS_PER_DAY);
+
+            const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+
+            let checked = 0;
+            let skippedPR = 0;
+            let skippedExempt = 0;
+            let skippedLinked = 0;
+            let closed = 0;
+            let page = 1;
+
+            while (true) {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner,
+                repo,
+                state: 'open',
+                sort: 'created',
+                direction: 'asc',
+                per_page: 100,
+                page,
+              });
+
+              if (issues.length === 0) break;
+
+              for (const issue of issues) {
+                checked++;
+
+                if (issue.pull_request) {
+                  skippedPR++;
+                  continue;
+                }
+
+                if (issue.labels.some(l => EXEMPT_LABELS.has(l.name))) {
+                  core.info(`#${issue.number}: skipped (exempt label)`);
+                  skippedExempt++;
+                  continue;
+                }
+
+                const createdAt = new Date(issue.created_at);
+                if (createdAt > cutoff) {
+                  core.info(`#${issue.number}: skipped (younger than ${STALE_DAYS} days)`);
+                  continue;
+                }
+
+                const { repository } = await github.graphql(`
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      issue(number: $number) {
+                        timelineItems(first: 100, itemTypes: [CROSS_REFERENCED_EVENT]) {
+                          nodes {
+                            ... on CrossReferencedEvent {
+                              source {
+                                ... on PullRequest {
+                                  number
+                                  state
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                `, { owner, repo, number: issue.number });
+
+                const nodes = repository.issue.timelineItems.nodes;
+                const hasLinkedPR = nodes.some(node => {
+                  const pr = node.source;
+                  return pr && pr.state && (pr.state === 'OPEN' || pr.state === 'MERGED');
+                });
+
+                if (hasLinkedPR) {
+                  core.info(`#${issue.number}: skipped (has linked open/merged PR)`);
+                  skippedLinked++;
+                  continue;
+                }
+
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  labels: ['stale'],
+                });
+
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: [
+                    'This issue has been automatically closed because it has been open',
+                    `for more than ${STALE_DAYS} days with no linked pull request.`,
+                    '',
+                    'If this issue is still relevant, please reopen it and link a PR',
+                    'or add one of the exempt labels: `pinned`, `security`,',
+                    '`help-wanted`, `good-first-issue`, `bug`.',
+                  ].join('\n'),
+                });
+
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'not_planned',
+                });
+
+                core.info(`#${issue.number}: closed (no linked open/merged PR)`);
+                closed++;
+              }
+
+              if (issues.length < 100) break;
+              page++;
+            }
+
+            core.info('--- Summary ---');
+            core.info(`Checked: ${checked}`);
+            core.info(`Skipped (pull requests): ${skippedPR}`);
+            core.info(`Skipped (exempt label): ${skippedExempt}`);
+            core.info(`Skipped (has linked PR): ${skippedLinked}`);
+            core.info(`Closed: ${closed}`);

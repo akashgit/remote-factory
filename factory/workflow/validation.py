@@ -64,6 +64,8 @@ def _validate_data_dependencies(
     for nid, node in workflow.nodes.items():
         if node.reads:
             predecessors = nx.ancestors(g, nid)
+            if not predecessors:
+                continue
             available_writes: set[str] = set()
             for pred_id in predecessors:
                 pred_node = workflow.nodes.get(pred_id)

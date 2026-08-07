@@ -249,7 +249,18 @@ class TestGateToCheckpoint:
         wf = _minimal_workflow(nodes={"gate_strategy": gate}, start="gate_strategy")
         result = _gate_to_checkpoint(gate, [], wf)
         assert "User Approval" in result
-        assert "Approve" in result
+        assert "Do NOT self-approve" in result
+        assert "MUST wait for the user" in result
+
+    def test_user_gate_anti_self_approval(self) -> None:
+        gate = GateNode(id="gate_approval", evaluator_type="user")
+        wf = _minimal_workflow(nodes={"gate_approval": gate}, start="gate_approval")
+        result = _gate_to_checkpoint(gate, [], wf)
+        assert "Do NOT self-approve" in result
+        assert "MUST wait for the user" in result
+        assert "Do you approve this plan" in result
+        assert "Do NOT write a verdict file" in result
+        assert "CEO Review" not in result
 
     def test_fn_gate_with_command(self) -> None:
         gate = GateNode(

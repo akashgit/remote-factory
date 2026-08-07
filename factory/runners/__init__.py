@@ -67,6 +67,8 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
 
     if resolved == "bob":
         return BobRunner(project_path=project_path)
+    if resolved == "opencode":
+        return OpenCodeRunner(project_path=project_path)
     return _RUNNERS[resolved]()
 
 

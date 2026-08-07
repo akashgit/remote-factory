@@ -51,11 +51,13 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "design": {
         "description": (
-            "Interactive design mode — identical to build but with a user approval "
-            "gate at strategy. Use when the user says 'design X', 'plan X', "
-            "'let's discuss what to build', or wants to review the strategy before building."
+            "Interactive design mode — build with a user approval gate at strategy, "
+            "plus conditional study for existing projects. Use when the user says "
+            "'design X', 'plan X', 'let's discuss what to build', or wants to review "
+            "the strategy before building. Works for both new and existing projects. "
+            "Supports --from-plan to load an existing plan and skip research."
         ),
-        "argument_hint": "<project_path> [idea or spec]",
+        "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>]",
     },
     "improve": {
         "description": (
@@ -473,9 +475,15 @@ def _gate_to_checkpoint(
         lines.append("")
         lines.append(f"### Steering Point — {gate_name} (User Approval)")
         lines.append("")
-        lines.append("Present findings to the user. Wait for approval or feedback.")
-        lines.append("- **Approve** → proceed to next step")
-        lines.append("- **Feedback** → re-run the previous step with corrections")
+        lines.append("**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**")
+        lines.append("")
+        lines.append("Present the strategy/findings to the user by summarizing key points in your output.")
+        lines.append('Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"')
+        lines.append("")
+        lines.append("**You MUST wait for the user's response before proceeding.**")
+        lines.append("- The user says \"approve\", \"yes\", \"looks good\", or similar → proceed to next step")
+        lines.append("- The user provides feedback or corrections → re-run the previous step incorporating their feedback")
+        lines.append("- Do NOT write a verdict file and auto-proceed — this gate requires human input")
     elif node.evaluator_type == "fn":
         evaluator_cmd = ""
         if node.evaluator_command:
@@ -503,10 +511,17 @@ def _gate_to_checkpoint(
         if proceed_edges:
             proceed_target = proceed_edges[0].target
             lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
-            lines.append(
-                f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
-                "Skip to the next CEO review gate or finalize as error."
-            )
+            if halt_edges:
+                halt_target = halt_edges[0].target
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → "
+                    f"continue to `{halt_target}` instead."
+                )
+            else:
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
+                    "Skip to the next CEO review gate or finalize as error."
+                )
         elif halt_edges:
             halt_target = halt_edges[0].target
             lines.append(

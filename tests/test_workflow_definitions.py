@@ -29,6 +29,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    Study,
     VerdictType,
 )
 
@@ -80,7 +81,9 @@ class TestTriggers:
         assert wf.trigger(ProjectState.NO_REPO, {"interactive": True})
         assert not wf.trigger(ProjectState.NO_REPO, {"interactive": False})
         assert not wf.trigger(ProjectState.NO_REPO, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"interactive": True})
+        # HAS_FACTORY now fires for design mode
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"interactive": True})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"interactive": False})
 
     def test_improve_trigger(self) -> None:
         wf = improve_workflow()
@@ -120,18 +123,89 @@ class TestDesignIsBuiltWithUserGate:
         assert gate_w2.evaluator_type == "user"
 
     def test_design_shares_other_nodes(self) -> None:
-        """W₂ shares all other node IDs with W₁."""
+        """W₂ shares all build node IDs with W₁, plus gate_has_factory and study."""
         w1 = build_workflow()
         w2 = design_workflow()
 
         w1_ids = set(w1.nodes.keys())
         w2_ids = set(w2.nodes.keys())
 
-        assert w1_ids == w2_ids
+        # Design has 3 extra nodes: gate_has_factory, discover, and study
+        assert w2_ids == w1_ids | {"gate_has_factory", "discover", "study"}
 
     def test_design_name(self) -> None:
         wf = design_workflow()
         assert wf.name == "design"
+
+
+# ── Design study node tests ──────────────────────────────────────
+
+
+class TestDesignStudyNode:
+    """Verify design mode's conditional study path for existing projects."""
+
+    def test_design_has_study_node(self) -> None:
+        """Design workflow must contain a study node."""
+        wf = design_workflow()
+        assert "study" in wf.nodes
+        assert isinstance(wf.nodes["study"], Study)
+
+    def test_design_has_gate_has_factory(self) -> None:
+        """Design workflow must contain the gate_has_factory conditional gate."""
+        wf = design_workflow()
+        assert "gate_has_factory" in wf.nodes
+        gate = wf.nodes["gate_has_factory"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_design_study_writes_observations(self) -> None:
+        """Study node must write observations.md."""
+        wf = design_workflow()
+        study = wf.nodes["study"]
+        assert ".factory/strategy/observations.md" in study.writes
+
+    def test_design_study_to_fork_research_edge(self) -> None:
+        """There must be an unconditional edge from study to fork_research."""
+        wf = design_workflow()
+        assert any(
+            e.source == "study" and e.target == "fork_research" and e.condition is None
+            for e in wf.edges
+        )
+
+    def test_design_gate_routes_to_study(self) -> None:
+        """gate_has_factory PROCEED must route to study."""
+        wf = design_workflow()
+        assert any(
+            e.source == "gate_has_factory" and e.target == "study"
+            and e.condition == VerdictType.PROCEED
+            for e in wf.edges
+        )
+
+    def test_design_gate_routes_to_discover(self) -> None:
+        """gate_has_factory HALT must route to discover (not fork_research)."""
+        wf = design_workflow()
+        assert any(
+            e.source == "gate_has_factory" and e.target == "discover"
+            and e.condition == VerdictType.HALT
+            for e in wf.edges
+        )
+
+    def test_design_has_discover_node(self) -> None:
+        """Design workflow must contain a discover FnNode."""
+        wf = design_workflow()
+        assert "discover" in wf.nodes
+        node = wf.nodes["discover"]
+        assert isinstance(node, FnNode)
+        assert node.command == "factory discover {project_path}"
+        assert ".factory/eval_profile.json" in node.writes
+
+    def test_design_discover_to_study_edge(self) -> None:
+        """There must be an unconditional edge from discover to study."""
+        wf = design_workflow()
+        assert any(
+            e.source == "discover" and e.target == "study" and e.condition is None
+            for e in wf.edges
+        )
 
 
 # ── W₄ structural delta from W₃ ─────────────────────────────────

@@ -1,7 +1,9 @@
-"""Tests for factory/runners/opencode.py — OpenCodeRunner implementation."""
+"""Tests for factory/runners/opencode.py — OpenCode v1.x runner."""
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,12 +14,10 @@ from factory.models import AgentRunRequest, AgentRunResult
 from factory.runners.opencode import (
     OpenCodeAuthError,
     OpenCodeRunner,
-    _can_source_key_from_shell,
     _check_auth,
     _check_binary_compat,
-    _find_opencode_bin_dir,
-    _prepend_opencode_path,
-    _source_openai_key_from_shell,
+    _has_opencode_auth,
+    _parse_opencode_output,
     is_opencode_dry_run,
 )
 
@@ -37,41 +37,37 @@ def _reset_opencode_globals() -> None:
 class TestOpenCodeAuthError:
     def test_error_message(self) -> None:
         err = OpenCodeAuthError()
-        assert "OPENAI_API_KEY" in str(err)
+        assert "opencode auth login" in str(err)
+        assert "ANTHROPIC_API_KEY" in str(err)
         assert "config.toml" in str(err)
-        assert "[credentials.opencode]" in str(err)
 
 
 # ---------------------------------------------------------------------------
-# _can_source_key_from_shell
+# _has_opencode_auth
 # ---------------------------------------------------------------------------
 
 
-class TestCanSourceKeyFromShell:
-    def test_returns_true_when_key_found(self) -> None:
-        mock_result = MagicMock(stdout="sk-fake-key-123\n")
-        with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-            assert _can_source_key_from_shell() is True
+class TestHasOpenCodeAuth:
+    def test_true_with_opencode_dir(self, tmp_path: Path) -> None:
+        with patch("factory.runners.opencode.Path.home", return_value=tmp_path):
+            (tmp_path / ".opencode").mkdir()
+            assert _has_opencode_auth() is True
 
-    def test_returns_false_when_empty(self) -> None:
-        mock_result = MagicMock(stdout="\n")
-        with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-            assert _can_source_key_from_shell() is False
+    def test_true_with_anthropic_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        with patch("factory.runners.opencode.Path.home", return_value=Path("/nonexistent")):
+            assert _has_opencode_auth() is True
 
-    def test_returns_false_on_file_not_found(self) -> None:
-        with patch(
-            "factory.runners.opencode.subprocess.run", side_effect=FileNotFoundError
-        ):
-            assert _can_source_key_from_shell() is False
+    def test_true_with_openai_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        with patch("factory.runners.opencode.Path.home", return_value=Path("/nonexistent")):
+            assert _has_opencode_auth() is True
 
-    def test_returns_false_on_timeout(self) -> None:
-        import subprocess
-
-        with patch(
-            "factory.runners.opencode.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="zsh", timeout=5),
-        ):
-            assert _can_source_key_from_shell() is False
+    def test_false_without_anything(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in oc_module._PROVIDER_ENV_VARS:
+            monkeypatch.delenv(var, raising=False)
+        with patch("factory.runners.opencode.Path.home", return_value=Path("/nonexistent")):
+            assert _has_opencode_auth() is False
 
 
 # ---------------------------------------------------------------------------
@@ -82,27 +78,27 @@ class TestCanSourceKeyFromShell:
 class TestCheckAuth:
     def test_skips_when_already_checked(self) -> None:
         oc_module._auth_checked = True
-        # Should return immediately without raising
         _check_auth()
 
+    def test_passes_with_opencode_dir(self, tmp_path: Path) -> None:
+        with patch("factory.runners.opencode._check_binary_compat"):
+            with patch("factory.runners.opencode.Path.home", return_value=tmp_path):
+                (tmp_path / ".opencode").mkdir()
+                _check_auth()
+        assert oc_module._auth_checked is True
+
     def test_passes_with_env_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         with patch("factory.runners.opencode._check_binary_compat"):
             _check_auth()
         assert oc_module._auth_checked is True
 
-    def test_passes_with_shell_sourced_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def test_raises_without_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in oc_module._PROVIDER_ENV_VARS:
+            monkeypatch.delenv(var, raising=False)
         with patch("factory.runners.opencode._check_binary_compat"):
-            with patch("factory.runners.opencode._can_source_key_from_shell", return_value=True):
-                _check_auth()
-        assert oc_module._auth_checked is True
-
-    def test_raises_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        with patch("factory.runners.opencode._check_binary_compat"):
-            with patch("factory.runners.opencode._can_source_key_from_shell", return_value=False):
-                with pytest.raises(OpenCodeAuthError, match="OPENAI_API_KEY"):
+            with patch("factory.runners.opencode.Path.home", return_value=Path("/nonexistent")):
+                with pytest.raises(OpenCodeAuthError, match="opencode auth login"):
                     _check_auth()
 
 
@@ -114,7 +110,6 @@ class TestCheckAuth:
 class TestCheckBinaryCompat:
     def test_skips_when_already_checked(self) -> None:
         oc_module._compat_checked = True
-        # Should return immediately
         _check_binary_compat()
 
     def test_returns_early_when_no_binary(self) -> None:
@@ -122,22 +117,15 @@ class TestCheckBinaryCompat:
             _check_binary_compat()
         assert oc_module._compat_checked is True
 
-    def test_go_binary_detected(self) -> None:
+    def test_v1x_detected_ok(self) -> None:
+        mock_result = MagicMock(stdout="1.18.14", stderr="")
+        with patch("shutil.which", return_value="/usr/local/bin/opencode"):
+            with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
+                _check_binary_compat()
+        assert oc_module._compat_checked is True
+
+    def test_v0x_warns(self) -> None:
         mock_result = MagicMock(stdout="opencode version v0.0.55", stderr="")
-        with patch("shutil.which", return_value="/usr/local/bin/opencode"):
-            with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-                _check_binary_compat()
-        assert oc_module._compat_checked is True
-
-    def test_npm_binary_warns(self) -> None:
-        mock_result = MagicMock(stdout="some npm output", stderr="")
-        with patch("shutil.which", return_value="/usr/local/bin/opencode"):
-            with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-                _check_binary_compat()
-        assert oc_module._compat_checked is True
-
-    def test_version_in_stderr(self) -> None:
-        mock_result = MagicMock(stdout="", stderr="opencode version v0.1.0")
         with patch("shutil.which", return_value="/usr/local/bin/opencode"):
             with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
                 _check_binary_compat()
@@ -165,115 +153,63 @@ class TestCheckBinaryCompat:
 
 
 # ---------------------------------------------------------------------------
-# _find_opencode_bin_dir
+# _parse_opencode_output
 # ---------------------------------------------------------------------------
 
 
-class TestFindOpencodeBinDir:
-    def test_found_on_path(self) -> None:
-        with patch("shutil.which", return_value="/usr/local/bin/opencode"):
-            assert _find_opencode_bin_dir() == "/usr/local/bin"
+class TestParseOpenCodeOutput:
+    def test_parses_json_with_content(self) -> None:
+        raw = json.dumps({"content": "Hello world", "sessionId": "sess-123"})
+        text, session_id = _parse_opencode_output(raw)
+        assert text == "Hello world"
+        assert session_id == "sess-123"
 
-    def test_found_in_gopath(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GOPATH", "/custom/go")
-        with patch("shutil.which", return_value=None):
-            with patch.object(Path, "is_file", return_value=True):
-                result = _find_opencode_bin_dir()
-        assert result is not None
+    def test_parses_json_with_text_field(self) -> None:
+        raw = json.dumps({"text": "Result", "session_id": "s1"})
+        text, session_id = _parse_opencode_output(raw)
+        assert text == "Result"
+        assert session_id == "s1"
 
-    def test_found_in_home_go_bin(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GOPATH", raising=False)
-        with patch("shutil.which", return_value=None):
-            with patch.object(Path, "is_file", side_effect=lambda: True):
-                # The first candidate is Path.home() / "go" / "bin"
-                result = _find_opencode_bin_dir()
-        # Should find it or not depending on mocking; just verify no crash
-        assert result is None or isinstance(result, str)
+    def test_parses_json_with_message_field(self) -> None:
+        raw = json.dumps({"message": "Done"})
+        text, session_id = _parse_opencode_output(raw)
+        assert text == "Done"
+        assert session_id is None
 
-    def test_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GOPATH", raising=False)
-        with patch("shutil.which", return_value=None):
-            with patch.object(Path, "is_file", return_value=False):
-                assert _find_opencode_bin_dir() is None
+    def test_falls_back_on_non_json(self) -> None:
+        raw = "plain text output"
+        text, session_id = _parse_opencode_output(raw)
+        assert text == raw
+        assert session_id is None
 
+    def test_multiline_parses_last_json(self) -> None:
+        raw = "some progress\nmore output\n" + json.dumps({"content": "final"})
+        text, session_id = _parse_opencode_output(raw)
+        assert text == "final"
 
-# ---------------------------------------------------------------------------
-# _prepend_opencode_path
-# ---------------------------------------------------------------------------
-
-
-class TestPrependOpencodePath:
-    def test_prepends_when_found(self) -> None:
-        env: dict[str, str] = {"PATH": "/usr/bin:/bin"}
-        with patch(
-            "factory.runners.opencode._find_opencode_bin_dir",
-            return_value="/home/user/go/bin",
-        ):
-            _prepend_opencode_path(env)
-        assert env["PATH"].startswith("/home/user/go/bin:")
-
-    def test_no_op_when_already_first(self) -> None:
-        env: dict[str, str] = {"PATH": "/home/user/go/bin:/usr/bin"}
-        with patch(
-            "factory.runners.opencode._find_opencode_bin_dir",
-            return_value="/home/user/go/bin",
-        ):
-            _prepend_opencode_path(env)
-        assert env["PATH"] == "/home/user/go/bin:/usr/bin"
-
-    def test_no_op_when_not_found(self) -> None:
-        env: dict[str, str] = {"PATH": "/usr/bin"}
-        with patch(
-            "factory.runners.opencode._find_opencode_bin_dir", return_value=None
-        ):
-            _prepend_opencode_path(env)
-        assert env["PATH"] == "/usr/bin"
+    def test_empty_content_falls_back(self) -> None:
+        raw = json.dumps({"content": "", "sessionId": "s1"})
+        text, session_id = _parse_opencode_output(raw)
+        assert text == raw.strip()
+        assert session_id is None
 
 
 # ---------------------------------------------------------------------------
-# _source_openai_key_from_shell
+# OpenCodeRunner.metadata
 # ---------------------------------------------------------------------------
 
 
-class TestSourceOpenaiKeyFromShell:
-    def test_no_op_when_key_exists(self) -> None:
-        env: dict[str, str] = {"OPENAI_API_KEY": "already-set"}
-        # Should not call subprocess at all
-        _source_openai_key_from_shell(env)
-        assert env["OPENAI_API_KEY"] == "already-set"
-
-    def test_sources_key_from_zshrc(self) -> None:
-        env: dict[str, str] = {}
-        mock_result = MagicMock(stdout="sk-sourced-key\n")
-        with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-            _source_openai_key_from_shell(env)
-        assert env["OPENAI_API_KEY"] == "sk-sourced-key"
-
-    def test_no_key_from_zshrc(self) -> None:
-        env: dict[str, str] = {}
-        mock_result = MagicMock(stdout="\n")
-        with patch("factory.runners.opencode.subprocess.run", return_value=mock_result):
-            _source_openai_key_from_shell(env)
-        assert "OPENAI_API_KEY" not in env
-
-    def test_handles_file_not_found(self) -> None:
-        env: dict[str, str] = {}
-        with patch(
-            "factory.runners.opencode.subprocess.run", side_effect=FileNotFoundError
-        ):
-            _source_openai_key_from_shell(env)
-        assert "OPENAI_API_KEY" not in env
-
-    def test_handles_timeout(self) -> None:
-        import subprocess
-
-        env: dict[str, str] = {}
-        with patch(
-            "factory.runners.opencode.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="zsh", timeout=5),
-        ):
-            _source_openai_key_from_shell(env)
-        assert "OPENAI_API_KEY" not in env
+class TestMetadata:
+    def test_metadata_v1x(self) -> None:
+        meta = OpenCodeRunner.metadata()
+        assert meta.name == "opencode"
+        assert meta.supports_model_override is True
+        assert meta.supports_session_name is True
+        assert meta.supports_session_resume is True
+        assert meta.supports_background is False
+        assert meta.required_env_vars == []
+        assert "opencode.ai/install" in meta.install_hint
+        assert meta.custom_auth_check is not None
 
 
 # ---------------------------------------------------------------------------
@@ -282,30 +218,193 @@ class TestSourceOpenaiKeyFromShell:
 
 
 class TestBuildCommand:
-    def test_command_structure(self, tmp_path: Path) -> None:
+    def test_basic_command_structure(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        with patch("factory.runners.opencode._prepend_opencode_path"):
-            with patch("factory.runners.opencode._source_openai_key_from_shell"):
-                cmd, env, temp_files = runner.build_command(
-                    AgentRunRequest(
-                        prompt="You are the CEO.",
-                        task="Run experiment",
-                        cwd=tmp_path,
-                        role="ceo",
-                    )
-                )
+        cmd, env, temp_files = runner.build_command(
+            AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Run experiment",
+                cwd=tmp_path,
+                role="ceo",
+            )
+        )
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        assert "-c" in cmd
+        assert cmd[1] == "run"
+        assert cmd[2] == "Run experiment"
+        assert "--format" in cmd
+        assert "json" in cmd
+        assert "--dir" in cmd
         assert str(tmp_path) in cmd
-        assert "-q" in cmd
-        full_prompt = cmd[cmd.index("-p") + 1]
-        assert "You are the CEO." in full_prompt
-        assert "Run experiment" in full_prompt
-        assert "## Current Task" in full_prompt
-        assert temp_files == []
+        assert "--auto" in cmd
+        assert "-p" not in cmd
+        assert "-c" not in cmd
+        assert "-q" not in cmd
         assert "VIRTUAL_ENV" not in env
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are the CEO."
+
+    def test_model_override(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                model="anthropic/claude-sonnet-4-20250514",
+            )
+        )
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "anthropic/claude-sonnet-4-20250514"
+
+    def test_session_name(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                session_name="my-session",
+            )
+        )
+        assert "--title" in cmd
+        idx = cmd.index("--title")
+        assert cmd[idx + 1] == "my-session"
+
+    def test_session_resume(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                resume_session_id="sess-abc",
+            )
+        )
+        assert "--session" in cmd
+        idx = cmd.index("--session")
+        assert cmd[idx + 1] == "sess-abc"
+
+    def test_session_continue(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                session_id="any",
+            )
+        )
+        assert "--continue" in cmd
+
+    def test_no_auto_without_skip_permissions(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=False,
+            )
+        )
+        assert "--auto" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# OpenCodeRunner.build_interactive_command
+# ---------------------------------------------------------------------------
+
+
+class TestBuildInteractiveCommand:
+    def test_interactive_no_run_subcommand(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="You are a test agent.",
+                task="Start session",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=False,
+            )
+        )
+        assert cmd[0] == "opencode"
+        assert "run" not in cmd
+        assert "--format" not in cmd
+        assert "--auto" not in cmd
+        assert "--prompt" in cmd
+        prompt_idx = cmd.index("--prompt")
+        assert cmd[prompt_idx + 1] == "Start session"
+        assert "--dir" not in cmd
+        assert cmd[-1] == str(tmp_path)
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are a test agent."
+
+    def test_interactive_no_title_flag(self, tmp_path: Path) -> None:
+        """--title is only valid for 'opencode run', not the base TUI command."""
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                session_name="factory: discover run-123",
+            )
+        )
+        assert "--title" not in cmd
+
+    def test_interactive_auto_with_skip_permissions(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=True,
+            )
+        )
+        assert "--auto" in cmd
+
+    def test_interactive_no_auto_without_skip_permissions(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                skip_permissions=False,
+            )
+        )
+        assert "--auto" not in cmd
+
+    def test_interactive_model_override(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="ceo",
+                model="openai/gpt-4o",
+            )
+        )
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "openai/gpt-4o"
 
 
 # ---------------------------------------------------------------------------
@@ -318,20 +417,22 @@ class TestOpenCodeHeadless:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
-        runner = OpenCodeRunner()
+        (tmp_path / ".factory").mkdir()
+        runner = OpenCodeRunner(project_path=tmp_path)
         result = await runner.headless(
             AgentRunRequest(
                 prompt="Test prompt",
                 task="Test task",
                 cwd=tmp_path,
                 role="researcher",
+                project_path=tmp_path,
             )
         )
         assert result.return_code == 0
         assert "[DRY-RUN]" in result.stdout
         assert "researcher" in result.stdout
 
-    async def test_background_warning(
+    async def test_background_returns_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
@@ -345,58 +446,76 @@ class TestOpenCodeHeadless:
                 extras={"background": True},
             )
         )
-        assert result.return_code == 0
+        assert result.return_code == 1
+        assert "--bg is not supported" in result.stdout
+
+    async def test_tmux_persist_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runner = OpenCodeRunner()
+        result = await runner.headless(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                role="ceo",
+                extras={"tmux_persist": True},
+            )
+        )
+        assert result.return_code == 1
+        assert "--tmux-persist is not supported" in result.stdout
 
     async def test_headless_calls_run_subprocess(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        (tmp_path / ".factory").mkdir()
 
-        runner = OpenCodeRunner()
+        runner = OpenCodeRunner(project_path=tmp_path)
         with patch("factory.runners.opencode._check_auth"):
-            with patch("factory.runners.opencode._prepend_opencode_path"):
-                with patch("factory.runners.opencode._source_openai_key_from_shell"):
-                    with patch(
-                        "factory.runners.opencode.run_subprocess",
-                        new_callable=AsyncMock,
-                    ) as mock_run:
-                        mock_run.return_value = AgentRunResult(
-                            stdout="output", return_code=0
-                        )
-                        result = await runner.headless(
-                            AgentRunRequest(
-                                prompt="You are a test agent.",
-                                task="Say hello",
-                                cwd=tmp_path,
-                                role="researcher",
-                                timeout=60.0,
-                            )
-                        )
+            with patch(
+                "factory.runners.opencode.run_subprocess",
+                new_callable=AsyncMock,
+            ) as mock_run:
+                mock_run.return_value = AgentRunResult(
+                    stdout="output", return_code=0
+                )
+                result = await runner.headless(
+                    AgentRunRequest(
+                        prompt="You are a test agent.",
+                        task="Say hello",
+                        cwd=tmp_path,
+                        role="researcher",
+                        timeout=60.0,
+                        project_path=tmp_path,
+                    )
+                )
 
-                        assert result.return_code == 0
-                        assert result.stdout == "output"
+                assert result.return_code == 0
+                assert result.stdout == "output"
 
-                        call_kwargs = mock_run.call_args.kwargs
-                        assert call_kwargs["runner_name"] == "opencode"
-                        assert call_kwargs["role"] == "researcher"
-                        assert call_kwargs["timeout"] == 60.0
-                        cmd = mock_run.call_args[0][0]
-                        assert cmd[0] == "opencode"
-                        assert "-q" in cmd
+                call_kwargs = mock_run.call_args.kwargs
+                assert call_kwargs["runner_name"] == "opencode"
+                assert call_kwargs["role"] == "researcher"
+                assert call_kwargs["timeout"] == 60.0
+                assert call_kwargs["sanitize"] is True
+                cmd = mock_run.call_args[0][0]
+                assert cmd[0] == "opencode"
+                assert cmd[1] == "run"
+                assert "--format" in cmd
+                assert "-q" not in cmd
 
-    async def test_headless_raises_without_key(
+    async def test_headless_raises_without_auth(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        for var in oc_module._PROVIDER_ENV_VARS:
+            monkeypatch.delenv(var, raising=False)
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
 
         runner = OpenCodeRunner()
         with patch("factory.runners.opencode._check_binary_compat"):
-            with patch(
-                "factory.runners.opencode._can_source_key_from_shell",
-                return_value=False,
-            ):
+            with patch("factory.runners.opencode.Path.home", return_value=Path("/nonexistent")):
                 with pytest.raises(OpenCodeAuthError):
                     await runner.headless(
                         AgentRunRequest(
@@ -406,6 +525,37 @@ class TestOpenCodeHeadless:
                             role="researcher",
                         )
                     )
+
+    async def test_ceiling_exceeded_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        (tmp_path / ".factory").mkdir()
+
+        from factory.runners.usage import CeilingExceededError
+
+        runner = OpenCodeRunner(project_path=tmp_path)
+        with patch("factory.runners.opencode._check_auth"):
+            with patch(
+                "factory.runners.opencode.check_ceilings",
+                side_effect=CeilingExceededError(
+                    "per-cycle", 8, 8,
+                    "FACTORY_OPENCODE_MAX_INVOCATIONS_PER_CYCLE",
+                    "opencode",
+                ),
+            ):
+                with patch.object(runner, "_emit_ceiling_event"):
+                    result = await runner.headless(
+                        AgentRunRequest(
+                            prompt="Test",
+                            task="Test",
+                            cwd=tmp_path,
+                            role="researcher",
+                            project_path=tmp_path,
+                        )
+                    )
+                    assert result.return_code == 1
+                    assert "ceiling exceeded" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -438,26 +588,61 @@ class TestOpenCodeInteractive:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
-        runner = OpenCodeRunner()
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        (tmp_path / ".factory").mkdir()
 
-        with patch("factory.runners.opencode._prepend_opencode_path"):
-            with patch("factory.runners.opencode._source_openai_key_from_shell"):
-                with patch("factory.runners.opencode.subprocess.run") as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0)
-                    code = runner.interactive_run(
-                        AgentRunRequest(
-                            prompt="You are the CEO.",
-                            task="Start session",
-                            cwd=tmp_path,
-                            role="ceo",
-                        )
+        runner = OpenCodeRunner(project_path=tmp_path)
+        with patch("factory.runners.opencode._check_auth"):
+            with patch("factory.runners.opencode.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                code = runner.interactive_run(
+                    AgentRunRequest(
+                        prompt="You are the CEO.",
+                        task="Start session",
+                        cwd=tmp_path,
+                        role="ceo",
+                        project_path=tmp_path,
                     )
-                    assert code == 0
-                    cmd = mock_run.call_args[0][0]
-                    assert cmd[0] == "opencode"
-                    assert "-p" in cmd
-                    assert "-c" in cmd
-                    assert "-q" not in cmd  # interactive does not use -q
+                )
+                assert code == 0
+                cmd = mock_run.call_args[0][0]
+                assert cmd[0] == "opencode"
+                assert "run" not in cmd
+                assert "--dir" not in cmd
+                assert cmd[-1] == str(tmp_path)
+                assert "-p" not in cmd
+                assert "-c" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# Token guardrails (usage integration)
+# ---------------------------------------------------------------------------
+
+
+class TestTokenGuardrails:
+    async def test_usage_logging_on_headless(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        runner = OpenCodeRunner(project_path=tmp_path)
+
+        await runner.headless(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="researcher",
+                project_path=tmp_path,
+            )
+        )
+
+        usage_log = factory_dir / "opencode_usage.jsonl"
+        assert usage_log.exists()
+        entry = json.loads(usage_log.read_text().strip())
+        assert entry["role"] == "researcher"
+        assert entry["dry_run"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -481,3 +666,24 @@ class TestIsOpencodeDryRun:
     def test_yes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "yes")
         assert is_opencode_dry_run() is True
+
+
+# ---------------------------------------------------------------------------
+# OpenCodeRunner.__init__ (cycle_start resolution)
+# ---------------------------------------------------------------------------
+
+
+class TestOpenCodeRunnerInit:
+    def test_init_with_explicit_cycle_start(self) -> None:
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        runner = OpenCodeRunner(cycle_start=ts)
+        assert runner.cycle_start == ts
+
+    def test_init_with_project_path(self, tmp_path: Path) -> None:
+        with patch("factory.runners.opencode.OpenCodeRunner.__init__.__wrapped__", create=True):
+            runner = OpenCodeRunner(project_path=tmp_path)
+            assert runner.cycle_start is not None
+
+    def test_init_default(self) -> None:
+        runner = OpenCodeRunner()
+        assert runner.cycle_start is not None

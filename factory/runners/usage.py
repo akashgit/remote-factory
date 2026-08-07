@@ -1,4 +1,7 @@
-"""Bob usage tracking — log and ceiling enforcement."""
+"""Runner usage tracking — log and ceiling enforcement.
+
+Generalized for any runner (Bob, OpenCode, etc.) via runner_name parameter.
+"""
 
 from __future__ import annotations
 
@@ -12,8 +15,6 @@ import structlog
 
 log = structlog.get_logger()
 
-USAGE_LOG_NAME = "bob_usage.jsonl"
-
 
 class UsageEntry(TypedDict):
     timestamp: str
@@ -24,9 +25,9 @@ class UsageEntry(TypedDict):
     dry_run: bool
 
 
-def get_usage_log_path(project_path: Path) -> Path:
-    """Return the path to the bob usage log for a project."""
-    return project_path / ".factory" / USAGE_LOG_NAME
+def get_usage_log_path(project_path: Path, runner_name: str = "bob") -> Path:
+    """Return the path to the usage log for a project."""
+    return project_path / ".factory" / f"{runner_name}_usage.jsonl"
 
 
 def log_usage(
@@ -36,9 +37,10 @@ def log_usage(
     duration_seconds: float,
     exit_code: int,
     dry_run: bool = False,
+    runner_name: str = "bob",
 ) -> None:
-    """Append a usage entry to the project's bob_usage.jsonl."""
-    log_path = get_usage_log_path(project_path)
+    """Append a usage entry to the project's usage log."""
+    log_path = get_usage_log_path(project_path, runner_name)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     entry: UsageEntry = {
@@ -54,15 +56,19 @@ def log_usage(
         f.write(json.dumps(entry) + "\n")
 
 
-def count_cycle_invocations(project_path: Path, cycle_start: datetime | None = None) -> int:
-    """Count non-dry-run bob invocations in the current cycle.
+def count_cycle_invocations(
+    project_path: Path,
+    cycle_start: datetime | None = None,
+    runner_name: str = "bob",
+) -> int:
+    """Count non-dry-run invocations in the current cycle.
 
     If cycle_start is None, returns 0 (no cycle tracking without explicit start).
     """
     if cycle_start is None:
         return 0
 
-    log_path = get_usage_log_path(project_path)
+    log_path = get_usage_log_path(project_path, runner_name)
     if not log_path.exists():
         return 0
 
@@ -85,23 +91,28 @@ def count_cycle_invocations(project_path: Path, cycle_start: datetime | None = N
     return count
 
 
-def get_cycle_ceiling() -> int:
+def get_cycle_ceiling(runner_name: str = "bob") -> int:
     """Get the per-cycle invocation ceiling from env var."""
     from factory.user_config import resolve
 
-    return int(resolve("bob_max_invocations_per_cycle", env_var="FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", default="8") or "8")
+    upper = runner_name.upper()
+    env_var = f"FACTORY_{upper}_MAX_INVOCATIONS_PER_CYCLE"
+    config_key = f"{runner_name}_max_invocations_per_cycle"
+    return int(resolve(config_key, env_var=env_var, default="8") or "8")
 
 
 class CeilingExceededError(Exception):
-    """Raised when a bob invocation ceiling is exceeded."""
+    """Raised when a runner invocation ceiling is exceeded."""
 
-    def __init__(self, ceiling_name: str, current: int, limit: int, env_var: str) -> None:
+    def __init__(self, ceiling_name: str, current: int, limit: int, env_var: str, runner_name: str = "bob") -> None:
         self.ceiling_name = ceiling_name
         self.current = current
         self.limit = limit
         self.env_var = env_var
+        self.runner_name = runner_name
+        display = runner_name.capitalize()
         super().__init__(
-            f"Bob {ceiling_name} ceiling exceeded: {current}/{limit}. "
+            f"{display} {ceiling_name} ceiling exceeded: {current}/{limit}. "
             f"To increase, set {env_var}={limit + 5}"
         )
 
@@ -115,14 +126,14 @@ class CeilingWarning:
     limit: int
 
 
-def _emit_warning_event(project_path: Path, warning: CeilingWarning) -> None:
+def _emit_warning_event(project_path: Path, warning: CeilingWarning, runner_name: str = "bob") -> None:
     """Emit a warning event to .factory/events.jsonl."""
     try:
         from factory.events import emit_event
 
         emit_event(
             project_path,
-            "bob.ceiling_warning",
+            f"{runner_name}.ceiling_warning",
             data={
                 "ceiling": warning.ceiling_name,
                 "remaining": warning.remaining,
@@ -136,31 +147,33 @@ def _emit_warning_event(project_path: Path, warning: CeilingWarning) -> None:
 def check_ceilings(
     project_path: Path,
     cycle_start: datetime | None = None,
+    runner_name: str = "bob",
 ) -> CeilingWarning | None:
-    """Check per-cycle ceiling before a bob invocation.
+    """Check per-cycle ceiling before a runner invocation.
 
     Raises CeilingExceededError if the per-cycle ceiling is exceeded.
     Returns CeilingWarning if ≤2 invocations remain before the ceiling.
     """
-    # Check per-cycle ceiling
-    cycle_count = count_cycle_invocations(project_path, cycle_start)
-    cycle_limit = get_cycle_ceiling()
+    upper = runner_name.upper()
+    env_var = f"FACTORY_{upper}_MAX_INVOCATIONS_PER_CYCLE"
+
+    cycle_count = count_cycle_invocations(project_path, cycle_start, runner_name)
+    cycle_limit = get_cycle_ceiling(runner_name)
     if cycle_count >= cycle_limit:
         raise CeilingExceededError(
-            "per-cycle", cycle_count, cycle_limit, "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE"
+            "per-cycle", cycle_count, cycle_limit, env_var, runner_name
         )
 
-    # Check for approaching ceiling (≤2 remaining)
     remaining = cycle_limit - cycle_count
     if remaining <= 2:
         warning = CeilingWarning("per-cycle", remaining, cycle_limit)
         log.warning(
-            "bob_ceiling_approaching",
+            f"{runner_name}_ceiling_approaching",
             ceiling=warning.ceiling_name,
             remaining=warning.remaining,
             limit=warning.limit,
         )
-        _emit_warning_event(project_path, warning)
+        _emit_warning_event(project_path, warning, runner_name)
         return warning
 
     return None

@@ -445,9 +445,47 @@ def build_workflow() -> Workflow:
 def design_workflow() -> Workflow:
     """W₂: Design Mode — W₁ with user gate at strategy approval.
 
-    W₂ = W₁[gate_strategy ← GateNode(user)]
+    W₂ = W₁[gate_strategy ← GateNode(user), +gate_has_factory, +study]
+
+    Existing projects (HAS_FACTORY) route through study before research.
+    New/partial projects route through discover → study → fork_research.
     """
     wf = build_workflow()
+
+    # Conditional entry: existing projects get study, new projects skip it
+    wf.nodes["gate_has_factory"] = GateNode(
+        id="gate_has_factory",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            'from pathlib import Path; '
+            'exists = Path(\"{project_path}/.factory/config.json\").exists(); '
+            'print(\"PROCEED\" if exists else \"HALT\")'
+            '"'
+        ),
+        reads={".factory/config.json"},
+    )
+
+    wf.nodes["discover"] = FnNode(
+        id="discover",
+        command="factory discover {project_path}",
+        writes={".factory/eval_profile.json"},
+    )
+
+    wf.nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    wf.edges.extend([
+        Edge(source="gate_has_factory", target="study", condition=VerdictType.PROCEED),
+        Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+        Edge(source="discover", target="study"),
+        Edge(source="study", target="fork_research"),
+    ])
+
+    wf.start_node = "gate_has_factory"
 
     wf.nodes["gate_strategy"] = GateNode(
         id="gate_strategy",
@@ -458,7 +496,7 @@ def design_workflow() -> Workflow:
     wf.name = "design"
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE} and ctx.get(
+        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE, ProjectState.HAS_FACTORY} and ctx.get(
             "interactive", False
         )
 
@@ -4320,10 +4358,26 @@ def plan_workflow() -> Workflow:
             'set -e; '
             'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
             'if ! gh auth status >/dev/null 2>&1; then '
-            '  echo "SKIP: gh not authenticated"; exit 0; '
+            '  echo "SKIP: gh not authenticated — plan saved locally only"; exit 0; '
+            'fi; '
+            'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then '
+            '  echo "SKIP: not inside a git repository"; exit 0; '
             'fi; '
             'if ! git remote -v 2>/dev/null | grep -q .; then '
-            '  echo "SKIP: no git remote configured"; exit 0; '
+            '  SLUG=$(basename "{project_path}"); '
+            '  echo "Creating GitHub repository: $SLUG..."; '
+            '  if gh repo create "$SLUG" --public --source=. --remote=origin --push 2>&1; then '
+            '    REPO_URL=$(gh repo view "$SLUG" --json url -q .url 2>/dev/null || echo ""); '
+            '    echo "GitHub repository created: ${REPO_URL:-$SLUG}"; '
+            '  elif gh repo view "$SLUG" >/dev/null 2>&1; then '
+            '    echo "Repository $SLUG already exists on GitHub, linking as remote..."; '
+            '    REMOTE_URL=$(gh repo view "$SLUG" --json sshUrl -q .sshUrl 2>/dev/null || '
+            '      gh repo view "$SLUG" --json url -q .url); '
+            '    git remote add origin "$REMOTE_URL" 2>/dev/null || true; '
+            '    git push -u origin HEAD 2>/dev/null || true; '
+            '  else '
+            '    echo "SKIP: could not create GitHub repo — plan saved locally only"; exit 0; '
+            '  fi; '
             'fi; '
             'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
             'FOCUS="${FOCUS:-}"; '
@@ -4350,12 +4404,15 @@ def plan_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
         writes={".factory/strategy/github-issue-ref.txt"},
         notes=(
-            "Publishes the approved plan to a GitHub issue. Two cases: "
-            "if --focus is an issue number, posts as a comment on that issue and adds the plan label. "
-            "Otherwise, creates a new issue titled 'Plan: <focus>'. "
-            "Writes the issue number to github-issue-ref.txt for downstream use by seed_backlog. "
-            "Graceful degradation: if gh is not authenticated or no git remote exists, "
-            "writes 'none' and exits cleanly."
+            "Publishes the approved plan to a GitHub issue. If no git remote exists, "
+            "auto-creates a public GitHub repository via 'gh repo create --public "
+            "--source=. --remote=origin --push'. If the repo name already exists on "
+            "GitHub, links it as a remote instead. After ensuring a remote exists, "
+            "publishes the plan: if --focus is an issue number, posts as a comment; "
+            "otherwise creates a new issue titled 'Plan: <focus>'. "
+            "Writes the issue number to github-issue-ref.txt for downstream use by "
+            "seed_backlog. Graceful degradation: if gh is not authenticated, not in "
+            "a git repo, or repo creation fails, writes 'none' and exits cleanly."
         ),
     )
 
@@ -4442,6 +4499,7 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
     from factory.workflow.contributed.tomswe import workflow as tomswe_workflow
     from factory.workflow.contributed.salitrap import workflow as salitrap_workflow
+    from factory.workflow.contributed.swebenchifyhard import workflow as swebenchifyhard_workflow
 
     return {
         "build": build_workflow(),
@@ -4474,4 +4532,5 @@ def register_all() -> dict[str, Workflow]:
         "frontend-design-discover": frontend_design_discover_workflow(),
         "frontend-design-scan": frontend_design_scan_workflow(),
         "evolve": evolve_workflow(),
+        "swebenchifyhard": swebenchifyhard_workflow(),
     }

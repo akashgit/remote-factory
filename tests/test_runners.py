@@ -1483,17 +1483,15 @@ class TestCeilingAccumulationAcrossInvocations:
 class TestRunnerBgWarnings:
     """Tests for background warning messages from non-claude runners."""
 
-    async def test_opencode_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """OpenCodeRunner logs a warning when extras['background']=True."""
-        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
-
+    async def test_opencode_bg_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenCodeRunner returns error when extras['background']=True."""
         runner = OpenCodeRunner()
-        with patch("factory.runners.opencode.log") as mock_log:
-            await runner.headless(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-                role="researcher", extras={"background": True},
-            ))
-            mock_log.warning.assert_any_call("opencode_bg_not_supported", hint="--bg is a claude-only feature")
+        result = await runner.headless(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+            role="researcher", extras={"background": True},
+        ))
+        assert result.return_code == 1
+        assert "--bg is not supported" in result.stdout
 
     async def test_bob_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """BobRunner logs a warning when extras['background']=True."""
@@ -1526,7 +1524,7 @@ class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
     def test_interactive_run_passes_prompt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -p with the prompt to OpenCode."""
+        """interactive_run() writes prompt to AGENTS.md and passes task via --prompt."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1542,15 +1540,13 @@ class TestOpenCodeInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            assert "-p" in cmd
-            p_idx = cmd.index("-p")
-            full_prompt = cmd[p_idx + 1]
-            assert "You are the CEO." in full_prompt
-            assert "Start session" in full_prompt
-            assert "## Current Task" in full_prompt
+            assert "--prompt" in cmd
+            prompt_idx = cmd.index("--prompt")
+            assert cmd[prompt_idx + 1] == "Start session"
+            assert not (tmp_path / "AGENTS.md").exists()
 
     def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -c with the cwd."""
+        """interactive_run() passes --dir with the cwd."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1564,9 +1560,8 @@ class TestOpenCodeInteractive:
             ))
 
             cmd = mock_run.call_args[0][0]
-            assert "-c" in cmd
-            c_idx = cmd.index("-c")
-            assert cmd[c_idx + 1] == str(tmp_path)
+            assert "--dir" not in cmd
+            assert cmd[-1] == str(tmp_path)
 
     def test_interactive_run_dry_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -2098,22 +2093,24 @@ class TestOpenCodeBuildInteractiveCommand:
 
     def test_base_command_structure(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
             prompt="You are the CEO.",
             task="Start session",
             cwd=tmp_path,
         ))
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        p_idx = cmd.index("-p")
-        full_prompt = cmd[p_idx + 1]
-        assert "You are the CEO." in full_prompt
-        assert "Start session" in full_prompt
-        assert "-c" in cmd
-        c_idx = cmd.index("-c")
-        assert cmd[c_idx + 1] == str(tmp_path)
+        assert "--prompt" in cmd
+        prompt_idx = cmd.index("--prompt")
+        assert cmd[prompt_idx + 1] == "Start session"
+        assert "--dir" not in cmd
+        assert cmd[-1] == str(tmp_path)
         assert "-q" not in cmd
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are the CEO."
 
     def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
@@ -2132,13 +2129,14 @@ class TestOpenCodeBuildInteractiveCommand:
 
         assert "-q" not in cmd
 
-    def test_empty_temp_files(self, tmp_path: Path) -> None:
+    def test_temp_files_contains_agents_md(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
         _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
             prompt="Test", task="Test", cwd=tmp_path,
         ))
 
-        assert temp_files == []
+        assert len(temp_files) == 1
+        assert temp_files[0] == tmp_path / "AGENTS.md"
 
 
 class TestGetRunnerChoices:
