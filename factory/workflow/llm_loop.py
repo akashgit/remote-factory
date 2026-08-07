@@ -63,7 +63,11 @@ async def run_llm_loop(
     *,
     instance_context: str = "",
 ) -> str:
-    """Execute the LLM tool-use loop for an LLMNode. Returns final text output."""
+    """Execute the LLM tool-use loop for an LLMNode. Returns final text output.
+
+    Also writes a trace log to {cwd}/.factory/reviews/llm-trace.log for
+    SkillOpt trace collection.
+    """
     from factory.workflow.llm_tools import execute_tool
 
     client = _build_client(node)
@@ -82,6 +86,7 @@ async def run_llm_loop(
     ]
 
     text_parts: list[str] = []
+    trace_log: list[str] = []
 
     for turn in range(node.max_turns):
         log.debug("llm_loop.turn", turn=turn, node=node.id, model=model)
@@ -107,6 +112,7 @@ async def run_llm_loop(
         for block in response.content:
             if block.type == "text":
                 turn_text.append(block.text)
+                trace_log.append(f"[assistant] {block.text[:300]}")
                 for seq in node.stop_sequences:
                     if seq in block.text:
                         text_parts.extend(turn_text)
@@ -124,6 +130,7 @@ async def run_llm_loop(
                     })
                     continue
 
+                trace_log.append(f"[{block.name}] {str(block.input.get('command', ''))[:200]}")
                 result = await execute_tool(
                     block.name, block.input, tool_map[block.name], cwd,
                 )
@@ -142,4 +149,9 @@ async def run_llm_loop(
         messages.append({"role": "user", "content": tool_results})
 
     log.info("llm_loop.finished", node=node.id, turns=turn + 1)
+
+    for trace_dir in [Path("/logs/agent"), cwd / ".factory" / "reviews"]:
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        (trace_dir / "llm-trace.log").write_text("\n".join(trace_log))
+
     return "\n".join(text_parts)

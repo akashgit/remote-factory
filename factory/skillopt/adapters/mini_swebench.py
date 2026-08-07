@@ -216,34 +216,45 @@ def _find_trial_dir(jobs_dir: str, instance_id: str) -> Path | None:
 
 def _parse_trial_trajectory(trial_dir: Path) -> str:
     parts: list[str] = []
-    session_files = list(trial_dir.rglob("sessions/projects/*/??*-*-*-*-*.jsonl"))
-    if session_files:
-        session = max(session_files, key=lambda p: p.stat().st_mtime)
-        for line in session.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msg = entry.get("message", {})
-            if not isinstance(msg, dict):
-                continue
-            role = msg.get("role")
-            content = msg.get("content", [])
-            if role == "assistant" and isinstance(content, list):
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    if block.get("type") == "text":
-                        parts.append(f"[assistant] {block['text'][:300]}")
-                    elif block.get("type") == "tool_use":
-                        tool = block.get("name", "")
-                        inp = block.get("input", {})
-                        if tool == "Bash":
-                            parts.append(f"[bash] {str(inp.get('command', ''))[:200]}")
-                        else:
-                            parts.append(f"[{tool}] {str(inp)[:100]}")
+
+    llm_trace = trial_dir / "agent" / "factory-ceo.txt"
+    if not llm_trace.exists():
+        llm_trace = None
+        for candidate in trial_dir.rglob("llm-trace.log"):
+            llm_trace = candidate
+            break
+
+    if llm_trace and llm_trace.exists():
+        parts.append(llm_trace.read_text()[:10000])
+    else:
+        session_files = list(trial_dir.rglob("sessions/projects/*/??*-*-*-*-*.jsonl"))
+        if session_files:
+            session = max(session_files, key=lambda p: p.stat().st_mtime)
+            for line in session.read_text().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = entry.get("message", {})
+                if not isinstance(msg, dict):
+                    continue
+                role = msg.get("role")
+                content = msg.get("content", [])
+                if role == "assistant" and isinstance(content, list):
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") == "text":
+                            parts.append(f"[assistant] {block['text'][:300]}")
+                        elif block.get("type") == "tool_use":
+                            tool = block.get("name", "")
+                            inp = block.get("input", {})
+                            if tool == "Bash":
+                                parts.append(f"[bash] {str(inp.get('command', ''))[:200]}")
+                            else:
+                                parts.append(f"[{tool}] {str(inp)[:100]}")
 
     verifier_stdout = trial_dir / "verifier" / "test-stdout.txt"
     if verifier_stdout.exists():
