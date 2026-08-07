@@ -39,7 +39,7 @@ _INSTANCE_PROMPT = """\
 <pr_description>
 Consider the following PR description:
 
-Read the task instruction from the study output below.
+{instance_context}
 </pr_description>
 
 <instructions>
@@ -51,8 +51,8 @@ You're a software engineer interacting continuously with a computer by submittin
 You'll be helping implement necessary changes to meet requirements in the PR description.
 Your task is specifically to make changes to non-test files in the current directory in order \
 to fix the issue described in the PR description in a way that is general and consistent with the codebase.
-This is an interactive process where you will think and issue AT LEAST ONE command, see the result, \
-then think and issue your next command(s).
+<IMPORTANT>This is an interactive process where you will think and issue AT LEAST ONE command, see the result, \
+then think and issue your next command(s).</IMPORTANT>
 
 For each response:
 
@@ -96,6 +96,13 @@ parts of the codebase).
 - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or \
 write/load environment variables from files
 
+Example of a CORRECT response:
+<example_response>
+I need to understand the Builder-related code. Let me find relevant files and check the project structure.
+
+[Makes multiple bash tool calls: {"command": "ls -la"}, {"command": "find src -name '*.java' | grep -i builder"}, {"command": "cat README.md | head -50"}]
+</example_response>
+
 ## Environment Details
 
 - You have a full Linux shell environment
@@ -108,16 +115,32 @@ write/load environment variables from files
 ## Submission
 
 When you've completed your work, commit your changes directly on the current branch.
+Follow these steps IN ORDER, with SEPARATE commands:
 
 Step 1: Stage only the source files you modified
 Run `git add path/to/file1 path/to/file2` listing only the source files you modified.
-Do NOT stage test files, reproduction scripts, or configuration files.
 
-Step 2: Commit with a descriptive message
+<IMPORTANT>
+Only stage the specific source files you modified to fix the issue.
+Do not stage any of the following files:
+
+- test and reproduction files
+- helper scripts, tests, or tools that you created
+- installation, build, packaging, configuration, or setup scripts unless they are directly part of the issue you were fixing
+- binary or compiled files
+</IMPORTANT>
+
+Step 2: Verify your staged changes
+Run `git diff --cached` to confirm only your intended changes are staged.
+
+Step 3: Commit with a descriptive message
 Run `git commit -m "Fix: <brief description of the fix>"`.
 
-Do NOT create branches or PRs. Commit directly on the current branch.
-Do NOT leave temporary test or reproduction scripts in the repo — remove them before committing.
+<CRITICAL>
+- Do NOT create branches or PRs — commit directly on the current branch.
+- Clean up any temporary test or reproduction scripts before committing — do NOT leave them in the repo.
+- You CANNOT continue working after committing.
+</CRITICAL>
 </instructions>"""
 
 

@@ -522,9 +522,20 @@ class WorkflowExecutor:
         """Run an LLMNode via direct API tool-use loop."""
         from factory.workflow.llm_loop import run_llm_loop
 
-        context = self.node_context.get(node.id, "")
+        context_parts: list[str] = []
+        for read_path in sorted(node.reads):
+            full_path = self.project_path / read_path
+            if full_path.exists():
+                context_parts.append(full_path.read_text())
+        gate_context = self.node_context.get(node.id, "")
+        if gate_context:
+            context_parts.append(gate_context)
+
         output = await asyncio.wait_for(
-            run_llm_loop(node, self.project_path, instance_context=context),
+            run_llm_loop(
+                node, self.project_path,
+                instance_context="\n\n".join(context_parts),
+            ),
             timeout=float(node.timeout),
         )
 

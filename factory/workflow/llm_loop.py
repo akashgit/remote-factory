@@ -72,7 +72,9 @@ async def run_llm_loop(
     model = _resolve_model(node.model, node.provider)
 
     instance_prompt = node.instance_prompt
-    if instance_context:
+    if "{instance_context}" in instance_prompt and instance_context:
+        instance_prompt = instance_prompt.replace("{instance_context}", instance_context)
+    elif instance_context:
         instance_prompt = f"{instance_prompt}\n\n{instance_context}"
 
     messages: list[dict[str, Any]] = [
