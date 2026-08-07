@@ -147,7 +147,7 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "plan": {
         "description": (
-            "Plan-only workflow (triggered via --mode design --just-plan). "
+            "Plan-only workflow — truncated design workflow (triggered via --mode design --just-plan). "
             "Prior plan check + research + strategy + single approval gate, "
             "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
             "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "

@@ -63,7 +63,6 @@ __all__ = [
     "frontend_design_discover_workflow",
     "frontend_design_scan_workflow",
     "evolve_workflow",
-    "plan_workflow",
     "register_all",
     "_get_builtin_registry",
 ]
@@ -443,13 +442,17 @@ def build_workflow() -> Workflow:
 # ── W₂: Design Mode ─────────────────────────────────────────────
 
 
-def design_workflow() -> Workflow:
+def design_workflow(just_plan: bool = False) -> Workflow:
     """W₂: Design Mode — W₁ with user gate at strategy approval.
 
     W₂ = W₁[gate_strategy ← GateNode(user), +gate_has_factory, +study]
 
     Existing projects (HAS_FACTORY) route through study before research.
     New/partial projects route through discover → study → fork_research.
+
+    When just_plan=True, the workflow is truncated after strategy approval:
+    prior plan check → research → strategy → user gate → publish → seed backlog.
+    No builder, QA, or archivist nodes. Terminal mode.
     """
     wf = build_workflow()
 
@@ -495,6 +498,191 @@ def design_workflow() -> Workflow:
     )
 
     wf.name = "design"
+
+    if just_plan:
+        # ── Prior plan detection (prepend before fork_research) ──
+
+        wf.nodes["check_prior_plans"] = GateNode(
+            id="check_prior_plans",
+            evaluator_type="fn",
+            evaluator_command=(
+                ': > "{project_path}/.factory/strategy/prior-plans.md"; '
+                'if [ -n "$FOCUS" ]; then '
+                '  if gh auth status >/dev/null 2>&1 && git remote -v 2>/dev/null | grep -q .; then '
+                '    gh issue list --label plan --search "$FOCUS" --json number,title,url '
+                '      --jq ".[] | \\"#\\(.number) \\(.title) — \\(.url)\\"" '
+                '      > "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
+                '  fi; '
+                '  if [ ! -s "{project_path}/.factory/strategy/prior-plans.md" ]; then '
+                '    grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
+                '      >> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
+                '  fi; '
+                'fi; '
+                '[ -s "{project_path}/.factory/strategy/prior-plans.md" ]'
+            ),
+            gate_prompt=(
+                "Check GitHub issues with plan label and .factory/archive/ for prior plans "
+                "matching the focus keywords. Write matching results to .factory/strategy/prior-plans.md "
+                "(GitHub issue URLs or local file paths). "
+                "PROCEED if matches exist (file is non-empty), HALT if no matches (skip to fresh research)."
+            ),
+            writes={".factory/strategy/prior-plans.md"},
+        )
+
+        wf.nodes["gate_prior_plans"] = GateNode(
+            id="gate_prior_plans",
+            evaluator_type="user",
+            gate_prompt=(
+                "Prior plan(s) found matching this topic. "
+                "Present the matching plans from .factory/strategy/prior-plans.md to the user. "
+                "If one match: ask 'Found a prior plan on this topic. Continue this plan or start fresh?' "
+                "If multiple matches: list them and let user pick which to continue, or start fresh. "
+                "The selected prior plan (if any) will be passed as context to researchers and strategist."
+            ),
+            reads={".factory/strategy/prior-plans.md"},
+        )
+
+        # ── Plan publishing nodes (after gate_strategy) ──
+
+        wf.nodes["publish_github"] = FnNode(
+            id="publish_github",
+            command=(
+                'bash -c \''
+                'set -e; '
+                'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+                'if ! gh auth status >/dev/null 2>&1; then '
+                '  echo "SKIP: gh not authenticated — plan saved locally only"; exit 0; '
+                'fi; '
+                'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then '
+                '  echo "SKIP: not inside a git repository"; exit 0; '
+                'fi; '
+                'if ! git remote -v 2>/dev/null | grep -q .; then '
+                '  SLUG=$(basename "{project_path}"); '
+                '  echo "Creating GitHub repository: $SLUG..."; '
+                '  if gh repo create "$SLUG" --public --source=. --remote=origin --push 2>&1; then '
+                '    REPO_URL=$(gh repo view "$SLUG" --json url -q .url 2>/dev/null || echo ""); '
+                '    echo "GitHub repository created: ${REPO_URL:-$SLUG}"; '
+                '  elif gh repo view "$SLUG" >/dev/null 2>&1; then '
+                '    echo "Repository $SLUG already exists on GitHub, linking as remote..."; '
+                '    REMOTE_URL=$(gh repo view "$SLUG" --json sshUrl -q .sshUrl 2>/dev/null || '
+                '      gh repo view "$SLUG" --json url -q .url); '
+                '    git remote add origin "$REMOTE_URL" 2>/dev/null || true; '
+                '    git push -u origin HEAD 2>/dev/null || true; '
+                '  else '
+                '    echo "SKIP: could not create GitHub repo — plan saved locally only"; exit 0; '
+                '  fi; '
+                'fi; '
+                'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
+                'FOCUS="${FOCUS:-}"; '
+                'ISSUE_NUM=""; '
+                'if echo "$FOCUS" | grep -qE "^[0-9]+$"; then '
+                '  ISSUE_NUM="$FOCUS"; '
+                'elif echo "$FOCUS" | grep -qoE "#([0-9]+)"; then '
+                '  ISSUE_NUM=$(echo "$FOCUS" | grep -oE "[0-9]+" | tail -1); '
+                'fi; '
+                'if [ -n "$ISSUE_NUM" ]; then '
+                '  gh issue comment "$ISSUE_NUM" --body-file "{project_path}/.factory/strategy/current.md"; '
+                '  gh issue edit "$ISSUE_NUM" --add-label plan; '
+                '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+                '  echo "Plan posted to issue #$ISSUE_NUM"; '
+                'else '
+                '  TITLE="Plan: ${FOCUS:-project}"; '
+                '  ISSUE_URL=$(gh issue create --title "$TITLE" --body-file "{project_path}/.factory/strategy/current.md" --label plan); '
+                '  ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE "[0-9]+$"); '
+                '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
+                '  echo "Created plan issue: $ISSUE_URL"; '
+                'fi'
+                '\''
+            ),
+            reads={".factory/strategy/current.md"},
+            writes={".factory/strategy/github-issue-ref.txt"},
+            notes=(
+                "Publishes the approved plan to a GitHub issue. If no git remote exists, "
+                "auto-creates a public GitHub repository via 'gh repo create --public "
+                "--source=. --remote=origin --push'. If the repo name already exists on "
+                "GitHub, links it as a remote instead. After ensuring a remote exists, "
+                "publishes the plan: if --focus is an issue number, posts as a comment; "
+                "otherwise creates a new issue titled 'Plan: <focus>'. "
+                "Writes the issue number to github-issue-ref.txt for downstream use by "
+                "seed_backlog. Graceful degradation: if gh is not authenticated, not in "
+                "a git repo, or repo creation fails, writes 'none' and exits cleanly."
+            ),
+        )
+
+        wf.nodes["seed_backlog"] = FnNode(
+            id="seed_backlog",
+            command=(
+                'python3 -c "'
+                "import re, os; "
+                "project = '{project_path}'; "
+                "plan = open(f'{project}/.factory/strategy/current.md').read(); "
+                "ref_file = f'{project}/.factory/strategy/github-issue-ref.txt'; "
+                "issue_num = open(ref_file).read().strip() if os.path.exists(ref_file) else 'none'; "
+                "ref = f'(see #{issue_num})' if issue_num != 'none' else '(see .factory/strategy/current.md)'; "
+                "phases = re.findall(r'### Phase \\d+:.*', plan); "
+                "backlog_path = f'{project}/.factory/strategy/backlog.md'; "
+                "items = '\\n'.join(f'- [ ] {p[4:]} {ref}' for p in phases); "
+                "open(backlog_path, 'a').write('\\n' + items + '\\n') if items else None; "
+                "print(f'Seeded {len(phases)} backlog items from plan')"
+                '"'
+            ),
+            reads={".factory/strategy/current.md", ".factory/strategy/github-issue-ref.txt"},
+            writes={".factory/strategy/backlog.md"},
+            notes=(
+                "Extracts phase headers from the approved plan at current.md and appends them "
+                "as backlog items to backlog.md. References GitHub issue number if publish_github "
+                "ran (reads github-issue-ref.txt), otherwise references current.md. "
+                "Example: '- [ ] Phase 1: Set up auth middleware (see #42)'"
+            ),
+        )
+
+        # ── Remove build-phase nodes that are unreachable in plan mode ──
+        build_phase_nodes = {
+            "archivist_plan", "builder", "gate_build",
+            "health_checker", "code_reviewer", "gate_review",
+            "adversarial_tester", "gate_qa", "gate_doc_freshness",
+            "gate_precheck", "archivist_build", "spec_generate",
+        }
+        for node_id in build_phase_nodes:
+            wf.nodes.pop(node_id, None)
+
+        # ── Rebuild edges for plan-only path ──
+        wf.edges = [
+            # Prior plan detection
+            Edge(source="check_prior_plans", target="gate_prior_plans", condition=VerdictType.PROCEED),
+            Edge(source="check_prior_plans", target="fork_research", condition=VerdictType.HALT),
+            Edge(source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED),
+            # Fork to researchers
+            Edge(source="fork_research", target="researcher_similar"),
+            Edge(source="fork_research", target="researcher_techstack"),
+            Edge(source="fork_research", target="researcher_pitfalls"),
+            # Researchers to join
+            Edge(source="researcher_similar", target="join_research"),
+            Edge(source="researcher_techstack", target="join_research"),
+            Edge(source="researcher_pitfalls", target="join_research"),
+            # Join → research gate
+            Edge(source="join_research", target="gate_research"),
+            # Research gate → strategist (proceed) or back to fork (reloop)
+            Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+            Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+            # Strategist → user gate
+            Edge(source="strategist", target="gate_strategy"),
+            # Strategy gate → publish (proceed) or strategist (reloop)
+            Edge(source="gate_strategy", target="publish_github", condition=VerdictType.PROCEED),
+            Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+            # Publish → seed backlog
+            Edge(source="publish_github", target="seed_backlog"),
+        ]
+
+        wf.name = "plan"
+        wf.start_node = "check_prior_plans"
+        wf.terminal = True
+
+        def plan_trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+            return ctx.get("just_plan") is True
+
+        wf.trigger = plan_trigger
+        return wf
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE, ProjectState.HAS_FACTORY} and ctx.get(
@@ -3794,7 +3982,7 @@ def _get_builtin_registry() -> dict[str, Any]:
         "frontend-design-discover": frontend_design_discover_workflow,
         "frontend-design-scan": frontend_design_scan_workflow,
         "parallel-improve": parallel_improve_workflow,
-        "plan": plan_workflow,
+        "plan": lambda: design_workflow(just_plan=True),
         "evolve": evolve_workflow,
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
@@ -4185,366 +4373,6 @@ def founder_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
-        trigger=trigger,
-        terminal=True,
-    )
-
-
-# ── W₁₅: Plan Mode ───────────────────────────────────────────────
-
-
-def plan_workflow() -> Workflow:
-    """W₁₅: Plan Mode — prior plan check + research + strategy + approve + publish. Terminal.
-
-    CheckPriorPlans → [matches?] → GatePriorPlans(user) → Fork(3 researchers) →
-    Join → CEO gate → Strategist → GateKeepPlan(user) →
-      Keep (PROCEED):    PublishGitHub → SeedBacklog → done
-      Refine (RELOOP):   → Strategist
-      Discard (HALT):    done
-
-    Planning-only mode. Produces a phased plan at .factory/strategy/current.md.
-    On approval, automatically publishes to GitHub and seeds backlog.
-    Does NOT chain to build/improve — user must explicitly invoke those modes
-    to execute the plan.
-    """
-    nodes: dict[str, Any] = {}
-    edges: list[Edge] = []
-
-    # ── Prior plan detection ──────────────────────────────────
-
-    nodes["check_prior_plans"] = GateNode(
-        id="check_prior_plans",
-        evaluator_type="fn",
-        evaluator_command=(
-            ': > "{project_path}/.factory/strategy/prior-plans.md"; '
-            'if [ -n "$FOCUS" ]; then '
-            '  if gh auth status >/dev/null 2>&1 && git remote -v 2>/dev/null | grep -q .; then '
-            '    gh issue list --label plan --search "$FOCUS" --json number,title,url '
-            '      --jq ".[] | \\"#\\(.number) \\(.title) — \\(.url)\\"" '
-            '      > "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
-            '  fi; '
-            '  if [ ! -s "{project_path}/.factory/strategy/prior-plans.md" ]; then '
-            '    grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
-            '      >> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
-            '  fi; '
-            'fi; '
-            '[ -s "{project_path}/.factory/strategy/prior-plans.md" ]'
-        ),
-        gate_prompt=(
-            "Check GitHub issues with plan label and .factory/archive/ for prior plans "
-            "matching the focus keywords. Write matching results to .factory/strategy/prior-plans.md "
-            "(GitHub issue URLs or local file paths). "
-            "PROCEED if matches exist (file is non-empty), HALT if no matches (skip to fresh research)."
-        ),
-        writes={".factory/strategy/prior-plans.md"},
-    )
-
-    nodes["gate_prior_plans"] = GateNode(
-        id="gate_prior_plans",
-        evaluator_type="user",
-        gate_prompt=(
-            "Prior plan(s) found matching this topic. "
-            "Present the matching plans from .factory/strategy/prior-plans.md to the user. "
-            "If one match: ask 'Found a prior plan on this topic. Continue this plan or start fresh?' "
-            "If multiple matches: list them and let user pick which to continue, or start fresh. "
-            "The selected prior plan (if any) will be passed as context to researchers and strategist."
-        ),
-        reads={".factory/strategy/prior-plans.md"},
-    )
-
-    # ── Research fork ─────────────────────────────────────────
-
-    nodes["fork_research"] = ForkNode(
-        id="fork_research",
-        targets=["researcher_domain", "researcher_practices", "researcher_constraints"],
-    )
-
-    nodes["researcher_domain"] = AgentNode(
-        id="researcher_domain",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Domain research. "
-            "Research the domain for this project. Investigate similar projects, "
-            "existing solutions, the state of the art, and market landscape. "
-            "If this is an existing project, study the codebase structure, "
-            "architecture, eval scores, experiment history, and .factory/archive/. "
-            "If .factory/strategy/backlog.md exists, read it for context on pending work. "
-            "If prior plans exist in .factory/archive/ on this topic "
-            "(listed in .factory/strategy/prior-plans.md if non-empty), "
-            "read and build on them rather than starting fresh. "
-            "Write findings to .factory/strategy/research-domain.md covering: "
-            "domain landscape, similar projects (with links), gaps and opportunities."
-        ),
-        reads={".factory/strategy/prior-plans.md"},
-        writes={".factory/strategy/research-domain.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-domain.md",
-                must_exist=True,
-                min_size=50,
-            )
-        ],
-    )
-
-    nodes["researcher_practices"] = AgentNode(
-        id="researcher_practices",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Best practices research. "
-            "Research best practices, design patterns, and proven approaches "
-            "for this type of project. Look for architecture patterns, "
-            "framework recommendations, and lessons from production systems. "
-            "Check .factory/archive/ for prior knowledge. "
-            "If prior plans exist in .factory/archive/ on this topic "
-            "(listed in .factory/strategy/prior-plans.md if non-empty), "
-            "read and build on them rather than starting fresh. "
-            "Write findings to .factory/strategy/research-practices.md covering: "
-            "recommended approaches, anti-patterns to avoid, proven patterns."
-        ),
-        reads={".factory/strategy/prior-plans.md"},
-        writes={".factory/strategy/research-practices.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-practices.md",
-                must_exist=True,
-                min_size=50,
-            )
-        ],
-    )
-
-    nodes["researcher_constraints"] = AgentNode(
-        id="researcher_constraints",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Constraints and risks research. "
-            "Research technical constraints, risks, and feasibility for this project. "
-            "Identify integration points, dependencies, scalability concerns, "
-            "security considerations, and potential blockers. "
-            "If this is an existing project, review current eval scores and "
-            "identify weakest dimensions. "
-            "If prior plans exist in .factory/archive/ on this topic "
-            "(listed in .factory/strategy/prior-plans.md if non-empty), "
-            "read and build on them rather than starting fresh. "
-            "Write findings to .factory/strategy/research-constraints.md covering: "
-            "technical constraints, risks, dependencies, feasibility assessment."
-        ),
-        reads={".factory/strategy/prior-plans.md"},
-        writes={".factory/strategy/research-constraints.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-constraints.md",
-                must_exist=True,
-                min_size=50,
-            )
-        ],
-    )
-
-    nodes["join_research"] = JoinNode(
-        id="join_research",
-        sources=["researcher_domain", "researcher_practices", "researcher_constraints"],
-        reads={
-            ".factory/strategy/research-domain.md",
-            ".factory/strategy/research-practices.md",
-            ".factory/strategy/research-constraints.md",
-        },
-        writes={".factory/strategy/research-combined.md"},
-    )
-
-    nodes["gate_research"] = GateNode(
-        id="gate_research",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "Is the research comprehensive? Does it cover the domain landscape, "
-            "best practices, and technical constraints adequately? "
-            "Check for gaps in coverage. No calendar-time estimates allowed. "
-            "REDIRECT if any research dimension is thin or missing."
-        ),
-        reads={".factory/strategy/research-combined.md"},
-    )
-
-    # ── Strategist ────────────────────────────────────────────
-
-    nodes["strategist"] = AgentNode(
-        id="strategist",
-        role=AgentRole.STRATEGIST,
-        prompt_template=(
-            "Synthesize a phased implementation plan from research findings. "
-            "Read ALL tagged research files at .factory/strategy/research-*.md. "
-            "If .factory/strategy/backlog.md exists, read it for context on pending work. "
-            "If prior plans exist in .factory/archive/ on this topic "
-            "(listed in .factory/strategy/prior-plans.md if non-empty), "
-            "build on them rather than starting fresh — incorporate prior decisions, "
-            "learnings, and partially-completed work into the new plan. "
-            "Produce a structured plan with phased approach, dependencies, "
-            "success criteria, and open questions. "
-            "Each phase must be scoped to one PR's worth of work. "
-            "Include at least one growth-focused phase. "
-            "Write the plan to .factory/strategy/current.md."
-        ),
-        reads={
-            ".factory/strategy/research-combined.md",
-            ".factory/strategy/prior-plans.md",
-        },
-        writes={".factory/strategy/current.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/current.md",
-                must_exist=True,
-                min_size=200,
-            )
-        ],
-    )
-
-    # ── Single user approval gate ─────────────────────────────
-
-    nodes["gate_keep_plan"] = GateNode(
-        id="gate_keep_plan",
-        evaluator_type="user",
-        gate_prompt=(
-            "Present the plan to the user. Ask: 'Keep this plan? "
-            "Approving will publish it as a comment on the GitHub issue "
-            "and seed the backlog with plan phases.'\n"
-            "Map: yes → PROCEED, feedback → RELOOP (re-run Strategist), no → HALT"
-        ),
-        reads={".factory/strategy/current.md"},
-    )
-
-    # ── GitHub publishing ─────────────────────────────────────
-
-    nodes["publish_github"] = FnNode(
-        id="publish_github",
-        command=(
-            'bash -c \''
-            'set -e; '
-            'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
-            'if ! gh auth status >/dev/null 2>&1; then '
-            '  echo "SKIP: gh not authenticated — plan saved locally only"; exit 0; '
-            'fi; '
-            'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then '
-            '  echo "SKIP: not inside a git repository"; exit 0; '
-            'fi; '
-            'if ! git remote -v 2>/dev/null | grep -q .; then '
-            '  SLUG=$(basename "{project_path}"); '
-            '  echo "Creating GitHub repository: $SLUG..."; '
-            '  if gh repo create "$SLUG" --public --source=. --remote=origin --push 2>&1; then '
-            '    REPO_URL=$(gh repo view "$SLUG" --json url -q .url 2>/dev/null || echo ""); '
-            '    echo "GitHub repository created: ${REPO_URL:-$SLUG}"; '
-            '  elif gh repo view "$SLUG" >/dev/null 2>&1; then '
-            '    echo "Repository $SLUG already exists on GitHub, linking as remote..."; '
-            '    REMOTE_URL=$(gh repo view "$SLUG" --json sshUrl -q .sshUrl 2>/dev/null || '
-            '      gh repo view "$SLUG" --json url -q .url); '
-            '    git remote add origin "$REMOTE_URL" 2>/dev/null || true; '
-            '    git push -u origin HEAD 2>/dev/null || true; '
-            '  else '
-            '    echo "SKIP: could not create GitHub repo — plan saved locally only"; exit 0; '
-            '  fi; '
-            'fi; '
-            'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
-            'FOCUS="${FOCUS:-}"; '
-            'ISSUE_NUM=""; '
-            'if echo "$FOCUS" | grep -qE "^[0-9]+$"; then '
-            '  ISSUE_NUM="$FOCUS"; '
-            'elif echo "$FOCUS" | grep -qoE "#([0-9]+)"; then '
-            '  ISSUE_NUM=$(echo "$FOCUS" | grep -oE "[0-9]+" | tail -1); '
-            'fi; '
-            'if [ -n "$ISSUE_NUM" ]; then '
-            '  gh issue comment "$ISSUE_NUM" --body-file "{project_path}/.factory/strategy/current.md"; '
-            '  gh issue edit "$ISSUE_NUM" --add-label plan; '
-            '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
-            '  echo "Plan posted to issue #$ISSUE_NUM"; '
-            'else '
-            '  TITLE="Plan: ${FOCUS:-project}"; '
-            '  ISSUE_URL=$(gh issue create --title "$TITLE" --body-file "{project_path}/.factory/strategy/current.md" --label plan); '
-            '  ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE "[0-9]+$"); '
-            '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
-            '  echo "Created plan issue: $ISSUE_URL"; '
-            'fi'
-            '\''
-        ),
-        reads={".factory/strategy/current.md"},
-        writes={".factory/strategy/github-issue-ref.txt"},
-        notes=(
-            "Publishes the approved plan to a GitHub issue. If no git remote exists, "
-            "auto-creates a public GitHub repository via 'gh repo create --public "
-            "--source=. --remote=origin --push'. If the repo name already exists on "
-            "GitHub, links it as a remote instead. After ensuring a remote exists, "
-            "publishes the plan: if --focus is an issue number, posts as a comment; "
-            "otherwise creates a new issue titled 'Plan: <focus>'. "
-            "Writes the issue number to github-issue-ref.txt for downstream use by "
-            "seed_backlog. Graceful degradation: if gh is not authenticated, not in "
-            "a git repo, or repo creation fails, writes 'none' and exits cleanly."
-        ),
-    )
-
-    # ── Backlog seeding ───────────────────────────────────────
-
-    nodes["seed_backlog"] = FnNode(
-        id="seed_backlog",
-        command=(
-            'python3 -c "'
-            "import re, os; "
-            "project = '{project_path}'; "
-            "plan = open(f'{project}/.factory/strategy/current.md').read(); "
-            "ref_file = f'{project}/.factory/strategy/github-issue-ref.txt'; "
-            "issue_num = open(ref_file).read().strip() if os.path.exists(ref_file) else 'none'; "
-            "ref = f'(see #{issue_num})' if issue_num != 'none' else '(see .factory/strategy/current.md)'; "
-            "phases = re.findall(r'### Phase \\d+:.*', plan); "
-            "backlog_path = f'{project}/.factory/strategy/backlog.md'; "
-            "items = '\\n'.join(f'- [ ] {p[4:]} {ref}' for p in phases); "
-            "open(backlog_path, 'a').write('\\n' + items + '\\n') if items else None; "
-            "print(f'Seeded {len(phases)} backlog items from plan')"
-            '"'
-        ),
-        reads={".factory/strategy/current.md", ".factory/strategy/github-issue-ref.txt"},
-        writes={".factory/strategy/backlog.md"},
-        notes=(
-            "Extracts phase headers from the approved plan at current.md and appends them "
-            "as backlog items to backlog.md. References GitHub issue number if publish_github "
-            "ran (reads github-issue-ref.txt), otherwise references current.md. "
-            "Example: '- [ ] Phase 1: Set up auth middleware (see #42)'"
-        ),
-    )
-
-    # ── Edges ─────────────────────────────────────────────────
-
-    edges = [
-        # Prior plan detection
-        Edge(source="check_prior_plans", target="gate_prior_plans", condition=VerdictType.PROCEED),
-        Edge(source="check_prior_plans", target="fork_research", condition=VerdictType.HALT),
-        # User chose (continue or fresh) → research
-        Edge(source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED),
-        # Fork to researchers
-        Edge(source="fork_research", target="researcher_domain"),
-        Edge(source="fork_research", target="researcher_practices"),
-        Edge(source="fork_research", target="researcher_constraints"),
-        # Researchers to join
-        Edge(source="researcher_domain", target="join_research"),
-        Edge(source="researcher_practices", target="join_research"),
-        Edge(source="researcher_constraints", target="join_research"),
-        # Join → research gate
-        Edge(source="join_research", target="gate_research"),
-        # Research gate → strategist (proceed) or back to fork (reloop)
-        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
-        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
-        # Strategist → single user gate (keep, refine, or discard?)
-        Edge(source="strategist", target="gate_keep_plan"),
-        # Keep gate → auto-publish → auto-seed (no user prompts between)
-        Edge(source="gate_keep_plan", target="publish_github", condition=VerdictType.PROCEED),
-        # Keep gate → refine (re-run strategist with feedback)
-        Edge(source="gate_keep_plan", target="strategist", condition=VerdictType.RELOOP),
-        # Publish → seed backlog (automatic, no gate)
-        Edge(source="publish_github", target="seed_backlog"),
-    ]
-
-    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return ctx.get("just_plan") is True
-
-    return Workflow(
-        name="plan",
-        nodes=nodes,
-        edges=edges,
-        start_node="check_prior_plans",
         trigger=trigger,
         terminal=True,
     )

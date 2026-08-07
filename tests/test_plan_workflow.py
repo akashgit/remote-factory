@@ -1,4 +1,4 @@
-"""Tests for plan_workflow — W₁₅: Plan Mode."""
+"""Tests for plan workflow — design_workflow(just_plan=True)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from factory.workflow.definitions import plan_workflow
+from factory.workflow.definitions import design_workflow
 from factory.workflow.primitives import (
     AgentNode,
     FnNode,
@@ -17,7 +17,7 @@ from factory.workflow.primitives import (
 
 @pytest.fixture()
 def wf():
-    return plan_workflow()
+    return design_workflow(just_plan=True)
 
 
 # ── Structure tests ──────────────────────────────────────────────
@@ -50,18 +50,18 @@ def test_plan_workflow_edge_coverage(wf):
         ("check_prior_plans", "gate_prior_plans", VerdictType.PROCEED),
         ("check_prior_plans", "fork_research", VerdictType.HALT),
         ("gate_prior_plans", "fork_research", VerdictType.PROCEED),
-        ("fork_research", "researcher_domain", None),
-        ("fork_research", "researcher_practices", None),
-        ("fork_research", "researcher_constraints", None),
-        ("researcher_domain", "join_research", None),
-        ("researcher_practices", "join_research", None),
-        ("researcher_constraints", "join_research", None),
+        ("fork_research", "researcher_similar", None),
+        ("fork_research", "researcher_techstack", None),
+        ("fork_research", "researcher_pitfalls", None),
+        ("researcher_similar", "join_research", None),
+        ("researcher_techstack", "join_research", None),
+        ("researcher_pitfalls", "join_research", None),
         ("join_research", "gate_research", None),
         ("gate_research", "strategist", VerdictType.PROCEED),
         ("gate_research", "fork_research", VerdictType.RELOOP),
-        ("strategist", "gate_keep_plan", None),
-        ("gate_keep_plan", "publish_github", VerdictType.PROCEED),
-        ("gate_keep_plan", "strategist", VerdictType.RELOOP),
+        ("strategist", "gate_strategy", None),
+        ("gate_strategy", "publish_github", VerdictType.PROCEED),
+        ("gate_strategy", "strategist", VerdictType.RELOOP),
         ("publish_github", "seed_backlog", None),
     ]
     assert edge_tuples == expected
@@ -78,13 +78,11 @@ def test_plan_publish_github_node_exists(wf):
     assert ".factory/strategy/github-issue-ref.txt" in node.writes
 
 
-def test_plan_single_gate_prompt_includes_github_warning(wf):
-    """Verify gate_keep_plan prompt warns about GitHub publishing."""
-    node = wf.nodes["gate_keep_plan"]
+def test_plan_strategy_gate_is_user(wf):
+    """Verify gate_strategy is a user gate in plan mode."""
+    node = wf.nodes["gate_strategy"]
     assert isinstance(node, GateNode)
     assert node.evaluator_type == "user"
-    assert "GitHub issue" in node.gate_prompt
-    assert "backlog" in node.gate_prompt
 
 
 def test_plan_no_archivist_node(wf):
@@ -94,11 +92,11 @@ def test_plan_no_archivist_node(wf):
 
 def test_plan_publish_directly_wired_after_gate(wf):
     """Verify publish_github and seed_backlog are directly wired with no gates between."""
-    edges_from_keep = [
-        (e.target, e.condition) for e in wf.edges if e.source == "gate_keep_plan"
+    edges_from_strategy = [
+        (e.target, e.condition) for e in wf.edges if e.source == "gate_strategy"
     ]
-    assert ("publish_github", VerdictType.PROCEED) in edges_from_keep
-    assert ("strategist", VerdictType.RELOOP) in edges_from_keep
+    assert ("publish_github", VerdictType.PROCEED) in edges_from_strategy
+    assert ("strategist", VerdictType.RELOOP) in edges_from_strategy
 
     edges_from_publish = [
         (e.target, e.condition) for e in wf.edges if e.source == "publish_github"
@@ -211,4 +209,29 @@ def test_plan_skill_export(wf):
     assert "workflow-plan" in skill
     assert "Publish" in skill
     assert "archivist" not in skill.lower() or "archivist_plan" not in skill
-    assert "single" in skill.lower() or "Single" in skill
+
+
+def test_plan_no_build_phase_nodes(wf):
+    """Verify all build-phase nodes are removed in plan mode."""
+    build_nodes = {
+        "builder", "gate_build", "health_checker", "code_reviewer",
+        "gate_review", "adversarial_tester", "gate_qa",
+        "gate_doc_freshness", "gate_precheck", "archivist_build",
+        "spec_generate",
+    }
+    for node_id in build_nodes:
+        assert node_id not in wf.nodes, f"{node_id} should not be in plan workflow"
+
+
+def test_design_without_just_plan_unchanged():
+    """Verify design_workflow() without just_plan is identical to before."""
+    wf = design_workflow()
+    assert wf.name == "design"
+    assert wf.terminal is False
+    assert wf.start_node == "fork_research"
+    assert "builder" in wf.nodes
+    assert "gate_build" in wf.nodes
+    assert "health_checker" in wf.nodes
+    gate = wf.nodes["gate_strategy"]
+    assert isinstance(gate, GateNode)
+    assert gate.evaluator_type == "user"
