@@ -16,9 +16,13 @@ log = structlog.get_logger()
 def _build_client(node: LLMNode) -> Any:
     if node.provider == "vertex":
         from anthropic import AnthropicVertex
+        region = os.environ.get("CLOUD_ML_REGION", "us-east5")
+        if region != "global":
+            region = "global"
+            log.info("llm_loop.vertex_region_override", region=region)
         return AnthropicVertex(
             project_id=os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", ""),
-            region=os.environ.get("CLOUD_ML_REGION", "global"),
+            region=region,
         )
     from anthropic import Anthropic
     return Anthropic()
