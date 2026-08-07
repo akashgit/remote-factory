@@ -511,10 +511,17 @@ def _gate_to_checkpoint(
         if proceed_edges:
             proceed_target = proceed_edges[0].target
             lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
-            lines.append(
-                f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
-                "Skip to the next CEO review gate or finalize as error."
-            )
+            if halt_edges:
+                halt_target = halt_edges[0].target
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → "
+                    f"continue to `{halt_target}` instead."
+                )
+            else:
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
+                    "Skip to the next CEO review gate or finalize as error."
+                )
         elif halt_edges:
             halt_target = halt_edges[0].target
             lines.append(
