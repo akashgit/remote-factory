@@ -11,6 +11,8 @@ import csv
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+from typing import Any
+
 from factory.workflow.primitives import AgentNode, Workflow
 
 
@@ -89,10 +91,8 @@ class CycleRecord:
 
     steps: list[AgentStep] = field(default_factory=list)
     eval_artifacts: list[str] = field(default_factory=list)
+    item_results: list[dict[str, Any]] = field(default_factory=list)
     node_trace: dict[str, NodeTrace] = field(default_factory=dict)
-
-    frozen_nodes: list[str] = field(default_factory=list)
-    mutable_node_ids: list[str] = field(default_factory=list)
 
 
 class CycleAnalyzer:
