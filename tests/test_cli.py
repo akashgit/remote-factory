@@ -3166,6 +3166,11 @@ class TestJustPlanFlag:
         assert "## Plan Loop (Just Plan)" in task
         assert "just_plan: true" in task
         assert "Terminal mode" in task
+        assert "### Post-Approval: GitHub Publish (MANDATORY)" in task
+        assert "gh label create plan" in task
+        assert "gh issue comment" in task
+        assert "gh issue create" in task
+        assert "Do NOT skip this step" in task
 
     def test_task_builder_no_just_plan_directive(self, tmp_path):
         """_build_ceo_task omits the plan directive when just_plan=False."""
