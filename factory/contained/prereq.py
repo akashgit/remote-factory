@@ -17,6 +17,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from factory.contained import style
 from factory.contained.credentials import resolve_credentials
 from factory.podman import (
     build_image_exists_argv,
@@ -123,6 +124,30 @@ def _inference_check() -> Check:
 SETUP_CAN_FIX = frozenset({"container_engine", "runtime_image"})
 
 
+def format_check(check: Check) -> str:
+    """One check's result, as it is printed.
+
+    Separate from `render_checks` so a caller can print each result *as it lands*. Some of these
+    take minutes — the in-cluster inference probe launches a pod and waits on it — and a run that
+    prints nothing until the last one finishes is indistinguishable from a hang.
+    """
+    mark = style.ok_mark() if check.ok else style.fail_mark()
+    lines = [f"{mark} {style.bold(check.name)}: {check.detail}"]
+    if not check.ok and check.fix:
+        lines.append(f"       {style.paint('fix:', 'yellow')} {check.fix}")
+    return "\n".join(lines)
+
+
+def summary_line(
+    checks: list[Check],
+    *,
+    ready_command: str | None = None,
+    setup_command: str | None = "factory contained setup",
+) -> str:
+    """The one-line verdict that follows the results. See `render_checks` for the whole block."""
+    return _summary(checks, ready_command=ready_command, setup_command=setup_command)
+
+
 def render_checks(
     checks: list[Check],
     *,
@@ -134,27 +159,32 @@ def render_checks(
     `setup_command` is None when the caller *is* setup: telling someone to run the command that just
     failed is worse than saying nothing.
     """
-    lines = []
-    for check in checks:
-        status = "ok  " if check.ok else "FAIL"
-        lines.append(f"[{status}] {check.name}: {check.detail}")
-        if not check.ok and check.fix:
-            lines.append(f"         fix: {check.fix}")
-    failures = [c for c in checks if not c.ok]
+    lines = [format_check(check) for check in checks]
     lines.append("")
+    lines.append(_summary(checks, ready_command=ready_command, setup_command=setup_command))
+    return "\n".join(lines)
+
+
+def _summary(
+    checks: list[Check], *, ready_command: str | None, setup_command: str | None
+) -> str:
+    lines: list[str] = []
+    failures = [c for c in checks if not c.ok]
     if not failures:
         ready = ready_command or "factory contained -- ceo <path>"
-        lines.append(f"All checks passed. Start a run with `{ready}`.")
+        lines.append(
+            style.paint("All checks passed.", "bold", "green")
+            + f" Start a run with `{style.bold(ready)}`."
+        )
         return "\n".join(lines)
 
+    count = style.paint(f"{len(failures)} check(s) failed.", "bold", "red")
     repairable = [c.name for c in failures if c.name in SETUP_CAN_FIX]
     if setup_command and repairable:
         lines.append(
-            f"{len(failures)} check(s) failed. `{setup_command}` can fix "
+            f"{count} `{style.bold(setup_command)}` can fix "
             f"{', '.join(repairable)}; the rest need the fix shown above each one."
         )
     else:
-        lines.append(
-            f"{len(failures)} check(s) failed. Each one shows the command that fixes it above."
-        )
+        lines.append(f"{count} Each one shows the command that fixes it above.")
     return "\n".join(lines)

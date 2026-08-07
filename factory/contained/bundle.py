@@ -15,11 +15,40 @@ rather than a value the user is expected to find and edit in the output.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from factory.contained.errors import ContainedError
-from factory.contained.k8s import SECRET_NAME, SERVICE_ACCOUNT, render_pvc
+from factory.contained.k8s import PVC_NAME, SECRET_NAME, SERVICE_ACCOUNT, render_pvc
 
 ROLE_NAME = "factory-runtime"
 SCC_ROLEBINDING = "factory-scc"
+
+
+@dataclass(frozen=True)
+class BundleObject:
+    """One object in the bundle, addressable on its own.
+
+    The bundle exists as a list before it exists as a blob. `setup` walks it object by object —
+    checking each against the cluster and explaining it before asking — and a single rendered
+    string cannot be walked. `render_bundle` joins these back together for `factory contained
+    bundle`, so the two can never describe different sets of objects.
+
+    `purpose` is written for someone deciding whether to allow this in *their* namespace, which is
+    a different question from what the YAML says. The YAML already says a Role has these verbs; the
+    purpose says why a run needs them.
+    """
+
+    kind: str
+    """The lowercase form `oc get` accepts — `serviceaccount`, `rolebinding`, `pvc`."""
+
+    name: str
+    purpose: str
+    manifest: str
+    """This object's YAML alone, with no leading separator."""
+
+    @property
+    def ref(self) -> str:
+        return f"{self.kind}/{self.name}"
 
 # The verbs the *pod's* ServiceAccount needs, and no more.
 #
@@ -59,20 +88,8 @@ DIVISION_RULES = """\
 """
 
 
-def render_bundle(
-    *,
-    namespace: str | None = None,
-    storage_class: str | None = None,
-    division: bool = False,
-    image: str = "",
-    storage_size: str = "10Gi",
-) -> str:
-    """Emit the bundle for one namespace.
-
-    The Secret is deliberately *not* in here. It carries credential material, and the factory never
-    reads or writes that — it references the Secret by name and `verify` checks it exists and
-    carries the expected keys. The command to create it is printed as a comment so the user has it
-    in front of them without the factory ever touching the value.
+def resolve_target(namespace: str | None) -> str:
+    """The namespace to generate for, or an error naming both ways to supply one.
 
     A namespace is never invented. Emitting cluster YAML pinned to a guessed name invites the user
     to apply it somewhere they did not intend, and "it defaulted to `factory`" is not something they
@@ -86,8 +103,151 @@ def render_bundle(
             "  factory contained --target k8s --namespace <name> bundle\n"
             "or select one first with `oc project <name>`."
         )
+    return target
+
+
+def bundle_objects(
+    *,
+    namespace: str | None = None,
+    storage_class: str | None = None,
+    division: bool = False,
+    storage_size: str = "10Gi",
+) -> list[BundleObject]:
+    """The bundle as a list, in the order a reader should meet it.
+
+    Identity first, then what that identity may do, then what grants it, then storage — so each
+    object's explanation can refer to the one before it rather than forward to one not yet seen.
+
+    The Secret is deliberately absent. It carries credential material, and the factory never reads
+    or writes that — it references the Secret by name and `verify` checks it exists and carries the
+    expected keys.
+    """
+    target = resolve_target(namespace)
     rules = BASE_RULES + (DIVISION_RULES if division else "")
+    build_note = (
+        " With --division it also carries the OpenShift build verbs, so the sidecar can submit a "
+        "Build and read its log."
+        if division else ""
+    )
+    return [
+        BundleObject(
+            kind="serviceaccount",
+            name=SERVICE_ACCOUNT,
+            purpose=(
+                "The identity the factory's pod runs as. It holds no permissions by itself — "
+                "everything below grants to this account and to nothing else, which is what makes "
+                "the rest of the bundle bounded."
+            ),
+            manifest=f"""\
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {SERVICE_ACCOUNT}
+  namespace: {target}
+""",
+        ),
+        BundleObject(
+            kind="role",
+            name=ROLE_NAME,
+            purpose=(
+                "What that identity may do, and the whole of it: create, watch and delete pods in "
+                "this namespace, and read their logs. That is what a run needs to launch a "
+                "validation pod and see why it failed. `pods/exec` is absent on purpose — the "
+                f"build sidecar is a boundary only because the agent cannot exec into it.{build_note}"
+            ),
+            manifest=f"""\
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {ROLE_NAME}
+  namespace: {target}
+rules:
+{rules}""",
+        ),
+        BundleObject(
+            kind="rolebinding",
+            name=ROLE_NAME,
+            purpose=(
+                "Grants the Role above to the ServiceAccount above. Without it the Role exists and "
+                "applies to nobody, and the run fails on its first cluster call."
+            ),
+            manifest=f"""\
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {ROLE_NAME}
+  namespace: {target}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {ROLE_NAME}
+subjects:
+  - kind: ServiceAccount
+    name: {SERVICE_ACCOUNT}
+    namespace: {target}
+""",
+        ),
+        BundleObject(
+            kind="rolebinding",
+            name=SCC_ROLEBINDING,
+            purpose=(
+                "Lets the pod run under the cluster's existing `restricted-v2` security context "
+                "constraint, which admission requires before it will schedule the pod at all. It "
+                "binds to an SCC that already exists — it does not create one, which would need "
+                "cluster-admin and is out of bounds for this tool."
+            ),
+            manifest=f"""\
+# Binds the ServiceAccount to the cluster's *existing* restricted SCC. Binding to a pre-existing
+# SCC is namespace-scoped; creating one is not, and is out of bounds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {SCC_ROLEBINDING}
+  namespace: {target}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:restricted-v2
+subjects:
+  - kind: ServiceAccount
+    name: {SERVICE_ACCOUNT}
+    namespace: {target}
+""",
+        ),
+        BundleObject(
+            kind="pvc",
+            name=PVC_NAME,
+            purpose=(
+                f"{storage_size} of storage holding the run's workspace. It outlives the pod on "
+                "purpose: a long unattended run's work survives the pod being deleted, and "
+                "`factory contained sync` fetches the result from here. Deleting a run never "
+                "deletes this claim."
+            ),
+            manifest=render_pvc(target, storage_class, storage_size),
+        ),
+    ]
+
+
+def render_bundle(
+    *,
+    namespace: str | None = None,
+    storage_class: str | None = None,
+    division: bool = False,
+    image: str = "",
+    storage_size: str = "10Gi",
+) -> str:
+    """Emit the whole bundle for one namespace, as `factory contained bundle` prints it.
+
+    Composed from `bundle_objects` rather than written out again, so the blob and the walkthrough
+    can never come to describe different sets of objects.
+    """
+    target = resolve_target(namespace)
+    objects = bundle_objects(
+        namespace=target, storage_class=storage_class, division=division,
+        storage_size=storage_size,
+    )
     image_note = f"#   runtime image: {image}\n" if image else ""
+    body = "".join(f"---\n{obj.manifest}" for obj in objects)
 
     return f"""\
 # factory contained — namespace prerequisites for {target}
@@ -106,51 +266,7 @@ def render_bundle(
 #         --from-file=GOOGLE_APPLICATION_CREDENTIALS=...
 #
 {image_note}# Everything below is namespace-scoped. Nothing here creates an SCC or a ClusterRole.
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {SERVICE_ACCOUNT}
-  namespace: {target}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {ROLE_NAME}
-  namespace: {target}
-rules:
-{rules}---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {ROLE_NAME}
-  namespace: {target}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {ROLE_NAME}
-subjects:
-  - kind: ServiceAccount
-    name: {SERVICE_ACCOUNT}
-    namespace: {target}
----
-# Binds the ServiceAccount to the cluster's *existing* restricted SCC. Binding to a pre-existing
-# SCC is namespace-scoped; creating one is not, and is out of bounds.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {SCC_ROLEBINDING}
-  namespace: {target}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:openshift:scc:restricted-v2
-subjects:
-  - kind: ServiceAccount
-    name: {SERVICE_ACCOUNT}
-    namespace: {target}
----
-{render_pvc(target, storage_class, storage_size)}"""
+{body}"""
 
 
 def _safe_current_namespace() -> str | None:

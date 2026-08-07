@@ -39,6 +39,46 @@ def _completed(stdout: str = "", returncode: int = 0) -> subprocess.CompletedPro
     return subprocess.CompletedProcess([], returncode, stdout, "")
 
 
+# Bound at import, before the autouse fixture below replaces the module attribute: the one test
+# that exercises the real lookup has to be able to reach past its own stub.
+_REAL_NAMESPACE_STATUS = k8s_setup._namespace_status
+
+
+@pytest.fixture(autouse=True)
+def _no_cluster_round_trip():
+    """Building a pod plan must not phone a cluster.
+
+    `_build_pod_plan` reads the namespace's allocated `fsGroup` range, which is a live `oc get
+    namespace`. On a machine logged in to a slow or unreachable cluster that is a 30-second timeout
+    per test — the difference between this file taking one second and taking two minutes.
+    """
+    with patch("factory.cli.contained_k8s.namespace_fs_group", return_value=None):
+        yield
+
+
+
+@pytest.fixture(autouse=True)
+def _no_real_kubeconfig():
+    """Keep these tests off the developer's actual kubeconfig.
+
+    Two reasons, both found by running it. `_choose_context` reads the real kubeconfig, so on a
+    machine with several clusters an interactive `setup_k8s` test stops at a prompt. And every one
+    of these helpers shells out to `oc`, which costs seconds per call on macOS — enough to take
+    this file from five seconds to seven minutes. Tests that mean to exercise a chooser or assert
+    on a server patch these themselves; an inner `patch` wins over the fixture.
+    """
+    with patch("factory.contained.k8s_setup.list_contexts", return_value=[]), \
+         patch("factory.contained.k8s_setup.cluster_context", return_value=k8s.ClusterContext()), \
+         patch("factory.contained.k8s_setup.current_namespace", return_value=None), \
+         patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.PRESENT), \
+         patch("factory.contained.k8s._run", return_value=_completed("true")), \
+         patch("factory.contained.k8s_setup.access_review", return_value=True):
+        # `access_review` is stubbed under the name *k8s_setup* imported, not on `k8s` itself: it
+        # shells out with `subprocess.run` directly, so nothing else here catches it, and the test
+        # that exercises the real function reaches it through `k8s.access_review`, untouched.
+        yield
+
+
 def _args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="factory")
     sub = parser.add_subparsers(dest="command")
@@ -357,7 +397,9 @@ def test_a_missing_object_names_the_command_that_restores_it() -> None:
 
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup._run", side_effect=fake_run):
-        checks = k8s_setup.verify_k8s(namespace="ns")
+        # `probe_inference=False`: the probe launches a real pod and waits on it, which is a
+        # three-minute round trip and nothing to do with what this test asserts.
+        checks = k8s_setup.verify_k8s(namespace="ns", probe_inference=False)
     missing = [c for c in checks if not c.ok and SCC_ROLEBINDING in c.name]
     assert missing
     # Flag before subcommand — the form the parser actually accepts.
@@ -433,21 +475,421 @@ def test_a_vertex_secret_is_accepted() -> None:
         assert k8s_setup._secret_check("oc", "ns").ok
 
 
+def test_setup_reports_the_current_state_before_asking(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The summary covers every object, so "4 of 5 are already there" is visible up front."""
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_setup.subprocess.run"), \
+         patch("builtins.input", return_value="q"):
+        k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True)
+    printed = capsys.readouterr().out
+    for ref in ("serviceaccount/factory", "role/factory-runtime", "rolebinding/factory-scc",
+                "pvc/factory-workspace"):
+        assert ref in printed
+    # The state is established before the first item is walked, not after it. Asserted on the item
+    # header rather than the prompt: the prompt is written by `input()`, which the mock swallows.
+    assert printed.index("Comparing 5 object(s)") < printed.index("1 of 5")
+
+
+def test_setup_asks_once_per_object_that_needs_a_decision(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_setup.subprocess.run"), \
+         patch("factory.contained.k8s_setup.verify_k8s", return_value=[]), \
+         patch("builtins.input", return_value="n") as ask:
+        k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True)
+    assert ask.call_count == 5          # one per object, not one for the whole wall of YAML
+
+
+def test_setup_explains_each_object_before_asking_about_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The YAML says a Role has these verbs; the purpose says why a run needs them."""
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_setup.subprocess.run"), \
+         patch("builtins.input", return_value="q"):
+        k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True)
+    printed = capsys.readouterr().out
+    assert "The identity the factory's pod runs as" in printed
+
+
+def test_setup_asks_which_namespace_when_none_was_given(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Landing silently on whatever `oc project` is set to is how `default` acquires a PVC."""
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_setup.subprocess.run"), \
+         patch("builtins.input", side_effect=["factory-contained", "q"]):
+        k8s_setup.setup_k8s(namespace=None, division=False, interactive=True)
+    printed = capsys.readouterr().out
+    assert "namespace 'factory-contained'" in printed
+    assert "namespace 'default'" not in printed
+
+
+def test_an_empty_answer_takes_the_current_context() -> None:
+    with patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("builtins.input", return_value=""):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") == "default"
+
+
+def test_an_explicit_namespace_is_used_without_being_asked_about() -> None:
+    """`--namespace` settles *which* namespace; it is never re-litigated by a prompt."""
+    with patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.PRESENT), \
+         patch("builtins.input", side_effect=AssertionError("must not ask")):
+        assert k8s_setup._choose_namespace("mine", interactive=True, binary="oc") == "mine"
+
+
+def test_an_explicit_namespace_is_still_checked_for_existence() -> None:
+    """A typo would otherwise surface as five separate NotFound errors from the apply."""
+    with patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.ABSENT), \
+         patch("factory.contained.k8s_setup._create_namespace",
+               return_value=(True, "created")) as create, \
+         patch("factory.contained.style.confirm", return_value=True):
+        assert k8s_setup._choose_namespace("mine", interactive=True, binary="oc") == "mine"
+    create.assert_called_once()
+
+
+def test_declining_to_create_a_missing_namespace_stops_rather_than_proceeding() -> None:
+    with patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.ABSENT), \
+         patch("factory.contained.k8s_setup._create_namespace") as create, \
+         patch("factory.contained.style.confirm", return_value=False):
+        assert k8s_setup._choose_namespace("mine", interactive=True, binary="oc") is None
+    create.assert_not_called()
+
+
+def test_a_missing_namespace_is_offered_for_creation_then_reused(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.k8s_setup.current_namespace", return_value=None), \
+         patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.ABSENT), \
+         patch("factory.contained.k8s_setup._create_namespace", return_value=(True, "")), \
+         patch("factory.contained.style.confirm", return_value=True), \
+         patch("builtins.input", return_value="factory-yi"):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") == "factory-yi"
+    assert "does not exist on this cluster" in capsys.readouterr().out
+
+
+def test_refusing_creation_at_the_prompt_asks_for_another_namespace() -> None:
+    """Declining is not aborting: the obvious next move is to name a different one."""
+    with patch("factory.contained.k8s_setup.current_namespace", return_value=None), \
+         patch("factory.contained.k8s_setup._namespace_status",
+               side_effect=[k8s_setup.ABSENT, k8s_setup.PRESENT]), \
+         patch("factory.contained.style.confirm", return_value=False), \
+         patch("builtins.input", side_effect=["typo", "real-one"]):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") == "real-one"
+
+
+def test_a_namespace_we_may_not_read_is_not_treated_as_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """On OpenShift a regular user is routinely denied `get namespaces` for a project they own."""
+    with patch("factory.contained.k8s_setup._namespace_status",
+               return_value=k8s_setup.UNREADABLE), \
+         patch("factory.contained.k8s_setup._create_namespace") as create:
+        assert k8s_setup._choose_namespace("mine", interactive=True, binary="oc") == "mine"
+    create.assert_not_called()
+    assert "Could not confirm" in capsys.readouterr().out
+
+
+def test_namespace_status_falls_back_to_project_when_namespaces_are_forbidden() -> None:
+    forbidden = _completed("", 1)
+    forbidden = subprocess.CompletedProcess([], 1, "", 'namespaces "x" is forbidden')
+    found = _completed("project.project.openshift.io/x")
+    with patch("factory.contained.k8s_setup._run", side_effect=[forbidden, found]) as run:
+        assert _REAL_NAMESPACE_STATUS("x", "oc") == k8s_setup.PRESENT
+    assert run.call_args_list[1][0][0][:3] == ["oc", "get", "project"]
+
+
+def test_namespace_creation_uses_new_project_on_openshift() -> None:
+    """A regular user is usually denied a bare Namespace but permitted to request a Project."""
+    with patch("factory.contained.k8s_setup._run", return_value=_completed("ok")) as run:
+        assert k8s_setup._create_namespace("mine", "oc")[0] is True
+    assert run.call_args[0][0] == ["oc", "new-project", "mine"]
+    with patch("factory.contained.k8s_setup._run", return_value=_completed("ok")) as run:
+        k8s_setup._create_namespace("mine", "kubectl")
+    assert run.call_args[0][0] == ["kubectl", "create", "namespace", "mine"]
+
+
+def test_setup_names_the_cluster_not_only_the_namespace(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`default` exists on every cluster anyone has logged into; the server is what identifies one."""
+    context = k8s.ClusterContext(
+        context="dev", server="https://api.example.com:6443", user="you@example.com",
+        namespace="default",
+    )
+    with patch("factory.contained.k8s_setup.cluster_context", return_value=context), \
+         patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("builtins.input", return_value=""):
+        k8s_setup._choose_namespace(None, interactive=True, binary="oc")
+    printed = capsys.readouterr().out
+    assert "https://api.example.com:6443" in printed
+    assert "you@example.com" in printed
+    assert "dev" in printed
+
+
+def test_the_review_summary_names_the_cluster(capsys: pytest.CaptureFixture[str]) -> None:
+    """With a per-object walk there is no single irreversible moment left to attach it to — the
+    first `y` is already one — so the destination is stated before the walk begins."""
+    context = k8s.ClusterContext(server="https://api.example.com:6443")
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.cluster_context", return_value=context), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_setup.subprocess.run"), \
+         patch("builtins.input", return_value="q"):
+        k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True)
+    assert "https://api.example.com:6443" in capsys.readouterr().out
+
+
+def test_a_walked_run_is_not_asked_to_confirm_a_second_time() -> None:
+    """Every accepted object was confirmed a moment ago; a blanket prompt on top teaches `y`."""
+    def absent(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        # Nothing is in the namespace, so all five objects need a decision.
+        return _completed("", 1) if argv[1] == "get" else _completed("applied")
+
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
+         patch("factory.contained.k8s_review._run", side_effect=absent), \
+         patch("factory.contained.k8s_setup.subprocess.run", return_value=_completed("applied")), \
+         patch("factory.contained.k8s_setup.verify_k8s",
+               return_value=[Check("namespace", True, "ok")]), \
+         patch("builtins.input", side_effect=["a"]) as ask:
+        k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True)
+    assert ask.call_count == 1          # the single `a`, and nothing after it
+
+
+def test_an_unreadable_kubeconfig_still_reports_what_it_knows(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Degrades one field at a time rather than printing nothing at all."""
+    with patch("factory.contained.k8s_setup.cluster_context",
+               return_value=k8s.ClusterContext()), \
+         patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("builtins.input", return_value=""):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") == "default"
+    assert "'default'" in capsys.readouterr().out
+
+
+def test_cluster_context_reads_names_never_credential_material() -> None:
+    payload = json.dumps({
+        "current-context": "dev",
+        "contexts": [{"context": {"user": "you", "namespace": "ns"}}],
+        "clusters": [{"cluster": {"server": "https://api.example.com:6443"}}],
+        "users": [{"user": {"token": "sk-secret-token"}}],
+    })
+    with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s._run", return_value=_completed(payload)):
+        context = k8s.cluster_context()
+    assert context.server == "https://api.example.com:6443"
+    assert (context.context, context.user, context.namespace) == ("dev", "you", "ns")
+    # Nothing from the `users` section reaches the dataclass at all.
+    assert "sk-secret-token" not in repr(context)
+
+
+def test_cluster_context_degrades_to_empty_on_junk() -> None:
+    with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s._run", return_value=_completed("not json")):
+        assert k8s.cluster_context() == k8s.ClusterContext()
+
+
+def test_verify_reports_each_check_as_it_lands() -> None:
+    """A step that prints nothing for three minutes is read as a hang. It was."""
+    seen: list[str] = []
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("", 1)):
+        checks = k8s_setup.verify_k8s(namespace="ns", probe_inference=False,
+                                      on_check=lambda c: seen.append(c.name))
+    # Every result reached the callback, in order, and none was reported only at the end.
+    assert seen == [c.name for c in checks]
+    assert seen
+
+
+def test_a_check_that_short_circuits_still_reaches_the_callback() -> None:
+    """A streaming caller prints only the summary at the end; a skipped callback is a lost check."""
+    seen: list[str] = []
+    with patch("factory.contained.k8s_setup.cli_binary",
+               side_effect=k8s.ClusterError("neither oc nor kubectl")):
+        checks = k8s_setup.verify_k8s(namespace="ns", on_check=lambda c: seen.append(c.name))
+    assert seen == ["cluster_cli"] == [c.name for c in checks]
+
+
+def test_the_inference_probe_is_skipped_when_the_secret_is_missing() -> None:
+    """The probe pod mounts that Secret; without it the wait is 180s to learn what we know."""
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("ctx")), \
+         patch("factory.contained.k8s_setup._secret_check",
+               return_value=Check("credentials_secret", False, "missing", fix="oc create secret")), \
+         patch("factory.contained.k8s_setup._inference_check") as probe:
+        checks = k8s_setup.verify_k8s(namespace="ns")
+    probe.assert_not_called()
+    inference = next(c for c in checks if c.name == "inference_from_cluster")
+    assert not inference.ok
+    assert "not attempted" in inference.detail
+    assert inference.fix == "oc create secret"     # the fix is the Secret's, not a generic one
+
+
+def test_the_inference_probe_still_runs_when_the_secret_is_there() -> None:
+    with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup._run", return_value=_completed("ctx")), \
+         patch("factory.contained.k8s_setup._secret_check",
+               return_value=Check("credentials_secret", True, "present")), \
+         patch("factory.contained.k8s_setup._inference_check",
+               return_value=Check("inference_from_cluster", True, "reached")) as probe:
+        k8s_setup.verify_k8s(namespace="ns")
+    probe.assert_called_once()
+
+
+def test_every_cluster_command_carries_the_chosen_context() -> None:
+    """Choosing a cluster is worthless if the apply still goes to the current one."""
+    try:
+        k8s.set_active_context("other-cluster")
+        assert k8s.cli("oc", "apply", "-f", "-") == [
+            "oc", "--context", "other-cluster", "apply", "-f", "-"
+        ]
+    finally:
+        k8s.set_active_context(None)
+    assert k8s.cli("oc", "apply", "-f", "-") == ["oc", "apply", "-f", "-"]
+
+
+def test_list_contexts_pairs_each_context_with_its_server() -> None:
+    payload = json.dumps({
+        "contexts": [
+            {"name": "dev", "context": {"cluster": "c1", "user": "u1", "namespace": "ns1"}},
+            {"name": "prod", "context": {"cluster": "c2", "user": "u2"}},
+        ],
+        "clusters": [
+            {"name": "c1", "cluster": {"server": "https://dev.example.com"}},
+            {"name": "c2", "cluster": {"server": "https://prod.example.com"}},
+        ],
+    })
+    with patch("factory.contained.k8s.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s._run", return_value=_completed(payload)):
+        contexts = k8s.list_contexts()
+    assert [c.context for c in contexts] == ["dev", "prod"]
+    assert [c.server for c in contexts] == ["https://dev.example.com", "https://prod.example.com"]
+    assert contexts[1].namespace is None          # a context need not pin a namespace
+
+
+def test_a_single_context_is_not_worth_a_question() -> None:
+    one = [k8s.ClusterContext(context="only", server="https://x")]
+    with patch("factory.contained.k8s_setup.list_contexts", return_value=one), \
+         patch("builtins.input", side_effect=AssertionError("must not ask")):
+        assert k8s_setup._choose_context(interactive=True) is None
+
+
+def test_a_cluster_can_be_chosen_by_number_or_by_name() -> None:
+    contexts = [
+        k8s.ClusterContext(context="dev", server="https://dev"),
+        k8s.ClusterContext(context="prod", server="https://prod"),
+    ]
+    with patch("factory.contained.k8s_setup.list_contexts", return_value=contexts), \
+         patch("factory.contained.k8s_setup.cluster_context", return_value=contexts[0]):
+        with patch("factory.contained.style.read_line", return_value="2"):
+            assert k8s_setup._choose_context(interactive=True) == "prod"
+        # People paste context names as often as they count list positions.
+        with patch("factory.contained.style.read_line", return_value="prod"):
+            assert k8s_setup._choose_context(interactive=True) == "prod"
+
+
+def test_escape_at_the_cluster_chooser_stops_setup() -> None:
+    contexts = [k8s.ClusterContext(context="dev"), k8s.ClusterContext(context="prod")]
+    with patch("factory.contained.k8s_setup.list_contexts", return_value=contexts), \
+         patch("factory.contained.k8s_setup.cluster_context", return_value=contexts[0]), \
+         patch("factory.contained.style.read_line", return_value=None):
+        assert k8s_setup._choose_context(interactive=True) is k8s_setup._ABORT
+
+
+def test_choosing_a_cluster_never_rewrites_the_kubeconfig() -> None:
+    """Where *this* run goes must not change where the user's next unrelated `oc` goes."""
+    contexts = [k8s.ClusterContext(context="dev"), k8s.ClusterContext(context="prod")]
+    with patch("factory.contained.k8s_setup.list_contexts", return_value=contexts), \
+         patch("factory.contained.k8s_setup.cluster_context", return_value=contexts[0]), \
+         patch("factory.contained.k8s_setup.use_context") as switch, \
+         patch("factory.contained.style.read_line", return_value="2"):
+        k8s_setup._choose_context(interactive=True)
+    switch.assert_not_called()
+
+
+def test_declining_the_default_switch_prints_the_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.k8s_setup.cluster_context",
+               return_value=k8s.ClusterContext(context="dev")), \
+         patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
+         patch("factory.contained.k8s_setup.use_context") as switch, \
+         patch("factory.contained.style.confirm", return_value=False):
+        k8s_setup._offer_default_switch("prod", interactive=True)
+    switch.assert_not_called()
+    assert "oc config use-context prod" in capsys.readouterr().out
+
+
+def test_no_switch_is_offered_when_the_chosen_context_is_already_current(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.k8s_setup.cluster_context",
+               return_value=k8s.ClusterContext(context="prod")), \
+         patch("builtins.input", side_effect=AssertionError("must not ask")):
+        k8s_setup._offer_default_switch("prod", interactive=True)
+    assert capsys.readouterr().out == ""
+
+
+def test_ctrl_c_exits_cleanly_rather_than_unwinding(capsys: pytest.CaptureFixture[str]) -> None:
+    """Backing out of a wizard partway is ordinary; a stack trace reads as a crash."""
+    args = _args(["--target", "k8s", "setup"])
+    with patch("factory.cli.contained.run_setup", side_effect=KeyboardInterrupt):
+        assert cli.cmd_contained(args) == 130
+    assert "Stopped." in capsys.readouterr().err
+
+
+def test_a_closed_stdin_stops_rather_than_re_asking_forever() -> None:
+    """Re-prompting a stream that can never answer is a hang, not a retry."""
+    with patch("factory.contained.k8s_setup.current_namespace", return_value=None), \
+         patch("builtins.input", side_effect=EOFError):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") is None
+
+
+def test_escape_at_the_namespace_prompt_stops_setup() -> None:
+    """Escape has to work at every prompt, not only at the per-object ones."""
+    with patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("factory.contained.style.read_line", return_value=None):
+        assert k8s_setup._choose_namespace(None, interactive=True, binary="oc") is None
+
+
+def test_the_namespace_is_marked_as_a_value_not_prose(capsys: pytest.CaptureFixture[str]) -> None:
+    """"in namespace default" cannot be read; the quotes are what make `default` a name."""
+    with patch("factory.contained.k8s_setup.current_namespace", return_value="default"), \
+         patch("builtins.input", return_value=""):
+        k8s_setup._choose_namespace(None, interactive=True, binary="oc")
+    assert "'default'" in capsys.readouterr().out
+
+
 def test_setup_applies_nothing_without_confirmation(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
          patch("factory.contained.k8s_setup._run", return_value=_completed("some-context")), \
          patch("factory.contained.k8s_setup.subprocess.run") as run:
         code = k8s_setup.setup_k8s(namespace="ns", division=False, interactive=False)
-    run.assert_not_called()
+    # Not `assert_not_called`: establishing the current state legitimately runs `get` and `diff`.
+    # What must not have happened is the mutation.
+    assert not any("apply" in call.args[0] for call in run.call_args_list if call.args)
     assert code == 1
     captured = capsys.readouterr()
-    # The full manifest is still printed — every object, not a summary.
-    assert "kind: ServiceAccount" in captured.out
-    assert "kind: Role" in captured.out
-    assert "kind: PersistentVolumeClaim" in captured.out
-    # ...but the outcome is stated *before* it, so 80 lines of YAML cannot bury it.
-    assert "Nothing was applied" in captured.err
+    # Every object is still accounted for — as state, not as a wall of YAML.
+    for ref in ("serviceaccount/factory", "role/factory-runtime", "pvc/factory-workspace"):
+        assert ref in captured.out
+    assert "nothing was applied" in captured.err.lower()
 
 
 def test_setup_says_so_when_no_cluster_is_selected(capsys: pytest.CaptureFixture[str]) -> None:
@@ -478,7 +920,9 @@ def test_setup_degrades_to_printing_when_apply_is_refused(
                                    assume_yes=True)
     assert code == 1
     err = capsys.readouterr().err
-    assert "hand the manifest above" in err.lower()
+    # "the manifest above" no longer exists — the wall of YAML is gone, so the hand-off names the
+    # `bundle` command that reproduces it instead.
+    assert "hand the bundle to whoever owns" in err.lower()
 
 
 def test_a_sweep_that_matched_nothing_says_nothing(capsys: pytest.CaptureFixture[str]) -> None:

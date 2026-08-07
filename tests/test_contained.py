@@ -108,6 +108,32 @@ def test_empty_invocation_names_an_example() -> None:
         interpret([])
 
 
+def test_help_is_a_subcommand_not_a_project_path() -> None:
+    """`factory contained help` reads the manual; it does not look for a directory called 'help'."""
+    args = interpret(["help"])
+    assert (args.subcommand, args.factory_args) == ("help", [])
+
+
+def test_help_prints_the_same_text_as_the_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.cmd_contained(parse(["help"])) == 0
+    printed = capsys.readouterr().out
+    for expected in ("factory contained [runtime flags]", "Targets:", "Subcommands:"):
+        assert expected in printed
+
+
+def test_help_ignores_a_trailing_word_rather_than_treating_it_as_a_name() -> None:
+    """There is no per-subcommand help, so `help ls` must not imply there is."""
+    args = interpret(["help", "ls"])
+    assert (args.subcommand, args.factory_args) == ("help", [])
+
+
+def test_examples_do_not_name_a_real_repository(capsys: pytest.CaptureFixture[str]) -> None:
+    """A placeholder has to read as one. A real project name reads as a required argument."""
+    with pytest.raises(SystemExit):
+        interpret([])
+    assert "my-project" in capsys.readouterr().err
+
+
 def test_name_is_not_abbreviated_into_namespace() -> None:
     """`--name` and `--namespace` share a prefix; abbreviation would alias them silently."""
     with pytest.raises(SystemExit):

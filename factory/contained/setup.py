@@ -23,10 +23,16 @@ import sys
 
 import structlog
 
+from factory.contained import style
 from factory.contained.prereq import Check, local_checks, render_checks
 from factory.podman import build_pull_argv, resolve_image
 
 log = structlog.get_logger()
+
+# The local half has three steps, and it says so up front. A wizard that prints an unlabelled wall
+# of lines gives the reader no way to tell "still working" from "finished" — numbering each step is
+# what turns the same information into progress.
+_LOCAL_STEPS = 3
 
 
 def run_setup(
@@ -46,13 +52,18 @@ def run_setup(
     code = 0
     if target in (None, "local", "both"):
         record_target("local")
+        if target == "both":
+            print(style.section("Local runtime"))
         _setup_local()
+        print(style.section("Result", step=_LOCAL_STEPS, total=_LOCAL_STEPS))
         checks = local_checks()
         print(render_checks(checks, setup_command=None))
         code = 0 if all(c.ok for c in checks) else 1
 
     if target in ("k8s", "both"):
         record_target("k8s")
+        if target == "both":
+            print(style.section("Cluster runtime"))
         from factory.contained.k8s_setup import setup_k8s
 
         k8s_code = setup_k8s(
@@ -67,12 +78,15 @@ def run_setup(
 
 
 def _ask_target() -> str:
-    print("What are you setting up?")
-    print("  1) local  — a podman container on this machine")
-    print("  2) k8s    — a pod on a cluster")
-    print("  3) both")
+    print(style.section("What are you setting up?"))
+    print(style.note("Pass --target local or --target k8s to skip this question."))
+    print()
+    print(f"  {style.bold('1')}) {style.paint('local', 'cyan')}  a podman container on this machine")
+    print(f"  {style.bold('2')}) {style.paint('k8s', 'cyan')}    a pod on a cluster")
+    print(f"  {style.bold('3')}) {style.paint('both', 'cyan')}")
+    print()
     try:
-        choice = input("Choice [1]: ").strip() or "1"
+        choice = input(style.prompt("Choice", "1")).strip() or "1"
     except EOFError:
         # stdin closed before an answer arrived — a pipe, a CI job, or `< /dev/null`. The default
         # is the documented one; an unanswered prompt must not become a bare `Error:`.
@@ -88,15 +102,20 @@ def _setup_local() -> None:
     `run_setup` is what reports the outcome, including for the cases handled here — so nothing in
     this function needs its own second, weaker copy of a check's message.
     """
+    print(style.section("Container engine", step=1, total=_LOCAL_STEPS))
     engine = next((c for c in local_checks() if c.name == "container_engine"), None)
     if engine is not None and not engine.ok:
         _start_machine()
+    else:
+        print(style.note("podman is reachable; nothing to do."))
 
+    print(style.section("Runtime image", step=2, total=_LOCAL_STEPS))
     image = resolve_image()
     if _image_present(image):
-        print(f"Runtime image already present: {image}")
+        print(style.line(style.dim(f"Image already present: {image}")))
     else:
-        print(f"Pulling the runtime image: {image}")
+        print(style.line(f"Pulling {style.value(image)}"))
+        print(style.note("This takes a few minutes on a cold cache."))
         result = subprocess.run(build_pull_argv(image))
         if result.returncode != 0:
             print(
@@ -140,9 +159,10 @@ def _start_machine() -> None:
     except (FileNotFoundError, PermissionError, OSError):
         return
     if listed.returncode != 0 or not listed.stdout.strip():
-        print("No podman machine found. Create one with: podman machine init")
+        # `line`, not `note`: this carries a command, and a wrapped command cannot be copied.
+        print(style.line("No podman machine found. Create one with: podman machine init"))
         return
-    print("The podman engine is not reachable. Starting the podman machine...")
+    print(style.note("The podman engine is not reachable. Starting the podman machine..."))
     subprocess.run(["podman", "machine", "start"])
 
 

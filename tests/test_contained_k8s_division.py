@@ -28,6 +28,19 @@ def _completed(stdout: str = "", returncode: int = 0) -> subprocess.CompletedPro
     return subprocess.CompletedProcess([], returncode, stdout, "")
 
 
+@pytest.fixture(autouse=True)
+def _no_cluster_round_trip():
+    """Building a pod plan must not phone a cluster.
+
+    `_build_pod_plan` reads the namespace's allocated `fsGroup` range, which is a live `oc get
+    namespace`. On a machine logged in to a slow or unreachable cluster that is a 30-second timeout
+    per test — the difference between this file taking one second and taking two minutes.
+    """
+    with patch("factory.cli.contained_k8s.namespace_fs_group", return_value=None):
+        yield
+
+
+
 def _plan(tmp_path: Path, *, division: bool = True) -> PodPlan:
     project = tmp_path / "rta"
     project.mkdir(exist_ok=True)

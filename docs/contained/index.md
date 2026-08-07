@@ -77,8 +77,10 @@ with namespace-scoped permissions — but the point above still stands for both.
 
 ```
 factory contained [runtime flags] -- <any factory command>
-factory contained {ls|attach|rm|sync|setup|verify|bundle} [name]
+factory contained {ls|attach|rm|sync|setup|verify|bundle|help} [name]
 ```
+
+`help` prints the same text as `--help`, so whichever you reach for works.
 
 **Both targets**
 
@@ -103,6 +105,7 @@ factory contained {ls|attach|rm|sync|setup|verify|bundle} [name]
 | Flag | Default | Meaning |
 |---|---|---|
 | `--namespace NS` | current context | Never hardcoded |
+| `--context NAME` | your current one | Which kubeconfig context every cluster command uses |
 | `--storage-class SC` | cluster default | Workspace PVC |
 
 A flag used against the wrong target fails at parse time naming the target it belongs to — never
@@ -113,9 +116,9 @@ error rather than a name.
 
 ## Interaction examples
 
-Transcripts below are from real runs against
-[`beatsmonster/rta`](https://github.com/beatsmonster/rta), with `$HOME` shortened. They were
-captured separately, so run names and ages differ between them.
+Transcripts below are from real runs, with `$HOME` shortened and the project renamed to
+`my-project` throughout so nothing here reads as a required argument. They were captured
+separately, so run names and ages differ between them.
 
 ### Checking prerequisites
 
@@ -144,17 +147,30 @@ the third is yours, because the factory never handles credential material.
 Inference is always reported by **shape** — which backend, which model, which variable or file
 supplied it — and never by printing material:
 
+`setup` runs as a numbered sequence, so it is always clear which step you are on and which one
+stalled. On a terminal the step rules, the `[ ok ]` / `[FAIL]` marks and every resolved value are
+coloured; piped or redirected, the same output is plain text.
+
 ```console
-$ factory contained setup
-The podman engine is not reachable. Starting the podman machine...
-Runtime image already present: ghcr.io/akashgit/remote-factory/factory-runtime:latest
-[ok  ] container_engine: podman reachable (5.7.1, rootful)
-[ok  ] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest present locally
-[ok  ] inference: Vertex, project my-project in us-east5, model <unset — pass --model in the
+$ factory contained --target local setup
+
+━━ 1/3  Container engine ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   The podman engine is not reachable. Starting the podman machine...
+
+━━ 2/3  Runtime image ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Image already present: ghcr.io/akashgit/remote-factory/factory-runtime:latest
+
+━━ 3/3  Result ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ok ] container_engine: podman reachable (5.7.1, rootful)
+[ ok ] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest present locally
+[ ok ] inference: Vertex, project my-project in us-east5, model <unset — pass --model in the
        payload>, credential from Application Default Credentials at ~/.config/gcloud
 
 All checks passed. Start a run with `factory contained -- ceo <path>`.
 ```
+
+Colour is navigation, not decoration, so it obeys the conventions you already have configured:
+`NO_COLOR` turns it off, `FORCE_COLOR` turns it on through a pipe, and `TERM=dumb` is respected.
 
 !!! note "If the image cannot be pulled"
     The runtime image is published by CI. If the pull fails, `setup` prints two ways forward: point
@@ -165,10 +181,14 @@ Run without `--target`, and at a terminal, `setup` asks which runtime you are pr
 
 ```console
 $ factory contained setup
-What are you setting up?
-  1) local  — a podman container on this machine
-  2) k8s    — a pod on a cluster
+
+━━ What are you setting up? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Pass --target local or --target k8s to skip this question.
+
+  1) local  a podman container on this machine
+  2) k8s    a pod on a cluster
   3) both
+
 Choice [1]:
 ```
 
@@ -181,17 +201,17 @@ The runtime's identifier is printed **first**, before any long-running work. A r
 cannot see is a run you cannot manage.
 
 ```console
-$ factory contained --name rta-run -- backlog-list ~/code/rta
+$ factory contained --name my-run -- backlog-list ~/code/my-project
 Warning: no inference credentials are configured, so every agent call in this run will fail.
   Set one of these before running, and pass it inward:
     export ANTHROPIC_API_KEY=...   then add:  --forward ANTHROPIC_API_KEY
   Run `factory contained verify` to check.
-Starting rta-run
-  attach:  factory contained attach rta-run
-  result:  factory contained sync rta-run
-  stop:    factory contained rm rta-run
+Starting my-run
+  attach:  factory contained attach my-run
+  result:  factory contained sync my-run
+  stop:    factory contained rm my-run
 
-rta-run is running.
+my-run is running.
 ```
 
 That is the whole output. The command returns as soon as the run is going; the run itself continues
@@ -203,9 +223,9 @@ runtime issued.
 ```console
 $ factory contained ls
 NAME                              TARGET  PROJECT       AGE   STATE
-rta-run                           local   e06e95065606  1s    running
+my-run                           local   e06e95065606  1s    running
 
-$ factory contained attach rta-run
+$ factory contained attach my-run
 ```
 
 `ls` covers both targets, but it only asks the cluster once you have actually used one — otherwise
@@ -225,25 +245,25 @@ deliberately outlives the run inside it.
 Nothing is ever merged for you.
 
 ```console
-$ factory contained sync rta-run
-rta-run: the workspace is already on this machine — a bind mount, not a transfer.
-Work is on branch contained/rta-run in ~/.factory-contained/rta-run/rta.
-  Review:  git -C ~/.factory-contained/rta-run/rta status && git -C ... diff
-  Merge:   git -C ~/code/rta merge contained/rta-run
+$ factory contained sync my-run
+my-run: the workspace is already on this machine — a bind mount, not a transfer.
+Work is on branch contained/my-run in ~/.factory-contained/my-run/my-project.
+  Review:  git -C ~/.factory-contained/my-run/my-project status && git -C ... diff
+  Merge:   git -C ~/code/my-project merge contained/my-run
 ```
 
 ### Tearing down
 
 ```console
-$ factory contained rm rta-run
-rta-run: deleted. Your work is kept — it is not removed with the runtime.
-Work is on branch contained/rta-run in ~/.factory-contained/rta-run/rta.
-  Review:  git -C ~/.factory-contained/rta-run/rta status && git -C ... diff
-  Merge:   git -C ~/code/rta merge contained/rta-run
+$ factory contained rm my-run
+my-run: deleted. Your work is kept — it is not removed with the runtime.
+Work is on branch contained/my-run in ~/.factory-contained/my-run/my-project.
+  Review:  git -C ~/.factory-contained/my-run/my-project status && git -C ... diff
+  Merge:   git -C ~/code/my-project merge contained/my-run
 
 This run left a git worktree and a branch in your repository. Remove them with:
-  git -C ~/code/rta worktree remove ~/.factory-contained/rta-run/rta
-  git -C ~/code/rta branch -D contained/rta-run
+  git -C ~/code/my-project worktree remove ~/.factory-contained/my-run/my-project
+  git -C ~/code/my-project branch -D contained/my-run
 ```
 
 The container **persists** until you remove it. Nothing is auto-reaped, because a failed run is
@@ -256,19 +276,19 @@ Five assertions run between provisioning and the first agent call. A failure abo
 tokens are spent, names the likely cause, and leaves the runtime up so you can look:
 
 ```console
-$ factory contained --name rta-run -- ceo ~/code/rta
+$ factory contained --name my-run -- ceo ~/code/my-project
 contained: step 'assert:git_usable' failed
   The workspace is not a usable git repository inside the runtime.
   Most likely the repository this project belongs to was not mounted — a git worktree's .git is a
   file pointing at a directory elsewhere.
   Try:  factory contained --mount <path-to-that-repository> -- <your command>
   The container is still there for inspection:
-    podman exec -it rta-run sh
-    factory contained rm rta-run
+    podman exec -it my-run sh
+    factory contained rm my-run
 
 This run left a git worktree and a branch in your repository. Remove them with:
-  git -C ~/code/rta worktree remove ~/.factory-contained/rta-run/rta
-  git -C ~/code/rta branch -D contained/rta-run
+  git -C ~/code/my-project worktree remove ~/.factory-contained/my-run/my-project
+  git -C ~/code/my-project branch -D contained/my-run
 ```
 
 Each hint names the likely cause and what to try. The container is left running so you can look
@@ -280,15 +300,15 @@ inside it before removing it.
 nothing:
 
 ```console
-$ FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/rta
-DRY RUN — rta-run (ghcr.io/…/factory-runtime:latest); nothing is provisioned.
-[create] podman run -d --init --name rta-run --label factory.contained=true …
-[assert:project_present] podman exec rta-run sh -lc '[ -d "…" ] && [ -n "$(ls -A "…")" ]'
-[assert:git_usable] podman exec rta-run sh -lc 'git -C "…" status --porcelain >/dev/null 2>&1'
-[assert:factory_state] podman exec rta-run test -f …/.factory/config.json
-[assert:writable] podman exec rta-run sh -lc 'touch "…/.factory-write-probe" && rm -f …'
-[assert:content_hash] podman exec rta-run sh -lc 'sha256sum "…" | grep -q "^<digest> "'
-[run] podman exec rta-run sh -lc 'tmux new-session -d -s factory -c … '
+$ FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/my-project
+DRY RUN — my-run (ghcr.io/…/factory-runtime:latest); nothing is provisioned.
+[create] podman run -d --init --name my-run --label factory.contained=true …
+[assert:project_present] podman exec my-run sh -lc '[ -d "…" ] && [ -n "$(ls -A "…")" ]'
+[assert:git_usable] podman exec my-run sh -lc 'git -C "…" status --porcelain >/dev/null 2>&1'
+[assert:factory_state] podman exec my-run test -f …/.factory/config.json
+[assert:writable] podman exec my-run sh -lc 'touch "…/.factory-write-probe" && rm -f …'
+[assert:content_hash] podman exec my-run sh -lc 'sha256sum "…" | grep -q "^<digest> "'
+[run] podman exec my-run sh -lc 'tmux new-session -d -s factory -c … '
       […the run line is ~45 lines: it embeds the Claude Code state seeding verbatim…]
 ```
 
@@ -302,7 +322,7 @@ from what actually executes, which would defeat the point of previewing.
 Secret-looking values are redacted anywhere a command is printed:
 
 ```console
-$ FACTORY_CONTAINED_DRY_RUN=1 factory contained --forward GH_TOKEN -- study ~/code/rta
+$ FACTORY_CONTAINED_DRY_RUN=1 factory contained --forward GH_TOKEN -- study ~/code/my-project
 … --env GH_TOKEN=<redacted> …
 ```
 
@@ -318,7 +338,7 @@ engine of its own, and nesting one inside it is not workable on macOS. That is w
 separate flag rather than something always on.
 
 ```console
-$ factory contained --division --name buildcycle -- ceo ~/code/rta --focus "add a Containerfile"
+$ factory contained --division --name buildcycle -- ceo ~/code/my-project --focus "add a Containerfile"
 
   ┌─ Container builds enabled (--division) ───────────────────────────────────────
   │ Started podman-mcp-server so the agent can build and run container images.
@@ -356,7 +376,7 @@ has. Asked to name its tools, it answers with them rather than proposing to buil
 
 ```console
 $ factory contained --division -- agent builder \
-    --task "List the container tools available to you. Do not write code." --project ~/code/rta
+    --task "List the container tools available to you. Do not write code." --project ~/code/my-project
 
 I have access to the following Podman/Docker container management tools:
 **Container Operations:**
@@ -383,49 +403,187 @@ amd64, and a workspace that survives the pod.
 
 ### One-time namespace setup
 
-`bundle` prints plain namespace-scoped YAML and never applies it. `setup` prints it, asks, and
-applies it **with your own credentials**:
+`bundle` prints plain namespace-scoped YAML and never applies it. `setup` asks which namespace to
+prepare, **checks what is already there**, then walks you through only the objects that are missing
+or wrong — one at a time, each explained — and applies what you accept **with your own
+credentials**:
 
 ```console
-$ factory contained --target k8s --namespace factory-contained setup
-About to apply the following to namespace factory-contained with your own oc credentials:
+$ factory contained --target k8s setup
 
-# factory contained — namespace prerequisites for factory-contained
-…
-apiVersion: v1
-kind: ServiceAccount
-…
+━━ 1/3  Cluster and namespace ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Apply it? [y/N] y
-serviceaccount/factory created
-role.rbac.authorization.k8s.io/factory-runtime created
-rolebinding.rbac.authorization.k8s.io/factory-runtime created
-rolebinding.rbac.authorization.k8s.io/factory-scc created
-persistentvolumeclaim/factory-workspace created
+   Clusters in your kubeconfig:
+
+   1) 'default/api-my-cluster-example-com:443/you@example.com' (current)
+      https://api.my-cluster.example.com:443
+   2) 'factory/api-lab-cluster:443/you'
+      https://api.lab-cluster.example.com:443
+
+Which cluster? [1] 2
+
+   This is where the factory's ServiceAccount, Role, RoleBinding and workspace
+   PVC will live. If it does not exist yet, you will be offered the chance to
+   create it.
+
+   Cluster:   https://api.my-cluster.example.com:443
+   User:      you@example.com
+   Context:   default/api-my-cluster-example-com:443/you@example.com
+   Namespace: 'default'  (the default below)
+
+Namespace to prepare [default] factory-contained
+   Namespace 'factory-contained' does not exist on this cluster.
+Create namespace 'factory-contained' now?  [y]es  [n]o  (y/N): y
+   $ oc new-project factory-contained
+   Created factory-contained.
+   `oc new-project` also made it your current project.
+
+━━ 2/3  Review and apply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Comparing 5 object(s) against namespace 'factory-contained' on
+   'https://api.my-cluster.example.com:443':
+
+   [ ok ] serviceaccount/factory       already present and matches what the factory needs
+   [diff] role/factory-runtime         present, but not what the factory needs
+   [new ] rolebinding/factory-runtime  not in this namespace — it would be created
+   [new ] rolebinding/factory-scc      not in this namespace — it would be created
+   [new ] pvc/factory-workspace        not in this namespace — it would be created
+
+   1 already correct and will be skipped; 4 need(s) your decision.
+
+── 1 of 4 · role/factory-runtime  (present, but not what the factory needs) ───
+   What that identity may do, and the whole of it: create, watch and delete
+   pods in this namespace, and read their logs. That is what a run needs to
+   launch a validation pod and see why it failed. `pods/exec` is absent on
+   purpose — the build sidecar is a boundary only because the agent cannot
+   exec into it.
+
+   What would change in factory-contained:
+  rules:
+-   verbs: ["get"]
++   verbs: ["create", "get", "list", "watch", "delete"]
+Apply this? (1 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): y
+   role.rbac.authorization.k8s.io/factory-runtime configured
+
+── 2 of 4 · rolebinding/factory-runtime  (would be created) ───────────────────
+   Grants the Role above to the ServiceAccount above. Without it the Role
+   exists and applies to nobody, and the run fails on its first cluster call.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+…
+Apply this? (2 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): a
+   Applying this and the 2 after it.
+   rolebinding.rbac.authorization.k8s.io/factory-runtime created
+   rolebinding.rbac.authorization.k8s.io/factory-scc created
+   persistentvolumeclaim/factory-workspace created
 
 The credentials Secret is yours to create — the factory never handles the material:
   oc create secret generic factory-credentials -n factory-contained \
       --from-literal=ANTHROPIC_API_KEY=...
 ```
 
+Six details that are deliberate.
+
+The **cluster** is asked too, not just the namespace. A kubeconfig usually holds several, and `oc
+config use-context` is the only way most people know to move between them — so picking the wrong
+one meant Ctrl-C, a context switch and a restart. Whatever you choose is applied as `--context` on
+**every** command this invocation issues, including the applies and the diffs; it does not rewrite
+your kubeconfig, because deciding where *this* run goes must not silently change where your next
+unrelated `oc get pods` goes. At the end, if you prepared a cluster that is not your default, you
+are offered the switch and given the exact command either way. `--context NAME` skips the question.
+
+The namespace is **asked**, not assumed — `--namespace` skips the question, and without it the
+current context supplies the default rather than the answer, so a shared `default` never quietly
+acquires a ServiceAccount, a Role and a 10Gi PVC. It is then **checked**, including when you passed
+it explicitly: a typo would otherwise surface as five separate `NotFound` errors from the apply. If
+it is not there you are offered the chance to create it, via `oc new-project` rather than `create
+namespace`, because a regular user is usually denied the second and permitted the first. A
+namespace you are simply *not allowed to read* — routine on OpenShift for a project you own — is
+reported as unconfirmed rather than treated as missing.
+
+The **cluster** is named alongside it. A namespace on its own identifies nothing — `default` exists
+on every cluster you have ever logged into — so the API server URL is the field that actually
+answers "am I about to apply RBAC to the right place?". Every namespace and server is printed
+quoted and highlighted, because "in namespace default" gives a reader no way to tell the name from
+the sentence. Only *names* are read from your kubeconfig: the context, the user's name, the server
+URL, the namespace. Nothing from its `users` section, which is where credential material lives.
+
+The **current state comes first**. Each object is checked against the namespace before anything is
+asked, and the summary covers all of them including the ones already correct — "4 of 5 are already
+there" is the most useful thing to know before deciding whether this is about to do something
+drastic. Comparison is `oc diff`, done server-side, so a field the cluster defaults in does not
+read as a change you are about to make.
+
+Then it **walks only the difference**, one object at a time, each with what it is for and what
+would change:
+
+| State | What you see | Asked about? |
+|---|---|---|
+| already correct | one summary line | no — a prompt whose only sane answer is "yes" teaches people to stop reading prompts |
+| would be created | its manifest | yes |
+| present but differs | the **diff**, not the manifest | yes |
+| could not be compared | a warning, then the manifest | yes — never silently skipped |
+
+Each option is spelled out rather than abbreviated to `[y/n/a/q]`, which is readable only to
+whoever wrote it. `y` applies one, `n` skips it, `a` applies everything remaining, and `q` **or
+Escape** stops. A bare Enter skips, because the default has to be the answer that changes nothing;
+anything unrecognised re-asks and never counts as yes. Where the terminal allows it these are
+single keypresses — no Enter — which is also what makes Escape work at all, since a line-buffered
+prompt can only ever see it as the `^[` characters it inserts.
+
+**Escape backs out of any prompt in the flow**, not just this one — the cluster chooser and the
+namespace prompt included, and the namespace prompt is a typed line, which is why it is read
+character by character rather than with `input()`. **Ctrl-C** exits with a message and status 130
+rather than a stack trace: changing your mind at question three is ordinary, not a crash.
+
+Finally, each object is **applied the moment you accept it**, not batched until the end. You see
+`role.rbac.../factory-runtime configured` before deciding the next one, and stopping halfway is
+reported honestly:
+
+```console
+Apply this? (2 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): q
+
+   Stopped. 1 object(s) were applied before you stopped and remain applied; the rest were not.
+```
+
+That sentence is the whole reason for applying per object: batching would have said "nothing was
+applied" to someone who had already said yes once. A skipped or unapplied object stays as it is,
+and `verify` at the end reports it — nothing goes quiet. A single object failing to apply names
+itself and does not stop the walk, since the rest may still be worth doing.
+
+There is no second, blanket "are you sure?": every object was confirmed a moment earlier, and a
+prompt on top of that is the friction that teaches people to hit `y` without reading. `--yes`
+applies everything pending without walking, for automation.
+
 Then `verify` checks every object, every verb the ServiceAccount needs, the Secret's **keys** (never
-its values), and that inference is reachable from a pod *inside* the namespace:
+its values), and that inference is reachable from a pod *inside* the namespace. Results print **as
+each one lands**, not at the end — several are a cluster round trip and the in-cluster inference
+probe launches a pod and waits on it, so a step that stayed silent until the last check finished
+was reported as a hang:
 
 ```console
 $ factory contained --target k8s --namespace factory-contained verify
-[ok  ] cluster_cli: oc, context factory-contained/api-…:443/you@example.com
-[ok  ] namespace: factory-contained exists and is accessible
-[ok  ] bundle:serviceaccount/factory: serviceaccount/factory present
+[ ok ] cluster_cli: oc, context factory-contained/api-…:443/you@example.com,
+       server https://api.my-cluster.example.com:6443
+[ ok ] namespace: factory-contained exists and is accessible
+[ ok ] bundle:serviceaccount/factory: serviceaccount/factory present
 …
-[ok  ] permissions: serviceaccount/factory has every verb the run needs
-[ok  ] no_pods_exec: serviceaccount/factory cannot exec into pods, which is what makes the build
+[ ok ] permissions: serviceaccount/factory has every verb the run needs
+[ ok ] no_pods_exec: serviceaccount/factory cannot exec into pods, which is what makes the build
        sidecar a boundary
-[ok  ] credentials_secret: secret/factory-credentials carries the Anthropic API key
-[ok  ] inference_from_cluster: a pod in this namespace reached the configured inference backend
-[ok  ] secret_scanner: gitleaks present; workspaces are scanned before they leave this machine
+[ ok ] credentials_secret: secret/factory-credentials carries the Anthropic API key
+[ ok ] inference_from_cluster: a pod in this namespace reached the configured inference backend
+[ ok ] secret_scanner: gitleaks present; workspaces are scanned before they leave this machine
 
 All checks passed. Start a run with `factory contained --target k8s --namespace factory-contained -- ceo <path>`.
 ```
+
+The inference check is the slow one: it creates a short-lived pod, with the same image and Secret
+a real run uses, and asks it to make one request — because a host-side check proves nothing about
+the *pod's* egress. It is announced before it starts, and **skipped entirely when the credentials
+Secret is missing**, since the probe pod mounts that Secret and could only spend its 180-second
+timeout rediscovering what the check above already said. That is the state a freshly prepared
+namespace is in, because creating the Secret is deliberately left to you.
 
 Before setup, the same command lists what is missing with the command that restores each — e.g.
 `factory contained --namespace factory-contained bundle | oc apply -f -`.
@@ -433,7 +591,7 @@ Before setup, the same command lists what is missing with the command that resto
 ### Running
 
 ```console
-$ factory contained --target k8s --namespace factory-contained -- run ~/code/rta --loop
+$ factory contained --target k8s --namespace factory-contained -- run ~/code/my-project --loop
 k8srun
   attach:  factory contained --target k8s attach k8srun
   result:  factory contained --target k8s sync k8srun
@@ -449,7 +607,7 @@ trip per file, which is painfully slow on a repository.
 Nothing leaves your machine unscanned. Gitleaks runs over the workspace before the upload:
 
 ```console
-$ factory contained --target k8s -- study ~/code/rta
+$ factory contained --target k8s -- study ~/code/my-project
 gitleaks: 1 finding(s)
   .env:1  [github-pat] Uncovered a GitHub Personal Access Token, potentially leading to
           unauthorized repository access and sensitive content exposure.
@@ -569,7 +727,9 @@ that run first, or run this one without `--division`.
 | Pre-answering Claude Code's first-run prompts | `factory/contained/claude_state.py` |
 | Cluster division | `factory/contained/k8s_division.py` |
 | Prereq bundle | `factory/contained/bundle.py` |
+| Object-by-object review | `factory/contained/k8s_review.py` |
 | Secret scan | `factory/contained/secrets.py` |
+| Terminal colour and wizard steps | `factory/contained/style.py` |
 | CLI | `factory/cli/contained.py`, `factory/cli/contained_k8s.py` |
 
 Both CLI modules **compose** commands and do not execute them, which is what makes
@@ -577,5 +737,12 @@ Both CLI modules **compose** commands and do not execute them, which is what mak
 rendering that drifts.
 
 The runtime image is `containers/factory/Containerfile` — UBI9 plus the factory wheel, the agent
-CLIs, and tmux — published multi-arch by `.github/workflows/runtime-image.yml`. `factory contained
-setup` pulls it; it does not build.
+CLIs, and tmux — published multi-arch (amd64 for cluster nodes, arm64 for a Mac laptop) by
+`.github/workflows/runtime-image.yml`. `factory contained setup` pulls it; it does not build.
+
+It publishes on three events. A push to `main` moves `:latest`; a **published release** builds that
+release's commit and publishes `:<release tag>`, moving `:latest` too unless the release is a
+prerelease; `workflow_dispatch` publishes whatever tag you name. Every event also tags the short
+SHA. The release trigger is the one that has to be automatic — `setup` pulls a published image and
+does not build, so a release whose image was never built leaves a new user's first command failing
+on a manifest that does not exist. Nightlies are prereleases and therefore never move `:latest`.

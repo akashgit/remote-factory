@@ -93,7 +93,7 @@ def scan(path: Path) -> ScanResult:
         Finding(
             # Relative to the workspace root, not the absolute path of the *copy*. The copy is an
             # implementation detail under ~/.factory-contained; a user told to fix
-            # `.factory-contained/<run>/rta/.env` goes and edits a file that is regenerated on the
+            # `.factory-contained/<run>/<project>/.env` goes and edits a file that is regenerated on the
             # next run, while the real one keeps being uploaded.
             file=_relative(str(item.get("File", "?")), path),
             line=int(item.get("StartLine", 0) or 0),

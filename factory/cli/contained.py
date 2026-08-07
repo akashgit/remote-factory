@@ -57,10 +57,16 @@ log = structlog.get_logger()
 
 LIFECYCLE_SUBCOMMANDS = ("ls", "attach", "rm", "sync", "setup", "verify", "bundle")
 
+# `help` is not a lifecycle subcommand — it provisions nothing and acts on no runtime — but it is
+# what people type, and without it the word falls through to the passthrough path and fails with
+# "no existing directory found in ['help']", a message about materializing workspaces for what is a
+# request to read the manual.
+HELP_SUBCOMMAND = "help"
+
 # Flags whose meaning exists only for one runtime. Using one against the other is a mistake worth
 # naming: silently ignoring it makes a user believe a namespace or a mount took effect.
 _LOCAL_ONLY = ("mount",)
-_K8S_ONLY = ("namespace", "storage_class")
+_K8S_ONLY = ("namespace", "storage_class", "context")
 
 # Flags are described here rather than in argparse's own listing: which target a flag belongs to is
 # the thing a user most needs to know, and a flat alphabetical list hides it.
@@ -82,6 +88,7 @@ Subcommands:
   sync NAME              Show how to get the run's work back
   rm NAME                Delete a runtime
   bundle                 Print the cluster prerequisites as YAML (k8s)
+  help                   Print this text (same as --help)
 
 Both targets:
   --target local|k8s     Which runtime                              (default: local)
@@ -97,6 +104,7 @@ Local only:
 
 K8s only:
   --namespace NS         Namespace                    (default: your current context)
+  --context NAME         Which kubeconfig context to use    (default: your current one)
   --storage-class SC     Storage class for the workspace volume
 
 Environment:
@@ -132,7 +140,7 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
         "contained",
         help="Run any factory command in a container (local) or a pod (k8s)",
         usage="factory contained [runtime flags] -- <factory command>\n"
-              "       factory contained {ls|attach|rm|sync|setup|verify|bundle} [name]",
+              "       factory contained {ls|attach|rm|sync|setup|verify|bundle|help} [name]",
         epilog=_HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         # `--name` and `--namespace` share a prefix. Without this, argparse's default prefix
@@ -156,6 +164,7 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
     p.add_argument("--mount", action="append", default=[], metavar="PATH", help=argparse.SUPPRESS)
     p.add_argument("--namespace", default=None, help=argparse.SUPPRESS)
     p.add_argument("--storage-class", default=None, dest="storage_class", help=argparse.SUPPRESS)
+    p.add_argument("--context", default=None, help=argparse.SUPPRESS)
     p.add_argument("--image", default=None, help=argparse.SUPPRESS)
     # `rm` prompts before deleting an active runtime and the cluster upload prompts on a secret-scan
     # finding; `--yes` skips both, for automation.
@@ -178,6 +187,11 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
     rest = list(args.rest)
     if rest and rest[0] == "--":          # argparse leaves the separator inside a REMAINDER
         args.subcommand, args.factory_args = None, rest[1:]
+    elif rest and rest[0] == HELP_SUBCOMMAND:
+        # Handled here rather than by argparse so that `help` behaves like `--help` without the
+        # payload separator: everything after it is discarded, because there is no per-subcommand
+        # help to select and silently ignoring `help ls` would imply there is.
+        args.subcommand, args.factory_args = HELP_SUBCOMMAND, []
     elif rest and rest[0] in LIFECYCLE_SUBCOMMANDS:
         args.subcommand = rest[0]
         args.factory_args = []
@@ -227,8 +241,8 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
     if not args.subcommand and not args.factory_args:
         parser.error(
             "`factory contained` expects a factory command after `--`, for example:\n"
-            "  factory contained -- ceo ~/code/rta\n"
-            "  factory contained --division -- study ~/code/rta"
+            "  factory contained -- ceo ~/code/my-project\n"
+            "  factory contained --division -- study ~/code/my-project"
         )
 
 
@@ -244,7 +258,9 @@ def _reject_subcommand_typo(parser: argparse.ArgumentParser, rest: list[str]) ->
     first = rest[0]
     if first.startswith("-") or Path(first).expanduser().exists():
         return
-    close = [c for c in LIFECYCLE_SUBCOMMANDS if _within_one_edit(first, c)]
+    close = [
+        c for c in (*LIFECYCLE_SUBCOMMANDS, HELP_SUBCOMMAND) if _within_one_edit(first, c)
+    ]
     if close:
         parser.error(
             f"unknown subcommand {first!r} — did you mean {close[0]!r}?\n"
@@ -328,7 +344,7 @@ def _resolve_project(factory_args: list[str]) -> Path:
     raise ContainedError(
         f"no existing directory found in {factory_args!r}. `factory contained` materializes a "
         "workspace from a project already on this machine, for example:\n"
-        "  factory contained -- ceo ~/code/rta"
+        "  factory contained -- ceo ~/code/my-project"
     )
 
 
@@ -546,9 +562,16 @@ def _run_step(step: Step) -> subprocess.CompletedProcess[str]:
 def _verify(args: argparse.Namespace) -> int:
     if args.target == "k8s":
         from factory.contained.k8s_setup import verify_k8s
+        from factory.contained.prereq import format_check, summary_line
 
-        checks = verify_k8s(namespace=args.namespace, division=args.division)
-        print(render_checks(checks, ready_command="factory contained --target k8s -- ceo <path>"))
+        # Streamed for the same reason `setup` streams: the cluster checks take minutes between
+        # them, and silence until the last one lands is indistinguishable from a hang.
+        checks = verify_k8s(
+            namespace=args.namespace, division=args.division,
+            on_check=lambda c: print(format_check(c), flush=True),
+        )
+        print()
+        print(summary_line(checks, ready_command="factory contained --target k8s -- ceo <path>"))
         return 0 if all(c.ok for c in checks) else 1
     checks = local_checks()
     print(render_checks(checks))
@@ -556,10 +579,35 @@ def _verify(args: argparse.Namespace) -> int:
 
 
 def cmd_contained(args: argparse.Namespace) -> int:
-    """Run the factory inside a container (local) or a pod (k8s)."""
+    """Run the factory inside a container (local) or a pod (k8s).
+
+    Ctrl-C is caught here rather than allowed to unwind. Backing out of a wizard partway through is
+    an ordinary thing to do — the flow is a sequence of questions and someone will always change
+    their mind at question three — and answering that with a stack trace reads as a crash the user
+    caused. The two exit paths that need their own message (a container that may still be running,
+    a namespace left half-prepared) handle it closer in and never reach this.
+    """
+    try:
+        return _dispatch(args)
+    except KeyboardInterrupt:
+        print("\nStopped.", file=sys.stderr)
+        return 130                       # what a shell expects from a process killed by SIGINT
+
+
+def _dispatch(args: argparse.Namespace) -> int:
     assert _PARSER is not None, "build_contained_parser must run before cmd_contained"
     interpret(_PARSER, args)
 
+    if getattr(args, "context", None):
+        # Pinned once, here, for every cluster command this invocation issues. `factory/contained/
+        # k8s.py:cli()` is the single place it is applied, so nothing downstream has to remember.
+        from factory.contained.k8s import set_active_context
+
+        set_active_context(args.context)
+
+    if args.subcommand == HELP_SUBCOMMAND:
+        _PARSER.print_help()
+        return 0
     if args.subcommand == "verify":
         return _verify(args)
     if args.subcommand == "setup":
