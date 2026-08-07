@@ -36,7 +36,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     validated = _validate_ceo_flags(args)
     if isinstance(validated, int):
         return validated
-    mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan = validated
+    mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan, just_plan = validated
 
     assert raw_path is not None
 
@@ -92,6 +92,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     err = _validate_late_flags(
         mode, focus, prompt_file, research_ideation,
         design_existing, project_path, no_github, issue_number,
+        just_plan=just_plan,
     )
     if err is not None:
         return err
@@ -129,6 +130,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         no_github=no_github,
         raw_path=raw_path,
         from_plan=from_plan,
+        just_plan=just_plan,
     )
 
 

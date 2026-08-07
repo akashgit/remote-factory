@@ -55,9 +55,10 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "plus conditional study for existing projects. Use when the user says "
             "'design X', 'plan X', 'let's discuss what to build', or wants to review "
             "the strategy before building. Works for both new and existing projects. "
-            "Supports --from-plan to load an existing plan and skip research."
+            "Supports --from-plan to load an existing plan and skip research. "
+            "With --just-plan, runs plan-only (research + strategy + GitHub publish, NO implementation)."
         ),
-        "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>]",
+        "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>] [--just-plan]",
     },
     "improve": {
         "description": (
@@ -146,16 +147,15 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "plan": {
         "description": (
-            "Plan mode — prior plan check + research + strategy + single approval gate, "
+            "Plan-only workflow (triggered via --mode design --just-plan). "
+            "Prior plan check + research + strategy + single approval gate, "
             "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
             "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "
             "Single approval gate: 'Keep this plan?' — approval auto-publishes to GitHub and seeds backlog. "
             "RELOOP re-runs Strategist with feedback. HALT exits without publishing. "
-            "Terminal — does not chain to build or improve. Use when the user says 'plan X', "
-            "'just plan', 'research and plan but don't build', or wants strategic analysis "
-            "without code changes."
+            "Terminal — does not chain to build or improve."
         ),
-        "argument_hint": "<project_path> [--focus <topic>]",
+        "argument_hint": "<project_path> --mode design --just-plan [--focus <topic>]",
     },
     "founder": {
         "description": (

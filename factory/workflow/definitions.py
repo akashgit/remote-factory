@@ -4538,7 +4538,7 @@ def plan_workflow() -> Workflow:
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return ctx.get("mode") == "plan"
+        return ctx.get("just_plan") is True
 
     return Workflow(
         name="plan",

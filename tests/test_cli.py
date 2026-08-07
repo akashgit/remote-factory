@@ -453,7 +453,7 @@ class TestCmdCeoDesign:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
-        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve, _from_plan = validated
+        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve, _from_plan, _just_plan = validated
         assert headless is True
         assert auto_approve is True
 
@@ -2792,7 +2792,7 @@ class TestFromPlanFlag:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int)
-        *_, from_plan = validated
+        *_, from_plan, _just_plan = validated
         assert from_plan is None
 
     def test_from_plan_validation_passes_with_design_mode(self):
@@ -2815,7 +2815,7 @@ class TestFromPlanFlag:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
-        *_, from_plan = validated
+        *_, from_plan, _just_plan = validated
         assert from_plan == "plan.md"
 
 
@@ -3084,3 +3084,90 @@ class TestFromPlanFeedbackWritesFile:
         assert result == 0
         feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
         assert not feedback_file.exists()
+
+
+class TestJustPlanFlag:
+    """Tests for --just-plan flag on design mode."""
+
+    def test_just_plan_requires_design_mode(self, capsys):
+        """--just-plan without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--just-plan"])
+        assert result == 1
+        assert "--just-plan requires --mode design" in capsys.readouterr().err
+
+    def test_just_plan_mutually_exclusive_with_from_plan(self, capsys):
+        """--just-plan and --from-plan cannot be used together."""
+        result = main(["ceo", "/some/path", "--mode", "design", "--just-plan", "--from-plan", "plan.md"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_just_plan_mutually_exclusive_with_prompt(self, capsys):
+        """--just-plan and --prompt cannot be used together."""
+        result = main(["ceo", "/some/path", "--mode", "design", "--just-plan", "--prompt", "spec.md"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_just_plan_with_focus_allowed(self):
+        """--just-plan and --focus are allowed together."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="/some/path",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus="auth",
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+            just_plan=True,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        *_, just_plan = validated
+        assert just_plan is True
+
+    def test_mode_plan_no_longer_valid(self, capsys):
+        """--mode plan is no longer a valid mode choice."""
+        with pytest.raises(SystemExit):
+            main(["ceo", "/some/path", "--mode", "plan"])
+
+    def test_just_plan_default_is_false(self):
+        """just_plan defaults to False when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+            just_plan=False,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        *_, just_plan = validated
+        assert just_plan is False
+
+    def test_task_builder_just_plan_directive(self, tmp_path):
+        """_build_ceo_task generates the plan directive for just_plan=True."""
+        task = _build_ceo_task(tmp_path, "design", just_plan=True)
+        assert "## Plan Loop (Just Plan)" in task
+        assert "just_plan: true" in task
+        assert "Terminal mode" in task
+
+    def test_task_builder_no_just_plan_directive(self, tmp_path):
+        """_build_ceo_task omits the plan directive when just_plan=False."""
+        task = _build_ceo_task(tmp_path, "design", just_plan=False)
+        assert "## Plan Loop (Just Plan)" not in task
