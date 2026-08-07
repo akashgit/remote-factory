@@ -102,13 +102,24 @@ def render_skill_from_slots(
     if not wf:
         raise ValueError(f"Unknown workflow: {workflow_name}")
 
-    from factory.workflow.primitives import AgentNode
+    from factory.workflow.primitives import AgentNode, LLMNode
 
     for slot_name, slot_value in prompt_slots.items():
-        node_id = slot_name.replace("task_prompt_", "")
-        node = wf.nodes.get(node_id)
-        if isinstance(node, AgentNode):
-            wf.nodes[node_id] = node.model_copy(update={"prompt_template": slot_value})
+        if slot_name.startswith("task_prompt_"):
+            node_id = slot_name.replace("task_prompt_", "")
+            node = wf.nodes.get(node_id)
+            if isinstance(node, AgentNode):
+                wf.nodes[node_id] = node.model_copy(update={"prompt_template": slot_value})
+        elif slot_name.startswith("instance_prompt_"):
+            node_id = slot_name.replace("instance_prompt_", "")
+            node = wf.nodes.get(node_id)
+            if isinstance(node, LLMNode):
+                wf.nodes[node_id] = node.model_copy(update={"instance_prompt": slot_value})
+        elif slot_name.startswith("system_prompt_"):
+            node_id = slot_name.replace("system_prompt_", "")
+            node = wf.nodes.get(node_id)
+            if isinstance(node, LLMNode):
+                wf.nodes[node_id] = node.model_copy(update={"system_prompt": slot_value})
 
     templatized = workflow_to_skill_md(wf)
     clean_md, _ = split_skill(templatized)
