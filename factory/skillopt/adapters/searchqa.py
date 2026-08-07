@@ -37,6 +37,15 @@ class SearchQAAdapter(EnvAdapter):
         if cfg.get("dataset_dir"):
             self.data_dir = Path(cfg["dataset_dir"])
         self.instances = cfg.get("instances", [])
+        self._check_data_dir()
+
+    def _check_data_dir(self) -> None:
+        if not self.data_dir.is_dir():
+            raise FileNotFoundError(
+                f"SearchQA Harbor data not found at {self.data_dir}\n"
+                f"Run the setup script to generate it:\n"
+                f"  cd {_BENCHMARKS_DIR.parent} && bash benchmarks/searchqa/setup.sh"
+            )
 
     def _list_task_ids(self, split: str) -> list[str]:
         split_dir = self.data_dir / split
