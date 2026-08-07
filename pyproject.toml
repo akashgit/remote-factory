@@ -13,7 +13,7 @@ dependencies = [
     "filelock>=3.0",
     "networkx>=3.6.1",
     "langfuse>=3.0",
-    "anthropic>=0.52",
+    "anthropic[vertex]>=0.52",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
