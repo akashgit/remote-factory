@@ -47,8 +47,10 @@ _ANSI_ESCAPE_RE = re.compile(
 
 
 def strip_ansi(data: bytes) -> bytes:
-    r"""Remove ANSI/VT escape sequences. Leaves \r, \n and plain text intact."""
-    return _ANSI_ESCAPE_RE.sub(b"", data)
+    r"""Remove ANSI/VT escape sequences and bare carriage returns."""
+    data = _ANSI_ESCAPE_RE.sub(b"", data)
+    data = data.replace(b"\r\n", b"\n").replace(b"\r", b"")
+    return data
 
 
 def should_stream() -> bool:
