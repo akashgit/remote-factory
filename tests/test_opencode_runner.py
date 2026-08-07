@@ -620,7 +620,7 @@ class TestOpenCodeInteractive:
 
 
 class TestTokenGuardrails:
-    def test_usage_logging_on_headless(
+    async def test_usage_logging_on_headless(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
@@ -628,16 +628,13 @@ class TestTokenGuardrails:
         factory_dir.mkdir()
         runner = OpenCodeRunner(project_path=tmp_path)
 
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(
-            runner.headless(
-                AgentRunRequest(
-                    prompt="test",
-                    task="test",
-                    cwd=tmp_path,
-                    role="researcher",
-                    project_path=tmp_path,
-                )
+        await runner.headless(
+            AgentRunRequest(
+                prompt="test",
+                task="test",
+                cwd=tmp_path,
+                role="researcher",
+                project_path=tmp_path,
             )
         )
 
