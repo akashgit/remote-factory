@@ -646,36 +646,25 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         for node_id in build_phase_nodes:
             wf.nodes.pop(node_id, None)
 
-        # ── Rebuild edges for plan-only path ──
-        wf.edges = [
-            # Prior plan detection
+        # ── Filter out edges referencing removed build-phase nodes ──
+        removed = build_phase_nodes
+        wf.edges = [e for e in wf.edges if e.source not in removed and e.target not in removed]
+
+        # Replace study → fork_research with study → check_prior_plans
+        wf.edges = [e for e in wf.edges if not (e.source == "study" and e.target == "fork_research")]
+
+        # Add plan-specific edges
+        wf.edges.extend([
+            Edge(source="study", target="check_prior_plans"),
             Edge(source="check_prior_plans", target="gate_prior_plans", condition=VerdictType.PROCEED),
             Edge(source="check_prior_plans", target="fork_research", condition=VerdictType.HALT),
             Edge(source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED),
-            # Fork to researchers
-            Edge(source="fork_research", target="researcher_similar"),
-            Edge(source="fork_research", target="researcher_techstack"),
-            Edge(source="fork_research", target="researcher_pitfalls"),
-            # Researchers to join
-            Edge(source="researcher_similar", target="join_research"),
-            Edge(source="researcher_techstack", target="join_research"),
-            Edge(source="researcher_pitfalls", target="join_research"),
-            # Join → research gate
-            Edge(source="join_research", target="gate_research"),
-            # Research gate → strategist (proceed) or back to fork (reloop)
-            Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
-            Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
-            # Strategist → user gate
-            Edge(source="strategist", target="gate_strategy"),
-            # Strategy gate → publish (proceed) or strategist (reloop)
             Edge(source="gate_strategy", target="publish_github", condition=VerdictType.PROCEED),
-            Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
-            # Publish → seed backlog
             Edge(source="publish_github", target="seed_backlog"),
-        ]
+        ])
 
         wf.name = "plan"
-        wf.start_node = "check_prior_plans"
+        wf.start_node = "gate_has_factory"
         wf.terminal = True
 
         def plan_trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:

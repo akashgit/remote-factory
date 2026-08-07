@@ -25,10 +25,10 @@ def wf():
 
 def test_plan_workflow_structure(wf):
     """Verify node and edge counts match the expected topology."""
-    assert len(wf.nodes) == 12
-    assert len(wf.edges) == 16
+    assert len(wf.nodes) == 15
+    assert len(wf.edges) == 20
     assert wf.name == "plan"
-    assert wf.start_node == "check_prior_plans"
+    assert wf.start_node == "gate_has_factory"
     assert wf.terminal is True
 
 
@@ -47,9 +47,6 @@ def test_plan_workflow_edge_coverage(wf):
         for e in wf.edges
     ]
     expected = [
-        ("check_prior_plans", "gate_prior_plans", VerdictType.PROCEED),
-        ("check_prior_plans", "fork_research", VerdictType.HALT),
-        ("gate_prior_plans", "fork_research", VerdictType.PROCEED),
         ("fork_research", "researcher_similar", None),
         ("fork_research", "researcher_techstack", None),
         ("fork_research", "researcher_pitfalls", None),
@@ -60,8 +57,15 @@ def test_plan_workflow_edge_coverage(wf):
         ("gate_research", "strategist", VerdictType.PROCEED),
         ("gate_research", "fork_research", VerdictType.RELOOP),
         ("strategist", "gate_strategy", None),
-        ("gate_strategy", "publish_github", VerdictType.PROCEED),
         ("gate_strategy", "strategist", VerdictType.RELOOP),
+        ("gate_has_factory", "study", VerdictType.PROCEED),
+        ("gate_has_factory", "discover", VerdictType.HALT),
+        ("discover", "study", None),
+        ("study", "check_prior_plans", None),
+        ("check_prior_plans", "gate_prior_plans", VerdictType.PROCEED),
+        ("check_prior_plans", "fork_research", VerdictType.HALT),
+        ("gate_prior_plans", "fork_research", VerdictType.PROCEED),
+        ("gate_strategy", "publish_github", VerdictType.PROCEED),
         ("publish_github", "seed_backlog", None),
     ]
     assert edge_tuples == expected
@@ -228,7 +232,7 @@ def test_design_without_just_plan_unchanged():
     wf = design_workflow()
     assert wf.name == "design"
     assert wf.terminal is False
-    assert wf.start_node == "fork_research"
+    assert wf.start_node == "gate_has_factory"
     assert "builder" in wf.nodes
     assert "gate_build" in wf.nodes
     assert "health_checker" in wf.nodes
