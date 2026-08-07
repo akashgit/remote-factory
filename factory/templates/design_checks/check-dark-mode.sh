@@ -22,19 +22,38 @@ if [[ "${1:-}" == "--score" ]]; then
   SCORE_MODE=true
 fi
 
+# --- Auto-detect source directory for full-scan mode ---
+if [[ "${SCAN_MODE:-}" == "full" ]] && [[ -z "${SCAN_SRC_DIR:-}" ]]; then
+  _BL=".factory/design-system/design-baseline.json"
+  if [[ -f "$_BL" ]]; then
+    SCAN_SRC_DIR=$(python3 -c "import json; print(json.load(open('$_BL')).get('source_root',''))" 2>/dev/null || true)
+  fi
+  if [[ -z "${SCAN_SRC_DIR:-}" ]]; then
+    for _d in src app pages lib; do
+      if [[ -d "$_d" ]]; then SCAN_SRC_DIR="$_d"; break; fi
+    done
+  fi
+  SCAN_SRC_DIR="${SCAN_SRC_DIR:-.}"
+fi
+
 # --- Gather files to check ---
 if [[ "${SCAN_MODE:-}" == "full" ]]; then
-  CHANGED_TSX=$(find "${SCAN_SRC_DIR:-src}" -type f -name '*.tsx' 2>/dev/null | sort || true)
+  CHANGED_TSX=$(find "$SCAN_SRC_DIR" -type f -name '*.tsx' 2>/dev/null | sort || true)
 else
   CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
   CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' || true)
 fi
 
 if [[ -z "$CHANGED_TSX" ]]; then
-  if $SCORE_MODE; then
-    echo '{"score": 1.0, "details": "No changed .tsx files to check."}'
+  if [[ "${SCAN_MODE:-}" == "full" ]]; then
+    _MSG="No .tsx files found in ${SCAN_SRC_DIR:-.}."
   else
-    echo "PASS: No changed .tsx files to check."
+    _MSG="No changed .tsx files to check."
+  fi
+  if $SCORE_MODE; then
+    echo "{\"score\": 1.0, \"details\": \"${_MSG}\"}"
+  else
+    echo "PASS: ${_MSG}"
   fi
   exit 0
 fi

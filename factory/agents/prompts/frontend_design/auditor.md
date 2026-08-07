@@ -23,6 +23,7 @@ If any are missing, report the gap and exit.
 
 ```json
 {
+  "source_root": "<root directory containing application source files, e.g. 'src', 'app', 'pages'>",
   "project_info": {
     "css_entry_points": ["<discovered paths>"],
     "component_root": "<discovered primitive component directory>",
