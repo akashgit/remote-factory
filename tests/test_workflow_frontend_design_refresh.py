@@ -173,6 +173,15 @@ class TestRefreshDifferPhase:
         assert len(reloop_edges) == 1
         assert reloop_edges[0].target == "refresh_differ"
 
+    def test_user_gate_halt_to_archivist(self) -> None:
+        wf = frontend_design_refresh_workflow()
+        halt_edges = [
+            e for e in wf.edges
+            if e.source == "gate_refresh_approve" and e.condition == VerdictType.HALT
+        ]
+        assert len(halt_edges) == 1
+        assert halt_edges[0].target == "archivist_refresh"
+
 
 # ── Applier Phase ─────────────────────────────────────────────
 
