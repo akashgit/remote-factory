@@ -194,6 +194,7 @@ class ClaudeRunner:
                 runner_name="claude",
                 role=request.role,
                 on_line=on_line,
+                sanitize=True,
             )
 
             usage = None

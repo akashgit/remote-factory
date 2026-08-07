@@ -166,6 +166,8 @@ _BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇"
 
 def _show_spinner(stop_event: threading.Event) -> None:
     """Braille spinner on stderr. Respects NO_COLOR."""
+    if not sys.stderr.isatty():
+        return
     use_color = not os.environ.get("NO_COLOR") and sys.stderr.isatty()
     idx = 0
     while not stop_event.is_set():

@@ -133,6 +133,27 @@ class WorkflowExecutor:
         self.result.duration_ms = elapsed
         self.result.completed_files = set(self.completed_files)
 
+        # Timing summary: extract per-node durations from completed events
+        node_timings: list[dict[str, Any]] = []
+        for ev in self.result.events:
+            if ev.get("type") == "node.completed" and "duration_ms" in ev:
+                node_timings.append({
+                    "id": ev.get("node_id", ""),
+                    "type": ev.get("node_type", ""),
+                    "duration_ms": round(ev["duration_ms"], 1),
+                })
+        node_timings.sort(key=lambda n: n["duration_ms"], reverse=True)
+        node_total_ms = sum(n["duration_ms"] for n in node_timings)
+        log.info(
+            "workflow.timing_summary",
+            workflow=self.workflow.name,
+            run_id=self.run_id,
+            total_ms=round(elapsed, 1),
+            node_count=len(node_timings),
+            nodes=node_timings,
+            overhead_ms=round(elapsed - node_total_ms, 1),
+        )
+
         if self.result.halted:
             self._emit(
                 "workflow.halted",

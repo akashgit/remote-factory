@@ -1072,11 +1072,12 @@ class TestAnsiSanitization:
         assert strip_ansi(b"\x1bMup") == b"up"  # RI (reverse line feed)
 
     def test_strip_ansi_preserves_plaintext_and_newlines(self) -> None:
-        r"""Plain text, \r, \n and UTF-8 multibyte content are left intact."""
+        r"""Plain text, \n and UTF-8 multibyte content are left intact. Bare \r is stripped."""
         from factory.runners._stream import strip_ansi
 
         assert strip_ansi(b"plain text\n") == b"plain text\n"
-        assert strip_ansi(b"a\rb\n") == b"a\rb\n"
+        assert strip_ansi(b"a\rb\n") == b"ab\n"
+        assert strip_ansi(b"a\r\nb\r\n") == b"a\nb\n"
         # UTF-8 multibyte must not be clipped (guards the \x9C omission)
         utf8 = "café — 日本語".encode()
         assert strip_ansi(utf8) == utf8
@@ -1266,10 +1267,10 @@ class TestAnsiSanitization:
 
 
 
-    async def test_claude_runner_does_not_sanitize(
+    async def test_claude_runner_sanitizes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ClaudeRunner.headless() does not sanitize (default False)."""
+        """ClaudeRunner.headless() passes sanitize=True to run_subprocess."""
         monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
 
         runner = ClaudeRunner()
@@ -1290,7 +1291,7 @@ class TestAnsiSanitization:
             ))
 
             mock_run.assert_called_once()
-            assert mock_run.call_args.kwargs.get("sanitize", False) is False
+            assert mock_run.call_args.kwargs.get("sanitize", False) is True
 
 
 class TestInactivityTimeout:

@@ -180,6 +180,7 @@ async def invoke_agent(
     review_tag: str | None = None,
     workflow_mode: str | None = None,
     settings_file: str | None = None,
+    prompt_override: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -191,9 +192,12 @@ async def invoke_agent(
     """
     global _consecutive_failures
 
-    prompt = resolve_prompt(
-        role, project_path, use_profile=use_profile, workflow_mode=workflow_mode
-    )
+    if prompt_override:
+        prompt = prompt_override
+    else:
+        prompt = resolve_prompt(
+            role, project_path, use_profile=use_profile, workflow_mode=workflow_mode
+        )
 
     if os.environ.get("FACTORY_NO_GITHUB") == "1":
         prompt += (

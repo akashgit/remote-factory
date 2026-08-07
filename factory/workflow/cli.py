@@ -28,7 +28,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed}")
+        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed,tool}")
         return 1
 
     handlers = {
@@ -38,6 +38,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
         "validate": _cmd_validate,
         "export-skills": _cmd_export_skills,
         "lint-contributed": _cmd_lint_contributed,
+        "tool": _cmd_tool,
     }
 
     handler = handlers.get(sub)
@@ -244,6 +245,41 @@ def _cmd_lint_contributed(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_tool(args: argparse.Namespace) -> int:
+    """Dispatch tool subcommands for step-by-step workflow execution."""
+    import sys
+
+    from factory.workflow.tool import tool_finalize, tool_init, tool_next, tool_status, tool_submit
+
+    sub = getattr(args, "tool_command", None)
+    if not sub:
+        print("Usage: factory workflow tool {init,next,submit,status,finalize}")
+        return 1
+
+    project_path = Path(args.project_path).resolve()
+
+    if sub == "init":
+        session_dir = tool_init(args.name, project_path)
+        print(session_dir)
+        return 0
+    elif sub == "next":
+        print(tool_next(project_path))
+        return 0
+    elif sub == "submit":
+        output = sys.stdin.read().strip()
+        result = tool_submit(project_path, args.node, output)
+        print(result)
+        return 0
+    elif sub == "status":
+        print(tool_status(project_path))
+        return 0
+    elif sub == "finalize":
+        print(tool_finalize(project_path))
+        return 0
+
+    return 1
+
+
 def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the 'workflow' subcommand with its subcommands."""
     wf_parser = sub.add_parser("workflow", help="Workflow graph engine commands")
@@ -282,3 +318,24 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument(
         "--path", default=None, help="Base directory to scan (default: factory/workflow/contributed/)"
     )
+
+    # tool
+    p_tool = wf_sub.add_parser("tool", help="Tool-based workflow execution")
+    tool_sub = p_tool.add_subparsers(dest="tool_command")
+
+    p_tool_init = tool_sub.add_parser("init", help="Initialize a tool session")
+    p_tool_init.add_argument("name", help="Workflow name")
+    p_tool_init.add_argument("project_path", help="Project path")
+
+    p_tool_next = tool_sub.add_parser("next", help="Get next node task")
+    p_tool_next.add_argument("project_path", help="Project path")
+
+    p_tool_submit = tool_sub.add_parser("submit", help="Submit node output")
+    p_tool_submit.add_argument("project_path", help="Project path")
+    p_tool_submit.add_argument("--node", required=True, help="Node ID")
+
+    p_tool_status = tool_sub.add_parser("status", help="Show session status")
+    p_tool_status.add_argument("project_path", help="Project path")
+
+    p_tool_finalize = tool_sub.add_parser("finalize", help="Finalize session — mark remaining nodes complete")
+    p_tool_finalize.add_argument("project_path", help="Project path")
