@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import warnings
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
+from factory.cycle_analyzer import CycleRecord
 from factory.inner_loop import InnerLoop
 from factory.workflow.definitions import evolve_workflow, register_all
 from factory.workflow.primitives import (
@@ -390,3 +393,66 @@ class TestFrozenNodesDefault:
         loop = InnerLoop(tmp_path, workflow=wf)
         assert loop.frozen_nodes == frozenset()
         assert loop.workflow is wf
+
+
+class TestWriteDirectivesFrozenNodes:
+    def test_frozen_nodes_included_in_directives_file(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b", "c")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a", "c"]))
+        loop._write_directives({"focus": "performance"})
+        msg_path = tmp_path / ".factory" / "messages" / "outer-loop-0000.md"
+        content = msg_path.read_text()
+        assert "frozen_nodes" in content
+        assert "a, c" in content
+
+    def test_no_frozen_nodes_omits_key(self, tmp_path: Path) -> None:
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset())
+        loop._write_directives({"focus": "performance"})
+        msg_path = tmp_path / ".factory" / "messages" / "outer-loop-0000.md"
+        content = msg_path.read_text()
+        assert "frozen_nodes" not in content
+
+
+class TestCollectResultsFrozenNodes:
+    def test_collect_populates_frozen_and_mutable(self, tmp_path: Path) -> None:
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        wf = _make_workflow("a", "b", "c")
+        loop = InnerLoop(tmp_path, workflow=wf, frozen_nodes=frozenset(["a"]))
+        record = loop.collect()
+        assert record.frozen_nodes == ["a"]
+        assert sorted(record.mutable_node_ids) == ["b", "c"]
+
+    def test_collect_empty_frozen(self, tmp_path: Path) -> None:
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        wf = _make_workflow("a", "b")
+        loop = InnerLoop(tmp_path, workflow=wf)
+        record = loop.collect()
+        assert record.frozen_nodes == []
+        assert sorted(record.mutable_node_ids) == ["a", "b"]
+
+
+class TestCycleRecordSerialization:
+    def test_default_fields_are_empty_lists(self) -> None:
+        record = CycleRecord(
+            cycle_number=0, mode="test", started_at=None,
+            ended_at=None, duration_s=0,
+            score_start=None, score_end=None, score_delta=None,
+        )
+        assert record.frozen_nodes == []
+        assert record.mutable_node_ids == []
+
+    def test_asdict_includes_new_fields(self) -> None:
+        record = CycleRecord(
+            cycle_number=1, mode="evolve", started_at=None,
+            ended_at=None, duration_s=0,
+            score_start=None, score_end=None, score_delta=None,
+            frozen_nodes=["a", "c"],
+            mutable_node_ids=["b"],
+        )
+        d = asdict(record)
+        assert d["frozen_nodes"] == ["a", "c"]
+        assert d["mutable_node_ids"] == ["b"]
+        json.dumps(d, default=str)

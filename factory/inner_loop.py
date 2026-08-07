@@ -221,6 +221,9 @@ class InnerLoop:
         if record.mode is None:
             record.mode = self.mode
 
+        record.frozen_nodes = sorted(self.frozen_nodes)
+        record.mutable_node_ids = sorted(self.mutable_nodes())
+
         if self.evaluator and record.experiments:
             for exp in record.experiments:
                 eval_files = [
@@ -245,6 +248,8 @@ class InnerLoop:
 
     def _write_directives(self, directives: dict[str, Any]) -> None:
         """Write outer-loop directives as a factory message."""
+        if self.frozen_nodes:
+            directives['frozen_nodes'] = sorted(self.frozen_nodes)
         msg_dir = self.factory_dir / "messages"
         msg_dir.mkdir(parents=True, exist_ok=True)
         msg_id = f"outer-loop-{self._step_count:04d}"
