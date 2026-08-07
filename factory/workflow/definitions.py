@@ -462,6 +462,7 @@ def design_workflow() -> Workflow:
             'print(\"PROCEED\" if exists else \"HALT\")'
             '"'
         ),
+        reads={".factory/config.json"},
     )
 
     wf.nodes["study"] = Study(
