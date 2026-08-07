@@ -2982,6 +2982,21 @@ def frontend_design_scan_workflow() -> Workflow:
         },
     )
 
+    # ── Phase 2b: Deploy check scripts from factory templates ──
+
+    nodes["deploy_checks"] = FnNode(
+        id="deploy_checks",
+        command=(
+            'TMPL=$(python3 -c "import factory, os; '
+            "print(os.path.join(factory.__path__[0], 'templates', 'design_checks'))\")"
+            " && mkdir -p {project_path}/.factory/design-system/checks"
+            ' && cp "$TMPL"/*.sh {project_path}/.factory/design-system/checks/'
+            " && chmod +x {project_path}/.factory/design-system/checks/*.sh"
+            ' && echo "Deployed check scripts"'
+        ),
+        reads={".factory/design-system/design-baseline.json"},
+    )
+
     # ── Phase 3: Run all 6 check scripts (full codebase scan) ──
 
     check_scripts = [
@@ -3120,8 +3135,9 @@ def frontend_design_scan_workflow() -> Workflow:
         Edge(source="researcher_ux", target="join_scan_research"),
         # Join → auditor
         Edge(source="join_scan_research", target="scan_auditor"),
-        # Auditor → fork checks
-        Edge(source="scan_auditor", target="fork_scan_checks"),
+        # Auditor → deploy checks → fork checks
+        Edge(source="scan_auditor", target="deploy_checks"),
+        Edge(source="deploy_checks", target="fork_scan_checks"),
         # Fork to each check
         *[Edge(source="fork_scan_checks", target=name) for name, _ in check_scripts],
         # Each check to join

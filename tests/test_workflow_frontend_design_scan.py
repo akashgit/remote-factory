@@ -34,7 +34,7 @@ class TestFrontendDesignScanValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_scan_workflow()
-        assert len(wf.nodes) == 21
+        assert len(wf.nodes) == 22
 
     def test_start_node(self) -> None:
         wf = frontend_design_scan_workflow()
@@ -111,6 +111,31 @@ class TestScanAuditorPhase:
         wf = frontend_design_scan_workflow()
         node = wf.nodes["scan_auditor"]
         assert ".factory/design-system/design-baseline.json" in node.writes
+
+
+# ── Deploy Checks ─────────────────────────────────────────────
+
+
+class TestDeployChecks:
+    def test_deploy_checks_is_fn_node(self) -> None:
+        wf = frontend_design_scan_workflow()
+        node = wf.nodes["deploy_checks"]
+        assert isinstance(node, FnNode)
+
+    def test_auditor_to_deploy_checks(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "scan_auditor" and e.target == "deploy_checks"]
+        assert len(edges) == 1
+
+    def test_deploy_checks_to_fork(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "deploy_checks" and e.target == "fork_scan_checks"]
+        assert len(edges) == 1
+
+    def test_no_direct_auditor_to_fork(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "scan_auditor" and e.target == "fork_scan_checks"]
+        assert len(edges) == 0
 
 
 # ── Phase 3: Check Scripts ─────────────────────────────────────
