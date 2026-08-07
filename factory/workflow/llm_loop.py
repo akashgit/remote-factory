@@ -18,7 +18,7 @@ def _build_client(node: LLMNode) -> Any:
         from anthropic import AnthropicVertex
         return AnthropicVertex(
             project_id=os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", ""),
-            region=os.environ.get("CLOUD_ML_REGION", "us-east5"),
+            region=os.environ.get("CLOUD_ML_REGION", "global"),
         )
     from anthropic import Anthropic
     return Anthropic()
