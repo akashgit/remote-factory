@@ -340,9 +340,44 @@ factory ceo <path> --mode design --focus "topic"              # Seed with a spec
 # Create — extend the factory
 factory ceo <path> --mode create --focus "description"        # Create a new factory mode
 factory ceo <path> --mode create --focus "mode: change"       # Update an existing mode
+
+# Contained — run any factory command somewhere other than your shell
+factory contained -- ceo <path>                               # In a podman container
+factory contained --division -- ceo <path>                    # ...and let the agent build images
+factory contained --target k8s --namespace ns -- run <path> --loop   # In a cluster pod
+factory contained ls | attach <name> | rm <name> | sync <name>
 ```
 
 See `factory --help` for the complete list.
+
+---
+
+## Contained Runtimes
+
+`factory contained` runs the factory against a pinned toolchain and a **copy** of your project, so
+your working tree is never modified. Everything after `--` is passed inward verbatim — it is a place
+to run the factory, not a mode of it.
+
+```bash
+factory contained setup            # Pull the runtime image, check prerequisites
+factory contained verify           # Report what's missing, with the fix for each
+factory contained -- ceo ~/code/my-project
+factory contained attach <name>    # Live TUI mid-run; Ctrl-b d detaches, the run continues
+factory contained sync <name>      # Prints the branch and the merge command — never merges for you
+```
+
+`--target k8s` runs it unattended on a cluster instead, with the workspace on a volume that survives
+the pod. `--division` lets the agent build container images, so it can build one, run it, read the
+failure and iterate.
+
+**It is not a security sandbox.** `contained` makes a run reproducible and keeps it off your working
+tree. It does not restrict what the agent's code can do, it is not built for code or tenants you do
+not trust, and it does not replace reviewing the result. Locally, your inference credentials are
+inside the container because the agent needs them; `--division` additionally opens an
+unauthenticated build endpoint on every network interface for the length of the run, so avoid it on
+untrusted networks.
+
+Full guide, with worked examples of every command: **[Contained Runtimes](contained/index.md)**.
 
 ---
 

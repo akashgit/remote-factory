@@ -19,6 +19,20 @@ os.environ["FACTORY_CEO_RESPAWN_DISABLED"] = "1"
 
 
 @pytest.fixture(autouse=True)
+def _no_raw_terminal():
+    """Never let a prompt take over the terminal during a test.
+
+    `factory.contained.style.read_key`/`read_line` put stdin into cbreak mode whenever it *is* a
+    terminal — and a test run launched from a shell has one. A prompt would then block forever on a
+    keypress that is never coming, ignoring any `builtins.input` patch, because the raw path does
+    not go through `input()` at all. Forcing the documented fallback makes every prompt
+    line-buffered, which is the path the tests patch.
+    """
+    with patch("factory.contained.style._raw_session", return_value=None):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_registry(tmp_path: Path) -> None:
     """Redirect global registry to tmp_path during tests to avoid polluting ~/.factory/."""
     os.environ["FACTORY_REGISTRY_DIR"] = str(tmp_path / ".factory-test-registry")

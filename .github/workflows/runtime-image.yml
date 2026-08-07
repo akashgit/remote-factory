@@ -1,0 +1,205 @@
+name: Contained runtime image
+
+# The image `factory contained` runs, for both the local and cluster targets.
+#
+# Built and published here rather than on demand: on-demand building is slow for every cold start,
+# and it is circular for the cluster target, whose whole point is that the laptop is not the build
+# host. `factory contained setup` pulls; it does not build.
+#
+# **Multi-arch is not optional.** One image serves an arm64 laptop and amd64 cluster nodes, so this
+# publishes a manifest list rather than a single tag. Build and validate on the *same*
+# architecture — a probe that builds on arm64 and validates on amd64 is not evidence about either.
+
+# Three ways in, and they publish different tags:
+#
+#   push to main   → :latest and :<sha>       — the branch everyone pulls from by default
+#   release        → :<release tag> and :<sha>, plus :latest for a full (non-pre) release
+#   dispatch       → whatever tag you name
+#
+# A release is the one that has to be automatic: `factory contained setup` pulls a published image
+# and does not build, so a release whose image was never built leaves every new user's first
+# command failing on a manifest that does not exist. A prerelease (the nightlies) deliberately
+# does *not* move `:latest` — nightly is a thing you opt into by tag, not something a laptop picks
+# up by pulling the default.
+on:
+  push:
+    branches: [main]
+    paths:
+      - containers/factory/Containerfile
+      - factory/**
+      - skills/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/runtime-image.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (default: latest)'
+        required: false
+        default: 'latest'
+        type: string
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/factory-runtime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is emulated here. It is slow, and it is the only way to produce the manifest the
+      # laptop half of the design pulls without maintaining a second runner.
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/factory/Containerfile
+          platforms: ${{ matrix.platform }}
+          # Pushed by digest and assembled into a manifest list below, so a half-finished matrix
+          # never leaves a tag pointing at one architecture.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Export the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Both the dispatch input and the release tag reach the shell through `env:` rather than by
+      # interpolation, here and in every step below: each is user-supplied text, and pasting it
+      # into a `run:` block makes it shell source. They are then *validated* as well as quoted,
+      # because a string that is safe to pass to a shell is still not necessarily a legal image
+      # tag, and `imagetools create` failing on a malformed reference is a confusing way to find
+      # out someone named a release `v1.0 (final)`.
+      - name: Resolve the tags to publish
+        id: tags
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          usable() {
+            case "$1" in
+              ""|-*|.*|*[!A-Za-z0-9._-]*) return 1 ;;
+              *) return 0 ;;
+            esac
+          }
+          case "$EVENT" in
+            release)
+              usable "$RELEASE_TAG" \
+                || { echo "::error::release tag '$RELEASE_TAG' is not usable as an image tag"; exit 1; }
+              tags="$RELEASE_TAG"
+              # A prerelease — every nightly is one — publishes under its own tag only. Moving
+              # `:latest` there would push a nightly onto every laptop that pulls the default.
+              if [ "$PRERELEASE" != "true" ]; then
+                tags="$tags latest"
+              fi
+              ;;
+            workflow_dispatch)
+              tag="${INPUT_TAG:-latest}"
+              usable "$tag" \
+                || { echo "::error::tag '$tag' is not usable as an image tag"; exit 1; }
+              tags="$tag"
+              ;;
+            *)
+              tags="latest"
+              ;;
+          esac
+          echo "Publishing tags: $tags"
+          echo "list=$tags" >> "$GITHUB_OUTPUT"
+          echo "primary=${tags%% *}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the manifest list
+        env:
+          TAGS: ${{ steps.tags.outputs.list }}
+        run: |
+          set -eu
+          args=""
+          for tag in $TAGS; do
+            args="$args --tag ${IMAGE}:${tag}"
+          done
+          docker buildx imagetools create $args \
+            --tag "${IMAGE}:${GITHUB_SHA::12}" \
+            $(printf "${IMAGE}@sha256:%s " $(ls /tmp/digests | sed 's/^sha256://'))
+
+      - name: Verify the published manifest carries both architectures
+        env:
+          TAG: ${{ steps.tags.outputs.primary }}
+        run: |
+          tag="$TAG"
+          docker buildx imagetools inspect "${IMAGE}:${tag}"
+          for arch in amd64 arm64; do
+            docker buildx imagetools inspect "${IMAGE}:${tag}" --raw \
+              | grep -q "\"architecture\":\"${arch}\"" \
+              || { echo "::error::${arch} is missing from the published manifest"; exit 1; }
+          done
+
+      # The factory has to actually start in the image. A published image that pulls but whose
+      # entry point is broken fails at the far end of a workspace upload and a pod start, where it
+      # reads as a cluster problem.
+      - name: Smoke-test the published image
+        env:
+          TAG: ${{ steps.tags.outputs.primary }}
+        run: |
+          tag="$TAG"
+          docker run --rm "${IMAGE}:${tag}" factory --help > /dev/null
+          docker run --rm "${IMAGE}:${tag}" tmux -V
+          docker run --rm "${IMAGE}:${tag}" git --version

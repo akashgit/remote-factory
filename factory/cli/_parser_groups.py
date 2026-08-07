@@ -613,5 +613,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--loop", action="store_true", default=False,
                     help="Enable workflow-tune loop: adds /workflow-tune skill for iterative tuning")
 
+    from factory.cli.contained import build_contained_parser
+    build_contained_parser(sub)
+
     from factory.workflow.cli import add_workflow_parser
     add_workflow_parser(sub)  # type: ignore[arg-type]
