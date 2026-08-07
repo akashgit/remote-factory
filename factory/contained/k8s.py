@@ -98,11 +98,158 @@ def cli_binary() -> str:
 
 def current_namespace() -> str | None:
     """The namespace from the current context. Never hardcoded."""
-    result = _run([cli_binary(), "config", "view", "--minify", "-o",
-                   "jsonpath={..namespace}"])
+    result = _run(cli(cli_binary(), "config", "view", "--minify", "-o",
+                   "jsonpath={..namespace}"))
     if result is None or result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+@dataclass(frozen=True)
+class ClusterContext:
+    """Which cluster, as which user, in which namespace — every field optional.
+
+    A namespace name on its own does not identify anything: `default` exists on every cluster
+    anyone has ever logged into, so "your current context is set to 'default'" cannot answer the
+    question a user actually has before applying RBAC, which is *where*. The API server URL is what
+    answers it.
+
+    Any field can be `None` — a kubeconfig can omit a namespace, and an unreachable or malformed
+    one yields all four empty. Read-only and local; this never contacts the cluster.
+    """
+
+    context: str | None = None
+    server: str | None = None
+    user: str | None = None
+    namespace: str | None = None
+
+
+# Which context every cluster command this invocation issues is pinned to. Process-global on
+# purpose: it is configuration for the whole invocation, decided once at entry from `--context` or
+# from the setup wizard's chooser, and threading it through forty call sites would mean every one
+# of them could forget. `cli()` is the single place it is applied, so a command that skips `cli()`
+# is the only way to reach the wrong cluster — which is a thing a reader can check.
+_ACTIVE_CONTEXT: str | None = None
+
+
+def set_active_context(name: str | None) -> None:
+    """Pin every later cluster command to `name`. `None` restores "whatever kubeconfig says"."""
+    global _ACTIVE_CONTEXT
+    _ACTIVE_CONTEXT = name or None
+
+
+def active_context() -> str | None:
+    return _ACTIVE_CONTEXT
+
+
+def cli(binary: str, *args: str) -> list[str]:
+    """Compose a cluster CLI invocation pinned to the context this invocation targets.
+
+    `--context` rather than `config use-context`: choosing where *this* command goes must not
+    rewrite the user's kubeconfig behind their back. Switching their default is offered separately,
+    as its own question.
+    """
+    argv = [binary]
+    if _ACTIVE_CONTEXT:
+        argv += ["--context", _ACTIVE_CONTEXT]
+    return argv + list(args)
+
+
+def list_contexts() -> list[ClusterContext]:
+    """Every context in the kubeconfig, so a cluster can be chosen rather than assumed.
+
+    Read-only and local — this contacts no cluster, which matters because a kubeconfig routinely
+    holds contexts for clusters that are down, expired, or on a network you are not currently on.
+    """
+    try:
+        binary = cli_binary()
+    except ClusterError:
+        return []
+    result = _run([binary, "config", "view", "-o", "json"], timeout=15)
+    if result is None or result.returncode != 0:
+        return []
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return []
+    servers = {
+        entry.get("name"): (entry.get("cluster") or {}).get("server")
+        for entry in data.get("clusters") or []
+        if isinstance(entry, dict)
+    }
+    contexts = []
+    for entry in data.get("contexts") or []:
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("context") or {}
+        contexts.append(
+            ClusterContext(
+                context=str(entry.get("name") or "") or None,
+                server=str(servers.get(detail.get("cluster")) or "") or None,
+                user=str(detail.get("user") or "") or None,
+                namespace=str(detail.get("namespace") or "") or None,
+            )
+        )
+    return contexts
+
+
+def context_details(name: str) -> ClusterContext:
+    """One named context, or an empty one when the kubeconfig does not describe it."""
+    return next(
+        (entry for entry in list_contexts() if entry.context == name), ClusterContext(context=name)
+    )
+
+
+def use_context(name: str) -> tuple[bool, str]:
+    """Make `name` the kubeconfig's default. Only ever called after the user asks for it."""
+    try:
+        binary = cli_binary()
+    except ClusterError as exc:
+        return False, str(exc)
+    result = _run([binary, "config", "use-context", name], timeout=30)
+    if result is None:
+        return False, f"could not run `{binary} config use-context {name}`"
+    if result.returncode == 0:
+        return True, (result.stdout or "").strip()
+    detail = (result.stderr or "").strip().splitlines()
+    return False, detail[0][:200] if detail else "no detail given"
+
+
+def cluster_context() -> ClusterContext:
+    """Read the current context out of the kubeconfig, for display.
+
+    One `config view --minify -o json` rather than four jsonpath calls. Only the *names* are taken
+    from it — the context, the user's name, the server URL, the namespace — and never anything from
+    the `users` section, which is where credential material lives.
+    """
+    try:
+        binary = cli_binary()
+    except ClusterError:
+        return ClusterContext()
+    result = _run(cli(binary, "config", "view", "--minify", "-o", "json"), timeout=15)
+    if result is None or result.returncode != 0:
+        return ClusterContext()
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ClusterContext()
+
+    def _first(key: str, inner: str) -> dict[str, object]:
+        entries = data.get(key)
+        if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+            nested = entries[0].get(inner)
+            if isinstance(nested, dict):
+                return nested
+        return {}
+
+    context = _first("contexts", "context")
+    cluster = _first("clusters", "cluster")
+    return ClusterContext(
+        context=str(data.get("current-context") or "") or None,
+        server=str(cluster.get("server") or "") or None,
+        user=str(context.get("user") or "") or None,
+        namespace=str(context.get("namespace") or "") or None,
+    )
 
 
 def has_cluster_context() -> bool:
@@ -112,7 +259,7 @@ def has_cluster_context() -> bool:
     cluster is broken. This separates "not set up" from "set up and unreachable". Reading the
     kubeconfig is local and cannot hang.
     """
-    result = _run([cli_binary(), "config", "current-context"], timeout=10)
+    result = _run(cli(cli_binary(), "config", "current-context"), timeout=10)
     return result is not None and result.returncode == 0 and bool(result.stdout.strip())
 
 
@@ -150,7 +297,7 @@ def _run(argv: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[
 
 
 def build_apply_argv(namespace: str) -> list[str]:
-    return [cli_binary(), "apply", "-n", namespace, "-f", "-"]
+    return cli(cli_binary(), "apply", "-n", namespace, "-f", "-")
 
 
 # Listing is an interactive operation — a user waiting at a prompt — so it gets a short client-side
@@ -161,18 +308,18 @@ LIST_TIMEOUT_SECONDS = 10
 
 def build_get_pods_argv(namespace: str) -> list[str]:
     """Every pod the factory created in this namespace — and nothing else."""
-    return [
+    return cli(
         cli_binary(), "get", "pods", "-n", namespace,
         "-l", f"{LABEL_CONTAINED}=true", "-o", "json",
         f"--request-timeout={LIST_TIMEOUT_SECONDS}s",
-    ]
+    )
 
 
 def build_pod_exec_argv(
     name: str, namespace: str, argv: list[str], *, tty: bool = False,
     container: str = FACTORY_CONTAINER,
 ) -> list[str]:
-    cmd = [cli_binary(), "exec"]
+    cmd = cli(cli_binary(), "exec")
     if tty:
         cmd += ["-i", "-t"]
     else:
@@ -195,7 +342,7 @@ def build_pod_attach_argv(
 
 
 def build_delete_pod_argv(name: str, namespace: str) -> list[str]:
-    return [cli_binary(), "delete", "pod", name, "-n", namespace, "--ignore-not-found"]
+    return cli(cli_binary(), "delete", "pod", name, "-n", namespace, "--ignore-not-found")
 
 
 def render_access_review(
@@ -247,7 +394,7 @@ def render_access_review(
 
 def build_access_review_argv() -> list[str]:
     """Post an access review and print nothing but the verdict."""
-    return [cli_binary(), "create", "-f", "-", "-o", "jsonpath={.status.allowed}"]
+    return cli(cli_binary(), "create", "-f", "-", "-o", "jsonpath={.status.allowed}")
 
 
 def access_review(
@@ -278,7 +425,7 @@ def access_review(
 
 def build_api_resources_argv(api_group: str) -> list[str]:
     """Detect an API by presence, not by which binary is installed."""
-    return [cli_binary(), "api-resources", "--api-group", api_group, "-o", "name"]
+    return cli(cli_binary(), "api-resources", "--api-group", api_group, "-o", "name")
 
 
 # OpenShift records the group range a namespace's pods may use in this annotation, as
@@ -300,10 +447,10 @@ def namespace_fs_group(namespace: str) -> int | None:
     next. `None` means "say nothing and let the cluster default it", which is right for plain
     Kubernetes, where volumes are not root-owned in the first place.
     """
-    result = _run([
+    result = _run(cli(
         cli_binary(), "get", "namespace", namespace,
         "-o", f"jsonpath={{.metadata.annotations.{_SUPPLEMENTAL_GROUPS_ANNOTATION.replace('.', chr(92) + '.')}}}",
-    ])
+    ))
     if result is None or result.returncode != 0:
         return None
     raw = result.stdout.strip().split("/")[0]
@@ -537,9 +684,9 @@ def wait_for_container(
     deadline = time.monotonic() + timeout
     last = ""
     while time.monotonic() < deadline:
-        result = _run([
+        result = _run(cli(
             cli_binary(), "get", "pod", name, "-n", namespace, "-o", "json"
-        ])
+        ))
         if result is not None and result.returncode == 0:
             try:
                 pod = json.loads(result.stdout or "{}")
