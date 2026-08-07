@@ -3794,7 +3794,6 @@ def _get_builtin_registry() -> dict[str, Any]:
         "frontend-design-discover": frontend_design_discover_workflow,
         "frontend-design-scan": frontend_design_scan_workflow,
         "parallel-improve": parallel_improve_workflow,
-        "plan": plan_workflow,
         "evolve": evolve_workflow,
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
