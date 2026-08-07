@@ -38,3 +38,6 @@ screenshots/
 docs/factory-slides/
 graphify-out/
 graph.json
+
+# Auto-generated workflow skill files (should be in skills/ not root)
+workflow-*/
