@@ -130,8 +130,8 @@ class TestDesignIsBuiltWithUserGate:
         w1_ids = set(w1.nodes.keys())
         w2_ids = set(w2.nodes.keys())
 
-        # Design has 2 extra nodes: gate_has_factory and study
-        assert w2_ids == w1_ids | {"gate_has_factory", "study"}
+        # Design has 3 extra nodes: gate_has_factory, discover, and study
+        assert w2_ids == w1_ids | {"gate_has_factory", "discover", "study"}
 
     def test_design_name(self) -> None:
         wf = design_workflow()
@@ -181,12 +181,29 @@ class TestDesignStudyNode:
             for e in wf.edges
         )
 
-    def test_design_gate_routes_to_fork_research(self) -> None:
-        """gate_has_factory HALT must route to fork_research (skip study)."""
+    def test_design_gate_routes_to_discover(self) -> None:
+        """gate_has_factory HALT must route to discover (not fork_research)."""
         wf = design_workflow()
         assert any(
-            e.source == "gate_has_factory" and e.target == "fork_research"
+            e.source == "gate_has_factory" and e.target == "discover"
             and e.condition == VerdictType.HALT
+            for e in wf.edges
+        )
+
+    def test_design_has_discover_node(self) -> None:
+        """Design workflow must contain a discover FnNode."""
+        wf = design_workflow()
+        assert "discover" in wf.nodes
+        node = wf.nodes["discover"]
+        assert isinstance(node, FnNode)
+        assert node.command == "factory discover {project_path}"
+        assert ".factory/eval_profile.json" in node.writes
+
+    def test_design_discover_to_study_edge(self) -> None:
+        """There must be an unconditional edge from discover to study."""
+        wf = design_workflow()
+        assert any(
+            e.source == "discover" and e.target == "study" and e.condition is None
             for e in wf.edges
         )
 

@@ -447,7 +447,7 @@ def design_workflow() -> Workflow:
     W₂ = W₁[gate_strategy ← GateNode(user), +gate_has_factory, +study]
 
     Existing projects (HAS_FACTORY) route through study before research.
-    New projects (NO_REPO, REPO_INCOMPLETE) skip study and go direct to fork_research.
+    New/partial projects route through discover → study → fork_research.
     """
     wf = build_workflow()
 
@@ -465,6 +465,12 @@ def design_workflow() -> Workflow:
         reads={".factory/config.json"},
     )
 
+    wf.nodes["discover"] = FnNode(
+        id="discover",
+        command="factory discover {project_path}",
+        writes={".factory/eval_profile.json"},
+    )
+
     wf.nodes["study"] = Study(
         id="study",
         command="factory study {project_path}",
@@ -473,7 +479,8 @@ def design_workflow() -> Workflow:
 
     wf.edges.extend([
         Edge(source="gate_has_factory", target="study", condition=VerdictType.PROCEED),
-        Edge(source="gate_has_factory", target="fork_research", condition=VerdictType.HALT),
+        Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+        Edge(source="discover", target="study"),
         Edge(source="study", target="fork_research"),
     ])
 
