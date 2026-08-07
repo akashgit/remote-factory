@@ -1,6 +1,5 @@
 """Harbor agent that runs ``factory ceo`` as a benchmark solver."""
 
-import hashlib
 import os
 import re
 from typing import override
@@ -535,6 +534,24 @@ class SwebenchFactoryCeo(FactoryCeo):
         )
 
 
+class MiniSwebenchFactoryCeo(FactoryCeo):
+    """Runs the mini-swebench workflow (bash-only agent, mini-SWE-agent style)."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "mini-swebench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run mini-swebench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
 class LegacybenchFactoryCeo(FactoryCeo):
     """Runs the deterministic legacybench workflow instead of generic factory ceo."""
 
@@ -589,240 +606,19 @@ class FeaturebenchFactoryCeo(FactoryCeo):
         )
 
 
-class HarborIndexFactoryCeo(FactoryCeo):
-    """Runs the generic factory ceo approach for the Harbor-Index meta-benchmark."""
+class SearchQAFactoryCeo(FactoryCeo):
+    """Runs the deterministic searchqa workflow."""
 
     @staticmethod
     @override
     def name() -> str:
-        return "harbor-index-factory-ceo"
-
-
-class SalitrapFactoryCeo(FactoryCeo):
-    """Runs the deterministic salitrap workflow."""
-
-    @staticmethod
-    @override
-    def name() -> str:
-        return "salitrap-factory-ceo"
+        return "searchqa-factory-ceo"
 
     @override
     def _get_factory_command(self) -> str:
         return (
             'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-            'factory workflow run salitrap . '
-            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
-            '; exit 0'
-        )
-
-
-class TomsweFactoryCeo(FactoryCeo):
-    """Runs the deterministic tomswe workflow with user-profile injection.
-
-    Reuses the swe-bench dataset but appends a deterministically-selected
-    ToM-SWE user profile to the task instruction before solving.
-    """
-
-    @staticmethod
-    @override
-    def name() -> str:
-        return "tomswe-factory-ceo"
-
-    @override
-    def _get_factory_command(self) -> str:
-        return (
-            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-            'factory workflow run tomswe . '
-            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
-            '; exit 0'
-        )
-
-    @staticmethod
-    def _select_profile(instruction: str) -> dict[str, object]:
-        idx = int(hashlib.sha256(instruction.encode()).hexdigest(), 16) % len(TOMSWE_PROFILES)
-        return TOMSWE_PROFILES[idx]
-
-    @staticmethod
-    def _format_profile(profile: dict[str, object]) -> str:
-        prefs = profile["coding_preferences"]
-        assert isinstance(prefs, list)
-        prefs_str = "\n".join(f"- {p}" for p in prefs)
-        return (
-            f"## User Profile\n\n"
-            f"**Profile ID:** {profile['profile_id']}\n"
-            f"**Verbosity:** {profile['verbosity']}\n"
-            f"**Question Timing:** {profile['question_timing']}\n"
-            f"**Response Style:** {profile['response_style']}\n\n"
-            f"**Coding Preferences:**\n{prefs_str}\n"
-        )
-
-    @override
-    async def run(
-        self,
-        instruction: str,
-        environment: BaseEnvironment,
-        context: AgentContext,
-    ) -> None:
-        """Run factory tomswe workflow with an injected user profile."""
-        api_key = (
-            self._get_env("ANTHROPIC_API_KEY")
-            or self._get_env("ANTHROPIC_AUTH_TOKEN")
-            or ""
-        )
-
-        env: dict[str, str] = {
-            "ANTHROPIC_API_KEY": api_key,
-            "IS_SANDBOX": "1",
-            "CLAUDE_CONFIG_DIR": "/logs/agent/sessions",
-        }
-
-        if self.model_name:
-            env["ANTHROPIC_MODEL"] = self.model_name.split("/")[-1]
-
-        for var in COMMON_ENV_VARS:
-            val = self._get_env(var) or os.environ.get(var)
-            if val and var not in env:
-                env[var] = val
-
-        env = {k: v for k, v in env.items() if v}
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                "mkdir -p $CLAUDE_CONFIG_DIR/debug "
-                "$CLAUDE_CONFIG_DIR/projects "
-                "$CLAUDE_CONFIG_DIR/shell-snapshots "
-                "$CLAUDE_CONFIG_DIR/statsig "
-                "$CLAUDE_CONFIG_DIR/todos "
-                "$CLAUDE_CONFIG_DIR/skills"
-            ),
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                "cat > ./factory.md << 'FACTORYEOF'\n"
-                "---\n"
-                "goal: Solve the given coding task\n"
-                "---\n"
-                "FACTORYEOF"
-            ),
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                'set -e; '
-                'if [ ! -d .git ]; then git init -b main; fi && '
-                'git config user.name "Factory Agent" && '
-                'git config user.email "factory@agent.local" && '
-                'printf "/proc\\n/sys\\n/dev\\n/run\\n/tmp\\n/var\\n/root\\n'
-                '/home\\n/usr\\n/bin\\n/sbin\\n/lib\\n/lib64\\n/etc\\n'
-                '/boot\\n/mnt\\n/opt\\n/srv\\n/media\\n/logs\\n" > .gitignore && '
-                'git add -A && '
-                'git commit -m "initial state" --allow-empty'
-            ),
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                'mkdir -p .factory && '
-                'printf \'{}\\n\' > .factory/config.json && '
-                'printf \'{"human_reviewed": true, "dimensions": []}\\n\' > .factory/eval_profile.json'
-            ),
-            env=env,
-        )
-
-        # Inject a deterministically-selected user profile into the instruction
-        profile = self._select_profile(instruction)
-        augmented = instruction + "\n\n" + self._format_profile(profile)
-
-        await self.exec_as_agent(
-            environment,
-            command=f"cat > /tmp/task-instruction.md << 'INSTREOF'\n{augmented}\nINSTREOF",
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=self._get_factory_command(),
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                "cp /testbed/.factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null || "
-                "cp .factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null; "
-                "exit 0"
-            ),
-            env=env,
-        )
-
-        await self.exec_as_agent(
-            environment,
-            command=(
-                "set +e; "
-                'FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *"); '
-                'if [ -n "$FACTORY_BRANCH" ]; then '
-                '  echo "Merging factory branch: $FACTORY_BRANCH"; '
-                '  git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null '
-                '    || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null '
-                "    || true; "
-                "fi; "
-                'if [ -z "$FACTORY_BRANCH" ]; then '
-                '  echo "No factory branch, finding orphaned commits..."; '
-                "  ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null "
-                "    | grep 'unreachable commit' | awk '{print \\$3}'); "
-                '  if [ -n "$ORPHAN_COMMITS" ]; then '
-                '    BEST_COMMIT=""; '
-                "    BEST_TIME=0; "
-                "    for SHA in $ORPHAN_COMMITS; do "
-                '      COMMIT_TIME=$(git show -s --format=\'%ct\' "$SHA" 2>/dev/null || echo 0); '
-                '      if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then '
-                "        BEST_TIME=$COMMIT_TIME; "
-                "        BEST_COMMIT=$SHA; "
-                "      fi; "
-                "    done; "
-                '    if [ -n "$BEST_COMMIT" ]; then '
-                '      echo "Recovering from orphan tip: $BEST_COMMIT"; '
-                '      echo "  Message: $(git log -1 --format=\'%s\' $BEST_COMMIT 2>/dev/null)"; '
-                '      git checkout "$BEST_COMMIT" -- . 2>/dev/null || true; '
-                "      git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true; "
-                "      rm -rf .factory/ eval/ factory.md 2>/dev/null || true; "
-                "    fi; "
-                "  fi; "
-                "fi; "
-                'for wt in .factory-worktrees/*/; do '
-                '  if [ -d "$wt" ]; then '
-                '    echo "Recovering files from worktree: $wt"; '
-                "    rsync -a --exclude='.git' --exclude='.factory' "
-                '      "$wt" ./ 2>/dev/null || true; '
-                "  fi; "
-                "done; "
-                "exit 0"
-            ),
-            env=env,
-        )
-
-
-class SwebenchifyHardFactoryCeo(FactoryCeo):
-    """Runs the swebenchifyhard workflow for SWE-benchify-hard benchmark."""
-
-    @staticmethod
-    @override
-    def name() -> str:
-        return "swebenchifyhard-factory-ceo"
-
-    @override
-    def _get_factory_command(self) -> str:
-        return (
-            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-            'factory workflow run swebenchifyhard . '
+            'factory workflow run searchqa . '
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )

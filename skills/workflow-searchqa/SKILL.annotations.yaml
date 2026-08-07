@@ -1,0 +1,15 @@
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads: []
+  writes: []
+  edges_out: []
+  slots:
+    task_prompt_builder: "# Question Answering Skill\n\n(No learned rules yet. Rules\
+      \ will be added through the reflection process.)\n\n## Instructions\n\nRead\
+      \ the question and search results from /tmp/task-instruction.md.\nAnswer the\
+      \ question and write ONLY your final answer to /workspace/answer.txt.\nAlso\
+      \ include your answer in <answer> tags in your response.\n"
+    timeout_builder: '120'

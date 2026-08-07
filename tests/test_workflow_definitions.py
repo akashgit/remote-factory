@@ -17,7 +17,6 @@ from factory.workflow.definitions import (
     founder_workflow,
     improve_workflow,
     meta_workflow,
-
     refine_workflow,
     register_all,
     research_workflow,
@@ -473,6 +472,9 @@ class TestDocFreshnessGate:
 
 
 # ── Builder → QA reachability audit ────────────────────────────
+
+
+QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "searchqa", "swebench", "terminalbench"}  # Benchmark workflows use external verifiers
 
 
 def _workflows_with_builder() -> list[str]:

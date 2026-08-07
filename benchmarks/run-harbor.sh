@@ -32,18 +32,20 @@ CONCURRENCY="5"
 LIMIT_TASKS=""
 PRESERVE_WORKSPACE="${PRESERVE_WORKSPACE:-}"
 BENCHMARK_SOLVER="${BENCHMARK_SOLVER:-factory}"
+INCLUDE_TASK_NAMES=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --task)        MODE="task"; INSTANCE_ID="$2"; shift 2 ;;
-        --all)         MODE="all"; shift ;;
-        --timeout)     SOLVER_TIMEOUT="$2"; shift 2 ;;
-        --split)       SPLIT="$2"; shift 2 ;;
-        --concurrency) CONCURRENCY="$2"; shift 2 ;;
-        --limit)       LIMIT_TASKS="$2"; shift 2 ;;
-        --preserve)    PRESERVE_WORKSPACE="1"; shift ;;
-        --solver)      BENCHMARK_SOLVER="$2"; shift 2 ;;
-        *)             echo "ERROR: Unknown option '$1'"; exit 1 ;;
+        --task)              MODE="task"; INSTANCE_ID="$2"; shift 2 ;;
+        --all)               MODE="all"; shift ;;
+        --timeout)           SOLVER_TIMEOUT="$2"; shift 2 ;;
+        --split)             SPLIT="$2"; shift 2 ;;
+        --concurrency)       CONCURRENCY="$2"; shift 2 ;;
+        --limit)             LIMIT_TASKS="$2"; shift 2 ;;
+        --preserve)          PRESERVE_WORKSPACE="1"; shift ;;
+        --solver)            BENCHMARK_SOLVER="$2"; shift 2 ;;
+        --include-task-name) INCLUDE_TASK_NAMES+=("$2"); shift 2 ;;
+        *)                   echo "ERROR: Unknown option '$1'"; exit 1 ;;
     esac
 done
 
@@ -359,6 +361,9 @@ if [ "${MODE}" = "task" ]; then
 else
     HARBOR_CMD+=(--n-concurrent "${CONCURRENCY}")
     [ -n "${LIMIT_TASKS}" ] && HARBOR_CMD+=(--n-tasks "${LIMIT_TASKS}")
+    for _itn in ${INCLUDE_TASK_NAMES[@]+"${INCLUDE_TASK_NAMES[@]}"}; do
+        HARBOR_CMD+=(--include-task-name "${_itn}")
+    done
 fi
 
 # Allow-agent-host flags (programbench)
@@ -418,7 +423,18 @@ COMMON_AE=(
     --ae "FACTORY_INSTANCE_ID=${INSTANCE_ID}"
 )
 
-HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}")
+BENCHMARK_AE=()
+if [ -n "${FACTORY_WORKFLOW_YAML_B64:-}" ]; then
+    BENCHMARK_AE+=(--ae "FACTORY_WORKFLOW_YAML_B64=${FACTORY_WORKFLOW_YAML_B64}")
+fi
+if [ -n "${FACTORY_SKILL_B64:-}" ]; then
+    BENCHMARK_AE+=(--ae "FACTORY_SKILL_B64=${FACTORY_SKILL_B64}")
+fi
+if [ -n "${FACTORY_STUDENT_MODEL:-}" ]; then
+    BENCHMARK_AE+=(--ae "FACTORY_STUDENT_MODEL=${FACTORY_STUDENT_MODEL}")
+fi
+
+HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}" ${BENCHMARK_AE[@]+"${BENCHMARK_AE[@]}"})
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     HARBOR_CMD+=(--mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]')

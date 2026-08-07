@@ -8,8 +8,13 @@ Designed for Harbor containers where:
 - Harbor's pytest verifier is the FINAL authority on pass/fail
 - Harbor checks the MAIN branch for changes
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
+
+Prompt override: set FACTORY_WORKFLOW_YAML_B64 env var with base64-encoded
+YAML annotations to override slot values (prompt, timeout, etc.) at runtime.
+Use ``factory workflow run swebench . --from-yaml <path>`` for local testing.
 """
 
+import os
 from typing import Any
 
 from factory.models import ProjectState
@@ -31,6 +36,38 @@ meta = {
         "gate_verify → auto_merge with RELOOP on test failure."
     ),
 }
+
+
+_DEFAULT_PROMPT = (
+    "You are fixing a bug in an open-source project for the SWE-bench benchmark.\n\n"
+    "## Your Task\n\n"
+    "1. **Read the task instruction** — Read /tmp/task-instruction.md for the full "
+    "bug description and task requirements.\n\n"
+    "2. **Understand the codebase** — explore the repository structure. "
+    "Read relevant source files, test files, and configuration. "
+    "Identify the root cause of the bug described in the task.\n\n"
+    "3. **Implement the fix** — make the MINIMAL change that resolves the "
+    "issue. Do NOT refactor, modernize, or add unrelated improvements. "
+    "Fix ONLY the described bug.\n\n"
+    "4. **Run the project's own tests** — this is CRITICAL. Run the test "
+    "suite to verify your fix works AND existing tests still pass. "
+    "Use pytest, tox, or whatever test runner the project uses. "
+    "If specific test files are mentioned in the task, run those first.\n\n"
+    "5. **Commit your changes** — commit directly on the current branch "
+    "with a descriptive message referencing the issue. Do NOT create a "
+    "new branch. Do NOT create a PR.\n\n"
+    "## Rules\n\n"
+    "- MINIMAL fix only — smallest diff that resolves the issue\n"
+    "- MUST run tests before committing — never commit untested code\n"
+    "- Do NOT create branches or PRs — commit on current branch\n"
+    "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
+    "- Do NOT modify test files unless the bug is IN the test infrastructure\n"
+    "- If tests fail after your fix, investigate and fix the issue\n"
+)
+
+
+def _resolve_model() -> str:
+    return os.environ.get("FACTORY_STUDENT_MODEL", "opus")
 
 
 def workflow() -> Workflow:
@@ -63,35 +100,10 @@ def workflow() -> Workflow:
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
-        model="opus",
+        model=_resolve_model(),
         timeout=7200,
         max_iterations=3,
-        prompt_template=(
-            "You are fixing a bug in an open-source project for the SWE-bench benchmark.\n\n"
-            "## Your Task\n\n"
-            "1. **Read the task instruction** — Read /tmp/task-instruction.md for the full "
-            "bug description and task requirements.\n\n"
-            "2. **Understand the codebase** — explore the repository structure. "
-            "Read relevant source files, test files, and configuration. "
-            "Identify the root cause of the bug described in the task.\n\n"
-            "3. **Implement the fix** — make the MINIMAL change that resolves the "
-            "issue. Do NOT refactor, modernize, or add unrelated improvements. "
-            "Fix ONLY the described bug.\n\n"
-            "4. **Run the project's own tests** — this is CRITICAL. Run the test "
-            "suite to verify your fix works AND existing tests still pass. "
-            "Use pytest, tox, or whatever test runner the project uses. "
-            "If specific test files are mentioned in the task, run those first.\n\n"
-            "5. **Commit your changes** — commit directly on the current branch "
-            "with a descriptive message referencing the issue. Do NOT create a "
-            "new branch. Do NOT create a PR.\n\n"
-            "## Rules\n\n"
-            "- MINIMAL fix only — smallest diff that resolves the issue\n"
-            "- MUST run tests before committing — never commit untested code\n"
-            "- Do NOT create branches or PRs — commit on current branch\n"
-            "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
-            "- Do NOT modify test files unless the bug is IN the test infrastructure\n"
-            "- If tests fail after your fix, investigate and fix the issue\n"
-        ),
+        prompt_template=_DEFAULT_PROMPT,
         reads={".factory/reviews/study-output.md"},
         writes={".factory/reviews/builder-latest.md"},
     )

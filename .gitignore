@@ -32,6 +32,10 @@ dist/
 skills/workflow-*/SKILL.md
 skills/workflow-*/SKILL.annotations.yaml
 
+# Generated benchmark data
+benchmarks/searchqa-harbor/
+benchmarks/searchqa/data/
+
 # Dev artifacts
 .playwright-mcp/
 screenshots/

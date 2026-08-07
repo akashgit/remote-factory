@@ -50,7 +50,7 @@ def ensure_skills(project_dir: Path, *, mode: str | None = None) -> list[Path]:
     workflow into *project_dir*/.factory/hooks/.
     """
     try:
-        return _ensure_skills_inner(project_dir, mode=mode)
+        return _ensure_skills_inner(project_dir)
     except Exception as exc:
         log.warning("skill_cache.error", error=str(exc))
         return []
