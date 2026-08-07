@@ -28,12 +28,21 @@ def _build_client(node: LLMNode) -> Any:
     return Anthropic()
 
 
-def _resolve_model(model: str) -> str:
-    aliases = {
-        "haiku": "claude-haiku-4-5-20251001",
-        "sonnet": "claude-sonnet-4-5-20250929",
-        "opus": "claude-opus-4-6-20250904",
-    }
+_ALIASES = {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-5-20250929",
+    "opus": "claude-opus-4-6-20250904",
+}
+
+_VERTEX_ALIASES = {
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-4-5",
+    "opus": "claude-opus-4-6",
+}
+
+
+def _resolve_model(model: str, provider: str = "anthropic") -> str:
+    aliases = _VERTEX_ALIASES if provider == "vertex" else _ALIASES
     return aliases.get(model, model)
 
 
@@ -60,7 +69,7 @@ async def run_llm_loop(
     client = _build_client(node)
     tool_map = {t.name: t for t in node.tools}
     api_tools = _tools_to_api_format(node) if node.tools else []
-    model = _resolve_model(node.model)
+    model = _resolve_model(node.model, node.provider)
 
     instance_prompt = node.instance_prompt
     if instance_context:
