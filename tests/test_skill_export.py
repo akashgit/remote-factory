@@ -532,17 +532,25 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
+_QA_EXEMPT_WORKFLOWS = frozenset({
+    "frontend-design-scan",
+})
+
+
 def _workflows_with_builder() -> list[str]:
     """Return names of workflows containing a Builder AgentNode.
 
     Excludes workflows with SubgraphForkNode — QA runs inside the subgraph,
-    not in the top-level skill prose.
+    not in the top-level skill prose. Also excludes scan-like workflows
+    where QA is handled by check scripts instead of QA agents.
     """
     from factory.workflow.definitions import register_all
 
     names = []
     for name, wf in register_all().items():
         if wf.terminal:
+            continue
+        if name in _QA_EXEMPT_WORKFLOWS:
             continue
         has_builder = any(
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
