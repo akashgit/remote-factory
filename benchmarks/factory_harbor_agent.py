@@ -1,6 +1,5 @@
 """Harbor agent that runs ``factory ceo`` as a benchmark solver."""
 
-import hashlib
 import os
 import re
 from typing import override

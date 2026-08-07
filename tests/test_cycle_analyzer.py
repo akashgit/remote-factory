@@ -575,8 +575,6 @@ class TestExecutorProtocol:
 
 class TestInnerLoopCustomExecutor:
     def test_step_delegates_to_custom_executor(self, tmp_path: Path) -> None:
-        from factory.inner_loop import Executor
-
         class StubExecutor:
             def __init__(self) -> None:
                 self.calls: list[tuple[Path, dict[str, Any] | None]] = []
@@ -939,7 +937,7 @@ class TestSkillOptTrainerDataFlow:
         assert reconstructed[0].id == "searchqa-001"
         assert reconstructed[1].fail_reason == "wrong_answer"
 
-        record2 = inner_loop.step(directives={"skill_content": "Improved prompt."})
+        inner_loop.step(directives={"skill_content": "Improved prompt."})
         trajectory = inner_loop.score_trajectory()
         assert len(trajectory) == 2
         assert trajectory == [0.5, 0.5]

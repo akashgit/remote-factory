@@ -72,11 +72,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         wf = yaml_to_workflow(from_yaml, name)
         log.info("workflow loaded from YAML override", path=from_yaml, name=name)
     else:
-        workflows = register_all()
-        wf = workflows.get(name)
+        wf = WorkflowRegistry.get_workflow(name, project_path)
         if not wf:
             print(f"Unknown workflow: {name}")
-            print(f"Available: {', '.join(workflows)}")
+            print(f"Available: {', '.join(WorkflowRegistry._entries)}")
             return 1
 
     executor = WorkflowExecutor(
