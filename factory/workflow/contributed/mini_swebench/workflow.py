@@ -159,24 +159,14 @@ def workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    nodes["study"] = FnNode(
-        id="study",
+    nodes["read_task"] = FnNode(
+        id="read_task",
         command=(
             "mkdir -p {project_path}/.factory/reviews && "
-            "cd {project_path} && "
-            "("
-            "echo '=== Repository Structure ===' && "
-            "find . -type f -name '*.py' | head -200 && "
-            "echo '\\n=== Test Files ===' && "
-            "find . -type f -name 'test_*.py' -o -name '*_test.py' | head -50 && "
-            "echo '\\n=== Configuration Files ===' && "
-            "ls -la setup.py setup.cfg pyproject.toml tox.ini conftest.py 2>/dev/null || true && "
-            "echo '\\n=== Task Instruction ===' && "
-            "cat /tmp/task-instruction.md 2>/dev/null || "
-            "echo 'No task instruction file found at /tmp/task-instruction.md'"
-            ") > .factory/reviews/study-output.md 2>&1"
+            "cat /tmp/task-instruction.md > {project_path}/.factory/reviews/task.md 2>/dev/null || "
+            "echo 'No task instruction found' > {project_path}/.factory/reviews/task.md"
         ),
-        writes={".factory/reviews/study-output.md"},
+        writes={".factory/reviews/task.md"},
     )
 
     nodes["solver"] = LLMNode(
@@ -189,7 +179,7 @@ def workflow() -> Workflow:
         max_turns=100,
         max_tokens=8192,
         timeout=7200,
-        reads={".factory/reviews/study-output.md"},
+        reads={".factory/reviews/task.md"},
         writes={".factory/reviews/builder-latest.md"},
     )
 
@@ -238,7 +228,7 @@ def workflow() -> Workflow:
     )
 
     edges = [
-        Edge(source="study", target="solver"),
+        Edge(source="read_task", target="solver"),
         Edge(source="solver", target="gate_verify"),
         Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
         Edge(source="gate_verify", target="solver", condition=VerdictType.RELOOP),
@@ -251,7 +241,7 @@ def workflow() -> Workflow:
         name="mini-swebench",
         nodes=nodes,
         edges=edges,
-        start_node="study",
+        start_node="read_task",
         terminal=True,
         trigger=trigger,
     )
