@@ -107,6 +107,7 @@ def _build_ceo_task(
     update_existing_mode: str | None = None,
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
+    just_plan: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -180,6 +181,32 @@ def _build_ceo_task(
             f"After you approve the plan at the strategy gate, persist it to "
             f".factory/strategy/current.md — the workflow continues to "
             f"implementation automatically.\n"
+        )
+
+    if just_plan:
+        task += (
+            '\n\n## Plan Loop (Just Plan)\n\n'
+            '**just_plan: true**\n\n'
+            'Run the full Plan mode workflow: research + strategy + approval + GitHub publish.\n\n'
+            '1. Check for prior plans (GitHub issues with plan label, .factory/archive/)\n'
+            '2. Run 3 parallel researchers (domain, practices, constraints)\n'
+            '3. CEO review gate\n'
+            '4. Strategist synthesizes phased plan\n'
+            '5. Single user approval gate: Keep this plan?\n'
+            '6. On approval: publish to GitHub + seed backlog\n\n'
+            'Terminal mode — do NOT transition to build or improve.\n\n'
+            '### Post-Approval: GitHub Publish (MANDATORY)\n\n'
+            'After the user approves the plan, you MUST:\n\n'
+            '1. Create the `plan` label if it does not exist: '
+            '`gh label create plan --description "Approved plan" --color 0366d6 --force`\n'
+            '2. If --focus targets a GitHub issue number, post the plan as a comment on that issue '
+            'and add the plan label:\n'
+            '   - `gh issue comment <NUMBER> --body-file .factory/strategy/current.md`\n'
+            '   - `gh issue edit <NUMBER> --add-label plan`\n'
+            '3. Otherwise, create a new issue with the plan label:\n'
+            '   - `gh issue create --title "Plan: <focus>" --body-file .factory/strategy/current.md --label plan`\n'
+            '4. Seed the backlog: extract phase headers from current.md and append to backlog.md\n\n'
+            'Do NOT skip this step. Do NOT exit without publishing.\n'
         )
 
     if research_ideation:

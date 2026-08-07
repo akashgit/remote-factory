@@ -453,7 +453,7 @@ class TestCmdCeoDesign:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
-        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve, _from_plan = validated
+        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve, _from_plan, _just_plan = validated
         assert headless is True
         assert auto_approve is True
 
@@ -2792,7 +2792,7 @@ class TestFromPlanFlag:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int)
-        *_, from_plan = validated
+        from_plan = validated[9]
         assert from_plan is None
 
     def test_from_plan_validation_passes_with_design_mode(self):
@@ -2815,8 +2815,103 @@ class TestFromPlanFlag:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
-        *_, from_plan = validated
+        from_plan = validated[9]
         assert from_plan == "plan.md"
+
+
+class TestJustPlanFlag:
+    """Tests for the --just-plan CLI flag."""
+
+    def test_just_plan_rejected_without_design_mode(self, capsys):
+        """--just-plan without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--just-plan"])
+        assert result == 1
+        assert "--just-plan requires --mode design" in capsys.readouterr().err
+
+    def test_just_plan_accepted_with_design_mode(self, tmp_path):
+        """--just-plan with --mode design succeeds."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "design", "--just-plan"])
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Plan Loop (Just Plan)" in task
+        assert "just_plan: true" in task
+
+    def test_just_plan_task_has_github_publish(self, tmp_path):
+        """--just-plan injects GitHub publish instructions into the task."""
+        task = _build_ceo_task(tmp_path, "design", design_existing=True, just_plan=True)
+        assert "### Post-Approval: GitHub Publish (MANDATORY)" in task
+        assert "gh label create plan" in task
+        assert "gh issue comment" in task
+        assert "gh issue create" in task
+        assert "Seed the backlog" in task
+        assert "Terminal mode" in task
+
+    def test_just_plan_task_without_flag(self, tmp_path):
+        """Without --just-plan, no Just Plan section is emitted."""
+        task = _build_ceo_task(tmp_path, "design", design_existing=True)
+        assert "## Plan Loop (Just Plan)" not in task
+
+    def test_just_plan_validation_returns_true(self):
+        """just_plan=True is correctly returned in the validation tuple."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+            just_plan=True,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        just_plan = validated[10]
+        assert just_plan is True
+
+    def test_just_plan_default_false(self):
+        """just_plan defaults to False when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        just_plan = validated[10]
+        assert just_plan is False
+
+    def test_just_plan_parser_flag(self):
+        """Parser accepts --just-plan flag on ceo subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "design", "--just-plan"])
+        assert args.just_plan is True
+
+    def test_just_plan_parser_default(self):
+        """Parser defaults just_plan to False."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "design"])
+        assert args.just_plan is False
 
 
 class TestResolvePlanSource:

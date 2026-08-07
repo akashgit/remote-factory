@@ -54,7 +54,7 @@ log = structlog.get_logger()
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool, str | None] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool, str | None, bool] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
@@ -71,6 +71,11 @@ def _validate_ceo_flags(
     dir_name: str | None = getattr(args, "dir", None)
     auto_approve: bool = getattr(args, "auto_approve", False)
     from_plan: str | None = getattr(args, "from_plan", None)
+    just_plan: bool = getattr(args, "just_plan", False)
+
+    if just_plan and mode != "design":
+        print("Error: --just-plan requires --mode design", file=sys.stderr)
+        return 1
 
     if auto_approve and mode != "design":
         print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
@@ -171,7 +176,7 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan)
+    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan, just_plan)
 
 
 # ── project resolution ────────────────────────────────────────
@@ -372,6 +377,7 @@ def _execute_ceo(
     no_github: bool = False,
     raw_path: str = "",
     from_plan: str | None = None,
+    just_plan: bool = False,
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
     from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
@@ -515,6 +521,7 @@ def _execute_ceo(
         update_existing_mode=update_existing_mode,
         from_plan=resolved_plan.plan if resolved_plan else None,
         from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
+        just_plan=just_plan,
     )
 
     session_name = _derive_session_name(

@@ -450,6 +450,9 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                     help="Load an existing plan into design mode instead of running research. "
                          "Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string. "
                          "Requires --mode design; mutually exclusive with --focus and --prompt")
+    p.add_argument("--just-plan", action="store_true", default=False, dest="just_plan",
+                    help="Plan-only mode: research + strategy + approval + GitHub publish, no implementation. "
+                         "Requires --mode design.")
 
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
