@@ -11,6 +11,8 @@ from unittest.mock import patch
 import pytest
 
 from factory.cli import contained as cli
+from factory.cli import contained_args
+from factory.cli import contained_local
 from factory.contained.credentials import (
     CredentialShape,
     resolve_credentials,
@@ -445,13 +447,13 @@ def test_forwarding_an_unset_variable_fails_before_provisioning(
 
 def test_a_payload_naming_no_project_is_rejected() -> None:
     with pytest.raises(ContainedError):
-        cli._resolve_project(["ceo", "--focus", "something"])
+        contained_args.resolve_project(["ceo", "--focus", "something"])
 
 
 def test_malformed_env_pair_is_rejected() -> None:
     with pytest.raises(ContainedError):
-        cli._parse_extra_env(["NOT_A_PAIR"])
-    assert cli._parse_extra_env(["EMPTY="]) == {"EMPTY": ""}
+        contained_args.parse_extra_env(["NOT_A_PAIR"])
+    assert contained_args.parse_extra_env(["EMPTY="]) == {"EMPTY": ""}
 
 
 def test_an_unknown_flag_is_rejected_rather_than_ignored() -> None:
@@ -489,7 +491,7 @@ def test_the_source_git_dir_is_mounted_writable(git_project: Path, tmp_path: Pat
         from factory.contained.workspace import plan_workspace
 
         ws = plan_workspace(git_project, "rta-test")
-        plan = cli._build_plan(args, ws, dry_run=True)
+        plan = contained_local._build_plan(args, ws, dry_run=True)
 
     git_mounts = [m for m in plan.mounts if m.target.endswith(".git")]
     assert git_mounts, "the source repository's git dir must be mounted"

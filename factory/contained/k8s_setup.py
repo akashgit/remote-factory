@@ -36,6 +36,7 @@ from factory.contained.k8s import (
     LABEL_CONTAINED,
     SECRET_NAME,
     SERVICE_ACCOUNT,
+    ClusterContext,
     ClusterError,
     access_review,
     build_api_resources_argv,
@@ -139,27 +140,9 @@ def verify_k8s(
         )
         return checks
 
-    context = _run(cli(binary, "config", "current-context"))
-    context_name = (
-        context.stdout.strip() if context is not None and context.returncode == 0 else ""
-    )
-    has_context = bool(context_name)
-    # The server, not just the context name. A context called `dev` says nothing about which
-    # cluster it reaches, and this check is where a user confirms they are pointed at the right one.
-    server = cluster_context().server if has_context else None
-    record(
-        Check(
-            name="cluster_cli",
-            ok=has_context,
-            detail=(
-                f"{binary}, context {context_name}" + (f", server {server}" if server else "")
-                if has_context
-                else f"{binary} is installed but no current context is selected"
-            ),
-            fix=None if has_context else f"{binary} login ...  # then `{binary} project <namespace>`",
-        )
-    )
-    if not has_context:
+    context = _context_check(binary)
+    record(context)
+    if not context.ok:
         # Everything below needs a reachable cluster. Reporting eight further failures that all mean
         # "no context" buries the one that matters.
         return checks
@@ -178,12 +161,45 @@ def verify_k8s(
     secret = _secret_check(binary, target)
     record(secret)
     record(_image_check())
-    if probe_inference and not secret.ok:
+    if probe_inference:
+        record(_inference_result(binary, target, secret, announce=on_check is not None))
+    record(_gitleaks_check())
+    if division:
+        record(*_division_checks(target))
+    return checks
+
+
+def _context_check(binary: str) -> Check:
+    """Is a cluster selected, and which one? The first check, because everything else needs it."""
+    context = _run(cli(binary, "config", "current-context"))
+    name = context.stdout.strip() if context is not None and context.returncode == 0 else ""
+    if not name:
+        return Check(
+            name="cluster_cli",
+            ok=False,
+            detail=f"{binary} is installed but no current context is selected",
+            fix=f"{binary} login ...  # then `{binary} project <namespace>`",
+        )
+    # The server, not just the context name. A context called `dev` says nothing about which
+    # cluster it reaches, and this check is where a user confirms they are pointed at the right one.
+    # Read only once a context exists: with none selected there is nothing for it to report, and
+    # asking costs a second `config view` to be told so.
+    server = cluster_context().server
+    return Check(
+        name="cluster_cli",
+        ok=True,
+        detail=f"{binary}, context {name}" + (f", server {server}" if server else ""),
+    )
+
+
+def _inference_result(binary: str, namespace: str, secret: Check, *, announce: bool) -> Check:
+    """The in-cluster probe, or the reason it was not worth running."""
+    if not secret.ok:
         # The probe pod mounts that Secret to authenticate. Without it the pod cannot succeed, and
         # running it anyway means waiting the full 180-second timeout to be told what the check
         # above already said — which is exactly what a freshly prepared namespace hits, because
         # creating the Secret is the step deliberately left to the user.
-        record(Check(
+        return Check(
             name="inference_from_cluster",
             ok=False,
             detail=(
@@ -191,20 +207,15 @@ def verify_k8s(
                 "authenticate. Create it, then re-run verify."
             ),
             fix=secret.fix,
+        )
+    if announce:
+        # Announced rather than merely slow: this one creates a pod and waits on it, and
+        # "nothing on screen for three minutes" is the report people read as a crash.
+        print(style.note(
+            "Checking inference from inside the namespace — this launches a short-lived pod "
+            "and waits for it, up to three minutes."
         ))
-    elif probe_inference:
-        if on_check is not None:
-            # Announced rather than merely slow: this one creates a pod and waits on it, and
-            # "nothing on screen for three minutes" is the report people read as a crash.
-            print(style.note(
-                "Checking inference from inside the namespace — this launches a short-lived pod "
-                "and waits for it, up to three minutes."
-            ))
-        record(_inference_check(binary, target, resolve_image()))
-    record(_gitleaks_check())
-    if division:
-        record(*_division_checks(target))
-    return checks
+    return _inference_check(binary, namespace, resolve_image())
 
 
 def _namespace_check(binary: str, namespace: str) -> Check:
@@ -716,6 +727,16 @@ def _choose_context(interactive: bool) -> str | None | object:
     if not interactive or len(contexts) < 2:
         # Nothing to choose between — and on a machine with one context, asking is noise.
         return None
+    _print_contexts(contexts, current)
+    return _ask_context(contexts, current)
+
+
+def _print_contexts(contexts: list[ClusterContext], current: str | None) -> None:
+    """The numbered list, with the server under each name and the current one marked.
+
+    The server is what distinguishes them: context names are local labels a person chose, and two
+    of them saying `dev` and `dev-2` do not say which cluster either one reaches.
+    """
     print()
     print(style.line("Clusters in your kubeconfig:"))
     print()
@@ -725,6 +746,10 @@ def _choose_context(interactive: bool) -> str | None | object:
         if entry.server:
             print(f"      {style.dim(entry.server)}")
     print()
+
+
+def _ask_context(contexts: list[ClusterContext], current: str | None) -> str | None | object:
+    """Ask until an answer names one of `contexts`. A context name, or ABORT for Escape."""
     default = str(next(
         (i for i, e in enumerate(contexts, start=1) if e.context == current), 1
     ))

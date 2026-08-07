@@ -89,9 +89,9 @@ def run_k8s(args: argparse.Namespace) -> int:
     """Provision a cluster pod and start the run in it."""
     dry_run = dry_run_enabled()
     try:
-        from factory.cli.contained import _resolve_project
+        from factory.cli.contained_args import resolve_project
 
-        project = _resolve_project(args.factory_args)
+        project = resolve_project(args.factory_args)
         namespace = resolve_namespace(args.namespace)
         if args.division:
             _require_openshift(dry_run)
@@ -169,9 +169,9 @@ def _build_pod_plan(
         if value is None:
             raise ContainedError(f"--forward {name}: not set in this environment")
         env[name] = value
-    from factory.cli.contained import _parse_extra_env
+    from factory.cli.contained_args import parse_extra_env
 
-    env.update(_parse_extra_env(args.extra_env))
+    env.update(parse_extra_env(args.extra_env))
 
     model_warning = vertex_model_warning(shape, args.factory_args)
     if model_warning:

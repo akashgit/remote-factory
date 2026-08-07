@@ -285,38 +285,49 @@ def read_line(
 
     target.write(rendered)
     target.flush()
-    typed_chars: list[str] = []
     try:
         tty.setcbreak(descriptor)
-        while True:
-            char = sys.stdin.read(1)
-            if char == ESCAPE:
-                if _drain_escape_sequence(descriptor):
-                    continue                  # an arrow key: not a cancel, and not text either
-                return None
-            if char in ("\r", "\n"):
-                return "".join(typed_chars).strip()
-            if char in _BACKSPACE:
-                if typed_chars:
-                    typed_chars.pop()
-                    target.write("\b \b")     # move back, erase, move back again
-                    target.flush()
-                continue
-            if char in ("", _END_OF_TRANSMISSION):
-                # Ctrl-D: end of input on an empty line, otherwise ignored as it would be in a shell.
-                if not typed_chars:
-                    return None
-                continue
-            if char.isprintable():
-                typed_chars.append(char)
-                target.write(char)
-                target.flush()
+        return _edit_line(descriptor, target)
     except (OSError, ValueError):
         return None
     finally:
         termios.tcsetattr(descriptor, termios.TCSADRAIN, original)
         target.write("\n")
         target.flush()
+
+
+def _edit_line(descriptor: int, target: TextIO) -> str | None:
+    """The line editor itself, on a terminal already in cbreak mode. `None` means cancelled.
+
+    Small on purpose, and it echoes as it goes: cbreak turns off the line discipline that normally
+    provides echo and Backspace, so anything it does not handle here is a key that appears to do
+    nothing. The caller owns putting the terminal into cbreak and restoring it — this function only
+    reads, and must not be called on a terminal that is still line-buffered.
+    """
+    typed_chars: list[str] = []
+    while True:
+        char = sys.stdin.read(1)
+        if char == ESCAPE:
+            if _drain_escape_sequence(descriptor):
+                continue                      # an arrow key: not a cancel, and not text either
+            return None
+        if char in ("\r", "\n"):
+            return "".join(typed_chars).strip()
+        if char in _BACKSPACE:
+            if typed_chars:
+                typed_chars.pop()
+                target.write("\b \b")         # move back, erase, move back again
+                target.flush()
+            continue
+        if char in ("", _END_OF_TRANSMISSION):
+            # Ctrl-D: end of input on an empty line, otherwise ignored as it would be in a shell.
+            if not typed_chars:
+                return None
+            continue
+        if char.isprintable():
+            typed_chars.append(char)
+            target.write(char)
+            target.flush()
 
 
 def choice(letter: str, rest: str, stream: TextIO | None = None) -> str:

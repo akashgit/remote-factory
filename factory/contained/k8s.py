@@ -28,6 +28,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -169,6 +170,36 @@ def cli(binary: str, *args: str) -> list[str]:
     return argv + list(args)
 
 
+def _kubeconfig_json(argv: list[str]) -> dict[str, Any]:
+    """A `config view -o json` as a dict — `{}` for every way it can fail to be one.
+
+    Takes the argv rather than composing it, because the two readers below deliberately differ:
+    `cluster_context` goes through `cli()` and so reports the context this run is pinned to, while
+    `list_contexts` must NOT, since a chooser pinned to one context could only ever offer that one.
+
+    A kubeconfig is a file a person edits, and an unreadable or half-written one has to degrade to
+    "nothing is known" rather than raise inside display code.
+    """
+    result = _run(argv, timeout=15)
+    if result is None or result.returncode != 0:
+        return {}
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _name(raw: object) -> str | None:
+    """One kubeconfig field as a non-empty string, or None.
+
+    Every field of `ClusterContext` is optional, and the absent and empty-string cases must collapse
+    to the same thing: `""` renders as a value the user chose, which is how "context ''" reaches a
+    screen. `str()` because the JSON is not schema-checked — nothing guarantees these are strings.
+    """
+    return str(raw or "") or None
+
+
 def list_contexts() -> list[ClusterContext]:
     """Every context in the kubeconfig, so a cluster can be chosen rather than assumed.
 
@@ -179,13 +210,7 @@ def list_contexts() -> list[ClusterContext]:
         binary = cli_binary()
     except ClusterError:
         return []
-    result = _run([binary, "config", "view", "-o", "json"], timeout=15)
-    if result is None or result.returncode != 0:
-        return []
-    try:
-        data = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return []
+    data = _kubeconfig_json([binary, "config", "view", "-o", "json"])
     servers = {
         entry.get("name"): (entry.get("cluster") or {}).get("server")
         for entry in data.get("clusters") or []
@@ -198,10 +223,10 @@ def list_contexts() -> list[ClusterContext]:
         detail = entry.get("context") or {}
         contexts.append(
             ClusterContext(
-                context=str(entry.get("name") or "") or None,
-                server=str(servers.get(detail.get("cluster")) or "") or None,
-                user=str(detail.get("user") or "") or None,
-                namespace=str(detail.get("namespace") or "") or None,
+                context=_name(entry.get("name")),
+                server=_name(servers.get(detail.get("cluster"))),
+                user=_name(detail.get("user")),
+                namespace=_name(detail.get("namespace")),
             )
         )
     return contexts
@@ -253,6 +278,20 @@ def use_context(name: str) -> tuple[bool, str]:
     return False, detail[0][:200] if detail else "no detail given"
 
 
+def _first_section(data: dict[str, Any], key: str, inner: str) -> dict[str, Any]:
+    """`data[key][0][inner]` when every step of that is what it claims to be, else `{}`.
+
+    `--minify` reduces the file to the current context, so the lists below hold exactly one entry —
+    but "should hold one dict" and "does" are different claims about a file a person edits.
+    """
+    entries = data.get(key)
+    if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+        nested = entries[0].get(inner)
+        if isinstance(nested, dict):
+            return nested
+    return {}
+
+
 def cluster_context() -> ClusterContext:
     """Read the current context out of the kubeconfig, for display.
 
@@ -264,29 +303,14 @@ def cluster_context() -> ClusterContext:
         binary = cli_binary()
     except ClusterError:
         return ClusterContext()
-    result = _run(cli(binary, "config", "view", "--minify", "-o", "json"), timeout=15)
-    if result is None or result.returncode != 0:
-        return ClusterContext()
-    try:
-        data = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return ClusterContext()
-
-    def _first(key: str, inner: str) -> dict[str, object]:
-        entries = data.get(key)
-        if isinstance(entries, list) and entries and isinstance(entries[0], dict):
-            nested = entries[0].get(inner)
-            if isinstance(nested, dict):
-                return nested
-        return {}
-
-    context = _first("contexts", "context")
-    cluster = _first("clusters", "cluster")
+    data = _kubeconfig_json(cli(binary, "config", "view", "--minify", "-o", "json"))
+    context = _first_section(data, "contexts", "context")
+    cluster = _first_section(data, "clusters", "cluster")
     return ClusterContext(
-        context=str(data.get("current-context") or "") or None,
-        server=str(cluster.get("server") or "") or None,
-        user=str(context.get("user") or "") or None,
-        namespace=str(context.get("namespace") or "") or None,
+        context=_name(data.get("current-context")),
+        server=_name(cluster.get("server")),
+        user=_name(context.get("user")),
+        namespace=_name(context.get("namespace")),
     )
 
 

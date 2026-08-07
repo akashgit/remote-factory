@@ -730,9 +730,12 @@ that run first, or run this one without `--division`.
 | Object-by-object review | `factory/contained/k8s_review.py` |
 | Secret scan | `factory/contained/secrets.py` |
 | Terminal colour and wizard steps | `factory/contained/style.py` |
-| CLI | `factory/cli/contained.py`, `factory/cli/contained_k8s.py` |
+| CLI front door | `factory/cli/contained.py` |
+| Reading the command line | `factory/cli/contained_args.py` |
+| One local container | `factory/cli/contained_local.py` |
+| One cluster pod | `factory/cli/contained_k8s.py` |
 
-Both CLI modules **compose** commands and do not execute them, which is what makes
+The CLI modules **compose** commands and do not execute them, which is what makes
 `FACTORY_CONTAINED_DRY_RUN=1` print the same argv the real path runs rather than a separate
 rendering that drifts.
 
