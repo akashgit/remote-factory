@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -223,7 +223,7 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+NodeType = Union[AgentNode, FnNode, GateNode, ForkNode, JoinNode, SubgraphForkNode, SelectionNode, Study]
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]
