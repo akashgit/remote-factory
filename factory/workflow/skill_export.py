@@ -460,9 +460,15 @@ def _gate_to_checkpoint(
         lines.append("")
         lines.append(f"### Steering Point — {gate_name} (User Approval)")
         lines.append("")
-        lines.append("Present findings to the user. Wait for approval or feedback.")
-        lines.append("- **Approve** → proceed to next step")
-        lines.append("- **Feedback** → re-run the previous step with corrections")
+        lines.append("**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**")
+        lines.append("")
+        lines.append("Present the strategy/findings to the user by summarizing key points in your output.")
+        lines.append('Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"')
+        lines.append("")
+        lines.append("**You MUST wait for the user's response before proceeding.**")
+        lines.append("- The user says \"approve\", \"yes\", \"looks good\", or similar → proceed to next step")
+        lines.append("- The user provides feedback or corrections → re-run the previous step incorporating their feedback")
+        lines.append("- Do NOT write a verdict file and auto-proceed — this gate requires human input")
     elif node.evaluator_type == "fn":
         evaluator_cmd = ""
         if node.evaluator_command:
