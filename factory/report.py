@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import datetime
 from pathlib import Path
 
 import structlog
+from jinja2 import Environment, FileSystemLoader
 
 from factory.models import AgentVerdict, Observation, PerformanceReport
 
@@ -149,6 +151,158 @@ def parse_observations(project_path: Path) -> list[Observation]:
     return observations
 
 
+def _read_goal(project_path: Path) -> str | None:
+    """Read the goal field from .factory/config.json."""
+    config_path = project_path / ".factory" / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        data = json.loads(config_path.read_text())
+        goal = data.get("goal")
+        return goal if isinstance(goal, str) and goal.strip() else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _invoke_reporter(project_path: Path) -> str | None:
+    """Invoke the reporter agent and return its output."""
+    import subprocess
+
+    goal = _read_goal(project_path)
+    task = (
+        f"Assess whether the project goal was achieved. "
+        f"Project path: {project_path}\n"
+        f"Goal: {goal or 'No goal set'}"
+    )
+    try:
+        result = subprocess.run(
+            [
+                "factory", "agent", "reporter",
+                "--task", task,
+                "--project", str(project_path),
+                "--model", "haiku",
+                "--timeout", "120",
+            ],
+            capture_output=True, text=True, timeout=150,
+        )
+        if result.returncode != 0:
+            log.warning("reporter_agent_failed", returncode=result.returncode)
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        log.warning("reporter_agent_error", error=str(exc))
+        return None
+
+    review_path = project_path / ".factory" / "reviews" / "reporter-latest.md"
+    if review_path.exists():
+        return review_path.read_text()
+    return None
+
+
+def _parse_goal_assessment(text: str) -> dict | None:
+    """Parse a reporter agent assessment into a dict for the template."""
+    overall_match = re.search(
+        r"\*\*Overall:\*\*\s*(ACHIEVED|PARTIALLY_ACHIEVED|NOT_ACHIEVED|INSUFFICIENT_DATA)",
+        text,
+    )
+    if not overall_match:
+        return None
+
+    overall = overall_match.group(1)
+    overall_class_map = {
+        "ACHIEVED": "keep",
+        "PARTIALLY_ACHIEVED": "redirect",
+        "NOT_ACHIEVED": "revert",
+        "INSUFFICIENT_DATA": "insufficient",
+    }
+    verdict_class_map = {
+        "MET": "keep",
+        "PARTIALLY_MET": "redirect",
+        "NOT_MET": "revert",
+        "NO_DATA": "insufficient",
+    }
+
+    asks: list[dict] = []
+    for ask_match in re.finditer(
+        r"#### Ask:\s*(.+?)\n\*\*Verdict:\*\*\s*(MET|PARTIALLY_MET|NOT_MET|NO_DATA)\s*\n"
+        r"\*\*Evidence:\*\*\s*\n(.*?)(?=\n#### Ask:|\n### Gaps|\n## |\Z)",
+        text, re.DOTALL,
+    ):
+        ask_text = ask_match.group(1).strip()
+        verdict = ask_match.group(2)
+        evidence_lines: list[str] = []
+        for line in ask_match.group(3).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line:
+                evidence_lines.append(line)
+        asks.append({
+            "ask": ask_text,
+            "verdict": verdict,
+            "verdict_class": verdict_class_map.get(verdict, ""),
+            "evidence": evidence_lines,
+        })
+
+    gaps: list[str] = []
+    gaps_match = re.search(r"### Gaps\s*\n(.+?)(?=\n### |\n## |\Z)", text, re.DOTALL)
+    if gaps_match:
+        for line in gaps_match.group(1).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line and line.lower() != "none":
+                gaps.append(line)
+
+    return {
+        "overall": overall,
+        "overall_class": overall_class_map.get(overall, ""),
+        "asks": asks,
+        "gaps": gaps,
+    }
+
+
+def generate_html_report(
+    project_path: Path,
+    output_path: Path | None = None,
+    *,
+    assess: bool = False,
+) -> Path:
+    """Render a self-contained HTML report for a project."""
+    from factory.store import ExperimentStore
+
+    report = build_performance_report(project_path)
+
+    store = ExperimentStore(project_path)
+    try:
+        experiments = asyncio.run(store.load_history())
+    except Exception:
+        experiments = []
+
+    goal = _read_goal(project_path)
+
+    goal_assessment: dict | None = None
+    if assess:
+        reporter_output = _invoke_reporter(project_path)
+        if reporter_output:
+            goal_assessment = _parse_goal_assessment(reporter_output)
+
+    template_dir = Path(__file__).parent / "templates"
+    env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=True)
+    template = env.get_template("report.html.j2")
+
+    html = template.render(
+        report=report,
+        experiments=experiments,
+        generated_at=report.generated_at.strftime("%Y-%m-%d %H:%M:%S"),
+        goal=goal,
+        goal_assessment=goal_assessment,
+    )
+
+    if output_path is None:
+        output_path = project_path / ".factory" / "report.html"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html)
+
+    log.info("html_report_generated", path=str(output_path))
+    return output_path
+
+
 def build_performance_report(project_path: Path) -> PerformanceReport:
     """Build a complete performance report for a project."""
     from factory.store import ExperimentStore
@@ -157,7 +311,6 @@ def build_performance_report(project_path: Path) -> PerformanceReport:
     store = ExperimentStore(project_path)
 
     try:
-        import asyncio
         records = asyncio.run(store.load_history())
     except Exception:
         records = []
