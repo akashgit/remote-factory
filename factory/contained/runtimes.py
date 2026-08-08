@@ -15,8 +15,14 @@ from datetime import datetime
 # States in which nothing a delete could interrupt is still happening. Anything else — including a
 # state we have never seen, or a blank one — is treated as active, which is the safe default for a
 # check that guards a destructive operation.
+# "finished" is this tool's own word, not an engine's: `lifecycle._run_state` reports it for a
+# container that is still up while every pane in its tmux session is dead — the run is over. Since
+# the container is *designed* to outlive its run (`--init` around `sleep infinity`), that is what a
+# completed local run looks like essentially always; "exited" is the rare case. Leaving it out made
+# `reap_stale` refuse the very containers it exists to reap, and made `rm` ask "still active
+# (state=finished). Delete anyway?" about the one state where deleting is unambiguously safe.
 _INACTIVE_STATES = frozenset({"exited", "stopped", "created", "dead", "removing", "succeeded",
-                              "failed", "terminated", "error", "completed"})
+                              "failed", "terminated", "error", "completed", "finished"})
 
 
 @dataclass(frozen=True)

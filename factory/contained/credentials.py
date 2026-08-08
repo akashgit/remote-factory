@@ -77,13 +77,14 @@ def resolve_credentials(
     config = config_path or FACTORY_CONFIG
 
     if _truthy(env.get("CLAUDE_CODE_USE_VERTEX")):
-        return _vertex_shape(env)
+        return _vertex_shape(env, config)
     if env.get("ANTHROPIC_API_KEY", "").strip():
         return CredentialShape(
             backend="anthropic",
             ok=True,
             detail=(
-                f"Anthropic API, key from ANTHROPIC_API_KEY, model {_model(env)}. The key crosses "
+                f"Anthropic API, key from ANTHROPIC_API_KEY, model {_model(env, config)}. The key "
+                "crosses "
                 "into the container."
             ),
             env={"ANTHROPIC_API_KEY": env["ANTHROPIC_API_KEY"]},
@@ -115,7 +116,7 @@ def resolve_credentials(
     )
 
 
-def _vertex_shape(env: dict[str, str]) -> CredentialShape:
+def _vertex_shape(env: dict[str, str], config_path: Path | None = None) -> CredentialShape:
     missing = [name for name in VERTEX_VARS if not env.get(name, "").strip()]
     adc = ADC_DIR / ADC_FILE
     if not adc.exists():
@@ -124,7 +125,8 @@ def _vertex_shape(env: dict[str, str]) -> CredentialShape:
     forwarded.update(VERTEX_PINNED_ENV)
     detail = (
         f"Vertex, project {env.get('ANTHROPIC_VERTEX_PROJECT_ID', '<unset>')} in "
-        f"{env.get('CLOUD_ML_REGION', '<unset>')}, model {_model(env)}, credential from "
+        f"{env.get('CLOUD_ML_REGION', '<unset>')}, model {_model(env, config_path)}, "
+        "credential from "
         f"Application Default Credentials at {ADC_DIR}"
     )
     if missing:
@@ -153,19 +155,24 @@ def _vertex_shape(env: dict[str, str]) -> CredentialShape:
     )
 
 
-def _model(env: dict[str, str]) -> str:
+def _model(env: dict[str, str], config_path: Path | None = None) -> str:
     """Which model the run would use, and where that came from. Never a credential."""
     for name in ("FACTORY_MODEL", "ANTHROPIC_MODEL"):
         value = env.get(name, "").strip()
         if value:
             return f"{value} (from {name})"
+    # The caller's config, not the module-level default: `resolve_credentials(config_path=...)`
+    # reads profiles from the path it was given, and reading the model from a different file made
+    # injection half-apply — under test that meant reaching into the developer's real
+    # ~/.factory/config.toml.
+    config = config_path or FACTORY_CONFIG
     try:
-        with FACTORY_CONFIG.open("rb") as handle:
+        with config.open("rb") as handle:
             configured = str(tomllib.load(handle).get("defaults", {}).get("model", "")).strip()
     except (OSError, tomllib.TOMLDecodeError):
         configured = ""
     if configured:
-        return f"{configured} (from {FACTORY_CONFIG} [defaults])"
+        return f"{configured} (from {config} [defaults])"
     return "<unset — pass --model in the payload>"
 
 

@@ -52,6 +52,12 @@ def gitleaks_available() -> bool:
     return shutil.which(GITLEAKS) is not None
 
 
+# gitleaks' own convention: 0 clean, this on findings, anything else means the scanner itself
+# failed. Named rather than repeated as a literal, because `scan()` has to tell "found secrets"
+# apart from "could not look" and the two used to collapse into one.
+LEAK_EXIT_CODE = 2
+
+
 def build_scan_argv(path: Path, report: Path) -> list[str]:
     """`gitleaks dir` — the working tree as it will be packed, not the git history.
 
@@ -62,7 +68,7 @@ def build_scan_argv(path: Path, report: Path) -> list[str]:
     return [
         GITLEAKS, "dir", str(path),
         "--report-format", "json", "--report-path", str(report),
-        "--no-banner", "--exit-code", "2",
+        "--no-banner", "--exit-code", str(LEAK_EXIT_CODE),
     ]
 
 
@@ -79,9 +85,26 @@ def scan(path: Path) -> ScanResult:
     with tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "gitleaks.json"
         try:
-            subprocess.run(build_scan_argv(path, report), capture_output=True, text=True, timeout=600)
+            result = subprocess.run(
+                build_scan_argv(path, report), capture_output=True, text=True, timeout=600
+            )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return ScanResult(scanned=False, detail=f"gitleaks could not be run: {exc}")
+        # The exit code carries the answer, and discarding it turned every *failure* into a clean
+        # bill of health: gitleaks writes a report only when it finds something, so a run that
+        # errored (bad flag, unreadable tree, wrong version) left no report and was read as "no
+        # secrets found" — the workspace then uploaded claiming it had been scanned, which is the
+        # one outcome this module exists to prevent. 0 is clean, LEAK_EXIT_CODE is findings,
+        # anything else is the scanner failing and must be reported as unscanned.
+        if result.returncode not in (0, LEAK_EXIT_CODE):
+            detail = (result.stderr or "").strip().splitlines()
+            return ScanResult(
+                scanned=False,
+                detail=(
+                    "gitleaks failed, so the workspace is being uploaded UNSCANNED"
+                    + (f": {detail[-1][:160]}" if detail else f" (exit {result.returncode})")
+                ),
+            )
         if not report.exists():
             return ScanResult(scanned=True, detail="no secrets found")
         try:

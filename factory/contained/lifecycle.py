@@ -263,15 +263,6 @@ def attach(name: str, target: str, namespace: str | None = None) -> int:
     runtime = resolve_runtime(name, runtimes)
     if runtime is None:
         return _not_ours(name)
-    if not runtime.active:
-        print(
-            f"contained: {name} is {runtime.state} — the container is not running, so there is "
-            f"nothing to attach to.\n"
-            f"  Its workspace is still on disk; `factory contained sync {name}` shows where.\n"
-            f"  Remove it with:  factory contained rm {name}",
-            file=sys.stderr,
-        )
-        return 1
     if runtime.target == "local" and runtime.state == "finished":
         # The container is up but the run's session is gone — usually the run ended, or a stray
         # Ctrl-D closed it. Sessions created by current versions survive that; older ones do not,
@@ -282,6 +273,15 @@ def attach(name: str, target: str, namespace: str | None = None) -> int:
             f"  Look inside anyway:  podman exec -it {name} bash\n"
             f"  Get the work back:   factory contained sync {name}\n"
             f"  Remove it:           factory contained rm {name}",
+            file=sys.stderr,
+        )
+        return 1
+    if not runtime.active:
+        print(
+            f"contained: {name} is {runtime.state} — the container is not running, so there is "
+            f"nothing to attach to.\n"
+            f"  Its workspace is still on disk; `factory contained sync {name}` shows where.\n"
+            f"  Remove it with:  factory contained rm {name}",
             file=sys.stderr,
         )
         return 1

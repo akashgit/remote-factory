@@ -237,7 +237,10 @@ def test_rm_refuses_a_container_the_factory_did_not_create() -> None:
 
 
 def test_rm_prompts_before_deleting_an_active_run(capsys: pytest.CaptureFixture[str]) -> None:
+    # `_run_state` is pinned rather than left to the tmux probe: with no podman reachable the probe
+    # reports "finished", which is an *inactive* state, and this test is about an active one.
     with patch("factory.contained.lifecycle._podman_entries", return_value=[_entry("ours")]), \
+         patch("factory.contained.lifecycle._run_state", return_value="running"), \
          patch("factory.contained.lifecycle.subprocess.call") as call:
         code = lifecycle.remove("ours", "local", assume_yes=False, interactive=False)
     call.assert_not_called()
@@ -269,7 +272,9 @@ def test_rm_does_not_echo_podmans_own_output(capsys: pytest.CaptureFixture[str])
 
 
 def test_reap_stale_leaves_a_running_container_alone() -> None:
+    """A name collision can equally mean "you meant to reattach", so a live run is never reaped."""
     with patch("factory.contained.lifecycle._podman_entries", return_value=[_entry("ours")]), \
+         patch("factory.contained.lifecycle._run_state", return_value="running"), \
          patch("factory.contained.lifecycle.subprocess.call") as call:
         reaped, detail = lifecycle.reap_stale("ours")
     call.assert_not_called()

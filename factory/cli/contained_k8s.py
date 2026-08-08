@@ -102,7 +102,7 @@ def run_k8s(args: argparse.Namespace) -> int:
             plan_workspace(project, run_id, self_contained=True) if dry_run
             else materialize(project, run_id, self_contained=True)
         )
-        plan = _build_pod_plan(args, ws, namespace, run_id)
+        plan = _build_pod_plan(args, ws, namespace, run_id, dry_run=dry_run)
     except (ContainedError, WorkspaceError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
@@ -155,8 +155,16 @@ def _project_dir(ws: Workspace) -> str:
 
 
 def _build_pod_plan(
-    args: argparse.Namespace, ws: Workspace, namespace: str, run_id: str
+    args: argparse.Namespace, ws: Workspace, namespace: str, run_id: str, *, dry_run: bool = False
 ) -> PodPlan:
+    """Compose the pod plan.
+
+    `dry_run` is not a cosmetic flag. Two of the values below are read from the *cluster* — the
+    namespace's allocated fsGroup range and whether the credentials Secret carries a Google
+    credential file. `FACTORY_CONTAINED_DRY_RUN=1` promises to compose commands and provision
+    nothing, and a promise that still opens a connection is not one; on an unreachable cluster it
+    is also a 30-second timeout apiece for a command that should return instantly.
+    """
     warnings: list[str] = []
     project_dir = _project_dir(ws)
 
@@ -198,7 +206,9 @@ def _build_pod_plan(
 
     # A Google credential has to arrive as a file, so the launch has to know whether one is there.
     # Keys only — the value never leaves the cluster.
-    adc = ADC_SECRET_KEY in secret_keys(SECRET_NAME, namespace)
+    # Both of these are live cluster reads, so dry-run projects instead of asking. The projection
+    # is stated in the dry-run output rather than left to look like fact.
+    adc = not dry_run and ADC_SECRET_KEY in secret_keys(SECRET_NAME, namespace)
     if adc:
         env["GOOGLE_APPLICATION_CREDENTIALS"] = ADC_PATH
 
@@ -217,7 +227,7 @@ def _build_pod_plan(
         factory_command=inner,
         storage_class=args.storage_class,
         division=args.division,
-        fs_group=namespace_fs_group(namespace),
+        fs_group=None if dry_run else namespace_fs_group(namespace),
         sidecar_image=resolve_sidecar_image(),
         adc=adc,
         warnings=tuple(warnings),
@@ -335,6 +345,14 @@ def _tmux_launch(plan: PodPlan) -> str:
 def _emit_dry_run(plan: PodPlan, args: argparse.Namespace) -> int:
     """Print the manifests and the commands the real path would apply and run, and do neither."""
     print(f"DRY RUN — {plan.name} in {plan.namespace} ({plan.image}); nothing is provisioned.")
+    # Two fields below are read from the cluster on the real path and cannot be here, because
+    # asking would be provisioning-adjacent contact that dry-run promises not to make. Saying so
+    # is the difference between a projection and a quiet inaccuracy.
+    print(
+        "Note: fsGroup is shown unset and no credentials volume is shown — both are read from the "
+        "namespace at launch. The real pod may carry either.",
+        file=sys.stderr,
+    )
     print(f"[apply] pvc/{PVC_NAME}")
     print(render_pvc(plan.namespace, plan.storage_class))
     print(f"[apply] pod/{plan.name}")
