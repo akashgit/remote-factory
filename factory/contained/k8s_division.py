@@ -31,24 +31,16 @@ import shlex
 
 from factory.contained.k8s import (
     LABEL_RUN,
-    WORKSPACE_ROOT,
+    REQUEST_DIR,
+    RESULT_DIR,
     build_api_resources_argv,
+    sidecar_command,
 )
 from factory.contained.k8s import sweep_argv as _sweep_argv
 
-# Where the sidecar watches for build requests. On the PVC, because that is the one thing both
-# containers can see — and deliberately *not* a route the agent can use to reach the cluster: it can
-# ask for a build, and nothing else.
-REQUEST_DIR = f"{WORKSPACE_ROOT}/.factory/division/requests"
-RESULT_DIR = f"{WORKSPACE_ROOT}/.factory/division/results"
-
+# `REQUEST_DIR`, `RESULT_DIR` and `sidecar_command` are re-exported from `k8s`: they describe the
+# pod spec, which that module owns, and the file drop below is their other half.
 INTERNAL_REGISTRY = "image-registry.openshift-image-registry.svc:5000"
-
-# How long the sidecar waits for a Build to reach a terminal phase after its logs have ended. The
-# gap is small but real — the log stream closes before the controller writes the final phase — and
-# without the wait every successful build reads as "Running", which the Complete check calls a
-# failure.
-PHASE_TIMEOUT_SECONDS = 120
 
 MCP_CLUSTER_SERVER = "kubernetes"
 MCP_BUILD_SERVER = "factory-build"
@@ -110,75 +102,6 @@ def openshift_available(runner=None) -> bool:
     except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0 and "builds" in (result.stdout or "")
-
-
-def sidecar_command() -> str:
-    """The sidecar's loop: watch the shared volume for a request, start a Build, write the result.
-
-    Deliberately dumb. It never evaluates anything from the request beyond a Containerfile path and
-    a tag, because the agent writes those files and the sidecar is the thing holding the credentials
-    the agent must not have. `oc start-build --from-dir` is what carries the context — a binary
-    source build, so there is no ConfigMap size ceiling and no fresh host-side upload per iteration.
-
-    Parsed with `sed` rather than `jq`: the sidecar image is an `oc` image, not the factory runtime,
-    and it carries neither jq nor python. Depending on a tool the image happens not to have fails at
-    the first build with `command not found`, which reads as a broken division rather than as a
-    missing package.
-
-    **The verdict comes from the Build's own phase, never from an exit code.** `oc start-build
-    --follow` exits 0 for a build that failed, so trusting it reports a build that produced no
-    image as succeeding — and the agent then validates something that does not exist. The build is
-    started, its logs are followed for the transcript, and then `.status.phase` is read and required
-    to be `Complete`.
-
-    **The Containerfile path is set on the BuildConfig, not passed as a build argument.** Binary
-    builds reject build args outright (`oc` warns and ignores them), so `--build-arg DOCKERFILE=`
-    silently did nothing and the build looked for a file named `Dockerfile` that was not there.
-    `dockerfilePath` is the field that actually selects it, and it is patched per request because
-    the agent may name a different file on the next iteration.
-    """
-    ns = '"$FACTORY_BUILD_NAMESPACE"'
-    return (
-        f'mkdir -p "{REQUEST_DIR}" "{RESULT_DIR}"; '
-        f'echo "build sidecar ready"; '
-        f'while true; do '
-        f'  for request in "{REQUEST_DIR}"/*.json; do '
-        f'    [ -e "$request" ] || continue; '
-        f'    name=$(basename "$request" .json); '
-        f'    dockerfile=$(sed -n \'s/.*"dockerfile"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p\' "$request"); '
-        f'    tag=$(sed -n \'s/.*"tag"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p\' "$request"); '
-        f'    rm -f "$request"; '
-        f'    log="{RESULT_DIR}/$name.log"; '
-        f'    echo "building $tag from $dockerfile" > "$log"; '
-        f'    oc new-build --name "$tag" --binary --strategy docker '
-        f'      --to "$tag:latest" -n {ns} >> "$log" 2>&1 || true; '
-        # dockerfilePath is relative to the build context, and the context is the project directory
-        # — which is what the agent means by "my Containerfile", and what makes a relative COPY in
-        # that file resolve the way it does on a laptop.
-        f'    oc patch bc/"$tag" -n {ns} --type=json '
-        f'      -p "[{{\\"op\\":\\"add\\",\\"path\\":\\"/spec/strategy/dockerStrategy/dockerfilePath\\",'
-        f'\\"value\\":\\"$dockerfile\\"}}]" >> "$log" 2>&1 || true; '
-        f'    build=$(oc start-build "$tag" --from-dir "$FACTORY_BUILD_CONTEXT" '
-        f'      -n {ns} -o=name 2>>"$log"); '
-        f'    if [ -z "$build" ]; then echo 1 > "{RESULT_DIR}/$name.status"; continue; fi; '
-        f'    echo "started $build" >> "$log"; '
-        f'    oc logs -f "$build" -n {ns} >> "$log" 2>&1 || true; '
-        # The log stream ends before the controller finalizes the Build, so reading the phase right
-        # here catches it mid-flight — every successful build reported "Running", and a strict
-        # Complete check would have called all of them failures. Poll until the phase is terminal.
-        f'    waited=0; '
-        f'    while [ "$waited" -lt {PHASE_TIMEOUT_SECONDS} ]; do '
-        f'      phase=$(oc get "$build" -n {ns} -o jsonpath="{{.status.phase}}" 2>>"$log"); '
-        f'      case "$phase" in New|Pending|Running|"") sleep 2; waited=$((waited+2));; '
-        f'        *) break;; esac; '
-        f'    done; '
-        f'    echo "build phase: $phase" >> "$log"; '
-        f'    if [ "$phase" = "Complete" ]; then echo 0 > "{RESULT_DIR}/$name.status"; '
-        f'    else echo 1 > "{RESULT_DIR}/$name.status"; fi; '
-        f'  done; '
-        f'  sleep 2; '
-        f'done'
-    )
 
 
 def start_build_server_source() -> str:

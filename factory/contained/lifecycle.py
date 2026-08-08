@@ -16,12 +16,12 @@ import argparse
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
 
+from factory.contained.runtimes import LifecycleError, Runtime
 from factory.contained.workspace import (
     Workspace,
     cleanup_hint,
@@ -39,32 +39,6 @@ from factory.podman import (
 )
 
 log = structlog.get_logger()
-
-# States in which nothing a delete could interrupt is still happening. Anything else — including a
-# state we have never seen, or a blank one — is treated as active, which is the safe default for a
-# check that guards a destructive operation.
-_INACTIVE_STATES = frozenset({"exited", "stopped", "created", "dead", "removing", "succeeded",
-                              "failed", "terminated", "error", "completed"})
-
-
-@dataclass(frozen=True)
-class Runtime:
-    """One factory-created runtime, normalized across podman containers and cluster pods."""
-
-    name: str
-    target: str
-    project: str
-    state: str
-    created: datetime | None = None
-    source: str | None = None
-
-    @property
-    def active(self) -> bool:
-        return self.state.strip().lower() not in _INACTIVE_STATES
-
-
-class LifecycleError(RuntimeError):
-    """Listing or acting on a runtime failed in a way the caller should report."""
 
 
 def _podman_entries() -> list[dict[str, object]]:
