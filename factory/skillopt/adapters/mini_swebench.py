@@ -231,7 +231,7 @@ def _parse_trial_trajectory(trial_dir: Path) -> str:
                 break
 
     if llm_trace and llm_trace.exists():
-        parts.append(llm_trace.read_text()[:10000])
+        parts.append(llm_trace.read_text())
     else:
         session_files = list(trial_dir.rglob("sessions/projects/*/??*-*-*-*-*.jsonl"))
         if session_files:
@@ -253,14 +253,14 @@ def _parse_trial_trajectory(trial_dir: Path) -> str:
                         if not isinstance(block, dict):
                             continue
                         if block.get("type") == "text":
-                            parts.append(f"[assistant] {block['text'][:300]}")
+                            parts.append(f"[assistant] {block['text']}")
                         elif block.get("type") == "tool_use":
                             tool = block.get("name", "")
                             inp = block.get("input", {})
                             if tool == "Bash":
-                                parts.append(f"[bash] {str(inp.get('command', ''))[:200]}")
+                                parts.append(f"[bash] {str(inp.get('command', ''))}")
                             else:
-                                parts.append(f"[{tool}] {str(inp)[:100]}")
+                                parts.append(f"[{tool}] {str(inp)}")
 
     verifier_stdout = trial_dir / "verifier" / "test-stdout.txt"
     if verifier_stdout.exists():
@@ -271,7 +271,7 @@ def _parse_trial_trajectory(trial_dir: Path) -> str:
                 summary_lines.append(line)
         if summary_lines:
             parts.append("\n[VERIFIER TEST RESULTS]")
-            parts.append("\n".join(summary_lines[:30]))
+            parts.append("\n".join(summary_lines))
 
     return "\n".join(parts)
 
@@ -288,7 +288,7 @@ def _build_fail_reason(trial_dir: Path | None) -> str:
             failed.append(line.strip())
     if not failed:
         return ""
-    return f"{len(failed)} tests FAILED: " + "; ".join(failed[:5])
+    return f"{len(failed)} tests FAILED: " + "; ".join(failed)
 
 
 def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:

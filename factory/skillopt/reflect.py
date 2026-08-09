@@ -61,7 +61,7 @@ def fmt_trajectory(trace_data: dict) -> str:
     if trace_data.get("fail_reason"):
         parts.append(f"Failure: {trace_data['fail_reason']}")
     if trace_data.get("trace_dump"):
-        parts.append(f"Trace:\n{trace_data['trace_dump'][:8000]}")
+        parts.append(f"Trace:\n{trace_data['trace_dump']}")
     return "\n".join(parts)
 
 
@@ -87,7 +87,7 @@ def fmt_minibatch_trajectories(items: list[RolloutResult]) -> str:
             parts.append(f"Gold answers: {gold_answers!r}")
         trace_dump = item.extras.get("trace_dump", "")
         if trace_dump:
-            parts.append(trace_dump[:8000])
+            parts.append(trace_dump)
         elif question is None:
             parts.append("(no trace data)")
         sections.append("\n".join(parts))
