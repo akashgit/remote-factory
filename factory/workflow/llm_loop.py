@@ -112,7 +112,7 @@ async def run_llm_loop(
         for block in response.content:
             if block.type == "text":
                 turn_text.append(block.text)
-                trace_log.append(f"[assistant] {block.text[:300]}")
+                trace_log.append(f"[assistant] {block.text}")
                 for seq in node.stop_sequences:
                     if seq in block.text:
                         text_parts.extend(turn_text)
@@ -131,11 +131,11 @@ async def run_llm_loop(
                     continue
 
                 cmd_str = str(block.input.get('command', ''))
-                trace_log.append(f"[{block.name}] {cmd_str[:200]}")
+                trace_log.append(f"[{block.name}] {cmd_str}")
                 result = await execute_tool(
                     block.name, block.input, tool_map[block.name], cwd,
                 )
-                trace_log.append(f"[output] {result[:500]}")
+                trace_log.append(f"[output] {result}")
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
