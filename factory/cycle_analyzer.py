@@ -3,6 +3,9 @@
 Assembles what happened in each inner-loop cycle: what agents ran, in what order,
 what each produced, what the evaluator said, and whether it helped. Mode-agnostic —
 works with evolve, improve, research, refine, or any experiment-producing workflow.
+
+Note: ``factory.optimization.analyzer.StepAnalyzer`` is the canonical path for new
+code that needs optimizer-focused step records. This module remains functional.
 """
 
 from __future__ import annotations
