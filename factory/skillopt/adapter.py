@@ -45,6 +45,8 @@ class EnvAdapter(ABC):
             prompt_slots=kwargs.get("prompt_slots"),
             prompt_slots_text=kwargs.get("prompt_slots_text"),
             learning_rate=kwargs.get("learning_rate", 10),
+            error_prompt_name=kwargs.get("error_prompt_name", "analyst_error.md"),
+            success_prompt_name=kwargs.get("success_prompt_name", "analyst_success.md"),
         )
 
     @abstractmethod

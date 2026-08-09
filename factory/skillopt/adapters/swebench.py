@@ -168,6 +168,11 @@ class SwebenchAdapter(EnvAdapter):
             )
         return results
 
+    def reflect(self, results, skill_content, out_dir, **kwargs):
+        kwargs.setdefault("error_prompt_name", "analyst_error_swebench.md")
+        kwargs.setdefault("success_prompt_name", "analyst_success_swebench.md")
+        return super().reflect(results, skill_content, out_dir, **kwargs)
+
     def get_task_types(self) -> list[str]:
         return ["bug_fix"]
 

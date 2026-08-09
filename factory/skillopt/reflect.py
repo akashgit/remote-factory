@@ -72,6 +72,10 @@ def fmt_minibatch_trajectories(items: list[RolloutResult]) -> str:
         parts = [header]
         if item.fail_reason:
             parts.append(f"Failure: {item.fail_reason}")
+        for key, val in item.extras.items():
+            if key == "trace_dump":
+                continue
+            parts.append(f"{key}: {val!r}")
         question = item.extras.get("question")
         prediction = item.extras.get("prediction")
         gold_answers = item.extras.get("gold_answers")
@@ -176,8 +180,9 @@ def run_error_analyst_minibatch(
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
     learning_rate: int = 10,
+    error_prompt_name: str = "analyst_error.md",
 ) -> RawPatch | None:
-    template = _load_prompt("analyst_error.md")
+    template = _load_prompt(error_prompt_name)
     traces_text = fmt_minibatch_trajectories(items)
 
     if prompt_slots is not None and prompt_slots_text is not None:
@@ -222,8 +227,9 @@ def run_success_analyst_minibatch(
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
     learning_rate: int = 10,
+    success_prompt_name: str = "analyst_success.md",
 ) -> RawPatch | None:
-    template = _load_prompt("analyst_success.md")
+    template = _load_prompt(success_prompt_name)
     traces_text = fmt_minibatch_trajectories(items)
 
     if prompt_slots is not None and prompt_slots_text is not None:
@@ -270,6 +276,8 @@ def run_minibatch_reflect(
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
     learning_rate: int = 10,
+    error_prompt_name: str = "analyst_error.md",
+    success_prompt_name: str = "analyst_success.md",
 ) -> list[RawPatch]:
     failures = [r for r in results if r.hard < 1.0]
     successes = [r for r in results if r.hard >= 1.0]
@@ -295,12 +303,14 @@ def run_minibatch_reflect(
             f = pool.submit(
                 run_error_analyst_minibatch, skill_content, batch, edit_budget,
                 step_buffer_context, prompt_slots, prompt_slots_text, learning_rate,
+                error_prompt_name,
             )
             futures[f] = "failure"
         for batch in success_batches:
             f = pool.submit(
                 run_success_analyst_minibatch, skill_content, batch, edit_budget,
                 step_buffer_context, prompt_slots, prompt_slots_text, learning_rate,
+                success_prompt_name,
             )
             futures[f] = "success"
 
