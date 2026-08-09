@@ -41,3 +41,6 @@ graph.json
 
 # Auto-generated workflow skill files (should be in skills/ not root)
 workflow-*/
+
+# Lumen branch learning docs (local only)
+lumen_docs/
