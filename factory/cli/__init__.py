@@ -45,6 +45,9 @@ from factory.cli.ceo import (
 from factory.cli.run import (
     cmd_run as cmd_run,
 )
+from factory.cli.skillopt import (
+    cmd_skillopt as cmd_skillopt,
+)
 from factory.cli.graph import (
     cmd_graph_extract as cmd_graph_extract,
     cmd_graph_status as cmd_graph_status,

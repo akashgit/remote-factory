@@ -246,6 +246,13 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
     p.add_argument("--date", default=None, help="Show activity for a specific date (YYYY-MM-DD)")
     p.add_argument("--days", type=int, default=7, help="Number of days to look back (default: 7)")
 
+    p = sub.add_parser("skillopt", help="Run unified optimization loop for prompt/graph tuning")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--benchmark", default=None, help="Benchmark adapter (e.g. searchqa)")
+    p.add_argument("--skill-path", default=None, help="Path to the skill file to optimize")
+    p.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
+    p.add_argument("--steps-per-epoch", type=int, default=1, help="Steps per epoch")
+
 
 def add_configuration_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")

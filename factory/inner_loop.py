@@ -1,5 +1,11 @@
 """InnerLoop — model-like wrapper for mode + evaluator that an outer-loop optimizer calls.
 
+.. deprecated::
+    This module is superseded by ``factory.optimization``. New code should use
+    ``factory.optimization.OptimizationLoop``, ``factory.optimization.Executor``,
+    ``factory.optimization.Evaluator``, and ``factory.optimization.Surface`` instead.
+    This module is kept for backward compatibility and will be removed in a future release.
+
 CycleAnalyzer handles execution tracing (what agents ran, costs, verdicts).
 Evaluator handles score interpretation (parses evaluator-specific output artifacts).
 InnerLoop composes both.

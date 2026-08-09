@@ -104,7 +104,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "skillopt"]),
     (
         "Configuration",
         [
@@ -298,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         "usage": _cli.cmd_usage,
         "runners": _cli.cmd_runners_list,
         "agent": _cli.cmd_agent,
+        "skillopt": _cli.cmd_skillopt,
         "ceo": _cli.cmd_ceo,
         "run": _cli.cmd_run,
         "tmux": _cli.cmd_tmux,
