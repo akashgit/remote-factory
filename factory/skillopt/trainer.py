@@ -166,9 +166,10 @@ class SkillOptTrainer:
         violations: list[str] = []
         for edit in patch.edits:
             if edit.op == "replace" and edit.target:
+                target = edit.target.strip()
                 is_prompt = any(
-                    edit.target.strip() == kv.strip()
-                    or kv.strip().startswith(edit.target.strip()[:200])
+                    target == kv.strip()
+                    or target in kv
                     for kv in known_values
                 )
                 if not is_prompt:
@@ -443,6 +444,11 @@ class SkillOptTrainer:
                     for slot_name, slot_value in self.prompt_slots.items():
                         if slot_value == edit.target:
                             candidate_slots[slot_name] = edit.content
+                            break
+                        if edit.target in slot_value:
+                            candidate_slots[slot_name] = slot_value.replace(
+                                edit.target, edit.content, 1,
+                            )
                             break
 
             n_ops = len(clipped.edits)
