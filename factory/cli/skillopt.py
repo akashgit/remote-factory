@@ -17,6 +17,7 @@ def cmd_skillopt(args: argparse.Namespace) -> int:
     from factory.optimization import OptimizationLoop, Surface
     from factory.optimization.executors import FactoryCeoExecutor
     from factory.optimization.mutators import UnifiedMutator
+    from factory.optimization.protocols import Evaluator, Executor
     from factory.optimization.types import LoopConfig
 
     config = LoopConfig(
@@ -30,6 +31,8 @@ def cmd_skillopt(args: argparse.Namespace) -> int:
         if skill.exists():
             surface.prompt_slots["skill"] = skill.read_text()
 
+    executor: Executor
+    evaluator: Evaluator
     if args.benchmark == "searchqa":
         from factory.optimization.benchmarks.searchqa import (
             SearchQAEvaluator,
