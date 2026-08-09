@@ -172,6 +172,108 @@ nodes["archivist"] = AgentNode(
 )
 ```
 
+## Composition
+
+The `factory/workflow/composition.py` module provides functions for building
+new workflows from existing ones without copying code.
+
+### Inspecting workflows
+
+Before composing, inspect the workflows to find node IDs:
+
+```python
+from factory.workflow.composition import describe_nodes
+from factory.workflow.definitions import improve_workflow
+
+# Fast mode (default) — deterministic extraction
+nodes = describe_nodes(improve_workflow())
+
+# Rich mode — LLM-powered one-liner summaries
+nodes = describe_nodes(improve_workflow(), use_llm=True)
+
+for node in nodes:
+    print(f"{node['id']:20s} {node['type']:16s} {node['description']}")
+```
+
+Example output:
+
+```
+study                Study            factory study {project_path}
+researcher           Agent(researcher) Deep research for the project...
+gate_research        Gate(agent)       Are observations grounded in data?...
+strategist           Agent(strategist) Generate prioritized hypotheses...
+...
+```
+
+### API
+
+| Function | Purpose |
+|----------|---------|
+| `describe_nodes(wf, *, use_llm=False)` | List all nodes with ID, type, and description (topo-sorted). Fast extraction by default; `use_llm=True` for LLM-powered rich summaries |
+| `compose_serial(w1, w2, ...)` | Chain two workflows end-to-end |
+| `trim_nodes(wf, node_ids)` | Remove nodes and reconnect (linear only) |
+| `prefix_nodes(wf, prefix)` | Namespace all node IDs with a prefix |
+| `find_terminal_nodes(wf)` | List nodes with no unconditional outgoing edges |
+| `validate_composition(wf)` | Run graph + composition-specific validation |
+
+### Example: chaining discover → review
+
+```python
+from factory.workflow.composition import compose_serial
+from factory.workflow.definitions import discover_workflow, review_workflow
+
+def discover_then_review() -> Workflow:
+    return compose_serial(
+        discover_workflow(),
+        review_workflow(),
+        end_node_w1="redetect",
+        name="discover-then-review",
+    )
+```
+
+### Example: extracting and trimming
+
+```python
+from factory.workflow.composition import trim_nodes
+
+wf = improve_workflow()
+# Extract the QA subgraph
+qa = wf.subgraph(
+    {"health_checker", "code_reviewer", "gate_review",
+     "adversarial_tester", "gate_qa"},
+    name="qa-only",
+    start_node="health_checker",
+)
+```
+
+### ID conflict resolution
+
+When composing workflows with overlapping node IDs, provide an explicit
+`rename` dict:
+
+```python
+composed = compose_serial(
+    discover_workflow(),
+    discover_workflow(),
+    end_node_w1="redetect",
+    name="double-discover",
+    rename={"discover": "discover2", "gate_discover": "gate_discover2",
+            "redetect": "redetect2"},
+)
+```
+
+Without a rename dict, `compose_serial` raises `ValueError` listing conflicts.
+
+### Constraints
+
+- **trim_nodes**: MVP supports linear nodes only (1 unconditional in-edge,
+  1 unconditional out-edge). Raises `ValueError` for GateNodes with conditional
+  edges, ForkNodes, JoinNodes, or nodes whose writes are read by downstream nodes.
+- **compose_parallel**: Deferred to future work.
+- All composition functions return new `Workflow` objects (immutable pattern)
+  and call `validate_graph()` before returning. `describe_nodes` is a read-only
+  introspection function returning `list[dict]`, not a `Workflow`.
+
 ## Validation
 
 The graph validator (`validation.py`) checks:
@@ -281,6 +383,7 @@ factory/workflow/
 ├── __init__.py          # Public API: re-exports all primitives + executor
 ├── primitives.py        # Pydantic models: Node types, Edge, Verdict, Workflow
 ├── definitions.py       # 8 workflow functions returning Workflow objects
+├── composition.py       # Composition: compose_serial, trim_nodes, describe_nodes, helpers
 ├── executor.py          # WorkflowExecutor — async graph walker
 ├── validation.py        # NetworkX-based graph validator
 ├── events.py            # Structured event types for .factory/events.jsonl
