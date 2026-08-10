@@ -68,6 +68,38 @@ class TestOptimizeCommandWiring:
         assert "optimize" in _REFACTORY_AGENT_COMMANDS
 
 
+class TestOptimizeDynamicArgs:
+    """Verify --benchmark auto and --benchmark-dir argparse setup."""
+
+    def test_benchmark_auto_choice(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["optimize", "/tmp/proj", "--benchmark", "auto"])
+        assert args.benchmark == "auto"
+
+    def test_benchmark_dir_arg(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "optimize", "/tmp/proj", "--benchmark-dir", "/some/path",
+        ])
+        assert args.benchmark_dir == "/some/path"
+
+    def test_benchmark_auto_no_dir_errors(self, tmp_path) -> None:
+        args = argparse.Namespace(
+            path=str(tmp_path),
+            benchmark="auto",
+            benchmark_dir=None,
+            skill_path=None,
+            steps=1,
+            epochs=1,
+            concurrency=5,
+            git_ref=None,
+            docker_host=None,
+            model="sonnet",
+        )
+        result = cmd_optimize(args)
+        assert result == 1
+
+
 class TestCmdOptimize:
     """Test cmd_optimize with mocked dependencies."""
 

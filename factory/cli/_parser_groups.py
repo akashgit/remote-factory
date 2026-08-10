@@ -255,8 +255,10 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
 
     p = sub.add_parser("optimize", help="Run inner-outer optimization loop with HarborBenchmark")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--benchmark", default="searchqa", choices=["searchqa", "featurebench"],
+    p.add_argument("--benchmark", default="searchqa", choices=["searchqa", "featurebench", "auto"],
                     help="Benchmark to run (default: searchqa)")
+    p.add_argument("--benchmark-dir", default=None,
+                    help="Path to benchmark directory with config.json, executor.py, evaluator.py")
     p.add_argument("--skill-path", default=None, help="Path to the skill file to optimize")
     p.add_argument("--steps", type=int, default=3, help="Steps per epoch (default: 3)")
     p.add_argument("--epochs", type=int, default=1, help="Number of training epochs (default: 1)")

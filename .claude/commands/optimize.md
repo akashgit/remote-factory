@@ -37,7 +37,8 @@ factory optimize <project-path> \
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--benchmark` | `searchqa` | Benchmark to run (currently only searchqa) |
+| `--benchmark` | `searchqa` | Benchmark to run (`searchqa`, `featurebench`, or `auto`) |
+| `--benchmark-dir` | none | Path to a custom benchmark directory (config.json + executor.py + evaluator.py) |
 | `--steps` | `3` | Number of optimization steps per epoch |
 | `--epochs` | `1` | Number of training epochs |
 | `--concurrency` | `5` | Number of concurrent Harbor tasks |
@@ -45,6 +46,22 @@ factory optimize <project-path> \
 | `--docker-host` | from `DOCKER_HOST` env | Docker/Podman socket path |
 | `--model` | `sonnet` | Model for the AgenticMutator |
 | `--skill-path` | auto | Path to initial skill file to optimize |
+
+## Dynamic Benchmarks
+
+Use `--benchmark auto` to load a benchmark from the project's `.factory/eval/benchmark/` directory, or `--benchmark-dir /path/to/dir` to load from any directory. The directory must contain:
+
+- `config.json` — benchmark metadata (must have `name`; optional `executor_params` and `evaluator_params` dicts)
+- `executor.py` — module with an `Executor` class that has an `execute` method
+- `evaluator.py` — module with an `Evaluator` class that has `parse`, `parse_many`, and `get_info` methods
+
+```bash
+# Auto-detect from project's .factory/eval/benchmark/
+factory optimize /path/to/project --benchmark auto --steps 5
+
+# Explicit directory
+factory optimize /path/to/project --benchmark-dir /path/to/my-benchmark --steps 3
+```
 
 ## Follow-Up Guidance
 
