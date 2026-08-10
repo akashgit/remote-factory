@@ -245,6 +245,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "MUST stay within EVOLVE-BLOCK-START/END markers."
         ),
     },
+    "automationbench-sales": {
+        "description": (
+            "AutomationBench-Sales fine-tuning mode — iterative pipeline for "
+            "fine-tuning small LLMs on Zapier's Sales domain via remote GPU "
+            "training and local evaluation. Runs research, data prep, remote "
+            "training (SSH), model serving, and auto-bench evaluation in a "
+            "convergence loop with plateau detection. Terminal mode."
+        ),
+        "argument_hint": "<project_path> --mode automationbench-sales",
+    },
 }
 
 
