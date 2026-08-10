@@ -251,6 +251,7 @@ class SkillOptTrainer:
             )
 
         for epoch in range(self.epochs):
+            self.rejected_edits = []
             log.info("epoch started", epoch=epoch + 1, total=self.epochs)
 
             for step in range(self.steps_per_epoch):
@@ -376,7 +377,7 @@ class SkillOptTrainer:
         self.failure_tracker.record_rollout(results, self.global_step, "train")
         hard_before, soft_before = self._compute_score(results)
 
-        step_buffer_context = self._build_step_buffer_context() if self.overfit else ""
+        step_buffer_context = self._build_step_buffer_context()
 
         reflect_kwargs: dict = {
             "minibatch_size": max(1, self.batch_size // 2),
