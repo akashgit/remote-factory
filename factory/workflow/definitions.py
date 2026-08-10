@@ -20,6 +20,7 @@ critical bugs, replacing the monolithic QA agent.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from factory.models import ProjectState
@@ -42,6 +43,8 @@ from factory.workflow.primitives import (
 # Re-export for test convenience
 __all__ = [
     "DOC_FRESHNESS_GATE_PROMPT",
+    "ResearcherConfig",
+    "_research_subgraph",
     "build_workflow",
     "design_workflow",
     "improve_workflow",
@@ -145,6 +148,80 @@ def _deep_qa_subgraph(
     return nodes, internal_edges
 
 
+# ── Research subgraph helper ───────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ResearcherConfig:
+    """Configuration for a single researcher in a parallel research fork."""
+
+    id: str
+    prompt_template: str
+    post_check_min_size: int | None = None
+
+
+def _research_subgraph(
+    *,
+    researchers: list[ResearcherConfig],
+    gate_prompt: str,
+) -> tuple[dict[str, Any], list[Edge]]:
+    """Return (nodes, internal_edges) for the fork/join research subgraph.
+
+    Three parallel researcher agents run behind a fork, converge at a join,
+    and pass through a CEO gate:
+
+        fork_research → researcher_{id}... → join_research → gate_research
+
+    The caller wires the exit edges (gate_research → next PROCEED,
+    gate_research → fork_research RELOOP) into the surrounding workflow.
+    """
+    researcher_ids = [f"researcher_{r.id}" for r in researchers]
+    nodes: dict[str, Any] = {}
+
+    nodes["fork_research"] = ForkNode(
+        id="fork_research",
+        targets=researcher_ids,
+    )
+
+    for r in researchers:
+        rid = f"researcher_{r.id}"
+        write_path = f".factory/strategy/research-{r.id}.md"
+        kwargs: dict[str, Any] = {
+            "id": rid,
+            "role": AgentRole.RESEARCHER,
+            "prompt_template": r.prompt_template,
+            "writes": {write_path},
+        }
+        if r.post_check_min_size is not None:
+            kwargs["post_checks"] = [
+                ArtifactCheck(path=write_path, must_exist=True, min_size=r.post_check_min_size)
+            ]
+        nodes[rid] = AgentNode(**kwargs)
+
+    nodes["join_research"] = JoinNode(
+        id="join_research",
+        sources=researcher_ids,
+        reads={f".factory/strategy/research-{r.id}.md" for r in researchers},
+        writes={".factory/strategy/research-combined.md"},
+    )
+
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=gate_prompt,
+        reads={".factory/strategy/research-combined.md"},
+    )
+
+    internal_edges = [
+        *[Edge(source="fork_research", target=rid) for rid in researcher_ids],
+        *[Edge(source=rid, target="join_research") for rid in researcher_ids],
+        Edge(source="join_research", target="gate_research"),
+    ]
+
+    return nodes, internal_edges
+
+
 # ── W₁: Build Mode ──────────────────────────────────────────────
 
 
@@ -158,93 +235,56 @@ def build_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # Fork: 3 parallel researchers
-    nodes["fork_research"] = ForkNode(
-        id="fork_research",
-        targets=["researcher_similar", "researcher_techstack", "researcher_pitfalls"],
-    )
-
-    nodes["researcher_similar"] = AgentNode(
-        id="researcher_similar",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Similar projects research. "
-            "Search the web for similar projects, existing solutions, and prior art. "
-            "Analyze their strengths, weaknesses, and market positioning. "
-            "Check .factory/archive/ for prior knowledge on similar builds. "
-            "Write findings to .factory/strategy/research-similar.md covering: "
-            "similar projects found (with links), what they do well and what's missing, "
-            "differentiation opportunities."
+    # Research subgraph: fork → 3 researchers → join → CEO gate
+    _BUILD_RESEARCHERS = [
+        ResearcherConfig(
+            id="similar",
+            prompt_template=(
+                "Similar projects research. "
+                "Search the web for similar projects, existing solutions, and prior art. "
+                "Analyze their strengths, weaknesses, and market positioning. "
+                "Check .factory/archive/ for prior knowledge on similar builds. "
+                "Write findings to .factory/strategy/research-similar.md covering: "
+                "similar projects found (with links), what they do well and what's missing, "
+                "differentiation opportunities."
+            ),
+            post_check_min_size=50,
         ),
-        writes={".factory/strategy/research-similar.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-similar.md", must_exist=True, min_size=50
-            )
-        ],
-    )
-    nodes["researcher_techstack"] = AgentNode(
-        id="researcher_techstack",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Tech stack research. "
-            "Identify the best technology stack for this type of project. "
-            "Find architecture patterns and best practices. "
-            "Evaluate framework/library options with trade-offs. "
-            "Write findings to .factory/strategy/research-techstack.md covering: "
-            "recommended tech stack with rationale, architecture patterns, "
-            "framework comparisons."
+        ResearcherConfig(
+            id="techstack",
+            prompt_template=(
+                "Tech stack research. "
+                "Identify the best technology stack for this type of project. "
+                "Find architecture patterns and best practices. "
+                "Evaluate framework/library options with trade-offs. "
+                "Write findings to .factory/strategy/research-techstack.md covering: "
+                "recommended tech stack with rationale, architecture patterns, "
+                "framework comparisons."
+            ),
+            post_check_min_size=50,
         ),
-        writes={".factory/strategy/research-techstack.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50
-            )
-        ],
-    )
-    nodes["researcher_pitfalls"] = AgentNode(
-        id="researcher_pitfalls",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Pitfalls and scope research. "
-            "Identify potential pitfalls and common mistakes for this type of project. "
-            "Research MVP scope best practices. "
-            "Check .factory/archive/ for lessons from past builds. "
-            "Write findings to .factory/strategy/research-pitfalls.md covering: "
-            "potential pitfalls to avoid, MVP scope recommendation, "
-            "lessons from similar past builds."
+        ResearcherConfig(
+            id="pitfalls",
+            prompt_template=(
+                "Pitfalls and scope research. "
+                "Identify potential pitfalls and common mistakes for this type of project. "
+                "Research MVP scope best practices. "
+                "Check .factory/archive/ for lessons from past builds. "
+                "Write findings to .factory/strategy/research-pitfalls.md covering: "
+                "potential pitfalls to avoid, MVP scope recommendation, "
+                "lessons from similar past builds."
+            ),
+            post_check_min_size=50,
         ),
-        writes={".factory/strategy/research-pitfalls.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50
-            )
-        ],
-    )
-
-    # Join
-    nodes["join_research"] = JoinNode(
-        id="join_research",
-        sources=["researcher_similar", "researcher_techstack", "researcher_pitfalls"],
-        reads={
-            ".factory/strategy/research-similar.md",
-            ".factory/strategy/research-techstack.md",
-            ".factory/strategy/research-pitfalls.md",
-        },
-        writes={".factory/strategy/research-combined.md"},
-    )
-
-    # CEO gate on research quality
-    nodes["gate_research"] = GateNode(
-        id="gate_research",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
+    ]
+    r_nodes, r_edges = _research_subgraph(
+        researchers=_BUILD_RESEARCHERS,
         gate_prompt=(
             "Is the research relevant? Does it cover the technology landscape adequately? "
             "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
         ),
-        reads={".factory/strategy/research-combined.md"},
     )
+    nodes.update(r_nodes)
 
     # Strategist
     nodes["strategist"] = AgentNode(
@@ -385,16 +425,8 @@ def build_workflow() -> Workflow:
 
     # Edges
     edges = [
-        # Fork to researchers
-        Edge(source="fork_research", target="researcher_similar"),
-        Edge(source="fork_research", target="researcher_techstack"),
-        Edge(source="fork_research", target="researcher_pitfalls"),
-        # Researchers to join
-        Edge(source="researcher_similar", target="join_research"),
-        Edge(source="researcher_techstack", target="join_research"),
-        Edge(source="researcher_pitfalls", target="join_research"),
-        # Join → research gate
-        Edge(source="join_research", target="gate_research"),
+        # Research subgraph internal edges
+        *r_edges,
         # Research gate → strategist (proceed) or back to researchers (reloop)
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
@@ -1660,97 +1692,70 @@ def create_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # Fork: 3 parallel researchers
-    nodes["fork_research"] = ForkNode(
-        id="fork_research",
-        targets=["researcher_existing", "researcher_intent", "researcher_practices"],
-    )
-
-    nodes["researcher_existing"] = AgentNode(
-        id="researcher_existing",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Existing workflow analysis. "
-            "If the CEO task includes '## Create Mode (Update Existing Mode)', read the "
-            "**Target mode:** field and focus your analysis on that specific mode's workflow "
-            "definition via `factory workflow show <target_mode>`. Document its current node "
-            "sequences, gate logic, edge wiring, trigger function, and reads/writes. Also read "
-            "its SKILL.md at skills/workflow-<target_mode>/SKILL.md for the generated playbook. "
-            "Otherwise, read factory/workflow/definitions.py and analyze all existing workflow "
-            "definitions (build, design, improve, research, meta, discover, review, refine). "
-            "Document common patterns: node sequences, gate conventions, fork/join patterns, "
-            "archivist placement, edge wiring, trigger functions, reads/writes declarations. "
-            "Read factory/workflow/primitives.py for available node types and their fields. "
-            "Read factory/workflow/skill_export.py for WORKFLOW_META format. "
-            "Write findings to .factory/strategy/research-existing.md covering: "
-            "node type usage patterns, common subgraphs (builder→gate→qa→gate loop), "
-            "trigger function conventions, data flow patterns."
+    # Research subgraph: fork → 3 researchers → join → CEO gate
+    _CREATE_RESEARCHERS = [
+        ResearcherConfig(
+            id="existing",
+            prompt_template=(
+                "Existing workflow analysis. "
+                "If the CEO task includes '## Create Mode (Update Existing Mode)', read the "
+                "**Target mode:** field and focus your analysis on that specific mode's workflow "
+                "definition via `factory workflow show <target_mode>`. Document its current node "
+                "sequences, gate logic, edge wiring, trigger function, and reads/writes. Also read "
+                "its SKILL.md at skills/workflow-<target_mode>/SKILL.md for the generated playbook. "
+                "Otherwise, read factory/workflow/definitions.py and analyze all existing workflow "
+                "definitions (build, design, improve, research, meta, discover, review, refine). "
+                "Document common patterns: node sequences, gate conventions, fork/join patterns, "
+                "archivist placement, edge wiring, trigger functions, reads/writes declarations. "
+                "Read factory/workflow/primitives.py for available node types and their fields. "
+                "Read factory/workflow/skill_export.py for WORKFLOW_META format. "
+                "Write findings to .factory/strategy/research-existing.md covering: "
+                "node type usage patterns, common subgraphs (builder→gate→qa→gate loop), "
+                "trigger function conventions, data flow patterns."
+            ),
         ),
-        writes={".factory/strategy/research-existing.md"},
-    )
-
-    nodes["researcher_intent"] = AgentNode(
-        id="researcher_intent",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Mode description analysis. "
-            "Read the user's mode description from the CEO task. "
-            "If the CEO task includes '## Create Mode (Update Existing Mode)', parse the "
-            "**Requested changes:** field and structure the requested modifications against "
-            "the existing mode's current behavior. Identify which nodes, edges, prompts, or "
-            "gates need to change and which must remain untouched. "
-            "Otherwise, parse and structure the description into a new workflow specification: "
-            "- Purpose and trigger conditions "
-            "- Agent roles needed (which specialists) "
-            "- Gate logic (user vs agent vs fn evaluators) "
-            "- Data flow (what files are read/written) "
-            "- Interactive vs headless requirements "
-            "- Input format (text, file, drawing, flow) "
-            "Write findings to .factory/strategy/research-intent.md covering: "
-            "structured requirements, node candidates, suggested graph topology."
+        ResearcherConfig(
+            id="intent",
+            prompt_template=(
+                "Mode description analysis. "
+                "Read the user's mode description from the CEO task. "
+                "If the CEO task includes '## Create Mode (Update Existing Mode)', parse the "
+                "**Requested changes:** field and structure the requested modifications against "
+                "the existing mode's current behavior. Identify which nodes, edges, prompts, or "
+                "gates need to change and which must remain untouched. "
+                "Otherwise, parse and structure the description into a new workflow specification: "
+                "- Purpose and trigger conditions "
+                "- Agent roles needed (which specialists) "
+                "- Gate logic (user vs agent vs fn evaluators) "
+                "- Data flow (what files are read/written) "
+                "- Interactive vs headless requirements "
+                "- Input format (text, file, drawing, flow) "
+                "Write findings to .factory/strategy/research-intent.md covering: "
+                "structured requirements, node candidates, suggested graph topology."
+            ),
         ),
-        writes={".factory/strategy/research-intent.md"},
-    )
-
-    nodes["researcher_practices"] = AgentNode(
-        id="researcher_practices",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Workflow design best practices. "
-            "Search the web for workflow and pipeline design patterns relevant "
-            "to the described mode. Look for: DAG design patterns, agent orchestration "
-            "patterns, quality gate strategies, error recovery approaches. "
-            "Check .factory/archive/ for lessons from past mode creation or workflow changes. "
-            "Write findings to .factory/strategy/research-practices.md covering: "
-            "relevant design patterns, pitfalls to avoid, testing strategies."
+        ResearcherConfig(
+            id="practices",
+            prompt_template=(
+                "Workflow design best practices. "
+                "Search the web for workflow and pipeline design patterns relevant "
+                "to the described mode. Look for: DAG design patterns, agent orchestration "
+                "patterns, quality gate strategies, error recovery approaches. "
+                "Check .factory/archive/ for lessons from past mode creation or workflow changes. "
+                "Write findings to .factory/strategy/research-practices.md covering: "
+                "relevant design patterns, pitfalls to avoid, testing strategies."
+            ),
         ),
-        writes={".factory/strategy/research-practices.md"},
-    )
-
-    # Join
-    nodes["join_research"] = JoinNode(
-        id="join_research",
-        sources=["researcher_existing", "researcher_intent", "researcher_practices"],
-        reads={
-            ".factory/strategy/research-existing.md",
-            ".factory/strategy/research-intent.md",
-            ".factory/strategy/research-practices.md",
-        },
-        writes={".factory/strategy/research-combined.md"},
-    )
-
-    # CEO gate on research quality
-    nodes["gate_research"] = GateNode(
-        id="gate_research",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
+    ]
+    r_nodes, r_edges = _research_subgraph(
+        researchers=_CREATE_RESEARCHERS,
         gate_prompt=(
             "Are the existing workflow patterns well-documented? "
             "Is the user's intent clearly structured into workflow requirements? "
             "Are best practices relevant to this type of mode? Any gaps?"
         ),
-        reads={".factory/strategy/research-combined.md"},
     )
+    nodes.update(r_nodes)
 
     # Strategist synthesizes workflow specification
     nodes["strategist"] = AgentNode(
@@ -1897,16 +1902,8 @@ def create_workflow() -> Workflow:
 
     # Edges
     edges = [
-        # Fork to researchers
-        Edge(source="fork_research", target="researcher_existing"),
-        Edge(source="fork_research", target="researcher_intent"),
-        Edge(source="fork_research", target="researcher_practices"),
-        # Researchers to join
-        Edge(source="researcher_existing", target="join_research"),
-        Edge(source="researcher_intent", target="join_research"),
-        Edge(source="researcher_practices", target="join_research"),
-        # Join → research gate
-        Edge(source="join_research", target="gate_research"),
+        # Research subgraph internal edges
+        *r_edges,
         # Research gate
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
@@ -3976,6 +3973,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "evolve": evolve_workflow,
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
+        ).workflow(),
+        "research-standalone": lambda: __import__(
+            "factory.workflow.research", fromlist=["workflow"]
         ).workflow(),
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]
