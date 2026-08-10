@@ -93,9 +93,25 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Export the digest
+        # The `sha256:` prefix is stripped because the digest becomes a **filename**, and
+        # `upload-artifact@v4` rejects a path containing a colon. Left on, the build pushes both
+        # architectures successfully and then fails on the upload, which skips the `manifest` job
+        # that creates the tag — so the registry ends up holding the layers with `"tags": null`
+        # and every `factory contained` command dies on ImagePullBackOff for an image that was
+        # in fact built. `Assemble the manifest list` puts the prefix back.
+        #
+        # Through `env:` rather than interpolated into the script, which is this workflow's rule
+        # for every value that reaches a shell.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
+          set -eu
+          case "$DIGEST" in
+            sha256:[0-9a-f]*) ;;
+            *) echo "::error::unexpected digest format: $DIGEST"; exit 1 ;;
+          esac
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
 
       - uses: actions/upload-artifact@v4
         with:
