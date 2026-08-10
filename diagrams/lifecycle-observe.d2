@@ -1,0 +1,99 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: "Experiment Lifecycle — Phase 1: Observe & Plan"
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+study: {
+  label: "factory study"
+  style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+researcher: {
+  label: Researcher
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+ceo_r: {
+  label: "CEO Review"
+  shape: hexagon
+  style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 13 }
+}
+
+strategist: {
+  label: "Strategist\n(FEEC priority)"
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+ceo_s: {
+  label: "CEO Hard Gate"
+  shape: hexagon
+  style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 13; bold: true }
+}
+
+approved: {
+  label: "Approved\nHypotheses"
+  style: { fill: "#C8E6C9"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+}
+
+study -> researcher: observations {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+researcher -> ceo_r {
+  style: { stroke-width: 2 }
+}
+ceo_r -> strategist {
+  style: { stroke-width: 2 }
+}
+strategist -> ceo_s {
+  style: { stroke-width: 2 }
+}
+ceo_s -> approved: "plan approved" {
+  style: { stroke: "#2E7D32"; stroke-width: 2; font-size: 11; font-color: "#0D1B2A" }
+}
+
+research_branch: {
+  label: "Research Mode"
+  style: { fill: "#E0F7FA"; stroke: "#00695C"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  fa: {
+    label: "Failure Analyst"
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  r2: {
+    label: "Researcher"
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  leakage: {
+    label: "Leakage Check"
+    shape: hexagon
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 12; bold: true }
+  }
+
+  fa -> r2: "failures" {
+    style: { font-size: 10; font-color: "#0D1B2A" }
+  }
+}
+
+research_branch -> strategist: "feeds" {
+  style: { stroke: "#00695C"; stroke-width: 2; font-size: 11; font-color: "#0D1B2A" }
+}
+ceo_s -> research_branch.leakage: "research mode" {
+  style: { stroke: "#00695C"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+}
+
+archivist_note: {
+  label: "Archivist fires after each step"
+  near: bottom-center
+  shape: text
+  style: { font-size: 11; italic: true; font-color: "#0D1B2A" }
+}

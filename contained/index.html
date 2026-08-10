@@ -1,0 +1,2264 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A harness for agentic software evolution — detect, delegate, evaluate, archive">
+      
+      
+      
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/contained/">
+      
+      
+        <link rel="prev" href="../ace/">
+      
+      
+        <link rel="next" href="../benchmarks/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Contained Runtimes - re:factory</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contained-runtimes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            re:factory
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contained Runtimes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    re:factory
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self-improvement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACE Playbook Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contained Runtimes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contained Runtimes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a target
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does-and-does-not-protect-you-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does and does not protect you from
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interaction examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checking-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checking prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#starting-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting a run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#watching-detaching-coming-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Watching, detaching, coming back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-the-work-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting the work back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tearing-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tearing down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-the-workspace-is-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the workspace is wrong
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#composing-without-provisioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composing without provisioning
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-local-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The local division
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-cluster-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The cluster target
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The cluster target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-namespace-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time namespace setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-secret-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The secret scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-the-work-back-and-tearing-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting the work back, and tearing down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-cluster-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The cluster division
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks-the-runtime-runs-for-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks the runtime runs for you
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../full-eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Eval
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a target
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does-and-does-not-protect-you-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does and does not protect you from
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interaction-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interaction examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interaction examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checking-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checking prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#starting-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting a run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#watching-detaching-coming-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Watching, detaching, coming back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-the-work-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting the work back
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tearing-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tearing down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-the-workspace-is-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the workspace is wrong
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#composing-without-provisioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composing without provisioning
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-local-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The local division
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-cluster-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The cluster target
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The cluster target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-namespace-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time namespace setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-secret-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The secret scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-the-work-back-and-tearing-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting the work back, and tearing down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-cluster-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The cluster division
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks-the-runtime-runs-for-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks the runtime runs for you
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="contained-runtimes">Contained Runtimes<a class="headerlink" href="#contained-runtimes" title="Permanent link">&para;</a></h1>
+<p><code>factory contained</code> runs any factory command somewhere other than your shell — in a podman container
+on your machine, or in a pod on an OpenShift cluster.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>factory<span class="w"> </span>contained<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project
+</code></pre></div>
+<p>Two things make it worth using. The run happens against a <strong>pinned toolchain</strong> — a known Python, a
+known set of agent CLIs, a known set of build tools — rather than whatever your machine has
+accumulated. And it works on a <strong>copy</strong> of your project, so your working tree is never modified.</p>
+<p>The copy is a git worktree of your repository, which means two things survive a run on purpose: the
+copy itself, holding whatever the run produced, and a <code>contained/&lt;name&gt;</code> branch pointing at it.
+<code>rm</code> prints the two commands that remove both once you are done with them.</p>
+<p>Everything after <code>--</code> is handed inward <strong>verbatim</strong>. The runtime is a place to run the factory, not
+a mode of it, so the host never parses what you pass and cannot break when the CLI grows.</p>
+<div class="admonition warning">
+<p class="admonition-title">Read the guarantees before trusting them</p>
+<p><code>contained</code> bounds <em>accidents</em> and gives runs a reproducible environment. It does <strong>not</strong> confine
+agent-authored code, it is <strong>not</strong> a multi-tenant boundary, and it does <strong>not</strong> replace review.
+See <a href="#what-it-does-and-does-not-protect-you-from">What it does and does not protect you from</a>.</p>
+</div>
+<hr />
+<h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>contained<span class="w"> </span>setup<span class="w">                  </span><span class="c1"># pull the image, check prerequisites</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>factory<span class="w"> </span>contained<span class="w"> </span>verify<span class="w">                 </span><span class="c1"># report what&#39;s missing, with the fix for each</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>factory<span class="w"> </span>contained<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>factory<span class="w"> </span>contained<span class="w"> </span>ls<span class="w">                     </span><span class="c1"># what&#39;s running</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>factory<span class="w"> </span>contained<span class="w"> </span>attach<span class="w"> </span>&lt;name&gt;<span class="w">          </span><span class="c1"># watch it; Ctrl-b d detaches, the run continues</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>factory<span class="w"> </span>contained<span class="w"> </span>sync<span class="w"> </span>&lt;name&gt;<span class="w">            </span><span class="c1"># how to get the work back</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>factory<span class="w"> </span>contained<span class="w"> </span>rm<span class="w"> </span>&lt;name&gt;<span class="w">              </span><span class="c1"># tear it down</span>
+</code></pre></div>
+<p>You need <code>podman</code> (with its machine running on macOS), and inference credentials — an
+<code>ANTHROPIC_API_KEY</code>, a Vertex configuration, or a credential profile in <code>~/.factory/config.toml</code>.</p>
+<hr />
+<h2 id="choosing-a-target">Choosing a target<a class="headerlink" href="#choosing-a-target" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>--target local</code></th>
+<th><code>--target k8s</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Where it runs</td>
+<td>a podman container on your machine</td>
+<td>a pod on a Kubernetes/OpenShift cluster</td>
+</tr>
+<tr>
+<td>Good for</td>
+<td>everyday work; attaching and watching</td>
+<td>long unattended runs; more CPU and memory than a laptop</td>
+</tr>
+<tr>
+<td>Needs</td>
+<td>podman</td>
+<td>a namespace, and a one-time setup you apply yourself</td>
+</tr>
+<tr>
+<td>Your project</td>
+<td>a copy, bind-mounted from disk</td>
+<td>a copy, uploaded to a volume that outlives the pod</td>
+</tr>
+<tr>
+<td>Credentials</td>
+<td>taken from your shell, and they enter the container</td>
+<td>a Secret you create in the namespace</td>
+</tr>
+<tr>
+<td>Survives a laptop closing</td>
+<td>no</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-it-does-and-does-not-protect-you-from">What it does and does not protect you from<a class="headerlink" href="#what-it-does-and-does-not-protect-you-from" title="Permanent link">&para;</a></h3>
+<p><code>contained</code> exists to make runs <strong>reproducible</strong> and to keep them <strong>off your working tree</strong>. Both
+targets do that well.</p>
+<p>It is <strong>not a security sandbox</strong>, and it is worth being concrete about what that means:</p>
+<ul>
+<li>The agent's code runs with normal network access and can reach anything your machine can. Nothing
+  restricts what it writes or fetches.</li>
+<li>Locally, your inference credentials are inside the container, because the agent needs them to work.</li>
+<li>A contained run does not make its diff safe to merge. Review the result exactly as you would
+  review any other change.</li>
+<li>Neither target is built for running code you do not trust, or for sharing a machine or namespace
+  with people you do not trust.</li>
+</ul>
+<p>The cluster target is the more constrained of the two — it runs under a restricted security context
+with namespace-scoped permissions — but the point above still stands for both.</p>
+<hr />
+<h2 id="command-reference">Command reference<a class="headerlink" href="#command-reference" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>factory contained [runtime flags] -- &lt;any factory command&gt;
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>factory contained {ls|attach|rm|sync|setup|verify|bundle|help} [name]
+</code></pre></div>
+<p><code>help</code> prints the same text as <code>--help</code>, so whichever you reach for works.</p>
+<p><strong>Both targets</strong></p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--target local\|k8s</code></td>
+<td><code>local</code></td>
+<td>Which runtime</td>
+</tr>
+<tr>
+<td><code>--division</code></td>
+<td>off</td>
+<td>Enable the container-manufacturing plane for that target</td>
+</tr>
+<tr>
+<td><code>--name NAME</code></td>
+<td>derived</td>
+<td>Runtime name</td>
+</tr>
+<tr>
+<td><code>--env KEY=VALUE</code></td>
+<td>—</td>
+<td>Extra environment, repeatable</td>
+</tr>
+<tr>
+<td><code>--forward VAR</code></td>
+<td>—</td>
+<td>Forward a named host variable, repeatable</td>
+</tr>
+<tr>
+<td><code>--image REF</code></td>
+<td>published default</td>
+<td>Override the runtime image</td>
+</tr>
+<tr>
+<td><code>--yes</code></td>
+<td>off</td>
+<td>Skip confirmations (<code>rm</code> of an active run, the secret-scan gate)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Local only</strong></p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--mount PATH</code></td>
+<td>Additional host path bind-mounted in, repeatable</td>
+</tr>
+</tbody>
+</table>
+<p><strong>K8s only</strong></p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--namespace NS</code></td>
+<td>current context</td>
+<td>Never hardcoded</td>
+</tr>
+<tr>
+<td><code>--context NAME</code></td>
+<td>your current one</td>
+<td>Which kubeconfig context every cluster command uses</td>
+</tr>
+<tr>
+<td><code>--storage-class SC</code></td>
+<td>cluster default</td>
+<td>Workspace PVC</td>
+</tr>
+</tbody>
+</table>
+<p>A flag used against the wrong target fails at parse time naming the target it belongs to — never
+silently ignored. Runtime flags go <strong>before</strong> the subcommand; anything flag-shaped after it is an
+error rather than a name.</p>
+<hr />
+<h2 id="interaction-examples">Interaction examples<a class="headerlink" href="#interaction-examples" title="Permanent link">&para;</a></h2>
+<p>Transcripts below are from real runs, with <code>$HOME</code> shortened and the project renamed to
+<code>my-project</code> throughout so nothing here reads as a required argument. They were captured
+separately, so run names and ages differ between them.</p>
+<h3 id="checking-prerequisites">Checking prerequisites<a class="headerlink" href="#checking-prerequisites" title="Permanent link">&para;</a></h3>
+<p><code>verify</code> reports; it changes nothing. Every failure carries the command that fixes it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>verify
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="go">[FAIL] container_engine: podman is installed but its engine is not reachable: Cannot connect to Podman...</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="go">         fix: podman machine start</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="go">[FAIL] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest is not present locally</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="go">         fix: factory contained setup   # pulls ghcr.io/akashgit/remote-factory/factory-runtime:latest</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="go">              or, if it is not published yet, point at one you have:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="go">              export FACTORY_CONTAINED_IMAGE=&lt;your-image&gt;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="go">[FAIL] inference: no inference configuration found: CLAUDE_CODE_USE_VERTEX is unset,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="go">       ANTHROPIC_API_KEY is unset, and ~/.factory/config.toml defines no credential profiles</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="go">         fix: export ANTHROPIC_API_KEY=... and re-run with --forward ANTHROPIC_API_KEY, or</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="go">              configure Vertex (...), or add a [credentials.&lt;name&gt;] section to ~/.factory/config.toml</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="go">3 check(s) failed. `factory contained setup` can fix container_engine, runtime_image; the rest</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="go">need the fix shown above each one.</span>
+</code></pre></div>
+<p>That is what a first run looks like on a machine with nothing set up. <code>setup</code> fixes the first two;
+the third is yours, because the factory never handles credential material.</p>
+<p>Inference is always reported by <strong>shape</strong> — which backend, which model, which variable or file
+supplied it — and never by printing material:</p>
+<p><code>setup</code> runs as a numbered sequence, so it is always clear which step you are on and which one
+stalled. On a terminal the step rules, the <code>[ ok ]</code> / <code>[FAIL]</code> marks and every resolved value are
+coloured; piped or redirected, the same output is plain text.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span><span class="nb">local</span><span class="w"> </span>setup
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="go">━━ 1/3  Container engine ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="go">   The podman engine is not reachable. Starting the podman machine...</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="go">━━ 2/3  Runtime image ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="go">   Image already present: ghcr.io/akashgit/remote-factory/factory-runtime:latest</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="go">━━ 3/3  Result ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="go">[ ok ] container_engine: podman reachable (5.7.1, rootful)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="go">[ ok ] runtime_image: ghcr.io/akashgit/remote-factory/factory-runtime:latest present locally</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="go">[ ok ] inference: Vertex, project my-project in us-east5, model &lt;unset — pass --model in the</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="go">       payload&gt;, credential from Application Default Credentials at ~/.config/gcloud</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="go">All checks passed. Start a run with `factory contained -- ceo &lt;path&gt;`.</span>
+</code></pre></div>
+<p>Colour is navigation, not decoration, so it obeys the conventions you already have configured:
+<code>NO_COLOR</code> turns it off, <code>FORCE_COLOR</code> turns it on through a pipe, and <code>TERM=dumb</code> is respected.</p>
+<div class="admonition note">
+<p class="admonition-title">If the image cannot be pulled</p>
+<p>The runtime image is published by CI. If the pull fails, <code>setup</code> prints two ways forward: point
+<code>FACTORY_CONTAINED_IMAGE</code> at an image you already have, or build one from a checkout of the
+repository — the Containerfile ships in git, not in the installed package.</p>
+</div>
+<p>Run without <code>--target</code>, and at a terminal, <code>setup</code> asks which runtime you are preparing first:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>setup
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="go">━━ What are you setting up? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="go">   Pass --target local or --target k8s to skip this question.</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="go">  1) local  a podman container on this machine</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="go">  2) k8s    a pod on a cluster</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="go">  3) both</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="go">Choice [1]:</span>
+</code></pre></div>
+<p>Pass <code>--target local</code> or <code>--target k8s</code> to skip the question. <code>setup</code> is idempotent — re-running
+changes nothing that is already correct, and it is the supported way to repair a partial setup.</p>
+<h3 id="starting-a-run">Starting a run<a class="headerlink" href="#starting-a-run" title="Permanent link">&para;</a></h3>
+<p>The runtime's identifier is printed <strong>first</strong>, before any long-running work. A run whose name you
+cannot see is a run you cannot manage.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--name<span class="w"> </span>my-run<span class="w"> </span>--<span class="w"> </span>backlog-list<span class="w"> </span>~/code/my-project
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="go">Warning: no inference credentials are configured, so every agent call in this run will fail.</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="go">  Set one of these before running, and pass it inward:</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="go">    export ANTHROPIC_API_KEY=...   then add:  --forward ANTHROPIC_API_KEY</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="go">  Run `factory contained verify` to check.</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="go">Starting my-run</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="go">  attach:  factory contained attach my-run</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="go">  result:  factory contained sync my-run</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="go">  stop:    factory contained rm my-run</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="go">my-run is running.</span>
+</code></pre></div>
+<p>That is the whole output. The command returns as soon as the run is going; the run itself continues
+in tmux inside the container. Set <code>FACTORY_LOG_LEVEL=debug</code> if you want to see every command the
+runtime issued.</p>
+<h3 id="watching-detaching-coming-back">Watching, detaching, coming back<a class="headerlink" href="#watching-detaching-coming-back" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>ls
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="go">NAME                              TARGET  PROJECT       AGE   STATE</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="go">my-run                           local   e06e95065606  1s    running</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>attach<span class="w"> </span>my-run
+</code></pre></div>
+<p><code>ls</code> covers both targets, but it only asks the cluster once you have actually used one — otherwise
+a laptop that has only ever run locally would wait on a network timeout and then be told about a
+cluster it never set up. <code>--target k8s ls</code> always asks.</p>
+<p>That drops you into the live session. <code>Ctrl-b d</code> detaches and <strong>leaves the run going</strong> — the tmux
+prefix, because the run lives in tmux precisely so that detaching is safe.</p>
+<p>Typing <code>exit</code> is safe too. It ends the shell inside the session and returns you to your own
+terminal; the session and everything it printed stay, and attaching again gives you a fresh shell in
+the same window. <code>ls</code> shows such a run as <code>finished</code> rather than <code>running</code>, because the container
+deliberately outlives the run inside it.</p>
+<h3 id="getting-the-work-back">Getting the work back<a class="headerlink" href="#getting-the-work-back" title="Permanent link">&para;</a></h3>
+<p>Nothing is ever merged for you.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>sync<span class="w"> </span>my-run
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="go">my-run: the workspace is already on this machine — a bind mount, not a transfer.</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="go">Work is on branch contained/my-run in ~/.factory-contained/my-run/my-project.</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="go">  Review:  git -C ~/.factory-contained/my-run/my-project status &amp;&amp; git -C ... diff</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="go">  Merge:   git -C ~/code/my-project merge contained/my-run</span>
+</code></pre></div>
+<h3 id="tearing-down">Tearing down<a class="headerlink" href="#tearing-down" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>rm<span class="w"> </span>my-run
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="go">my-run: deleted. Your work is kept — it is not removed with the runtime.</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="go">Work is on branch contained/my-run in ~/.factory-contained/my-run/my-project.</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="go">  Review:  git -C ~/.factory-contained/my-run/my-project status &amp;&amp; git -C ... diff</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="go">  Merge:   git -C ~/code/my-project merge contained/my-run</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="go">This run left a git worktree and a branch in your repository. Remove them with:</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="go">  git -C ~/code/my-project worktree remove ~/.factory-contained/my-run/my-project</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="go">  git -C ~/code/my-project branch -D contained/my-run</span>
+</code></pre></div>
+<p>The container <strong>persists</strong> until you remove it. Nothing is auto-reaped, because a failed run is
+exactly when its state is worth reading. A launch that fails <em>before</em> the container exists cleans
+its own workspace up, so only runs that actually started leave anything behind.</p>
+<h3 id="when-the-workspace-is-wrong">When the workspace is wrong<a class="headerlink" href="#when-the-workspace-is-wrong" title="Permanent link">&para;</a></h3>
+<p>Five assertions run between provisioning and the first agent call. A failure aborts <strong>before</strong> any
+tokens are spent, names the likely cause, and leaves the runtime up so you can look:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--name<span class="w"> </span>my-run<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="go">contained: step &#39;assert:git_usable&#39; failed</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="go">  The workspace is not a usable git repository inside the runtime.</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="go">  Most likely the repository this project belongs to was not mounted — a git worktree&#39;s .git is a</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="go">  file pointing at a directory elsewhere.</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="go">  Try:  factory contained --mount &lt;path-to-that-repository&gt; -- &lt;your command&gt;</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="go">  The container is still there for inspection:</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="go">    podman exec -it my-run sh</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="go">    factory contained rm my-run</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="go">This run left a git worktree and a branch in your repository. Remove them with:</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="go">  git -C ~/code/my-project worktree remove ~/.factory-contained/my-run/my-project</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="go">  git -C ~/code/my-project branch -D contained/my-run</span>
+</code></pre></div>
+<p>Each hint names the likely cause and what to try. The container is left running so you can look
+inside it before removing it.</p>
+<h3 id="composing-without-provisioning">Composing without provisioning<a class="headerlink" href="#composing-without-provisioning" title="Permanent link">&para;</a></h3>
+<p><code>FACTORY_CONTAINED_DRY_RUN=1</code> prints the exact commands the real path would run, and provisions
+nothing:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="gp">$ </span><span class="nv">FACTORY_CONTAINED_DRY_RUN</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>factory<span class="w"> </span>contained<span class="w"> </span>--<span class="w"> </span>study<span class="w"> </span>~/code/my-project
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="go">DRY RUN — my-run (ghcr.io/…/factory-runtime:latest); nothing is provisioned.</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="go">[create] podman run -d --init --name my-run --label factory.contained=true …</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="gp">[assert:project_present] podman exec my-run sh -lc &#39;[ -d &quot;…&quot; ] &amp;&amp; [ -n &quot;$</span><span class="o">(</span>ls<span class="w"> </span>-A<span class="w"> </span><span class="s2">&quot;…&quot;</span><span class="o">)</span><span class="s2">&quot; ]&#39;</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="go">[assert:git_usable] podman exec my-run sh -lc &#39;git -C &quot;…&quot; status --porcelain &gt;/dev/null 2&gt;&amp;1&#39;</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="go">[assert:factory_state] podman exec my-run test -f …/.factory/config.json</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="go">[assert:writable] podman exec my-run sh -lc &#39;touch &quot;…/.factory-write-probe&quot; &amp;&amp; rm -f …&#39;</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="go">[assert:content_hash] podman exec my-run sh -lc &#39;sha256sum &quot;…&quot; | grep -q &quot;^&lt;digest&gt; &quot;&#39;</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="go">[run] podman exec my-run sh -lc &#39;tmux new-session -d -s factory -c … &#39;</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="go">      […the run line is ~45 lines: it embeds the Claude Code state seeding verbatim…]</span>
+</code></pre></div>
+<p>Which assertions appear depends on what your project actually has: <code>factory_state</code> only when the
+project has a <code>.factory/config.json</code>, <code>git_usable</code> only when it is a git repository.</p>
+<p>The <code>[run]</code> line really is that long, and it will look like line noise. Dry-run's contract is to
+print <em>the same commands the real path runs</em>, so it is not trimmed — a tidier rendering could drift
+from what actually executes, which would defeat the point of previewing.</p>
+<p>Secret-looking values are redacted anywhere a command is printed:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="gp">$ </span><span class="nv">FACTORY_CONTAINED_DRY_RUN</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>factory<span class="w"> </span>contained<span class="w"> </span>--forward<span class="w"> </span>GH_TOKEN<span class="w"> </span>--<span class="w"> </span>study<span class="w"> </span>~/code/my-project
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="go">… --env GH_TOKEN=&lt;redacted&gt; …</span>
+</code></pre></div>
+<hr />
+<h2 id="the-local-division">The local division<a class="headerlink" href="#the-local-division" title="Permanent link">&para;</a></h2>
+<p><code>--division</code> gives the contained agent your <strong>host's</strong> podman engine, so it can build an image, run
+it, read the failure and iterate.</p>
+<p>Builds happen on your machine rather than inside the container: the container has no container
+engine of its own, and nesting one inside it is not workable on macOS. That is why this is a
+separate flag rather than something always on.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--division<span class="w"> </span>--name<span class="w"> </span>buildcycle<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;add a Containerfile&quot;</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="go">  ┌─ Container builds enabled (--division) ───────────────────────────────────────</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="go">  │ Started podman-mcp-server so the agent can build and run container images.</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="go">  │ The run reaches it at http://host.containers.internal:8430/mcp</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="go">  │</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="go">  │ It listens on 0.0.0.0:8430 — every network interface, not just this</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="go">  │ machine — and it has no authentication. For as long as the run lasts, anyone</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="go">  │ who can reach that port can build and run containers as you.</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="go">  │</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="go">  │ Avoid --division on untrusted networks.</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="go">  │ It stops when the run is removed:</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="go">  │     factory contained rm buildcycle</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="go">  └───────────────────────────────────────────────────────────────────────────────</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="go">Starting buildcycle</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="go">  attach:  factory contained attach buildcycle</span>
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="go">  result:  factory contained sync buildcycle</span>
+<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="go">  stop:    factory contained rm buildcycle</span>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a>
+<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="go">buildcycle is running.</span>
+</code></pre></div>
+<p>The endpoint lives as long as the run, not as long as the launching command — the launch returns
+immediately while the run continues for minutes or hours. <code>factory contained rm</code> stops it.</p>
+<p>It cannot be bound to loopback instead: the container reaches your machine through a gateway
+address rather than through localhost, so a loopback bind would make the build tools unreachable
+rather than make them safer.</p>
+<p><code>FACTORY_CONTAINED_DRY_RUN=1</code> shows the same banner, marked as not started, so you can see what
+<code>--division</code> would do before doing it.</p>
+<p>The agent gets the podman tool surface plus a brief telling it these are capabilities it already
+has. Asked to name its tools, it answers with them rather than proposing to build a CLI wrapper:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--division<span class="w"> </span>--<span class="w"> </span>agent<span class="w"> </span>builder<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;List the container tools available to you. Do not write code.&quot;</span><span class="w"> </span>--project<span class="w"> </span>~/code/my-project
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="go">I have access to the following Podman/Docker container management tools:</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="go">**Container Operations:**</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="go">- `mcp__podman__container_list` — List running containers</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="go">- `mcp__podman__container_run` — Run a container from an image</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="go">- `mcp__podman__container_logs` — Display container logs</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="go">…</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="go">**Image Operations:**</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="go">- `mcp__podman__image_build` — Build an image from a Dockerfile/Containerfile</span>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="go">…</span>
+</code></pre></div>
+<p>Without the flag, nothing is started, no <code>.mcp.json</code> is written, and the agent has no container
+tools. The division is genuinely opt-in.</p>
+<p>Requires <code>npx</code> on <code>PATH</code>.</p>
+<hr />
+<h2 id="the-cluster-target">The cluster target<a class="headerlink" href="#the-cluster-target" title="Permanent link">&para;</a></h2>
+<p><code>--target k8s</code> runs the factory unattended on hardware your laptop is not: real CPU, real memory,
+amd64, and a workspace that survives the pod.</p>
+<h3 id="one-time-namespace-setup">One-time namespace setup<a class="headerlink" href="#one-time-namespace-setup" title="Permanent link">&para;</a></h3>
+<p><code>bundle</code> prints plain namespace-scoped YAML and never applies it. <code>setup</code> asks which namespace to
+prepare, <strong>checks what is already there</strong>, then walks you through only the objects that are missing
+or wrong — one at a time, each explained — and applies what you accept <strong>with your own
+credentials</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>setup
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="go">━━ 1/3  Cluster and namespace ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="go">   Clusters in your kubeconfig:</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="go">   1) &#39;default/api-my-cluster-example-com:443/you@example.com&#39; (current)</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="go">      https://api.my-cluster.example.com:443</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="go">   2) &#39;factory/api-lab-cluster:443/you&#39;</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="go">      https://api.lab-cluster.example.com:443</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="go">Which cluster? [1] 2</span>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="go">   This is where the factory&#39;s ServiceAccount, Role, RoleBinding and workspace</span>
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="go">   PVC will live. If it does not exist yet, you will be offered the chance to</span>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="go">   create it.</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="go">   Cluster:   https://api.my-cluster.example.com:443</span>
+<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="go">   User:      you@example.com</span>
+<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="go">   Context:   default/api-my-cluster-example-com:443/you@example.com</span>
+<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="go">   Namespace: &#39;default&#39;  (the default below)</span>
+<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>
+<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="go">Namespace to prepare [default] factory-contained</span>
+<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="go">   Namespace &#39;factory-contained&#39; does not exist on this cluster.</span>
+<a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="go">Create namespace &#39;factory-contained&#39; now?  [y]es  [n]o  (y/N): y</span>
+<a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a><span class="gp">   $ </span>oc<span class="w"> </span>new-project<span class="w"> </span>factory-contained
+<a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="go">   Created factory-contained.</span>
+<a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="go">   `oc new-project` also made it your current project.</span>
+<a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a>
+<a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="go">━━ 2/3  Review and apply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<a id="__codelineno-15-31" name="__codelineno-15-31" href="#__codelineno-15-31"></a><span class="go">   Comparing 5 object(s) against namespace &#39;factory-contained&#39; on</span>
+<a id="__codelineno-15-32" name="__codelineno-15-32" href="#__codelineno-15-32"></a><span class="go">   &#39;https://api.my-cluster.example.com:443&#39;:</span>
+<a id="__codelineno-15-33" name="__codelineno-15-33" href="#__codelineno-15-33"></a>
+<a id="__codelineno-15-34" name="__codelineno-15-34" href="#__codelineno-15-34"></a><span class="go">   [ ok ] serviceaccount/factory       already present and matches what the factory needs</span>
+<a id="__codelineno-15-35" name="__codelineno-15-35" href="#__codelineno-15-35"></a><span class="go">   [diff] role/factory-runtime         present, but not what the factory needs</span>
+<a id="__codelineno-15-36" name="__codelineno-15-36" href="#__codelineno-15-36"></a><span class="go">   [new ] rolebinding/factory-runtime  not in this namespace — it would be created</span>
+<a id="__codelineno-15-37" name="__codelineno-15-37" href="#__codelineno-15-37"></a><span class="go">   [new ] rolebinding/factory-scc      not in this namespace — it would be created</span>
+<a id="__codelineno-15-38" name="__codelineno-15-38" href="#__codelineno-15-38"></a><span class="go">   [new ] pvc/factory-workspace        not in this namespace — it would be created</span>
+<a id="__codelineno-15-39" name="__codelineno-15-39" href="#__codelineno-15-39"></a>
+<a id="__codelineno-15-40" name="__codelineno-15-40" href="#__codelineno-15-40"></a><span class="go">   1 already correct and will be skipped; 4 need(s) your decision.</span>
+<a id="__codelineno-15-41" name="__codelineno-15-41" href="#__codelineno-15-41"></a>
+<a id="__codelineno-15-42" name="__codelineno-15-42" href="#__codelineno-15-42"></a><span class="go">── 1 of 4 · role/factory-runtime  (present, but not what the factory needs) ───</span>
+<a id="__codelineno-15-43" name="__codelineno-15-43" href="#__codelineno-15-43"></a><span class="go">   What that identity may do, and the whole of it: create, watch and delete</span>
+<a id="__codelineno-15-44" name="__codelineno-15-44" href="#__codelineno-15-44"></a><span class="go">   pods in this namespace, and read their logs. That is what a run needs to</span>
+<a id="__codelineno-15-45" name="__codelineno-15-45" href="#__codelineno-15-45"></a><span class="go">   launch a validation pod and see why it failed. `pods/exec` is absent on</span>
+<a id="__codelineno-15-46" name="__codelineno-15-46" href="#__codelineno-15-46"></a><span class="go">   purpose — the build sidecar is a boundary only because the agent cannot</span>
+<a id="__codelineno-15-47" name="__codelineno-15-47" href="#__codelineno-15-47"></a><span class="go">   exec into it.</span>
+<a id="__codelineno-15-48" name="__codelineno-15-48" href="#__codelineno-15-48"></a>
+<a id="__codelineno-15-49" name="__codelineno-15-49" href="#__codelineno-15-49"></a><span class="go">   What would change in factory-contained:</span>
+<a id="__codelineno-15-50" name="__codelineno-15-50" href="#__codelineno-15-50"></a><span class="go">  rules:</span>
+<a id="__codelineno-15-51" name="__codelineno-15-51" href="#__codelineno-15-51"></a><span class="go">-   verbs: [&quot;get&quot;]</span>
+<a id="__codelineno-15-52" name="__codelineno-15-52" href="#__codelineno-15-52"></a><span class="go">+   verbs: [&quot;create&quot;, &quot;get&quot;, &quot;list&quot;, &quot;watch&quot;, &quot;delete&quot;]</span>
+<a id="__codelineno-15-53" name="__codelineno-15-53" href="#__codelineno-15-53"></a><span class="go">Apply this? (1 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): y</span>
+<a id="__codelineno-15-54" name="__codelineno-15-54" href="#__codelineno-15-54"></a><span class="go">   role.rbac.authorization.k8s.io/factory-runtime configured</span>
+<a id="__codelineno-15-55" name="__codelineno-15-55" href="#__codelineno-15-55"></a>
+<a id="__codelineno-15-56" name="__codelineno-15-56" href="#__codelineno-15-56"></a><span class="go">── 2 of 4 · rolebinding/factory-runtime  (would be created) ───────────────────</span>
+<a id="__codelineno-15-57" name="__codelineno-15-57" href="#__codelineno-15-57"></a><span class="go">   Grants the Role above to the ServiceAccount above. Without it the Role</span>
+<a id="__codelineno-15-58" name="__codelineno-15-58" href="#__codelineno-15-58"></a><span class="go">   exists and applies to nobody, and the run fails on its first cluster call.</span>
+<a id="__codelineno-15-59" name="__codelineno-15-59" href="#__codelineno-15-59"></a>
+<a id="__codelineno-15-60" name="__codelineno-15-60" href="#__codelineno-15-60"></a><span class="go">apiVersion: rbac.authorization.k8s.io/v1</span>
+<a id="__codelineno-15-61" name="__codelineno-15-61" href="#__codelineno-15-61"></a><span class="go">kind: RoleBinding</span>
+<a id="__codelineno-15-62" name="__codelineno-15-62" href="#__codelineno-15-62"></a><span class="go">…</span>
+<a id="__codelineno-15-63" name="__codelineno-15-63" href="#__codelineno-15-63"></a><span class="go">Apply this? (2 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): a</span>
+<a id="__codelineno-15-64" name="__codelineno-15-64" href="#__codelineno-15-64"></a><span class="go">   Applying this and the 2 after it.</span>
+<a id="__codelineno-15-65" name="__codelineno-15-65" href="#__codelineno-15-65"></a><span class="go">   rolebinding.rbac.authorization.k8s.io/factory-runtime created</span>
+<a id="__codelineno-15-66" name="__codelineno-15-66" href="#__codelineno-15-66"></a><span class="go">   rolebinding.rbac.authorization.k8s.io/factory-scc created</span>
+<a id="__codelineno-15-67" name="__codelineno-15-67" href="#__codelineno-15-67"></a><span class="go">   persistentvolumeclaim/factory-workspace created</span>
+<a id="__codelineno-15-68" name="__codelineno-15-68" href="#__codelineno-15-68"></a>
+<a id="__codelineno-15-69" name="__codelineno-15-69" href="#__codelineno-15-69"></a><span class="go">The credentials Secret is yours to create — the factory never handles the material:</span>
+<a id="__codelineno-15-70" name="__codelineno-15-70" href="#__codelineno-15-70"></a><span class="go">  oc create secret generic factory-credentials -n factory-contained \</span>
+<a id="__codelineno-15-71" name="__codelineno-15-71" href="#__codelineno-15-71"></a><span class="go">      --from-literal=ANTHROPIC_API_KEY=...</span>
+</code></pre></div>
+<p>Six details that are deliberate.</p>
+<p>The <strong>cluster</strong> is asked too, not just the namespace. A kubeconfig usually holds several, and <code>oc
+config use-context</code> is the only way most people know to move between them — so picking the wrong
+one meant Ctrl-C, a context switch and a restart. Whatever you choose is applied as <code>--context</code> on
+<strong>every</strong> command this invocation issues, including the applies and the diffs; it does not rewrite
+your kubeconfig, because deciding where <em>this</em> run goes must not silently change where your next
+unrelated <code>oc get pods</code> goes. At the end, if you prepared a cluster that is not your default, you
+are offered the switch and given the exact command either way. <code>--context NAME</code> skips the question.</p>
+<p>The namespace is <strong>asked</strong>, not assumed — <code>--namespace</code> skips the question, and without it the
+current context supplies the default rather than the answer, so a shared <code>default</code> never quietly
+acquires a ServiceAccount, a Role and a 10Gi PVC. It is then <strong>checked</strong>, including when you passed
+it explicitly: a typo would otherwise surface as five separate <code>NotFound</code> errors from the apply. If
+it is not there you are offered the chance to create it, via <code>oc new-project</code> rather than <code>create
+namespace</code>, because a regular user is usually denied the second and permitted the first. A
+namespace you are simply <em>not allowed to read</em> — routine on OpenShift for a project you own — is
+reported as unconfirmed rather than treated as missing.</p>
+<p>The <strong>cluster</strong> is named alongside it. A namespace on its own identifies nothing — <code>default</code> exists
+on every cluster you have ever logged into — so the API server URL is the field that actually
+answers "am I about to apply RBAC to the right place?". Every namespace and server is printed
+quoted and highlighted, because "in namespace default" gives a reader no way to tell the name from
+the sentence. Only <em>names</em> are read from your kubeconfig: the context, the user's name, the server
+URL, the namespace. Nothing from its <code>users</code> section, which is where credential material lives.</p>
+<p>The <strong>current state comes first</strong>. Each object is checked against the namespace before anything is
+asked, and the summary covers all of them including the ones already correct — "4 of 5 are already
+there" is the most useful thing to know before deciding whether this is about to do something
+drastic. Comparison is <code>oc diff</code>, done server-side, so a field the cluster defaults in does not
+read as a change you are about to make.</p>
+<p>Then it <strong>walks only the difference</strong>, one object at a time, each with what it is for and what
+would change:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>What you see</th>
+<th>Asked about?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>already correct</td>
+<td>one summary line</td>
+<td>no — a prompt whose only sane answer is "yes" teaches people to stop reading prompts</td>
+</tr>
+<tr>
+<td>would be created</td>
+<td>its manifest</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>present but differs</td>
+<td>the <strong>diff</strong>, not the manifest</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>could not be compared</td>
+<td>a warning, then the manifest</td>
+<td>yes — never silently skipped</td>
+</tr>
+</tbody>
+</table>
+<p>Each option is spelled out rather than abbreviated to <code>[y/n/a/q]</code>, which is readable only to
+whoever wrote it. <code>y</code> applies one, <code>n</code> skips it, <code>a</code> applies everything remaining, and <code>q</code> <strong>or
+Escape</strong> stops. A bare Enter skips, because the default has to be the answer that changes nothing;
+anything unrecognised re-asks and never counts as yes. Where the terminal allows it these are
+single keypresses — no Enter — which is also what makes Escape work at all, since a line-buffered
+prompt can only ever see it as the <code>^[</code> characters it inserts.</p>
+<p><strong>Escape backs out of any prompt in the flow</strong>, not just this one — the cluster chooser and the
+namespace prompt included, and the namespace prompt is a typed line, which is why it is read
+character by character rather than with <code>input()</code>. <strong>Ctrl-C</strong> exits with a message and status 130
+rather than a stack trace: changing your mind at question three is ordinary, not a crash.</p>
+<p>Finally, each object is <strong>applied the moment you accept it</strong>, not batched until the end. You see
+<code>role.rbac.../factory-runtime configured</code> before deciding the next one, and stopping halfway is
+reported honestly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="go">Apply this? (2 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): q</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="go">   Stopped. 1 object(s) were applied before you stopped and remain applied; the rest were not.</span>
+</code></pre></div>
+<p>That sentence is the whole reason for applying per object: batching would have said "nothing was
+applied" to someone who had already said yes once. A skipped or unapplied object stays as it is,
+and <code>verify</code> at the end reports it — nothing goes quiet. A single object failing to apply names
+itself and does not stop the walk, since the rest may still be worth doing.</p>
+<p>There is no second, blanket "are you sure?": every object was confirmed a moment earlier, and a
+prompt on top of that is the friction that teaches people to hit <code>y</code> without reading. <code>--yes</code>
+applies everything pending without walking, for automation.</p>
+<p>Then <code>verify</code> checks every object, every verb the ServiceAccount needs, the Secret's <strong>keys</strong> (never
+its values), and that inference is reachable from a pod <em>inside</em> the namespace. Results print <strong>as
+each one lands</strong>, not at the end — several are a cluster round trip and the in-cluster inference
+probe launches a pod and waits on it, so a step that stayed silent until the last check finished
+was reported as a hang:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>--namespace<span class="w"> </span>factory-contained<span class="w"> </span>verify
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="go">[ ok ] cluster_cli: oc, context factory-contained/api-…:443/you@example.com,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="go">       server https://api.my-cluster.example.com:6443</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="go">[ ok ] namespace: factory-contained exists and is accessible</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="go">[ ok ] bundle:serviceaccount/factory: serviceaccount/factory present</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="go">…</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="go">[ ok ] permissions: serviceaccount/factory has every verb the run needs</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="go">[ ok ] no_pods_exec: serviceaccount/factory cannot exec into pods, which is what makes the build</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="go">       sidecar a boundary</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="go">[ ok ] credentials_secret: secret/factory-credentials carries the Anthropic API key</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="go">[ ok ] inference_from_cluster: a pod in this namespace reached the configured inference backend</span>
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="go">[ ok ] secret_scanner: gitleaks present; workspaces are scanned before they leave this machine</span>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="go">All checks passed. Start a run with `factory contained --target k8s --namespace factory-contained -- ceo &lt;path&gt;`.</span>
+</code></pre></div>
+<p>The inference check is the slow one: it creates a short-lived pod, with the same image and Secret
+a real run uses, and asks it to make one request — because a host-side check proves nothing about
+the <em>pod's</em> egress. It is announced before it starts, and <strong>skipped entirely when the credentials
+Secret is missing</strong>, since the probe pod mounts that Secret and could only spend its 180-second
+timeout rediscovering what the check above already said. That is the state a freshly prepared
+namespace is in, because creating the Secret is deliberately left to you.</p>
+<p>Before setup, the same command lists what is missing with the command that restores each — e.g.
+<code>factory contained --namespace factory-contained bundle | oc apply -f -</code>.</p>
+<h3 id="running">Running<a class="headerlink" href="#running" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>--namespace<span class="w"> </span>factory-contained<span class="w"> </span>--<span class="w"> </span>run<span class="w"> </span>~/code/my-project<span class="w"> </span>--loop
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="go">k8srun</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="go">  attach:  factory contained --target k8s attach k8srun</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="go">  result:  factory contained --target k8s sync k8srun</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="go">  logs:    oc logs -f k8srun -n factory-contained -c factory</span>
+</code></pre></div>
+<p>The workspace is packed into one tarball, streamed into an initContainer that is waiting for it, and
+unpacked onto the PVC before the factory container starts. <code>oc cp</code> of a directory is one API round
+trip per file, which is painfully slow on a repository.</p>
+<h3 id="the-secret-scan">The secret scan<a class="headerlink" href="#the-secret-scan" title="Permanent link">&para;</a></h3>
+<p>Nothing leaves your machine unscanned. Gitleaks runs over the workspace before the upload:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>--<span class="w"> </span>study<span class="w"> </span>~/code/my-project
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="go">gitleaks: 1 finding(s)</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="go">  .env:1  [github-pat] Uncovered a GitHub Personal Access Token, potentially leading to</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="go">          unauthorized repository access and sensitive content exposure.</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="go">This workspace is about to be copied onto cluster storage. Anything above goes with it.</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="go">Refusing to upload without confirmation. Re-run with --yes to proceed non-interactively.</span>
+</code></pre></div>
+<p>It is a <strong>warn-and-confirm gate, not a hard block</strong> — a false positive on a test fixture must not
+stop work, because an override people use reflexively protects nobody. <code>--yes</code> proceeds, and says so
+rather than passing silently. If gitleaks is not installed, the upload warns that it is unscanned
+rather than quietly going ahead.</p>
+<h3 id="getting-the-work-back-and-tearing-down">Getting the work back, and tearing down<a class="headerlink" href="#getting-the-work-back-and-tearing-down" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>sync<span class="w"> </span>k8srun
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="go">k8srun: workspace fetched to ~/.factory-contained/k8srun/workspace.tar.gz.</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="go">  Review:  tar tzf ~/.factory-contained/k8srun/workspace.tar.gz</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="go">  Unpack:  mkdir -p &lt;dir&gt; &amp;&amp; tar xzf ~/.factory-contained/k8srun/workspace.tar.gz -C &lt;dir&gt;</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="go">Nothing is merged automatically.</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--target<span class="w"> </span>k8s<span class="w"> </span>rm<span class="w"> </span>k8srun
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="go">k8srun: pod deleted.</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="go">  The workspace is still on PVC factory-workspace in factory-contained. Fetch it with</span>
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="go">  `factory contained --target k8s sync k8srun` before deleting the claim.</span>
+</code></pre></div>
+<p>The PVC is deliberately left alone: it may hold the only copy of a long run's work.</p>
+<h3 id="the-cluster-division">The cluster division<a class="headerlink" href="#the-cluster-division" title="Permanent link">&para;</a></h3>
+<p><code>--target k8s --division</code> is <strong>OpenShift only</strong>, refused at launch by API presence rather than by
+whether <code>oc</code> happens to be installed. Builds go through OpenShift <code>Build</code> objects, submitted by a
+<strong>sidecar container</strong> that is the only holder of <code>oc</code> and the ServiceAccount token — the agent's
+container has neither, and cannot exec into the sidecar because the Role excludes <code>pods/exec</code>.
+<code>verify</code> asserts that verb's absence; it is the one check that fails when something <em>succeeds</em>.</p>
+<p>The agent gets one tool for building — <code>start_build(dockerfile, tag)</code> — plus namespace-scoped
+cluster tools for launching validation pods and reading logs.</p>
+<hr />
+<h2 id="checks-the-runtime-runs-for-you">Checks the runtime runs for you<a class="headerlink" href="#checks-the-runtime-runs-for-you" title="Permanent link">&para;</a></h2>
+<p>Before the first agent call, the runtime asserts that the workspace it is about to use is the one
+you meant — that it is present and non-empty, that git works in it, that <code>.factory/</code> arrived if your
+project has one, that it is writable, and that a file's contents match the copy on your machine.</p>
+<p>Each of these can fail silently otherwise: a read-only workspace looks like an agent whose edits
+keep vanishing, and a stale copy produces a plausible result from the wrong code. A failed check
+stops the run before any tokens are spent and leaves the container up so you can look inside it.</p>
+<hr />
+<h2 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FACTORY_CONTAINED_IMAGE</code></td>
+<td>Override the runtime image</td>
+</tr>
+<tr>
+<td><code>FACTORY_CONTAINED_SIDECAR_IMAGE</code></td>
+<td>Override the k8s build sidecar's <code>oc</code> image</td>
+</tr>
+<tr>
+<td><code>FACTORY_CONTAINED_HOME</code></td>
+<td>Where workspace copies live (default <code>~/.factory-contained</code>)</td>
+</tr>
+<tr>
+<td><code>FACTORY_CONTAINED_DRY_RUN=1</code></td>
+<td>Print what would run; provision nothing</td>
+</tr>
+<tr>
+<td><code>FACTORY_LOG_LEVEL=debug</code></td>
+<td>Show every command the runtime issues (quiet by default)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Nothing crosses into the runtime that you did not ask for.</strong> Variables starting with <code>FACTORY_</code>
+go in, along with whatever <code>--forward</code> names and the variables your inference backend needs — and
+nothing else. Your <code>~/.factory/</code> is mounted read-write, so config, credential profiles, the project
+registry and evolved playbooks work exactly as they do outside. Anything else you want in there —
+<code>~/.claude/projects/</code>, <code>GH_TOKEN</code>, <code>FACTORY_MANAGED_DIRS</code>, <code>FACTORY_VAULT_PATH</code> — you pass explicitly
+with <code>--mount</code> or <code>--forward</code>.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p><strong>"podman is installed but its engine is not reachable"</strong> — on macOS the machine stops quietly.
+<code>podman machine start</code>, or <code>factory contained setup</code>, which does it for you.</p>
+<p><strong>"The workspace is read-only inside the runtime"</strong> — the container runs as a user that does not own
+your files. Check that the project is owned by you, and that <code>factory contained verify</code> is green.</p>
+<p><strong>"could not read ... from inside a container"</strong> — usually the podman machine does not share that
+path. On macOS it shares your home directory; a project elsewhere is not mounted at all rather than
+mounted empty. Move it under your home directory, or add the path with <code>podman machine set --volume</code>
+and restart the machine. The launch warns about this before it happens.</p>
+<p><strong>"is not a path the podman machine shares"</strong> — same cause, caught at launch. The message lists the
+paths that <em>are</em> shared.</p>
+<p><strong>A wall of output instead of three lines</strong> — that is <code>FACTORY_LOG_LEVEL=debug</code>. Unset it.</p>
+<p><strong>"container 'x' already exists"</strong> — a previous run left it. Attach to it, <code>rm</code> it, or pass <code>--name</code>.
+A container that is no longer running is reaped automatically and the run retried once.</p>
+<p><strong>"is already running a session — this is the same run, not a new one"</strong> (k8s) — the pod is mid-run.
+Attach, or <code>rm</code> and start again.</p>
+<p><strong>"the division port 8430 is already held by the run 'x'"</strong> — one port, one server. Finish or remove
+that run first, or run this one without <code>--division</code>.</p>
+<p><strong>Vertex 429s on every call</strong> — pass an explicit <code>--model</code>. <code>MAX_THINKING_TOKENS=0</code> is pinned for you.</p>
+<hr />
+<h2 id="implementation">Implementation<a class="headerlink" href="#implementation" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>All podman CLI knowledge</td>
+<td><code>factory/podman.py</code></td>
+</tr>
+<tr>
+<td>All cluster CLI knowledge</td>
+<td><code>factory/contained/k8s.py</code></td>
+</tr>
+<tr>
+<td>Workspace copy</td>
+<td><code>factory/contained/workspace.py</code></td>
+</tr>
+<tr>
+<td>Provenance assertions</td>
+<td><code>factory/contained/provenance.py</code></td>
+</tr>
+<tr>
+<td>Container identity probe</td>
+<td><code>factory/contained/identity.py</code></td>
+</tr>
+<tr>
+<td>Credential shape</td>
+<td><code>factory/contained/credentials.py</code></td>
+</tr>
+<tr>
+<td>Local division</td>
+<td><code>factory/contained/division.py</code></td>
+</tr>
+<tr>
+<td>Pre-answering Claude Code's first-run prompts</td>
+<td><code>factory/contained/claude_state.py</code></td>
+</tr>
+<tr>
+<td>Cluster division</td>
+<td><code>factory/contained/k8s_division.py</code></td>
+</tr>
+<tr>
+<td>Prereq bundle</td>
+<td><code>factory/contained/bundle.py</code></td>
+</tr>
+<tr>
+<td>Object-by-object review</td>
+<td><code>factory/contained/k8s_review.py</code></td>
+</tr>
+<tr>
+<td>Secret scan</td>
+<td><code>factory/contained/secrets.py</code></td>
+</tr>
+<tr>
+<td>Terminal colour and wizard steps</td>
+<td><code>factory/contained/style.py</code></td>
+</tr>
+<tr>
+<td>CLI front door</td>
+<td><code>factory/cli/contained.py</code></td>
+</tr>
+<tr>
+<td>Reading the command line</td>
+<td><code>factory/cli/contained_args.py</code></td>
+</tr>
+<tr>
+<td>One local container</td>
+<td><code>factory/cli/contained_local.py</code></td>
+</tr>
+<tr>
+<td>One cluster pod</td>
+<td><code>factory/cli/contained_k8s.py</code></td>
+</tr>
+</tbody>
+</table>
+<p>The CLI modules <strong>compose</strong> commands and do not execute them, which is what makes
+<code>FACTORY_CONTAINED_DRY_RUN=1</code> print the same argv the real path runs rather than a separate
+rendering that drifts.</p>
+<p>The runtime image is <code>containers/factory/Containerfile</code> — UBI9 plus the factory wheel, the agent
+CLIs, and tmux — published multi-arch (amd64 for cluster nodes, arm64 for a Mac laptop) by
+<code>.github/workflows/runtime-image.yml</code>. <code>factory contained setup</code> pulls it; it does not build.</p>
+<p>It publishes on three events. A push to <code>main</code> moves <code>:latest</code>; a <strong>published release</strong> builds that
+release's commit and publishes <code>:&lt;release tag&gt;</code>, moving <code>:latest</code> too unless the release is a
+prerelease; <code>workflow_dispatch</code> publishes whatever tag you name. Every event also tags the short
+SHA. The release trigger is the one that has to be automatic — <code>setup</code> pulls a published image and
+does not build, so a release whose image was never built leaves a new user's first command failing
+on a manifest that does not exist. Nightlies are prereleases and therefore never move <code>:latest</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
