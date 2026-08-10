@@ -17,34 +17,59 @@ def cmd_optimize(args: argparse.Namespace) -> int:
 
     from factory.optimization import AgenticMutator, LoopConfig, OptimizationLoop, Surface
     from factory.optimization.benchmarks.harbor import HarborBenchmark
-    from factory.optimization.benchmarks.searchqa import SearchQAEvaluator
+    from factory.optimization.protocols import Evaluator, Executor
 
     benchmark = getattr(args, "benchmark", None) or "searchqa"
-    if benchmark != "searchqa":
-        print(f"Error: unsupported benchmark: {benchmark}", file=sys.stderr)
-        return 1
-
-    surface = Surface()
-    skill_path = getattr(args, "skill_path", None)
-    if skill_path:
-        sp = Path(skill_path)
-        if sp.exists():
-            surface.prompt_slots["skill"] = sp.read_text()
-
     git_ref = getattr(args, "git_ref", None) or "main"
     docker_host = getattr(args, "docker_host", None) or os.environ.get("DOCKER_HOST", "")
-    model = getattr(args, "model", None) or "sonnet"
     concurrency = getattr(args, "concurrency", 5)
     steps = getattr(args, "steps", 3)
     epochs = getattr(args, "epochs", 1)
 
-    executor = HarborBenchmark(
-        git_ref=git_ref,
-        concurrency=concurrency,
-        docker_host=docker_host,
-        model=model,
-    )
-    evaluator = SearchQAEvaluator()
+    evaluator: Evaluator
+    executor: Executor
+    model: str
+
+    match benchmark:
+        case "searchqa":
+            from factory.optimization.benchmarks.searchqa import SearchQAEvaluator
+
+            model = getattr(args, "model", None) or "sonnet"
+            surface = Surface()
+            skill_path = getattr(args, "skill_path", None)
+            if skill_path:
+                sp = Path(skill_path)
+                if sp.exists():
+                    surface.prompt_slots["skill"] = sp.read_text()
+            executor = HarborBenchmark(
+                git_ref=git_ref,
+                concurrency=concurrency,
+                docker_host=docker_host,
+                model=model,
+            )
+            evaluator = SearchQAEvaluator()
+
+        case "featurebench":
+            from factory.optimization.benchmarks.featurebench import (
+                FeatureBenchEvaluator,
+                build_featurebench_executor,
+                build_featurebench_surface,
+            )
+
+            model = getattr(args, "model", None) or "opus"
+            surface = build_featurebench_surface()
+            executor = build_featurebench_executor(
+                git_ref=git_ref,
+                concurrency=concurrency,
+                docker_host=docker_host,
+                model=model,
+            )
+            evaluator = FeatureBenchEvaluator()
+
+        case _:
+            print(f"Error: unsupported benchmark: {benchmark}", file=sys.stderr)
+            return 1
+
     mutator = AgenticMutator(project_path=project, model=model)
 
     config = LoopConfig(
