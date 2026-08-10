@@ -149,7 +149,7 @@ class HarborBenchmark:
         n_total = len(task_results)
         acc = n_correct / n_total if n_total else 0.0
 
-        agg_file = Path(tempfile.mktemp(suffix=".json", prefix="harbor-agg-"))
+        agg_file = Path(tempfile.mkdtemp(prefix="harbor-agg-")) / "results.json"
         agg_file.write_text(json.dumps({"accuracy": acc}))
         artifacts.append(str(agg_file))
 

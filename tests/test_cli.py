@@ -269,6 +269,7 @@ class TestRefactoryAgentFilter:
         "resume",
         "ace",
         "ace-stats",
+        "optimize",
     }
 
     def test_filtered_help_shows_only_expected_commands(self, monkeypatch):
