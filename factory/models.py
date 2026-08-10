@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -675,3 +675,21 @@ class AgentRunResult(BaseModel):
     return_code: int
     usage: AgentUsage | None = None
     metadata: dict[str, object] = {}
+
+
+# ── board state (multi-mode compositor) ─────────────────────────
+
+
+class BoardState(BaseModel):
+    """Shared data plane for multi-mode composition runs."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    run_id: str
+    modes_requested: list[str]
+    modes_completed: list[str] = Field(default_factory=list)
+    current_mode: str | None = None
+    data: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    global_data: dict[str, Any] = Field(default_factory=dict)
+    started_at: str
+    updated_at: str
