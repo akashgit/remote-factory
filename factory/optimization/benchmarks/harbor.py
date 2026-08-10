@@ -53,6 +53,8 @@ class HarborBenchmark:
         model: str = "sonnet",
         auth_env: dict[str, str] | None = None,
         cleanup_jobs: bool = True,
+        agent_class: str = "factory_harbor_agent:SearchQAFactoryCeo",
+        dataset: str = "searchqa",
     ) -> None:
         self.git_ref = git_ref
         self.subset_dir = Path(subset_dir) if subset_dir else None
@@ -61,6 +63,8 @@ class HarborBenchmark:
         self.model = model
         self.auth_env = auth_env or {}
         self.cleanup_jobs = cleanup_jobs
+        self.agent_class = agent_class
+        self.dataset = dataset
         self._run = 0
 
     def execute(
@@ -90,7 +94,8 @@ class HarborBenchmark:
             "uvx", "harbor", "run",
             "--model", model_str,
             "-p", task_dir,
-            "--agent", "factory_harbor_agent:SearchQAFactoryCeo",
+            "--agent", self.agent_class,
+            "--dataset", self.dataset,
             "--n-concurrent", str(self.concurrency),
             "--timeout-multiplier", "1",
             "--jobs-dir", str(jobs_dir),
