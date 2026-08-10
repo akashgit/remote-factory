@@ -103,6 +103,13 @@ class SkillOptTrainer:
     def _save_skill(self, content: str) -> None:
         self.skill_path.write_text(content)
 
+    def _write_yaml_annotations(self) -> None:
+        """Write current prompt_slots back to the YAML annotations file."""
+        ann_path = self.skill_path.parent / (self.skill_path.stem + ".annotations.yaml")
+        yaml_text = self._serialize_yaml()
+        ann_path.write_text(yaml_text)
+        log.info("yaml annotations updated", path=str(ann_path))
+
     def _serialize_yaml(self, slots: dict[str, str] | None = None) -> str:
         """Serialize current YAML surface with given (or current) slot values."""
         surface = self._build_updated_yaml_surface()
@@ -538,6 +545,7 @@ class SkillOptTrainer:
             self.current_score = gate.current_score
             if self.yaml_surface:
                 self._update_prompt_slots_after_accept(clipped, candidate_slots)
+                self._write_yaml_annotations()
             if gate.action == "accept_new_best":
                 self.best_skill = gate.best_skill
                 self.best_score = gate.best_score
