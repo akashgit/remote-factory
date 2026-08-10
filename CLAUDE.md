@@ -249,6 +249,9 @@ factory backlog-remove /path "item text"        # Remove a completed backlog ite
 factory adversarial-state /path/to/project           # Inspect adversarial loop state
 factory adversarial-state /path/to/project --reset   # Reset to defaults
 
+# Optimize — tune prompts via inner-outer loop
+factory optimize /path/to/project --benchmark searchqa --steps 5 --concurrency 10
+
 # Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 factory export /path/to/project                 # Dump full project snapshot as JSON
