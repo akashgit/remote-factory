@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from pathlib import Path
 from typing import Annotated, Any, Literal, Union
@@ -231,43 +230,41 @@ class MultiModeExecutor:
         return results
 
     async def _execute_single_mode(self, mode: str) -> ExecutionResult:
-        self._board.state.current_mode = mode
-        os.environ["FACTORY_MODE_PREFIX"] = mode
+        async with self._board._lock:
+            self._board.state.current_mode = mode
 
-        try:
-            wf = WorkflowRegistry.get_workflow(mode, self._project_path)
-            if wf is None:
-                result = ExecutionResult()
-                result.halted = True
-                result.halt_reason = f"No workflow registered for mode {mode!r}"
-                return result
-
-            executor = WorkflowExecutor(
-                wf,
-                self._project_path,
-                agent_pool=self._agent_pool,
-                dry_run=self._dry_run,
-            )
-            try:
-                result = await executor.execute()
-            except Exception as exc:
-                result = ExecutionResult()
-                result.halted = True
-                result.halt_reason = str(exc)
-                log.error("compositor.mode.exception", mode=mode, error=str(exc))
-
-            await self._board.async_write(mode, "result", {
-                "success": result.success,
-                "halted": result.halted,
-                "halt_reason": result.halt_reason,
-                "nodes_executed": result.nodes_executed,
-                "duration_ms": result.duration_ms,
-            })
-            await self._board.async_mark_mode_complete(mode)
-
+        wf = WorkflowRegistry.get_workflow(mode, self._project_path)
+        if wf is None:
+            result = ExecutionResult()
+            result.halted = True
+            result.halt_reason = f"No workflow registered for mode {mode!r}"
             return result
-        finally:
-            os.environ.pop("FACTORY_MODE_PREFIX", None)
+
+        executor = WorkflowExecutor(
+            wf,
+            self._project_path,
+            agent_pool=self._agent_pool,
+            dry_run=self._dry_run,
+            mode_prefix=mode,
+        )
+        try:
+            result = await executor.execute()
+        except Exception as exc:
+            result = ExecutionResult()
+            result.halted = True
+            result.halt_reason = str(exc)
+            log.error("compositor.mode.exception", mode=mode, error=str(exc))
+
+        await self._board.async_write(mode, "result", {
+            "success": result.success,
+            "halted": result.halted,
+            "halt_reason": result.halt_reason,
+            "nodes_executed": result.nodes_executed,
+            "duration_ms": result.duration_ms,
+        })
+        await self._board.async_mark_mode_complete(mode)
+
+        return result
 
     async def _execute_parallel(self, modes: list[str]) -> dict[str, ExecutionResult]:
         results: dict[str, ExecutionResult] = {}

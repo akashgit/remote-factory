@@ -33,6 +33,18 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     raw_path: str | None = getattr(args, "path", None)
 
+    modes_spec = getattr(args, "modes", None)
+    if modes_spec is not None:
+        mode = getattr(args, "mode", "auto")
+        loop = getattr(args, "loop", False)
+        if mode != "auto" or loop:
+            print("Error: --modes cannot be used with --mode or --loop", file=sys.stderr)
+            return 1
+        from factory.cli._path_resolver import _resolve_input
+        project_path, _context = _resolve_input(raw_path)
+        from factory.cli.run import _run_multi_mode
+        return _run_multi_mode(project_path, args)
+
     validated = _validate_ceo_flags(args)
     if isinstance(validated, int):
         return validated

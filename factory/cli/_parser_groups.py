@@ -379,6 +379,15 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
              "parallel-improve, interactive) are deprecated — use --mode design instead",
     )
     p.add_argument(
+        "--modes", default=None,
+        help="Compose modes: comma for sequential, plus for parallel "
+             "(e.g., discover,a+b,improve)",
+    )
+    p.add_argument(
+        "--resume-from", default=None, dest="resume_from",
+        help="Resume a multi-mode run from the specified mode",
+    )
+    p.add_argument(
         "--focus", default=None,
         help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
              "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
@@ -472,6 +481,15 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
         help="Operating mode. Only 'create' and 'design' are actively supported; "
              "other modes (build, improve, research, meta, discover, parallel-improve) "
              "are deprecated — use --mode design instead",
+    )
+    p.add_argument(
+        "--modes", default=None,
+        help="Compose modes: comma for sequential, plus for parallel "
+             "(e.g., discover,a+b,improve)",
+    )
+    p.add_argument(
+        "--resume-from", default=None, dest="resume_from",
+        help="Resume a multi-mode run from the specified mode",
     )
     p.add_argument(
         "--focus", default=None,

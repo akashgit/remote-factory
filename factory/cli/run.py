@@ -339,6 +339,80 @@ def _run_heartbeat_loop(
     return 0
 
 
+def _run_multi_mode(project_path: Path, args: argparse.Namespace) -> int:
+    """Execute a multi-mode composition via --modes flag. Returns exit code."""
+    import asyncio
+    import uuid
+
+    from factory.workflow.compositor import (
+        MultiModeExecutor,
+        parse_mode_spec,
+        validate_composition,
+    )
+    from factory.workflow.board import Board
+
+    modes_spec = args.modes
+    resume_from = getattr(args, "resume_from", None)
+
+    try:
+        steps = parse_mode_spec(modes_spec)
+    except ValueError as exc:
+        print(f"Error: invalid --modes spec: {exc}", file=sys.stderr)
+        return 1
+
+    errors = validate_composition(steps)
+    if errors:
+        print(f"Error: invalid mode composition:", file=sys.stderr)
+        for e in errors:
+            print(f"  - {e}", file=sys.stderr)
+        return 1
+
+    if resume_from:
+        from factory.workflow.compositor import SequentialStep, ParallelStep
+
+        found = False
+        trimmed = []
+        for step in steps:
+            if found:
+                trimmed.append(step)
+            elif isinstance(step, SequentialStep) and step.mode == resume_from:
+                found = True
+                trimmed.append(step)
+            elif isinstance(step, ParallelStep) and resume_from in step.modes:
+                found = True
+                trimmed.append(step)
+        if not found:
+            print(f"Error: --resume-from mode {resume_from!r} not found in spec", file=sys.stderr)
+            return 1
+        steps = trimmed
+
+    all_modes: list[str] = []
+    for step in steps:
+        from factory.workflow.compositor import SequentialStep, ParallelStep
+        if isinstance(step, SequentialStep):
+            all_modes.append(step.mode)
+        elif isinstance(step, ParallelStep):
+            all_modes.extend(step.modes)
+
+    run_id = getattr(args, "run_id", None) or uuid.uuid4().hex[:12]
+    board_path = project_path / ".factory" / "board.json"
+    board = Board(board_path, run_id=run_id, modes=all_modes)
+
+    dry_run = getattr(args, "dry_run", False)
+    executor = MultiModeExecutor(
+        project_path, board, run_id, dry_run=dry_run,
+    )
+
+    results = asyncio.run(executor.execute(steps))
+
+    any_failed = any(
+        getattr(r, "halted", False)
+        for r in results.values()
+        if hasattr(r, "halted")
+    )
+    return 1 if any_failed else 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
     from factory.user_config import load_config
@@ -347,6 +421,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     load_config(profile=profile)
 
     project_path, context = _resolve_input(args.path)
+
+    modes_spec = getattr(args, "modes", None)
+    if modes_spec is not None:
+        mode = getattr(args, "mode", "auto")
+        loop = getattr(args, "loop", False)
+        if mode != "auto" or loop:
+            print("Error: --modes cannot be used with --mode or --loop", file=sys.stderr)
+            return 1
+        return _run_multi_mode(project_path, args)
+
     prompt_file = getattr(args, "prompt", None)
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)

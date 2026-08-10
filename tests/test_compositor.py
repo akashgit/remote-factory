@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,7 +16,7 @@ from factory.workflow.compositor import (
     parse_mode_spec,
     validate_composition,
 )
-from factory.workflow.executor import ExecutionResult
+from factory.workflow.executor import ExecutionResult, WorkflowExecutor
 from factory.workflow.primitives import Workflow
 
 
@@ -275,13 +274,36 @@ class TestBoardNamespaceIsolation:
         assert isinstance(data_b, dict)
 
 
-class TestEnvVar:
-    def test_env_var_set_during_execution(self, executor: MultiModeExecutor) -> None:
+class TestModePrefix:
+    def test_mode_prefix_passed_to_executor(self, executor: MultiModeExecutor) -> None:
         captured_prefix: str | None = None
 
-        async def mock_execute(self_exec: object) -> ExecutionResult:
+        original_init = WorkflowExecutor.__init__
+
+        def capturing_init(self_exec, *a, **kw):
             nonlocal captured_prefix
-            captured_prefix = os.environ.get("FACTORY_MODE_PREFIX")
+            captured_prefix = kw.get("mode_prefix")
+            original_init(self_exec, *a, **kw)
+
+        async def mock_execute(self_exec: object) -> ExecutionResult:
+            return _make_result()
+
+        async def run() -> dict:
+            with (
+                patch("factory.workflow.compositor.WorkflowRegistry.get_workflow") as mock_get,
+                patch("factory.workflow.compositor.WorkflowExecutor.__init__", capturing_init),
+                patch("factory.workflow.compositor.WorkflowExecutor.execute", mock_execute),
+            ):
+                mock_get.side_effect = lambda name, path=None: _make_dummy_workflow(name)
+                steps = [SequentialStep(mode="modeA")]
+                return await executor.execute(steps)
+
+        asyncio.run(run())
+
+        assert captured_prefix == "modeA"
+
+    def test_current_mode_set_under_lock(self, executor: MultiModeExecutor) -> None:
+        async def mock_execute(self_exec: object) -> ExecutionResult:
             return _make_result()
 
         async def run() -> dict:
@@ -295,22 +317,4 @@ class TestEnvVar:
 
         asyncio.run(run())
 
-        assert captured_prefix == "modeA"
-        assert "FACTORY_MODE_PREFIX" not in os.environ
-
-    def test_env_var_cleaned_on_error(self, executor: MultiModeExecutor) -> None:
-        async def mock_execute(self_exec: object) -> ExecutionResult:
-            raise RuntimeError("boom")
-
-        async def run() -> dict:
-            with (
-                patch("factory.workflow.compositor.WorkflowRegistry.get_workflow") as mock_get,
-                patch("factory.workflow.compositor.WorkflowExecutor.execute", mock_execute),
-            ):
-                mock_get.side_effect = lambda name, path=None: _make_dummy_workflow(name)
-                steps = [SequentialStep(mode="modeA")]
-                return await executor.execute(steps)
-
-        asyncio.run(run())
-
-        assert "FACTORY_MODE_PREFIX" not in os.environ
+        assert executor._board.state.current_mode == "modeA"
