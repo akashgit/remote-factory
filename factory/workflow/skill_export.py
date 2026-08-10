@@ -40,6 +40,17 @@ log = structlog.get_logger()
 
 
 WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
+    "compress": {
+        "description": (
+            "Compress mode — iterative ML model compression research. "
+            "Experiments with distillation, quantization, pruning, and sparsification "
+            "techniques to find optimal ways to compress large models into smaller ones "
+            "with minimal quality loss. Follows P-KD-Q ordering (Prune → Distill → Quantize). "
+            "Use when the user says 'compress X', 'distill X', 'quantize X', or wants to "
+            "run compression experiments on an ML project."
+        ),
+        "argument_hint": "<project_path> [--focus <technique>]",
+    },
     "build": {
         "description": (
             "Build a new project from scratch. Runs parallel research, strategy "

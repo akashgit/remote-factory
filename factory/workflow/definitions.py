@@ -43,6 +43,7 @@ from factory.workflow.primitives import (
 __all__ = [
     "DOC_FRESHNESS_GATE_PROMPT",
     "build_workflow",
+    "compress_workflow",
     "design_workflow",
     "improve_workflow",
 
@@ -3954,6 +3955,7 @@ def _get_builtin_registry() -> dict[str, Any]:
         return _BUILTIN_REGISTRY
     _BUILTIN_REGISTRY = {
         "build": build_workflow,
+        "compress": compress_workflow,
         "design": design_workflow,
         "discover": discover_workflow,
         "review": review_workflow,
@@ -4365,6 +4367,341 @@ def founder_workflow() -> Workflow:
         start_node="study",
         trigger=trigger,
         terminal=True,
+    )
+
+
+def compress_workflow() -> Workflow:
+    """Compress Mode — iterative ML model compression research.
+
+    Study → Fork(3 researchers) → Join → CEO gate → Strategist → User gate →
+    per-hypothesis: begin → Builder → CEO gate → deep-QA → gate_qa(max 3) →
+    doc freshness → Precheck → finalize → Archivist(async)
+
+    Researchers cover: compression techniques (pruning, distillation, quantization),
+    prior compression experiments, and evaluation methods/metrics.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Study
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    # Fork: 3 parallel researchers
+    nodes["fork_research"] = ForkNode(
+        id="fork_research",
+        targets=["researcher_techniques", "researcher_priors", "researcher_eval"],
+    )
+
+    nodes["researcher_techniques"] = AgentNode(
+        id="researcher_techniques",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Compression techniques research. "
+            "Survey state-of-the-art ML model compression methods: pruning (structured, "
+            "unstructured, coarse-grained), knowledge distillation (logit, sequence-level, "
+            "hidden-state, on-policy GKD, rationale/CoT), quantization (PTQ, QAT, mixed-precision), "
+            "and novel methods (low-rank factorization, PrunedLoRA, CAKD). "
+            "Research the P-KD-Q pipeline ordering (Prune → Distill → Quantize). "
+            "Search the web for recent compression papers and repos. "
+            "Check .factory/archive/ for prior compression knowledge. "
+            "Write findings to .factory/strategy/research-techniques.md covering: "
+            "technique survey with trade-offs, recommended compression pipeline ordering, "
+            "hardware compatibility considerations."
+        ),
+        writes={".factory/strategy/research-techniques.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-techniques.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+
+    nodes["researcher_priors"] = AgentNode(
+        id="researcher_priors",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Prior compression experiments research. "
+            "Analyze the project's prior compression attempts from .factory/archive/. "
+            "Review experiment history via factory history. "
+            "Identify what compression techniques have been tried, what worked, "
+            "what failed, and why. Check for existing baseline measurements. "
+            "Search the web for compression results on similar model architectures. "
+            "Write findings to .factory/strategy/research-priors.md covering: "
+            "prior experiment outcomes, successful techniques, failure patterns, "
+            "baseline model characteristics."
+        ),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/research-priors.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-priors.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+
+    nodes["researcher_eval"] = AgentNode(
+        id="researcher_eval",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Compression evaluation methods research. "
+            "Research evaluation strategies for ML model compression quality: "
+            "accuracy retention metrics (perplexity, F1, task performance), "
+            "efficiency metrics (compression ratio, inference latency, memory usage), "
+            "distribution similarity (KL divergence, JS divergence), "
+            "and multi-objective optimization (Pareto frontier approach). "
+            "Identify the project's existing eval harness and benchmark suite. "
+            "Search the web for compression-specific evaluation frameworks. "
+            "Write findings to .factory/strategy/research-eval.md covering: "
+            "recommended evaluation metrics, quality gate thresholds, "
+            "four-tier validation pyramid (unit → integration → performance → production)."
+        ),
+        writes={".factory/strategy/research-eval.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-eval.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+
+    # Join
+    nodes["join_research"] = JoinNode(
+        id="join_research",
+        sources=["researcher_techniques", "researcher_priors", "researcher_eval"],
+        reads={
+            ".factory/strategy/research-techniques.md",
+            ".factory/strategy/research-priors.md",
+            ".factory/strategy/research-eval.md",
+        },
+        writes={".factory/strategy/research-combined.md"},
+    )
+
+    # CEO gate on research quality
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Is the compression research comprehensive? Check: "
+            "1) Technique coverage: pruning, distillation, quantization all surveyed? "
+            "2) P-KD-Q pipeline ordering documented? "
+            "3) Prior experiments analyzed (if any)? "
+            "4) Evaluation metrics and quality thresholds identified? "
+            "Any gaps in compression landscape coverage?"
+        ),
+        reads={".factory/strategy/research-combined.md"},
+    )
+
+    # Strategist — generate compression hypotheses
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Generate compression experiment hypotheses. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Read the backlog at .factory/strategy/backlog.md — clear compression items. "
+            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+            "Generate hypotheses for compression experiments: each must specify "
+            "the compression technique (pruning, distillation, quantization, or pipeline), "
+            "target compression ratio, expected quality retention, and evaluation method. "
+            "Follow P-KD-Q ordering when proposing multi-stage compression pipelines. "
+            "Prefer structured pruning over unstructured for hardware compatibility. "
+            "Each hypothesis must be scoped to one PR with expected impact on eval dimensions. "
+            "Write to .factory/strategy/current.md."
+        ),
+        reads={".factory/strategy/research-combined.md", ".factory/strategy/observations.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    # User gate for strategy approval (interactive mode)
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="user",
+        gate_prompt=(
+            "Review compression hypotheses. Check: "
+            "1) Are the proposed compression techniques appropriate for the model? "
+            "2) Are compression ratio targets realistic? "
+            "3) Are quality retention thresholds acceptable? "
+            "4) Is the experiment cost (GPU hours, tokens) justified? "
+            "Approve to proceed with experiments, or provide feedback to revise."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Per-hypothesis experiment loop
+    nodes["begin"] = FnNode(
+        id="begin",
+        command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
+        notes="Open a new experiment for the current compression hypothesis. The CEO must substitute $HYPOTHESIS with the hypothesis text.",
+        writes={".factory/experiments/current_id"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the current compression hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md for project context. "
+            "Read the CEO strategy approval at .factory/reviews/ceo-verdict-strategist.md. "
+            "Implement exactly what the hypothesis describes: compression scripts, "
+            "training configs, evaluation harness integration. "
+            "Follow P-KD-Q ordering for multi-stage pipelines. "
+            "Prefer structured pruning for hardware compatibility. "
+            "Run tests to verify the implementation. "
+            "Commit and open a draft PR."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and PR diff. Does the compression implementation "
+            "match the hypothesis? Check: correct compression technique used, "
+            "no scope creep beyond the hypothesis, tests included, "
+            "P-KD-Q ordering respected for multi-stage pipelines. "
+            "REDIRECT if off-scope or implementation incorrect."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    # Deep-QA subgraph
+    dq_nodes, dq_edges = _deep_qa_subgraph(
+        code_reviewer_extra=(
+            "Verify compression implementation correctness. Check: "
+            "P-KD-Q ordering followed for multi-stage pipelines, "
+            "no hardcoded quality thresholds (should be configurable), "
+            "structured pruning preferred over unstructured, "
+            "evaluation metrics correctly measured."
+        ),
+        adversarial_extra=(
+            "Run the compression pipeline end-to-end if possible. "
+            "Verify: compressed model loads and runs inference, "
+            "compression ratio achieved matches target, "
+            "quality metrics are computed correctly, "
+            "edge cases handled (empty inputs, extreme compression ratios)."
+        ),
+    )
+    nodes.update(dq_nodes)
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results for compression experiment. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+        ),
+        notes="Close the compression experiment with a keep/revert verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
+        reads={".factory/reviews/adversarial-qa.md"},
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template=(
+            "Archive compression experiment results and learnings. "
+            "Record: compression technique used, compression ratio achieved, "
+            "quality retention metrics, failure modes if reverted, "
+            "P-KD-Q ordering effectiveness."
+        ),
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/archive/experiment.md"},
+        blocking=False,
+    )
+
+    # Edges
+    edges = [
+        # Study → fork researchers
+        Edge(source="study", target="fork_research"),
+        # Fork to researchers
+        Edge(source="fork_research", target="researcher_techniques"),
+        Edge(source="fork_research", target="researcher_priors"),
+        Edge(source="fork_research", target="researcher_eval"),
+        # Researchers to join
+        Edge(source="researcher_techniques", target="join_research"),
+        Edge(source="researcher_priors", target="join_research"),
+        Edge(source="researcher_eval", target="join_research"),
+        # Join → research gate
+        Edge(source="join_research", target="gate_research"),
+        # Research gate
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+        # Strategist → user gate
+        Edge(source="strategist", target="gate_strategy"),
+        # User gate
+        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # begin → builder
+        Edge(source="begin", target="builder"),
+        # Builder → build gate
+        Edge(source="builder", target="gate_build"),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        # Deep-QA internal edges
+        *dq_edges,
+        # adversarial_tester → gate_qa
+        Edge(source="adversarial_tester", target="gate_qa"),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
+        # Precheck → finalize (proceed) or halt → archivist (error handling)
+        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
+        # Finalize → archivist (non-blocking)
+        Edge(source="finalize", target="archivist"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.HAS_FACTORY and ctx.get("mode") == "compress"
+
+    return Workflow(
+        name="compress",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+        trigger=trigger,
     )
 
 
