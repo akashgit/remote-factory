@@ -198,6 +198,10 @@ def cmd_refactory(args: argparse.Namespace) -> int:
     if model:
         cmd.extend(["--model", model])
 
+    mcp_config = project_path / ".refactory" / ".mcp.json"
+    if mcp_config.exists():
+        cmd.extend(["--mcp-config", str(mcp_config), "--strict-mcp-config"])
+
     os.chdir(project_path)
     os.execvp("claude", cmd)
     return 0
