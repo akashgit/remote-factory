@@ -75,29 +75,117 @@ class HarborExecutor:
             log.warning("executor.harbor.script_missing", path=str(script))
             return ExecutionResult(returncode=1, artifacts=[], duration_s=0.0)
 
-        log.info("executor.harbor.start", script=str(script))
+        n_tasks = self.n_tasks if self.n_tasks is not None else 5
+        concurrency = self.concurrency if self.concurrency is not None else 2
+
+        cmd: list[str] = [
+            str(script), "searchqa", "--all",
+            "--limit", str(n_tasks),
+            "--concurrency", str(concurrency),
+            "--timeout", "120",
+            "--solver", "factory",
+            "--preserve",
+        ]
+        if self.split:
+            cmd.extend(["--split", self.split])
+
+        log.info("executor.harbor.start", script=str(script), n_tasks=n_tasks)
         start = time.monotonic()
-        result = subprocess.run(
-            [str(script)],
-            cwd=project_dir,
-            env=env,
-        )
+        result = subprocess.run(cmd, cwd=project_dir, env=env)
         duration = time.monotonic() - start
 
         artifacts: list[str] = []
         task_results: list[TaskResult] = []
+
+        jobs_dir = env.get("JOBS_DIR", "")
+        if not jobs_dir:
+            jobs_dir = _find_latest_jobs_dir()
+        if jobs_dir:
+            task_results = _parse_trial_results(Path(jobs_dir))
+            if task_results:
+                artifacts.append(jobs_dir)
+
         reward_path = project_dir / "reward.json"
         if reward_path.exists():
             artifacts.append(str(reward_path))
-            task_results = _parse_task_results(reward_path)
+            if not task_results:
+                task_results = _parse_task_results(reward_path)
 
-        log.info("executor.harbor.done", returncode=result.returncode, duration_s=round(duration, 1))
+        log.info(
+            "executor.harbor.done",
+            returncode=result.returncode,
+            duration_s=round(duration, 1),
+            tasks_parsed=len(task_results),
+        )
         return ExecutionResult(
             returncode=result.returncode,
             artifacts=artifacts,
             duration_s=duration,
             task_results=task_results,
         )
+
+
+def _find_latest_jobs_dir() -> str:
+    """Find the most recently modified searchqa jobs directory in /tmp."""
+    import glob as _glob
+
+    candidates = _glob.glob("/tmp/searchqa-jobs-*")
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda p: Path(p).stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def _strip_harbor_suffix(name: str) -> str:
+    """Strip the ``__<7char>`` Harbor suffix from a trial directory name."""
+    if len(name) > 9 and name[-8] == "_" and name[-9] == "_":
+        return name[:-9]
+    return name
+
+
+def _parse_trial_results(jobs_dir: Path) -> list[TaskResult]:
+    """Parse per-task verifier outputs from preserved trial directories."""
+    if not jobs_dir.is_dir():
+        return []
+
+    results: list[TaskResult] = []
+    for trial in sorted(jobs_dir.iterdir()):
+        if not trial.is_dir():
+            continue
+
+        reward_file = trial / "verifier" / "reward.json"
+        reward = 0.0
+        if reward_file.exists():
+            try:
+                data = json.loads(reward_file.read_text())
+                reward = float(data.get("reward", 0.0))
+            except (json.JSONDecodeError, OSError, ValueError):
+                pass
+
+        predicted = ""
+        gold = ""
+        stdout_file = trial / "verifier" / "test-stdout.txt"
+        if stdout_file.exists():
+            try:
+                for line in stdout_file.read_text().splitlines():
+                    if line.startswith("Predicted:"):
+                        predicted = line[len("Predicted:"):].strip()
+                    elif line.startswith("Gold:"):
+                        gold = line[len("Gold:"):].strip()
+            except OSError:
+                pass
+
+        task_id = _strip_harbor_suffix(trial.name)
+        results.append(
+            TaskResult(
+                task_id=task_id,
+                reward=reward,
+                predicted=predicted,
+                gold=gold,
+                question="",
+            )
+        )
+    return results
 
 
 def _parse_task_results(reward_path: Path) -> list[TaskResult]:
