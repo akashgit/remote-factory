@@ -64,6 +64,7 @@ __all__ = [
     "frontend_design_scan_workflow",
     "evolve_workflow",
     "plan_workflow",
+    "setup_eval_workflow",
     "register_all",
     "_get_builtin_registry",
 ]
@@ -3796,6 +3797,7 @@ def _get_builtin_registry() -> dict[str, Any]:
         "parallel-improve": parallel_improve_workflow,
         "plan": plan_workflow,
         "evolve": evolve_workflow,
+        "setup-eval": setup_eval_workflow,
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
         ).workflow(),
@@ -4188,6 +4190,224 @@ def founder_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
+        trigger=trigger,
+        terminal=True,
+    )
+
+
+# ── W₁₆: Setup-Eval Mode ────────────────────────────────────────
+
+
+def setup_eval_workflow() -> Workflow:
+    """W₁₆: Setup-Eval — connect any benchmark to the inner-outer loop.
+
+    researcher_benchmark → gate_research → strategist → gate_strategy →
+    builder → gate_build → health_checker → gate_verify
+
+    Given a benchmark URL or name, orchestrates agents to study the benchmark,
+    design protocol implementations, write glue code, and verify with a single
+    task execution. Terminal — does not chain to other modes.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Researcher — study benchmark docs/repo
+    nodes["researcher_benchmark"] = AgentNode(
+        id="researcher_benchmark",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Study the benchmark repo/docs to understand: "
+            "(1) task format — JSON fields, input/output schema; "
+            "(2) runner CLI — command, flags, output location; "
+            "(3) scoring method — accuracy, EM, F1, or custom metric; "
+            "(4) required dependencies — Docker, runtime, data files. "
+            "Check if the benchmark has an official Python SDK. "
+            "Write findings to .factory/eval/benchmark/research.md."
+        ),
+        writes={".factory/eval/benchmark/research.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/eval/benchmark/research.md",
+                must_exist=True,
+                min_size=100,
+            ),
+        ],
+        timeout=600,
+    )
+
+    # Gate — research completeness
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check research covers: task format (JSON schema), runner CLI command, "
+            "scoring method, dependencies. PROCEED if all four are present. "
+            "REDIRECT if any are missing."
+        ),
+        reads={".factory/eval/benchmark/research.md"},
+    )
+
+    # Strategist — design Executor + Evaluator
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design Executor and Evaluator classes implementing "
+            "factory/optimization/protocols.py. Reference the research at "
+            ".factory/eval/benchmark/research.md. The Executor MUST be a thin "
+            "wrapper around the benchmark's native runner (not reimplementing "
+            "benchmark logic). Design: "
+            "(1) Executor class — constructor params, env vars for skill injection, "
+            "subprocess command construction (list-based, NO shell=True), graceful "
+            "handling of missing scripts/deps. "
+            "(2) Evaluator class — parse method with multiple fallback keys, "
+            "parse_many with configurable aggregation, get_info returning benchmark "
+            "metadata. "
+            "(3) Artifact locations — where the runner writes outputs, fallback paths. "
+            "(4) Train/val/test split strategy. "
+            "See factory/optimization/executors/harbor.py for reference. "
+            "Write design to .factory/strategy/current.md."
+        ),
+        reads={".factory/eval/benchmark/research.md"},
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+            ),
+        ],
+    )
+
+    # Gate — strategy verification
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify Executor design uses list-based subprocess (no shell=True), "
+            "handles missing deps gracefully, injects skill via base64 env var. "
+            "Verify Evaluator returns valid=False on parse errors. "
+            "PROCEED if design is sound."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Builder — implement executor, evaluator, config
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the Executor and Evaluator from .factory/strategy/current.md. "
+            "Write to .factory/eval/benchmark/executor.py (Executor protocol implementation) "
+            "and .factory/eval/benchmark/evaluator.py (Evaluator protocol implementation). "
+            "Write .factory/eval/benchmark/config.json with benchmark metadata "
+            "(name, metrics, splits, dependencies, runner_cli). "
+            "Create train/val/test splits if data is publicly downloadable, "
+            "otherwise create stub split files with instructions. "
+            "Follow patterns from factory/optimization/executors/harbor.py and "
+            "factory/optimization/benchmarks/searchqa.py. "
+            "Executor MUST: use list-based subprocess invocation, check script "
+            "existence before running, return ExecutionResult(returncode=1) on "
+            "missing deps, base64-encode skill content for env var injection. "
+            "Evaluator MUST: try/except all JSON parsing, return "
+            "EvalResult(valid=False) on errors, support multiple fallback score keys. "
+            "Commit changes and open a draft PR."
+        ),
+        reads={".factory/strategy/current.md", ".factory/eval/benchmark/research.md"},
+        writes={
+            ".factory/eval/benchmark/executor.py",
+            ".factory/eval/benchmark/evaluator.py",
+            ".factory/eval/benchmark/config.json",
+            ".factory/reviews/builder-latest.md",
+        },
+        timeout=1200,
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/eval/benchmark/config.json",
+                must_exist=True,
+                min_size=50,
+            ),
+        ],
+    )
+
+    # Gate — build verification
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and PR diff. Check: executor.py exists and "
+            "implements Executor protocol, evaluator.py exists and implements "
+            "Evaluator protocol, config.json has valid JSON with benchmark metadata. "
+            "REDIRECT if any are missing or malformed."
+        ),
+        reads={
+            ".factory/reviews/builder-latest.md",
+            ".factory/eval/benchmark/executor.py",
+            ".factory/eval/benchmark/evaluator.py",
+            ".factory/eval/benchmark/config.json",
+        },
+    )
+
+    # Health checker — verify imports and protocol compliance
+    nodes["health_checker"] = AgentNode(
+        id="health_checker",
+        role=AgentRole.HEALTH_CHECKER,
+        prompt_template=(
+            "Verify the benchmark adapter by importing executor and evaluator modules, "
+            "checking they satisfy the Executor and Evaluator protocols from "
+            "factory/optimization/protocols.py. If possible, run the executor on 1 "
+            "train task and parse the result with the evaluator. Report: import "
+            "success, protocol compliance, execution result (if run), parse result "
+            "(if run). Gate result: PASS if imports succeed and protocols are "
+            "satisfied; FAIL if imports fail or protocol violation detected."
+        ),
+        reads={
+            ".factory/eval/benchmark/executor.py",
+            ".factory/eval/benchmark/evaluator.py",
+            ".factory/eval/benchmark/config.json",
+        },
+        writes={".factory/reviews/health-check.md"},
+        timeout=600,
+    )
+
+    # Gate — final verification
+    nodes["gate_verify"] = GateNode(
+        id="gate_verify",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Final verification gate. Read health check results. "
+            "PROCEED if: executor imports cleanly, evaluator imports cleanly, "
+            "both satisfy protocols, and (if execution was attempted) result is "
+            "valid. HALT if any critical check failed."
+        ),
+        reads={".factory/reviews/health-check.md"},
+    )
+
+    edges = [
+        Edge(source="researcher_benchmark", target="gate_research"),
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="researcher_benchmark", condition=VerdictType.RELOOP),
+        Edge(source="strategist", target="gate_strategy"),
+        Edge(source="gate_strategy", target="builder", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        Edge(source="builder", target="gate_build"),
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="health_checker", target="gate_verify"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "setup-eval"
+
+    return Workflow(
+        name="setup-eval",
+        nodes=nodes,
+        edges=edges,
+        start_node="researcher_benchmark",
         trigger=trigger,
         terminal=True,
     )

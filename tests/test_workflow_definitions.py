@@ -21,6 +21,7 @@ from factory.workflow.definitions import (
     refine_workflow,
     register_all,
     research_workflow,
+    setup_eval_workflow,
 )
 from factory.workflow.primitives import (
     AgentNode,
@@ -309,7 +310,7 @@ class TestAgentPool:
 class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) >= 13, f"Expected at least 13 workflows, got {len(all_wf)}"
+        assert len(all_wf) >= 14, f"Expected at least 14 workflows, got {len(all_wf)}"
         required = {
             "build",
             "design",
@@ -325,6 +326,7 @@ class TestRegisterAll:
             "spec-generate",
             "spec-update",
             "founder",
+            "setup-eval",
         }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -949,3 +951,113 @@ class TestFounderWorkflow:
         issues = validate_skill(skill_md)
         assert issues == [], f"founder skill has issues: {issues}"
         assert "workflow-founder" in skill_md
+
+
+# ── W₁₆: Setup-Eval Mode ──────────────────────────────────────────
+
+
+class TestSetupEvalWorkflow:
+    def test_valid(self) -> None:
+        wf = setup_eval_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"setup-eval workflow has issues: {issues}"
+
+    def test_name(self) -> None:
+        assert setup_eval_workflow().name == "setup-eval"
+
+    def test_start_node(self) -> None:
+        assert setup_eval_workflow().start_node == "researcher_benchmark"
+
+    def test_terminal(self) -> None:
+        assert setup_eval_workflow().terminal is True
+
+    def test_node_count(self) -> None:
+        wf = setup_eval_workflow()
+        assert len(wf.nodes) == 8
+
+    def test_node_types(self) -> None:
+        wf = setup_eval_workflow()
+        agent_nodes = {
+            "researcher_benchmark": AgentRole.RESEARCHER,
+            "strategist": AgentRole.STRATEGIST,
+            "builder": AgentRole.BUILDER,
+            "health_checker": AgentRole.HEALTH_CHECKER,
+        }
+        for nid, role in agent_nodes.items():
+            node = wf.nodes[nid]
+            assert isinstance(node, AgentNode), f"{nid} should be AgentNode"
+            assert node.role == role, f"{nid} should have role {role}"
+
+        gate_nodes = ["gate_research", "gate_strategy", "gate_build", "gate_verify"]
+        for nid in gate_nodes:
+            node = wf.nodes[nid]
+            assert isinstance(node, GateNode), f"{nid} should be GateNode"
+
+    def test_forward_edges(self) -> None:
+        wf = setup_eval_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected = [
+            ("researcher_benchmark", "gate_research", None),
+            ("gate_research", "strategist", VerdictType.PROCEED),
+            ("strategist", "gate_strategy", None),
+            ("gate_strategy", "builder", VerdictType.PROCEED),
+            ("builder", "gate_build", None),
+            ("gate_build", "health_checker", VerdictType.PROCEED),
+            ("health_checker", "gate_verify", None),
+        ]
+        for src, tgt, cond in expected:
+            assert (src, tgt, cond) in edge_set, f"missing edge {src} -> {tgt} ({cond})"
+
+    def test_reloop_edges(self) -> None:
+        wf = setup_eval_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected_reloops = [
+            ("gate_research", "researcher_benchmark", VerdictType.RELOOP),
+            ("gate_strategy", "strategist", VerdictType.RELOOP),
+            ("gate_build", "builder", VerdictType.RELOOP),
+        ]
+        for src, tgt, cond in expected_reloops:
+            assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
+
+    def test_trigger_positive(self) -> None:
+        wf = setup_eval_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "setup-eval"})
+        assert wf.trigger(ProjectState.NO_REPO, {"mode": "setup-eval"})
+
+    def test_trigger_negative(self) -> None:
+        wf = setup_eval_workflow()
+        assert wf.trigger is not None
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.NO_REPO, {})
+
+    def test_researcher_post_checks(self) -> None:
+        wf = setup_eval_workflow()
+        node = wf.nodes["researcher_benchmark"]
+        assert isinstance(node, AgentNode)
+        assert len(node.post_checks) == 1
+        check = node.post_checks[0]
+        assert check.path == ".factory/eval/benchmark/research.md"
+        assert check.must_exist is True
+        assert check.min_size == 100
+
+    def test_builder_post_checks(self) -> None:
+        wf = setup_eval_workflow()
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert len(node.post_checks) == 1
+        check = node.post_checks[0]
+        assert check.path == ".factory/eval/benchmark/config.json"
+        assert check.must_exist is True
+        assert check.min_size == 50
+
+    def test_registered(self) -> None:
+        all_wf = register_all()
+        assert "setup-eval" in all_wf
+
+    def test_registered_valid(self) -> None:
+        all_wf = register_all()
+        wf = all_wf["setup-eval"]
+        issues = wf.validate_graph()
+        assert issues == [], f"registered setup-eval has issues: {issues}"
