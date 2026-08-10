@@ -12,12 +12,13 @@ from factory.optimization.types import ExecutionResult, LoopConfig, Patch, StepR
 
 
 class _CountingExecutor:
-    def __init__(self) -> None:
+    def __init__(self, artifacts: list[str] | None = None) -> None:
         self.call_count = 0
+        self._artifacts = artifacts or []
 
     def execute(self, project_dir: Path, surface: Surface, **kwargs: Any) -> ExecutionResult:
         self.call_count += 1
-        return ExecutionResult(returncode=0, artifacts=[], duration_s=1.0)
+        return ExecutionResult(returncode=0, artifacts=self._artifacts, duration_s=1.0)
 
 
 class _FixedScoreEvaluator:
@@ -58,6 +59,25 @@ class _NoOpMutator:
         history: list[StepRecord],
     ) -> Patch:
         return Patch(reasoning="noop")
+
+
+class _PatchMutator:
+    """Returns a fixed patch with prompt edits."""
+
+    def __init__(self, edits: list[tuple[str, str, str]]) -> None:
+        self._edits = edits
+
+    def propose(
+        self,
+        surface: Surface,
+        execution_result: ExecutionResult,
+        history: list[StepRecord],
+    ) -> Patch:
+        from factory.optimization.types import SlotEdit
+        return Patch(
+            prompt_edits=[SlotEdit(slot_name=s, old_value=o, new_value=n) for s, o, n in self._edits],
+            reasoning="test patch",
+        )
 
 
 class TestOptimizationLoopStep:
@@ -116,3 +136,37 @@ class TestOptimizationLoopTrain:
         )
         result = loop.train()
         assert len(result.steps) == 1
+
+
+class TestPatchApplication:
+    def test_accepted_patch_modifies_prompt_slots(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "result.json"
+        artifact.write_text("{}")
+        surface = Surface(prompt_slots={"skill": "original prompt"})
+        mutator = _PatchMutator([("skill", "original prompt", "improved prompt")])
+        loop = OptimizationLoop(
+            project_dir=tmp_path,
+            surface=surface,
+            executor=_CountingExecutor(artifacts=[str(artifact)]),
+            evaluator=_FixedScoreEvaluator(score=0.8),
+            mutator=mutator,
+        )
+        record = loop.step()
+        assert record.verdict == "keep"
+        assert surface.prompt_slots["skill"] == "improved prompt"
+
+    def test_patch_ignores_unknown_slots(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "result.json"
+        artifact.write_text("{}")
+        surface = Surface(prompt_slots={"skill": "original"})
+        mutator = _PatchMutator([("nonexistent", "old", "new")])
+        loop = OptimizationLoop(
+            project_dir=tmp_path,
+            surface=surface,
+            executor=_CountingExecutor(artifacts=[str(artifact)]),
+            evaluator=_FixedScoreEvaluator(score=0.8),
+            mutator=mutator,
+        )
+        loop.step()
+        assert "nonexistent" not in surface.prompt_slots
+        assert surface.prompt_slots["skill"] == "original"

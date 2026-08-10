@@ -48,6 +48,17 @@ class Patch:
 
 
 @dataclass
+class TaskResult:
+    """Per-task result from a benchmark execution."""
+
+    task_id: str
+    reward: float
+    predicted: str = ""
+    gold: str = ""
+    question: str = ""
+
+
+@dataclass
 class ExecutionResult:
     """Result of running one optimization step via an Executor."""
 
@@ -55,6 +66,7 @@ class ExecutionResult:
     artifacts: list[str] = field(default_factory=list)
     duration_s: float = 0.0
     cost_usd: float = 0.0
+    task_results: list[TaskResult] = field(default_factory=list)
 
 
 @dataclass
