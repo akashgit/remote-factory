@@ -1,10 +1,22 @@
-"""Composition parser — turns a mode spec string into typed execution steps."""
+"""Composition parser and multi-mode executor for chained workflow execution."""
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+import asyncio
+import os
+import time
+from pathlib import Path
+from typing import Annotated, Any, Literal, Union
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field
+
+from factory.workflow.board import Board
+from factory.workflow.executor import ExecutionResult, WorkflowExecutor
+from factory.workflow.primitives import DEFAULT_AGENT_POOL, AgentConfig
+from factory.workflow.registry import WorkflowRegistry
+
+log = structlog.get_logger()
 
 BUILTIN_MODES: frozenset[str] = frozenset({
     "discover",
@@ -118,3 +130,195 @@ def validate_composition(
                     errors.append(f"Step {i}: unknown mode {mode!r}")
 
     return errors
+
+
+class MultiModeExecutor:
+    """Walk a list of CompositionSteps, executing modes sequentially or in parallel."""
+
+    def __init__(
+        self,
+        project_path: Path,
+        board: Board,
+        run_id: str,
+        *,
+        agent_pool: dict[str, AgentConfig] | None = None,
+        dry_run: bool = False,
+    ) -> None:
+        self._project_path = project_path
+        self._board = board
+        self._run_id = run_id
+        self._agent_pool = agent_pool or dict(DEFAULT_AGENT_POOL)
+        self._dry_run = dry_run
+
+    async def execute(self, steps: list[SequentialStep | ParallelStep]) -> dict[str, Any]:
+        results: dict[str, Any] = {}
+
+        for i, step in enumerate(steps):
+            if isinstance(step, SequentialStep):
+                log.info(
+                    "compositor.step.start",
+                    step_index=i,
+                    step_type="sequential",
+                    modes=[step.mode],
+                )
+                t0 = time.monotonic()
+                result = await self._execute_single_mode(step.mode)
+                elapsed = (time.monotonic() - t0) * 1000
+                results[step.mode] = result
+
+                log.info(
+                    "compositor.step.complete",
+                    step_index=i,
+                    step_type="sequential",
+                    modes=[step.mode],
+                    duration_ms=round(elapsed, 1),
+                )
+
+                if result.halted:
+                    log.warning(
+                        "compositor.step.failed",
+                        step_index=i,
+                        step_type="sequential",
+                        error=result.halt_reason,
+                    )
+                    break
+
+            elif isinstance(step, ParallelStep):
+                log.info(
+                    "compositor.step.start",
+                    step_index=i,
+                    step_type="parallel",
+                    modes=step.modes,
+                )
+                log.info("compositor.parallel.start", modes=step.modes)
+
+                t0 = time.monotonic()
+                parallel_results = await self._execute_parallel(step.modes)
+                elapsed = (time.monotonic() - t0) * 1000
+
+                completed = [m for m, r in parallel_results.items() if r.success]
+                failed = [m for m, r in parallel_results.items() if not r.success]
+                results.update(parallel_results)
+
+                log.info(
+                    "compositor.parallel.join",
+                    completed_modes=completed,
+                    failed_modes=failed,
+                )
+                log.info(
+                    "compositor.step.complete",
+                    step_index=i,
+                    step_type="parallel",
+                    modes=step.modes,
+                    duration_ms=round(elapsed, 1),
+                )
+
+                if failed:
+                    log.warning(
+                        "compositor.step.failed",
+                        step_index=i,
+                        step_type="parallel",
+                        error=f"Failed modes: {failed}",
+                    )
+                    break
+
+                await self._board.async_write_global(
+                    "parallel_results",
+                    {m: {"success": r.success, "nodes_executed": r.nodes_executed} for m, r in parallel_results.items()},
+                )
+
+        await self._board.async_save()
+        return results
+
+    async def _execute_single_mode(self, mode: str) -> ExecutionResult:
+        self._board.state.current_mode = mode
+        os.environ["FACTORY_MODE_PREFIX"] = mode
+
+        try:
+            wf = WorkflowRegistry.get_workflow(mode, self._project_path)
+            if wf is None:
+                result = ExecutionResult()
+                result.halted = True
+                result.halt_reason = f"No workflow registered for mode {mode!r}"
+                return result
+
+            executor = WorkflowExecutor(
+                wf,
+                self._project_path,
+                agent_pool=self._agent_pool,
+                dry_run=self._dry_run,
+            )
+            try:
+                result = await executor.execute()
+            except Exception as exc:
+                result = ExecutionResult()
+                result.halted = True
+                result.halt_reason = str(exc)
+                log.error("compositor.mode.exception", mode=mode, error=str(exc))
+
+            await self._board.async_write(mode, "result", {
+                "success": result.success,
+                "halted": result.halted,
+                "halt_reason": result.halt_reason,
+                "nodes_executed": result.nodes_executed,
+                "duration_ms": result.duration_ms,
+            })
+            await self._board.async_mark_mode_complete(mode)
+
+            return result
+        finally:
+            os.environ.pop("FACTORY_MODE_PREFIX", None)
+
+    async def _execute_parallel(self, modes: list[str]) -> dict[str, ExecutionResult]:
+        results: dict[str, ExecutionResult] = {}
+        tasks: dict[str, asyncio.Task[ExecutionResult]] = {}
+        failed = asyncio.Event()
+
+        async def _run_and_check(mode: str) -> ExecutionResult:
+            result = await self._execute_single_mode(mode)
+            if result.halted:
+                failed.set()
+            return result
+
+        for mode in modes:
+            task = asyncio.create_task(
+                _run_and_check(mode),
+                name=f"compositor-{mode}",
+            )
+            tasks[mode] = task
+
+        waiter = asyncio.create_task(failed.wait())
+        all_tasks = set(tasks.values())
+
+        done, pending = await asyncio.wait(
+            all_tasks | {waiter},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if failed.is_set():
+            for t in tasks.values():
+                if not t.done():
+                    t.cancel()
+            if any(not t.done() for t in tasks.values()):
+                await asyncio.wait(tasks.values(), timeout=5.0)
+        else:
+            waiter.cancel()
+            if any(not t.done() for t in tasks.values()):
+                await asyncio.wait(tasks.values())
+
+        for mode, task in tasks.items():
+            if task.done() and not task.cancelled():
+                try:
+                    results[mode] = task.result()
+                except Exception as exc:
+                    r = ExecutionResult()
+                    r.halted = True
+                    r.halt_reason = str(exc)
+                    results[mode] = r
+            else:
+                r = ExecutionResult()
+                r.halted = True
+                r.halt_reason = "Cancelled due to sibling failure"
+                results[mode] = r
+
+        return results

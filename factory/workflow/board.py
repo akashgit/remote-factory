@@ -56,9 +56,17 @@ class Board:
         self._state.data.setdefault(mode, {})[key] = value
         self._state.updated_at = datetime.now(timezone.utc).isoformat()
 
+    async def async_write(self, mode: str, key: str, value: Any) -> None:
+        async with self._lock:
+            self.write(mode, key, value)
+
     def write_global(self, key: str, value: Any) -> None:
         self._state.global_data[key] = value
         self._state.updated_at = datetime.now(timezone.utc).isoformat()
+
+    async def async_write_global(self, key: str, value: Any) -> None:
+        async with self._lock:
+            self.write_global(key, value)
 
     # ── lifecycle ────────────────────────────────────────────────
 
@@ -66,6 +74,10 @@ class Board:
         if mode not in self._state.modes_completed:
             self._state.modes_completed.append(mode)
         self._state.updated_at = datetime.now(timezone.utc).isoformat()
+
+    async def async_mark_mode_complete(self, mode: str) -> None:
+        async with self._lock:
+            self.mark_mode_complete(mode)
 
     def snapshot(self, mode: str | None = None) -> dict[str, Any]:
         if mode is not None:
@@ -84,14 +96,17 @@ class Board:
     # ── persistence ──────────────────────────────────────────────
 
     def load(self) -> BoardState:
-        raw = json.loads(self._path.read_text())
+        try:
+            raw = json.loads(self._path.read_text())
+        except FileNotFoundError:
+            return self._state
         self._state = BoardState.model_validate(raw)
         return self._state
 
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = self._state.model_dump(mode="json")
-        dir_fd = None
+        tmp_path: str | None = None
         try:
             fd = tempfile.NamedTemporaryFile(
                 mode="w",
@@ -99,19 +114,25 @@ class Board:
                 suffix=".tmp",
                 delete=False,
             )
+            tmp_path = fd.name
             try:
                 json.dump(payload, fd, indent=2)
                 fd.flush()
                 os.fsync(fd.fileno())
             finally:
                 fd.close()
-            os.replace(fd.name, self._path)
+            os.replace(tmp_path, self._path)
         except BaseException:
-            try:
-                os.unlink(fd.name)
-            except OSError:
-                pass
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
             raise
+
+    async def async_save(self) -> None:
+        async with self._lock:
+            self.save()
 
     @property
     def state(self) -> BoardState:
