@@ -34,7 +34,8 @@ def _call_llm(prompt: str, timeout: int = 300) -> str | None:
         return None
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["claude", "-p", "-"],
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout,
