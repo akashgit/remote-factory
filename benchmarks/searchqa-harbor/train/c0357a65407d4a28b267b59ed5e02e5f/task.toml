@@ -1,0 +1,17 @@
+schema_version = "1.3"
+
+[task]
+name = "searchqa/c0357a65407d4a28b267b59ed5e02e5f"
+description = "Answer a question using search results"
+
+[environment]
+network_mode = "public"
+cpus = 1
+memory_mb = 512
+storage_mb = 1024
+
+[agent]
+timeout_sec = 120.0
+
+[verifier]
+timeout_sec = 30.0
