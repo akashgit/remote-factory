@@ -253,6 +253,18 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
     p.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
     p.add_argument("--steps-per-epoch", type=int, default=1, help="Steps per epoch")
 
+    p = sub.add_parser("optimize", help="Run inner-outer optimization loop with HarborBenchmark")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--benchmark", default="searchqa", choices=["searchqa"],
+                    help="Benchmark to run (default: searchqa)")
+    p.add_argument("--skill-path", default=None, help="Path to the skill file to optimize")
+    p.add_argument("--steps", type=int, default=3, help="Steps per epoch (default: 3)")
+    p.add_argument("--epochs", type=int, default=1, help="Number of training epochs (default: 1)")
+    p.add_argument("--concurrency", type=int, default=5, help="Concurrent Harbor tasks (default: 5)")
+    p.add_argument("--git-ref", default=None, help="Git ref for Harbor agent (default: current branch)")
+    p.add_argument("--docker-host", default=None, help="Docker host socket (default: from DOCKER_HOST env)")
+    p.add_argument("--model", default="sonnet", help="Model for AgenticMutator (default: sonnet)")
+
 
 def add_configuration_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")

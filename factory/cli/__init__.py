@@ -45,6 +45,9 @@ from factory.cli.ceo import (
 from factory.cli.run import (
     cmd_run as cmd_run,
 )
+from factory.cli.optimize import (
+    cmd_optimize as cmd_optimize,
+)
 from factory.cli.skillopt import (
     cmd_skillopt as cmd_skillopt,
 )
