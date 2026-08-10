@@ -92,6 +92,10 @@ class OptimizationLoop:
             if score_end > self._best_score:
                 self._best_score = score_end
                 self._best_step = self._global_step
+            if patch:
+                for edit in patch.prompt_edits:
+                    if edit.slot_name in self.surface.prompt_slots:
+                        self.surface.prompt_slots[edit.slot_name] = edit.new_value
 
         record = StepRecord(
             step_number=self._global_step,
