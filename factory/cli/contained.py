@@ -17,6 +17,7 @@ import sys
 from factory.cli.contained_args import (
     HELP_EPILOG,
     HELP_SUBCOMMAND,
+    add_runtime_flags,
     interpret,
     target_given,
 )
@@ -58,23 +59,10 @@ def build_contained_parser(sub: argparse._SubParsersAction) -> argparse.Argument
     # One REMAINDER for everything positional, split afterwards by `interpret`. A declarative split
     # is not expressible: an optional positional carrying `choices` would try to match the first
     # word of the payload and reject it as an invalid choice.
-    # Every flag is SUPPRESSed from argparse's own listing and described in the epilog instead:
-    # a flat list hides which target each flag belongs to, and printing both lists each flag twice.
     p.add_argument("rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
-    p.add_argument("--target", choices=["local", "k8s"], default="local", help=argparse.SUPPRESS)
-    p.add_argument("--division", action="store_true", default=False, help=argparse.SUPPRESS)
-    p.add_argument("--name", default=None, help=argparse.SUPPRESS)
-    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", dest="extra_env",
-                   help=argparse.SUPPRESS)
-    p.add_argument("--forward", action="append", default=[], metavar="VAR", help=argparse.SUPPRESS)
-    p.add_argument("--mount", action="append", default=[], metavar="PATH", help=argparse.SUPPRESS)
-    p.add_argument("--namespace", default=None, help=argparse.SUPPRESS)
-    p.add_argument("--storage-class", default=None, dest="storage_class", help=argparse.SUPPRESS)
-    p.add_argument("--context", default=None, help=argparse.SUPPRESS)
-    p.add_argument("--image", default=None, help=argparse.SUPPRESS)
-    # `rm` prompts before deleting an active runtime and the cluster upload prompts on a secret-scan
-    # finding; `--yes` skips both, for automation.
-    p.add_argument("--yes", action="store_true", default=False, help=argparse.SUPPRESS)
+    # From the one table `interpret` also parses the tail against, so a flag can never be accepted
+    # before the subcommand and rejected after it.
+    add_runtime_flags(p)
     _PARSER = p
     return p
 
