@@ -436,6 +436,7 @@ def build_workflow() -> Workflow:
         edges=edges,
         start_node="fork_research",
         trigger=trigger,
+        board_writes=["build_spec", "scaffold_complete"],
     )
 
 
@@ -928,6 +929,8 @@ def improve_workflow() -> Workflow:
         edges=edges,
         start_node="study",
         trigger=trigger,
+        board_reads=["eval_reviewed"],
+        board_writes=["experiment_result", "composite_score"],
     )
 
 
@@ -1073,6 +1076,8 @@ def research_workflow() -> Workflow:
 
     wf.name = "research"
     wf.start_node = "baseline"
+    wf.board_reads = ["eval_reviewed"]
+    wf.board_writes = ["research_metric", "failure_analysis"]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return state == ProjectState.HAS_FACTORY and bool(ctx.get("research_target"))
@@ -1326,6 +1331,7 @@ def discover_workflow() -> Workflow:
         edges=edges,
         start_node="discover",
         trigger=trigger,
+        board_writes=["eval_profile", "project_type"],
     )
 
 
@@ -1449,6 +1455,8 @@ def review_workflow() -> Workflow:
         edges=edges,
         start_node="eval_test",
         trigger=trigger,
+        board_reads=["eval_profile"],
+        board_writes=["eval_reviewed"],
     )
 
 

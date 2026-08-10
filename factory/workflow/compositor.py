@@ -131,6 +131,65 @@ def validate_composition(
     return errors
 
 
+def validate_composition_with_contracts(
+    steps: list[SequentialStep | ParallelStep],
+    registry: WorkflowRegistry,
+    project_path: Path | None = None,
+) -> tuple[list[str], list[str]]:
+    """Validate composition using board data contracts from workflow definitions.
+
+    Returns (errors, warnings) where:
+    - errors: fatal issues (overlapping board_writes in parallel steps)
+    - warnings: advisory issues (unsatisfied board_reads in sequential steps)
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    def _get_workflow(mode: str) -> Any:
+        return registry.get_workflow(mode, project_path)
+
+    written_keys: set[str] = set()
+
+    for i, step in enumerate(steps):
+        if isinstance(step, ParallelStep):
+            parallel_writes: dict[str, list[str]] = {}
+            for mode in step.modes:
+                if mode in BUILTIN_MODES:
+                    errors.append(
+                        f"Step {i}: built-in mode {mode!r} cannot appear in a ParallelStep"
+                    )
+                wf = _get_workflow(mode)
+                if wf is None:
+                    continue
+                for key in wf.board_writes:
+                    parallel_writes.setdefault(key, []).append(mode)
+
+            for key, writers in parallel_writes.items():
+                if len(writers) > 1:
+                    errors.append(
+                        f"Step {i}: overlapping board_writes key {key!r} "
+                        f"in parallel modes {writers}"
+                    )
+
+            for mode in step.modes:
+                wf = _get_workflow(mode)
+                if wf is not None:
+                    written_keys.update(wf.board_writes)
+
+        elif isinstance(step, SequentialStep):
+            wf = _get_workflow(step.mode)
+            if wf is not None:
+                for key in wf.board_reads:
+                    if key not in written_keys:
+                        warnings.append(
+                            f"Step {i}: mode {step.mode!r} reads board key {key!r} "
+                            f"not written by any preceding mode"
+                        )
+                written_keys.update(wf.board_writes)
+
+    return errors, warnings
+
+
 class MultiModeExecutor:
     """Walk a list of CompositionSteps, executing modes sequentially or in parallel."""
 
