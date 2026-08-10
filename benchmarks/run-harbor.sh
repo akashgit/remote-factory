@@ -399,6 +399,15 @@ else
     echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
 fi
 
+# Skill injection --ae flags (optimization loop injects these)
+SKILL_AE=()
+if [ -n "${FACTORY_SKILL_B64:-}" ]; then
+    SKILL_AE+=(--ae "FACTORY_SKILL_B64=${FACTORY_SKILL_B64}")
+fi
+if [ -n "${SEARCHQA_SKILL_B64:-}" ]; then
+    SKILL_AE+=(--ae "SEARCHQA_SKILL_B64=${SEARCHQA_SKILL_B64}")
+fi
+
 # Common --ae flags (written once)
 COMMON_AE=(
     --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}"
@@ -418,7 +427,7 @@ COMMON_AE=(
     --ae "FACTORY_INSTANCE_ID=${INSTANCE_ID}"
 )
 
-HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}")
+HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}" ${SKILL_AE[@]+"${SKILL_AE[@]}"})
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     HARBOR_CMD+=(--mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]')

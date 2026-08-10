@@ -10,6 +10,10 @@ from factory.optimization.executors import (
     HarborExecutor,
     WorkflowRunExecutor,
 )
+from factory.optimization.executors.harbor import (
+    _parse_trial_results,
+    _strip_harbor_suffix,
+)
 from factory.optimization.protocols import Executor
 
 
@@ -84,7 +88,8 @@ class TestHarborExecutorSkillInjection:
             import subprocess
             return subprocess.CompletedProcess(cmd, 0)
 
-        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run):
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
             e.execute(tmp_path, surface)
 
         assert "SEARCHQA_SKILL_B64" in captured_env
@@ -116,7 +121,8 @@ class TestHarborExecutorTaskResultParsing:
             import subprocess
             return subprocess.CompletedProcess(cmd, 0)
 
-        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run):
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
             result = e.execute(tmp_path, Surface())
 
         assert len(result.task_results) == 2
@@ -142,7 +148,205 @@ class TestHarborExecutorTaskResultParsing:
             import subprocess
             return subprocess.CompletedProcess(cmd, 0)
 
-        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run):
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
             result = e.execute(tmp_path, Surface())
 
         assert result.task_results == []
+
+
+class TestHarborExecutorCommand:
+    """Tests for full command construction with arguments."""
+
+    def test_default_command_args(self, tmp_path) -> None:
+        from unittest.mock import patch as mock_patch
+        from factory.optimization.surface import Surface
+
+        script = tmp_path / "run-harbor.sh"
+        script.write_text("#!/bin/bash\necho ok")
+        script.chmod(0o755)
+
+        e = HarborExecutor(harbor_script="run-harbor.sh")
+        captured_cmd: list[str] = []
+
+        def mock_run(cmd, cwd=None, env=None):
+            captured_cmd.extend(cmd)
+            import subprocess
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
+            e.execute(tmp_path, Surface())
+
+        assert captured_cmd[1] == "searchqa"
+        assert "--all" in captured_cmd
+        assert "--limit" in captured_cmd
+        assert captured_cmd[captured_cmd.index("--limit") + 1] == "5"
+        assert "--concurrency" in captured_cmd
+        assert captured_cmd[captured_cmd.index("--concurrency") + 1] == "2"
+        assert "--timeout" in captured_cmd
+        assert captured_cmd[captured_cmd.index("--timeout") + 1] == "120"
+        assert "--solver" in captured_cmd
+        assert captured_cmd[captured_cmd.index("--solver") + 1] == "factory"
+        assert "--preserve" in captured_cmd
+
+    def test_custom_n_tasks_and_concurrency(self, tmp_path) -> None:
+        from unittest.mock import patch as mock_patch
+        from factory.optimization.surface import Surface
+
+        script = tmp_path / "run-harbor.sh"
+        script.write_text("#!/bin/bash\necho ok")
+        script.chmod(0o755)
+
+        e = HarborExecutor(harbor_script="run-harbor.sh", n_tasks=20, concurrency=8)
+        captured_cmd: list[str] = []
+
+        def mock_run(cmd, cwd=None, env=None):
+            captured_cmd.extend(cmd)
+            import subprocess
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
+            e.execute(tmp_path, Surface())
+
+        assert captured_cmd[captured_cmd.index("--limit") + 1] == "20"
+        assert captured_cmd[captured_cmd.index("--concurrency") + 1] == "8"
+
+    def test_split_flag_included(self, tmp_path) -> None:
+        from unittest.mock import patch as mock_patch
+        from factory.optimization.surface import Surface
+
+        script = tmp_path / "run-harbor.sh"
+        script.write_text("#!/bin/bash\necho ok")
+        script.chmod(0o755)
+
+        e = HarborExecutor(harbor_script="run-harbor.sh", split="dev")
+        captured_cmd: list[str] = []
+
+        def mock_run(cmd, cwd=None, env=None):
+            captured_cmd.extend(cmd)
+            import subprocess
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
+            e.execute(tmp_path, Surface())
+
+        assert "--split" in captured_cmd
+        assert captured_cmd[captured_cmd.index("--split") + 1] == "dev"
+
+    def test_no_split_omits_flag(self, tmp_path) -> None:
+        from unittest.mock import patch as mock_patch
+        from factory.optimization.surface import Surface
+
+        script = tmp_path / "run-harbor.sh"
+        script.write_text("#!/bin/bash\necho ok")
+        script.chmod(0o755)
+
+        e = HarborExecutor(harbor_script="run-harbor.sh")
+        captured_cmd: list[str] = []
+
+        def mock_run(cmd, cwd=None, env=None):
+            captured_cmd.extend(cmd)
+            import subprocess
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with mock_patch("factory.optimization.executors.harbor.subprocess.run", mock_run), \
+             mock_patch("factory.optimization.executors.harbor._find_latest_jobs_dir", return_value=""):
+            e.execute(tmp_path, Surface())
+
+        assert "--split" not in captured_cmd
+
+
+class TestStripHarborSuffix:
+    """Tests for _strip_harbor_suffix helper."""
+
+    def test_strips_7char_suffix(self) -> None:
+        assert _strip_harbor_suffix("my-task__abc1234") == "my-task"
+
+    def test_preserves_name_without_suffix(self) -> None:
+        assert _strip_harbor_suffix("my-task") == "my-task"
+
+    def test_preserves_single_underscore(self) -> None:
+        assert _strip_harbor_suffix("my_task") == "my_task"
+
+    def test_handles_complex_task_id(self) -> None:
+        assert _strip_harbor_suffix("nq-train-12345__xf9g2h1") == "nq-train-12345"
+
+    def test_short_name_not_stripped(self) -> None:
+        assert _strip_harbor_suffix("a__b1c2d3e") == "a"
+
+    def test_too_short_returns_unchanged(self) -> None:
+        assert _strip_harbor_suffix("__abc1234") == "__abc1234"
+
+
+class TestParseTrialResults:
+    """Tests for _parse_trial_results — parsing per-task verifier outputs."""
+
+    def test_parses_reward_and_stdout(self, tmp_path) -> None:
+        trial = tmp_path / "task-001__abc1234"
+        verifier = trial / "verifier"
+        verifier.mkdir(parents=True)
+        verifier.joinpath("reward.json").write_text(json.dumps({"reward": 1.0}))
+        verifier.joinpath("test-stdout.txt").write_text(
+            "Running test...\nPredicted: Paris\nGold: ['Paris']\nPASS\n"
+        )
+
+        results = _parse_trial_results(tmp_path)
+        assert len(results) == 1
+        assert results[0].task_id == "task-001"
+        assert results[0].reward == 1.0
+        assert results[0].predicted == "Paris"
+        assert results[0].gold == "['Paris']"
+        assert results[0].question == ""
+
+    def test_missing_reward_defaults_zero(self, tmp_path) -> None:
+        trial = tmp_path / "task-002__xyz5678"
+        trial.mkdir(parents=True)
+
+        results = _parse_trial_results(tmp_path)
+        assert len(results) == 1
+        assert results[0].task_id == "task-002"
+        assert results[0].reward == 0.0
+
+    def test_missing_stdout_empty_strings(self, tmp_path) -> None:
+        trial = tmp_path / "task-003__abc1234"
+        verifier = trial / "verifier"
+        verifier.mkdir(parents=True)
+        verifier.joinpath("reward.json").write_text(json.dumps({"reward": 0.5}))
+
+        results = _parse_trial_results(tmp_path)
+        assert len(results) == 1
+        assert results[0].predicted == ""
+        assert results[0].gold == ""
+
+    def test_multiple_trials(self, tmp_path) -> None:
+        for i, (task, reward) in enumerate([("q1", 1.0), ("q2", 0.0), ("q3", 0.5)]):
+            trial = tmp_path / f"{task}__abcdef{i}"
+            verifier = trial / "verifier"
+            verifier.mkdir(parents=True)
+            verifier.joinpath("reward.json").write_text(json.dumps({"reward": reward}))
+
+        results = _parse_trial_results(tmp_path)
+        assert len(results) == 3
+        rewards = {r.task_id: r.reward for r in results}
+        assert rewards["q1"] == 1.0
+        assert rewards["q2"] == 0.0
+        assert rewards["q3"] == 0.5
+
+    def test_empty_dir_returns_empty(self, tmp_path) -> None:
+        assert _parse_trial_results(tmp_path) == []
+
+    def test_nonexistent_dir_returns_empty(self, tmp_path) -> None:
+        assert _parse_trial_results(tmp_path / "nonexistent") == []
+
+    def test_invalid_reward_json(self, tmp_path) -> None:
+        trial = tmp_path / "task-bad__abc1234"
+        verifier = trial / "verifier"
+        verifier.mkdir(parents=True)
+        verifier.joinpath("reward.json").write_text("not json")
+
+        results = _parse_trial_results(tmp_path)
+        assert len(results) == 1
+        assert results[0].reward == 0.0
