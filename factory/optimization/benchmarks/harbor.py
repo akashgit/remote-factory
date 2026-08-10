@@ -84,7 +84,6 @@ class HarborBenchmark:
             skill_b64 = base64.b64encode(skill.encode()).decode()
 
         jobs_dir = Path(tempfile.mkdtemp(prefix=f"optimize-jobs-{self._run}-"))
-        task_dir = str(self.subset_dir) if self.subset_dir else str(project_dir)
 
         model_str = self.model
         if "/" not in model_str:
@@ -93,13 +92,20 @@ class HarborBenchmark:
         cmd: list[str] = [
             "uvx", "harbor", "run",
             "--model", model_str,
-            "-p", task_dir,
             "--agent", self.agent_class,
-            "--dataset", self.dataset,
             "--n-concurrent", str(self.concurrency),
             "--timeout-multiplier", "1",
             "--jobs-dir", str(jobs_dir),
         ]
+
+        if self.subset_dir:
+            cmd += ["-p", str(self.subset_dir)]
+        else:
+            task_dir = project_dir / "benchmarks" / f"{self.dataset}-harbor" / "train"
+            if task_dir.is_dir():
+                cmd += ["-p", str(task_dir)]
+            else:
+                cmd += ["--dataset", self.dataset]
 
         ae_flags: list[str] = []
 
