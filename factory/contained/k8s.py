@@ -26,6 +26,8 @@ import json
 import shutil
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -122,6 +124,60 @@ def cli_binary() -> str:
         "neither `oc` nor `kubectl` is on PATH. Install one and retry — `factory contained verify "
         "--target k8s` lists every cluster prerequisite."
     )
+
+
+# What the API server and the CLIs say when the kubeconfig has a context but no usable credential.
+# An expired token is the ordinary end of a working session — `oc login` issues one that lasts a
+# day — so this is not an exotic state, and it must never be mistaken for "the object is not there".
+_AUTH_ERROR_MARKERS = (
+    "you must be logged in",
+    "asked for the client to provide credentials",
+    "unauthorized",
+    "invalid bearer token",
+    "token has expired",
+    "no credentials",
+)
+
+# What `NotFound` looks like on stderr. This is the *only* failure that means an object is absent;
+# everything else means the question could not be answered.
+_NOT_FOUND_MARKERS = ("not found", "notfound")
+
+
+def is_auth_error(text: str) -> bool:
+    """Whether this failure means "you are logged out", rather than anything about the object."""
+    lowered = (text or "").lower()
+    return any(marker in lowered for marker in _AUTH_ERROR_MARKERS)
+
+
+def is_not_found(text: str) -> bool:
+    """Whether this failure means the object genuinely is not there.
+
+    Everything else — Unauthorized, Forbidden, a DNS failure, a proxy — is a *question that could
+    not be answered*, and reporting one of those as "absent" is how a review comes to offer to
+    create five objects that already exist.
+    """
+    lowered = (text or "").lower()
+    return any(marker in lowered for marker in _NOT_FOUND_MARKERS)
+
+
+def login_status(binary: str) -> tuple[bool, str]:
+    """One authenticated round trip: is the selected context actually usable? Never raises.
+
+    `config current-context` cannot answer this — it reads the kubeconfig on disk and succeeds
+    happily against a context whose token expired an hour ago. That is exactly the state where
+    every later read fails, and where the failures are subtle enough to be misread as answers.
+    """
+    argv = (
+        cli(binary, "whoami") if binary == "oc"
+        else cli(binary, "auth", "can-i", "get", "pods")
+    )
+    result = _run(argv, timeout=30)
+    if result is None:
+        return False, f"`{' '.join(argv)}` could not be run"
+    if result.returncode == 0:
+        return True, (result.stdout or "").strip().splitlines()[0] if result.stdout.strip() else ""
+    detail = (result.stderr or result.stdout or "").strip().splitlines()
+    return False, detail[0][:200] if detail else f"exit {result.returncode}"
 
 
 def current_namespace() -> str | None:
@@ -862,59 +918,226 @@ def apply_manifest(manifest: str, namespace: str) -> None:
     log.debug("k8s_applied", namespace=namespace, output=result.stdout.strip()[:200])
 
 
-def wait_for_container(name: str, namespace: str, container: str, *, timeout: int = 300) -> str:
+# ------------------------------------------------------------------------------------------------
+# Waiting on a pod, without waiting on one that is never going to start
+# ------------------------------------------------------------------------------------------------
+
+# Waiting reasons the kubelet reports only once it has already given up, or that no amount of time
+# can resolve. Waiting out any of these buys nothing: the answer will not change, and the minutes
+# spent are minutes the user spends looking at a blank screen before being told something the very
+# first poll knew. `ImagePullBackOff` belongs here and `ErrImagePull` does not — *BackOff* is the
+# word the kubelet uses after it has already retried.
+DOOMED_WAITING_REASONS = frozenset({
+    "ImagePullBackOff",
+    "ErrImageNeverPull",
+    "InvalidImageName",
+    "CreateContainerConfigError",
+    "CreateContainerError",
+    "RunContainerError",
+    "CrashLoopBackOff",
+})
+
+# Reasons that *might* still resolve — a registry blip, a node under load — but that are an error
+# rather than progress. Tolerated for `stuck_after` seconds and then treated as doomed.
+RETRYABLE_WAITING_REASONS = frozenset({"ErrImagePull", "ImageInspectError"})
+
+# How long an error-ish state is given to clear itself before the wait gives up. Deliberately not
+# applied to `ContainerCreating`, which is what a first-ever image pull looks like and legitimately
+# runs for minutes; capping that would trade a hang for a false failure on every cold cache.
+STUCK_AFTER_SECONDS = 30
+
+RUNNING, SUCCEEDED, WAITING, DOOMED = "running", "succeeded", "waiting", "doomed"
+
+
+@dataclass(frozen=True)
+class PodProgress:
+    """What a pod is doing, and whether waiting longer could change it.
+
+    `verdict` is one of `running`, `succeeded`, `waiting`, `doomed`. The split that matters is the
+    last one: a pod whose image cannot be pulled and a pod that is still pulling look identical
+    from a `--timeout` flag, and only one of them is worth waiting for.
+    """
+
+    verdict: str
+    phase: str = ""
+    reason: str = ""
+    message: str = ""
+
+    def describe(self) -> str:
+        """One human-readable line — the kubelet's own words wherever it supplied any."""
+        head = self.reason or self.phase or self.verdict
+        detail = " ".join(self.message.split())[:200]
+        return f"{head} — {detail}" if detail else head
+
+
+def classify_pod(pod: dict[str, Any], *, container: str | None = None) -> PodProgress:
+    """Read one `oc get pod -o json` into a verdict. Pure: no cluster calls, no clock.
+
+    `container` narrows the question to one container of the pod, which is what the workspace
+    loader needs — an initContainer that is *running* is the window the upload has to hit, and a
+    pod-level readiness condition is never true during it.
+
+    Anything unrecognized is `waiting`, never `doomed`: this decides whether to stop waiting, and
+    the cost of being wrong in that direction is a run aborted for a state that would have cleared.
+    """
+    # `or {}` as well as the type check: a key that is present and explicitly null is not the same
+    # as an absent one, and `.get(k, {})` returns the null. A half-written pod document has to
+    # classify as "keep waiting", never raise inside a poll loop.
+    status = (pod.get("status") or {}) if isinstance(pod, dict) else {}
+    if not isinstance(status, dict):
+        return PodProgress(WAITING, "", "Pending", "")
+    phase = str(status.get("phase", "") or "")
+
+    statuses = [
+        entry for entry in
+        (list(status.get("initContainerStatuses", []) or [])
+         + list(status.get("containerStatuses", []) or []))
+        if isinstance(entry, dict) and (container is None or entry.get("name") == container)
+    ]
+
+    for entry in statuses:
+        state = entry.get("state", {}) or {}
+        terminated = state.get("terminated")
+        if isinstance(terminated, dict):
+            code = terminated.get("exitCode")
+            if code == 0:
+                return PodProgress(SUCCEEDED, phase, str(terminated.get("reason") or "Completed"),
+                                   str(terminated.get("message") or ""))
+            return PodProgress(
+                DOOMED, phase, str(terminated.get("reason") or "Error"),
+                str(terminated.get("message") or f"exit code {code}"),
+            )
+        if "running" in state:
+            return PodProgress(RUNNING, phase, "Running", "")
+        waiting = state.get("waiting")
+        if isinstance(waiting, dict):
+            reason = str(waiting.get("reason") or "")
+            message = str(waiting.get("message") or "")
+            if reason in DOOMED_WAITING_REASONS:
+                return PodProgress(DOOMED, phase, reason, message)
+            return PodProgress(WAITING, phase, reason or "Waiting", message)
+
+    # No container has a state yet — the answer is at pod level, where an unschedulable pod lives.
+    unschedulable = _unschedulable(status)
+    if unschedulable is not None:
+        return PodProgress(DOOMED, phase, "Unschedulable", unschedulable)
+    if phase == "Succeeded":
+        return PodProgress(SUCCEEDED, phase, "Succeeded", "")
+    if phase == "Failed":
+        return PodProgress(DOOMED, phase, str(status.get("reason") or "Failed"),
+                           str(status.get("message") or ""))
+    return PodProgress(WAITING, phase, phase or "Pending", "")
+
+
+def _unschedulable(status: dict[str, Any]) -> str | None:
+    """The scheduler's explanation, when it declined to place the pod at all.
+
+    A pod nothing will ever schedule — no node with the requested resources, a PVC in a zone the
+    nodes are not in — sits in `Pending` with no container status whatsoever, which is
+    indistinguishable from "starting" unless the conditions are read.
+    """
+    for condition in status.get("conditions", []) or []:
+        if not isinstance(condition, dict):
+            continue
+        if (condition.get("type") == "PodScheduled" and condition.get("status") == "False"
+                and condition.get("reason") == "Unschedulable"):
+            return str(condition.get("message") or "no node can accept this pod")
+    return None
+
+
+def read_pod(name: str, namespace: str) -> dict[str, Any] | None:
+    """One pod as a dict, or None when it could not be read. Never raises."""
+    result = _run(cli(cli_binary(), "get", "pod", name, "-n", namespace, "-o", "json"), timeout=30)
+    if result is None or result.returncode != 0:
+        return None
+    try:
+        pod = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    return pod if isinstance(pod, dict) else None
+
+
+def poll_pod(
+    name: str,
+    namespace: str,
+    *,
+    container: str | None = None,
+    until: tuple[str, ...] = (RUNNING, SUCCEEDED),
+    timeout: int = 300,
+    stuck_after: int = STUCK_AFTER_SECONDS,
+    interval: float = 2.0,
+    on_progress: Callable[[PodProgress], None] | None = None,
+) -> PodProgress:
+    """Wait for a pod to reach one of `until`, or to prove it never will.
+
+    Replaces `oc wait --for=... --timeout=Ns`, which is blind by construction: it reports only that
+    the condition did not hold, so an image that cannot be pulled costs the full timeout and is then
+    described as a mystery. Here the pod is read each round and `classify_pod` decides — a doomed
+    state returns immediately carrying the kubelet's own message, and an error state that might
+    still clear is given `stuck_after` seconds to do so.
+
+    `on_progress` is called with every changed state, which is how a caller drives a status line.
+    Returns the last `PodProgress`; a timeout is returned as `doomed` with reason `Timeout` rather
+    than raised, because both callers want to add their own context to it.
+    """
+    deadline = time.monotonic() + timeout
+    error_since: float | None = None
+    last = PodProgress(WAITING, "", "Pending", "")
+    reported = ""
+    while time.monotonic() < deadline:
+        pod = read_pod(name, namespace)
+        if pod is not None:
+            last = classify_pod(pod, container=container)
+            if on_progress is not None and last.describe() != reported:
+                reported = last.describe()
+                on_progress(last)
+            if last.verdict in until:
+                return last
+            if last.verdict == DOOMED:
+                return last
+            if last.reason in RETRYABLE_WAITING_REASONS:
+                error_since = error_since or time.monotonic()
+                if time.monotonic() - error_since >= stuck_after:
+                    return PodProgress(
+                        DOOMED, last.phase, last.reason,
+                        f"{last.message} (unchanged for {stuck_after}s)".strip(),
+                    )
+            else:
+                error_since = None
+        time.sleep(interval)
+    return PodProgress(DOOMED, last.phase, "Timeout",
+                       f"still {last.describe()} after {timeout}s")
+
+
+def wait_for_container(
+    name: str, namespace: str, container: str, *, timeout: int = 300,
+    on_progress: Callable[[PodProgress], None] | None = None,
+) -> str:
     """Block until `container` is running or has finished. Returns `"running"` or `"terminated"`.
 
     Both are answers, and conflating them hangs: an initContainer that already did its work on an
     earlier pod for this run terminates before the host ever looks, and a wait that only accepts
     "running" then times out against a container that succeeded.
 
-    Polled rather than `oc wait`ed: the condition here is per-container ("the loader is up"), and
-    `oc wait --for=condition=Ready` is per-pod and is never satisfied while an initContainer is
-    still running — which is precisely the window the upload needs.
+    Polled rather than `oc wait`ed, for two reasons. The condition is per-container ("the loader is
+    up") and `oc wait --for=condition=Ready` is per-pod, never satisfied while an initContainer is
+    still running — precisely the window the upload needs. And polling is what makes it possible to
+    stop early: this used to spend its full five minutes against an `ImagePullBackOff` before
+    reporting a timeout whose cause the very first poll already knew.
     """
-    import time
-
-    deadline = time.monotonic() + timeout
-    last = ""
-    while time.monotonic() < deadline:
-        result = _run(cli(cli_binary(), "get", "pod", name, "-n", namespace, "-o", "json"))
-        if result is not None and result.returncode == 0:
-            try:
-                pod = json.loads(result.stdout or "{}")
-            except json.JSONDecodeError:
-                pod = {}
-            statuses = pod.get("status", {}).get("initContainerStatuses", []) + pod.get(
-                "status", {}
-            ).get("containerStatuses", [])
-            for status in statuses:
-                if status.get("name") != container:
-                    continue
-                state = status.get("state", {})
-                if "running" in state:
-                    return "running"
-                terminated = state.get("terminated")
-                if isinstance(terminated, dict):
-                    if terminated.get("exitCode") == 0:
-                        return "terminated"
-                    raise ClusterError(
-                        f"container {container} in pod {name} exited "
-                        f"{terminated.get('exitCode')} ({terminated.get('reason')}). "
-                        f"`{cli_binary()} logs {name} -c {container} -n {namespace}` has why."
-                    )
-                last = json.dumps(state)[:200]
-            phase = pod.get("status", {}).get("phase", "")
-            if phase in ("Failed", "Succeeded") and not last:
-                raise ClusterError(
-                    f"pod {name} reached {phase} before {container} ran. "
-                    f"`{cli_binary()} describe pod {name} -n {namespace}` has the reason."
-                )
-        time.sleep(2)
+    progress = poll_pod(
+        name, namespace, container=container, timeout=timeout, on_progress=on_progress,
+    )
+    if progress.verdict == RUNNING:
+        return "running"
+    if progress.verdict == SUCCEEDED:
+        return "terminated"
     raise ClusterError(
-        f"timed out after {timeout}s waiting for container {container} in pod {name} to run"
-        + (f" (last state: {last})" if last else "")
-        + f". `{cli_binary()} describe pod {name} -n {namespace}` has the reason — an unschedulable "
-        "pod and an unpullable image both look like this from here."
+        f"container {container} in pod {name} did not start: {progress.describe()}. "
+        f"`{cli_binary()} describe pod {name} -n {namespace}` has the full story"
+        + (f", and `{cli_binary()} logs {name} -c {container} -n {namespace}` has its output"
+           if progress.phase in ("Running", "Failed", "Succeeded") else "")
+        + "."
     )
 
 
