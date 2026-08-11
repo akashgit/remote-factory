@@ -362,7 +362,7 @@ def _run_multi_mode(project_path: Path, args: argparse.Namespace) -> int:
 
     errors = validate_composition(steps)
     if errors:
-        print(f"Error: invalid mode composition:", file=sys.stderr)
+        print("Error: invalid mode composition:", file=sys.stderr)
         for e in errors:
             print(f"  - {e}", file=sys.stderr)
         return 1

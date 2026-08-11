@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from io import StringIO
 from unittest.mock import patch
 
 import pytest
@@ -42,7 +40,6 @@ class TestModesFlag:
 class TestModesMutualExclusivity:
     def test_modes_with_explicit_mode_errors(self, tmp_path) -> None:
         from factory.cli.run import cmd_run
-        from pathlib import Path
 
         parser = build_parser()
         args = parser.parse_args(["run", str(tmp_path), "--modes", "discover,improve", "--mode", "build"])

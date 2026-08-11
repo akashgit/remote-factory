@@ -246,6 +246,12 @@ factory backlog-list /path                      # List pending backlog items
 factory backlog-add /path "item text"           # Add a new item to the backlog
 factory backlog-remove /path "item text"        # Remove a completed backlog item
 
+# Compose — chain modes in a single run
+factory run /path --modes 'discover,review,improve'                   # Sequential pipeline
+factory run /path --modes 'math-solver+chemistry-solver'              # Parallel execution
+factory run /path --modes 'discover,math+chem,improve'                # Mixed sequential+parallel
+factory run /path --modes 'discover,review,improve' --resume-from review  # Crash recovery
+
 # Adversarial eval loops
 factory adversarial-state /path/to/project           # Inspect adversarial loop state
 factory adversarial-state /path/to/project --reset   # Reset to defaults
@@ -260,6 +266,34 @@ factory review --verdict KEEP --pr 42           # Post structured review on GitH
 ```
 
 `factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Multiple issues can be specified in a single `--focus` string using commas, spaces, or "and" (e.g., `--focus "111 and 112"`, `--focus "issue 42, issue 43"`, `--focus "#111 #112"`). Each issue is fetched independently and added as a separate backlog item. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on before transitioning to Improve mode. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless` unless `--auto-approve` is used. `--auto-approve` lifts the headless restriction for design mode, forcing headless execution and auto-approving user gates (e.g. strategy review) — useful for CI/CD and automated pipelines. `--from-plan <source>` loads an existing plan into design mode, skipping the research phase. Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string (searches GitHub issues with the `plan` label). Requires `--mode design`; mutually exclusive with `--focus` and `--prompt`. When fetching from a GitHub issue, includes both the issue body and all comments. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`. `--just-plan` (requires `--mode design`) enters planning-only mode — research + strategy + optional GitHub publishing with no implementation. Three parallel researchers investigate domain, practices, and constraints. The Strategist synthesizes a phased plan. Single user gate: keep the plan? Approval auto-publishes to GitHub as an issue with the `plan` label and seeds the backlog with plan phases. Terminal mode — does not chain to other modes. Compatible with `--focus`. Mutually exclusive with `--from-plan` and `--prompt`.
+
+### Composable multi-mode execution (`--modes`)
+
+`--modes` composes multiple workflow modes into a single run. Modes execute as a pipeline: sequential stages run one after another, parallel stages run concurrently within a stage. A shared Board data plane passes results between modes.
+
+```bash
+# Sequential — run discover, then review, then improve
+factory run /path --modes 'discover,review,improve'
+
+# Parallel — run two custom modes concurrently
+factory run /path --modes 'math-solver+chemistry-solver'
+
+# Mixed — sequential stages with a parallel stage in the middle
+factory run /path --modes 'discover,math-solver+chemistry-solver,improve'
+
+# Crash recovery — resume from a specific mode
+factory run /path --modes 'discover,review,improve' --resume-from review
+```
+
+**Syntax:** Comma (`,`) separates sequential stages. Plus (`+`) separates parallel modes within a stage. Built-in modes (discover, review, improve, build, research, etc.) cannot appear in parallel stages — only user-defined workflow modes can run in parallel.
+
+**Mutual exclusivity:** `--modes` cannot be combined with `--mode` or `--loop`. It replaces both single-mode execution and heartbeat looping with explicit composition.
+
+**Crash recovery:** `--resume-from <mode>` skips all stages before the named mode and resumes execution from that point. Works with both sequential and parallel stages — if the named mode appears in a parallel stage, the entire parallel stage re-executes.
+
+**Board data contracts:** Workflows declare `board_reads` and `board_writes` on their definitions. The compositor validates these contracts at parse time: overlapping `board_writes` in parallel stages are rejected (fatal error), and unsatisfied `board_reads` in sequential stages produce warnings. The Board persists to `.factory/board.json` and is atomically saved after each stage completes.
+
+**Implementation:** `factory/workflow/compositor.py` (parser, validator, `MultiModeExecutor`), `factory/workflow/board.py` (namespaced shared data plane), `factory/cli/run.py` (CLI integration), `factory/models.py` (`BoardState` model).
 
 ## Contained runtimes
 
