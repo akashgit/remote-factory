@@ -126,8 +126,7 @@ def cli_binary() -> str:
 
 def current_namespace() -> str | None:
     """The namespace from the current context. Never hardcoded."""
-    result = _run(cli(cli_binary(), "config", "view", "--minify", "-o",
-                   "jsonpath={..namespace}"))
+    result = _run(cli(cli_binary(), "config", "view", "--minify", "-o", "jsonpath={..namespace}"))
     if result is None or result.returncode != 0:
         return None
     return result.stdout.strip() or None
@@ -245,13 +244,6 @@ def list_contexts() -> list[ClusterContext]:
     return contexts
 
 
-def context_details(name: str) -> ClusterContext:
-    """One named context, or an empty one when the kubeconfig does not describe it."""
-    return next(
-        (entry for entry in list_contexts() if entry.context == name), ClusterContext(context=name)
-    )
-
-
 def secret_keys(name: str, namespace: str) -> set[str]:
     """The Secret's key *names* — never its values. Empty when it cannot be read.
 
@@ -263,8 +255,9 @@ def secret_keys(name: str, namespace: str) -> set[str]:
         binary = cli_binary()
     except ClusterError:
         return set()
-    result = _run(cli(binary, "get", "secret", name, "-n", namespace, "-o", "jsonpath={.data}"),
-                  timeout=30)
+    result = _run(
+        cli(binary, "get", "secret", name, "-n", namespace, "-o", "jsonpath={.data}"), timeout=30
+    )
     if result is None or result.returncode != 0:
         return set()
     raw = (result.stdout or "").strip()
@@ -351,7 +344,9 @@ def resolve_namespace(explicit: str | None) -> str:
         # Never say "pass --namespace" to someone who just did. The two causes have different
         # fixes, and blaming the user for the flag they used sends them round in circles.
         if explicit is not None:
-            raise ClusterError(f"--namespace was given as {explicit!r}, which is not a usable name.")
+            raise ClusterError(
+                f"--namespace was given as {explicit!r}, which is not a usable name."
+            )
         raise ClusterError(
             "no namespace given. Pass --namespace <name> before the subcommand, or select one "
             "with `oc project <name>`."
@@ -384,14 +379,25 @@ LIST_TIMEOUT_SECONDS = 10
 def build_get_pods_argv(namespace: str) -> list[str]:
     """Every pod the factory created in this namespace — and nothing else."""
     return cli(
-        cli_binary(), "get", "pods", "-n", namespace,
-        "-l", f"{LABEL_CONTAINED}=true", "-o", "json",
+        cli_binary(),
+        "get",
+        "pods",
+        "-n",
+        namespace,
+        "-l",
+        f"{LABEL_CONTAINED}=true",
+        "-o",
+        "json",
         f"--request-timeout={LIST_TIMEOUT_SECONDS}s",
     )
 
 
 def build_pod_exec_argv(
-    name: str, namespace: str, argv: list[str], *, tty: bool = False,
+    name: str,
+    namespace: str,
+    argv: list[str],
+    *,
+    tty: bool = False,
     container: str = FACTORY_CONTAINER,
 ) -> list[str]:
     cmd = cli(cli_binary(), "exec")
@@ -421,7 +427,12 @@ def build_delete_pod_argv(name: str, namespace: str) -> list[str]:
 
 
 def render_access_review(
-    verb: str, resource: str, namespace: str, *, subresource: str = "", group: str = "",
+    verb: str,
+    resource: str,
+    namespace: str,
+    *,
+    subresource: str = "",
+    group: str = "",
     as_service_account: str | None = None,
 ) -> str:
     """A SubjectAccessReview asking whether a subject may do one thing in one namespace.
@@ -473,7 +484,12 @@ def build_access_review_argv() -> list[str]:
 
 
 def access_review(
-    verb: str, resource: str, namespace: str, *, subresource: str = "", group: str = "",
+    verb: str,
+    resource: str,
+    namespace: str,
+    *,
+    subresource: str = "",
+    group: str = "",
     as_service_account: str | None = None,
 ) -> bool | None:
     """Whether the subject may do this. `None` when the review could not be run at all.
@@ -483,7 +499,11 @@ def access_review(
     unreachable.
     """
     payload = render_access_review(
-        verb, resource, namespace, subresource=subresource, group=group,
+        verb,
+        resource,
+        namespace,
+        subresource=subresource,
+        group=group,
         as_service_account=as_service_account,
     )
     try:
@@ -522,10 +542,16 @@ def namespace_fs_group(namespace: str) -> int | None:
     next. `None` means "say nothing and let the cluster default it", which is right for plain
     Kubernetes, where volumes are not root-owned in the first place.
     """
-    result = _run(cli(
-        cli_binary(), "get", "namespace", namespace,
-        "-o", f"jsonpath={{.metadata.annotations.{_SUPPLEMENTAL_GROUPS_ANNOTATION.replace('.', chr(92) + '.')}}}",
-    ))
+    result = _run(
+        cli(
+            cli_binary(),
+            "get",
+            "namespace",
+            namespace,
+            "-o",
+            f"jsonpath={{.metadata.annotations.{_SUPPLEMENTAL_GROUPS_ANNOTATION.replace('.', chr(92) + '.')}}}",
+        )
+    )
     if result is None or result.returncode != 0:
         return None
     raw = result.stdout.strip().split("/")[0]
@@ -572,14 +598,14 @@ def loader_command(run_name: str) -> str:
     marker = unpack_marker(run_name)
     return (
         f'echo "waiting for the workspace upload (timeout {LOADER_TIMEOUT_SECONDS}s)"; '
-        f'waited=0; '
+        f"waited=0; "
         f'while [ ! -f "{marker}" ]; do '
-        f'  sleep 2; waited=$((waited+2)); '
+        f"  sleep 2; waited=$((waited+2)); "
         f'  if [ "$waited" -ge {LOADER_TIMEOUT_SECONDS} ]; then '
         f'    echo "the workspace was never uploaded; the host did not finish streaming it" >&2; '
-        f'    exit 1; '
-        f'  fi; '
-        f'done; '
+        f"    exit 1; "
+        f"  fi; "
+        f"done; "
         f'echo "workspace present"'
     )
 
@@ -618,7 +644,7 @@ def sidecar_command() -> str:
     return (
         f'mkdir -p "{REQUEST_DIR}" "{RESULT_DIR}"; '
         f'echo "build sidecar ready"; '
-        f'while true; do '
+        f"while true; do "
         f'  for request in "{REQUEST_DIR}"/*.json; do '
         f'    [ -e "$request" ] || continue; '
         f'    name=$(basename "$request" .json); '
@@ -643,18 +669,18 @@ def sidecar_command() -> str:
         # The log stream ends before the controller finalizes the Build, so reading the phase right
         # here catches it mid-flight — every successful build reported "Running", and a strict
         # Complete check would have called all of them failures. Poll until the phase is terminal.
-        f'    waited=0; '
+        f"    waited=0; "
         f'    while [ "$waited" -lt {PHASE_TIMEOUT_SECONDS} ]; do '
         f'      phase=$(oc get "$build" -n {ns} -o jsonpath="{{.status.phase}}" 2>>"$log"); '
         f'      case "$phase" in New|Pending|Running|"") sleep 2; waited=$((waited+2));; '
-        f'        *) break;; esac; '
-        f'    done; '
+        f"        *) break;; esac; "
+        f"    done; "
         f'    echo "build phase: $phase" >> "$log"; '
         f'    if [ "$phase" = "Complete" ]; then echo 0 > "{RESULT_DIR}/$name.status"; '
         f'    else echo 1 > "{RESULT_DIR}/$name.status"; fi; '
-        f'  done; '
-        f'  sleep 2; '
-        f'done'
+        f"  done; "
+        f"  sleep 2; "
+        f"done"
     )
 
 
@@ -675,7 +701,9 @@ def render_pod(plan: PodPlan) -> str:
     capabilities dropped, the default seccomp profile. The runtime image is built for arbitrary
     UIDs, so no `runAsUser` is pinned — the namespace picks one.
     """
-    labels = "\n".join(f"    {key}: {_yaml_scalar(value)}" for key, value in sorted(plan.labels.items()))
+    labels = "\n".join(
+        f"    {key}: {_yaml_scalar(value)}" for key, value in sorted(plan.labels.items())
+    )
     env = "\n".join(
         f"        - name: {key}\n          value: {_yaml_scalar(value)}"
         for key, value in sorted(plan.env.items())
@@ -688,15 +716,23 @@ def render_pod(plan: PodPlan) -> str:
     # leaves the pod Pending on "couldn't find key", and `optional` covers a missing *Secret*, not a
     # missing key. Mounting all of it means the file is simply absent when the key is, which is a
     # condition the auth library reports plainly.
-    credentials_volume = f"""
+    credentials_volume = (
+        f"""
     - name: credentials
       secret:
         secretName: {plan.secret_name}
-        defaultMode: 0400""" if plan.adc else ""
-    credentials_mount = f"""
+        defaultMode: 0400"""
+        if plan.adc
+        else ""
+    )
+    credentials_mount = (
+        f"""
         - name: credentials
           mountPath: {CREDENTIALS_MOUNT}
-          readOnly: true""" if plan.adc else ""
+          readOnly: true"""
+        if plan.adc
+        else ""
+    )
     return f"""\
 apiVersion: v1
 kind: Pod
@@ -789,9 +825,7 @@ def _yaml_scalar(value: str) -> str:
 
 def render_pvc(namespace: str, storage_class: str | None, size: str = "10Gi") -> str:
     """The workspace claim. RWO: one pod mounts it, and it survives that pod."""
-    storage_class_line = (
-        f"  storageClassName: {storage_class}\n" if storage_class else ""
-    )
+    storage_class_line = f"  storageClassName: {storage_class}\n" if storage_class else ""
     return f"""\
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -828,9 +862,7 @@ def apply_manifest(manifest: str, namespace: str) -> None:
     log.debug("k8s_applied", namespace=namespace, output=result.stdout.strip()[:200])
 
 
-def wait_for_container(
-    name: str, namespace: str, container: str, *, timeout: int = 300
-) -> str:
+def wait_for_container(name: str, namespace: str, container: str, *, timeout: int = 300) -> str:
     """Block until `container` is running or has finished. Returns `"running"` or `"terminated"`.
 
     Both are answers, and conflating them hangs: an initContainer that already did its work on an
@@ -846,18 +878,15 @@ def wait_for_container(
     deadline = time.monotonic() + timeout
     last = ""
     while time.monotonic() < deadline:
-        result = _run(cli(
-            cli_binary(), "get", "pod", name, "-n", namespace, "-o", "json"
-        ))
+        result = _run(cli(cli_binary(), "get", "pod", name, "-n", namespace, "-o", "json"))
         if result is not None and result.returncode == 0:
             try:
                 pod = json.loads(result.stdout or "{}")
             except json.JSONDecodeError:
                 pod = {}
-            statuses = (
-                pod.get("status", {}).get("initContainerStatuses", [])
-                + pod.get("status", {}).get("containerStatuses", [])
-            )
+            statuses = pod.get("status", {}).get("initContainerStatuses", []) + pod.get(
+                "status", {}
+            ).get("containerStatuses", [])
             for status in statuses:
                 if status.get("name") != container:
                     continue
@@ -910,7 +939,8 @@ def stream_workspace(tarball: Path, name: str, namespace: str) -> None:
 def fetch_workspace(name: str, namespace: str, destination: Path) -> None:
     """Stream a tarball back the same way it went in."""
     argv = build_pod_exec_argv(
-        name, namespace,
+        name,
+        namespace,
         ["sh", "-c", f'cd "{WORKSPACE_ROOT}" && tar czf - .'],
     )
     with destination.open("wb") as handle:
@@ -929,7 +959,8 @@ def fetch_workspace(name: str, namespace: str, destination: Path) -> None:
 def _summarize(stderr: str) -> str:
     """The last meaningful line of a CLI's error output, trimmed to something readable."""
     lines = [
-        line.strip() for line in (stderr or "").splitlines()
+        line.strip()
+        for line in (stderr or "").splitlines()
         if line.strip() and not line.startswith("E0") and "Unhandled Error" not in line
     ]
     if not lines:
@@ -945,9 +976,7 @@ def cluster_runtimes(namespace: str | None = None) -> list[Runtime]:
         raise LifecycleError(str(exc)) from exc
     result = _run(build_get_pods_argv(target), timeout=LIST_TIMEOUT_SECONDS + 5)
     if result is None:
-        raise LifecycleError(
-            f"the cluster did not answer within {LIST_TIMEOUT_SECONDS}s"
-        )
+        raise LifecycleError(f"the cluster did not answer within {LIST_TIMEOUT_SECONDS}s")
     if result.returncode != 0:
         # kubectl prints a paragraph of retry noise for one expired token. A user running `ls` for
         # their local containers wants one line about it, not six.
@@ -982,7 +1011,9 @@ def cluster_runtimes(namespace: str | None = None) -> list[Runtime]:
     return runtimes
 
 
-def remove_cluster_runtime(name: str, *, namespace: str | None = None, assume_yes: bool = False) -> int:
+def remove_cluster_runtime(
+    name: str, *, namespace: str | None = None, assume_yes: bool = False
+) -> int:
     """Delete the pod. The PVC is left alone unless the user asks — it holds the work.
 
     A PVC deleted with the pod takes the run's output with it, and the only copy of a multi-hour
@@ -1024,8 +1055,14 @@ def sweep_argv(namespace: str, run_name: str) -> list[str]:
     them.
     """
     return [
-        cli_binary(), "delete", "pods", "-n", namespace,
-        "-l", f"{LABEL_RUN}={run_name}", "--ignore-not-found",
+        cli_binary(),
+        "delete",
+        "pods",
+        "-n",
+        namespace,
+        "-l",
+        f"{LABEL_RUN}={run_name}",
+        "--ignore-not-found",
     ]
 
 

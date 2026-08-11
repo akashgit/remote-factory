@@ -3,7 +3,6 @@
 import csv
 import io
 import json
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -51,9 +50,19 @@ def ensure_factory_dir(path: Path) -> None:
 
 
 TSV_COLUMNS = [
-    "id", "timestamp", "hypothesis", "change_summary", "issue_number",
-    "pr_number", "score_before", "score_after", "delta", "verdict",
-    "cost_usd", "notes", "research_citations",
+    "id",
+    "timestamp",
+    "hypothesis",
+    "change_summary",
+    "issue_number",
+    "pr_number",
+    "score_before",
+    "score_after",
+    "delta",
+    "verdict",
+    "cost_usd",
+    "notes",
+    "research_citations",
 ]
 
 
@@ -97,14 +106,16 @@ def _parse_project_eval(items: str | list[str] | float) -> list[ProjectEvalDimen
         command = fields.get("command", "")
         if not name or not command:
             continue
-        dims.append(ProjectEvalDimension(
-            name=name,
-            command=command,
-            parse=fields.get("parse", "json"),  # type: ignore[arg-type]
-            weight=float(fields.get("weight", "1.0")),
-            timeout=float(fields.get("timeout", "300")),
-            description=fields.get("description", ""),
-        ))
+        dims.append(
+            ProjectEvalDimension(
+                name=name,
+                command=command,
+                parse=fields.get("parse", "json"),  # type: ignore[arg-type]
+                weight=float(fields.get("weight", "1.0")),
+                timeout=float(fields.get("timeout", "300")),
+                description=fields.get("description", ""),
+            )
+        )
     return dims
 
 
@@ -155,12 +166,12 @@ def _parse_inner_loop(items: str | list[str] | float) -> InnerLoopConfig | None:
         aggregate=AggregateMethod(str(kv.get("aggregate", "mean"))),
         plateau_threshold=int(str(kv.get("plateau_threshold", "3"))),
         max_inner_runs_per_cycle=(
-            int(str(kv["max_inner_runs_per_cycle"]))
-            if "max_inner_runs_per_cycle" in kv
-            else None
+            int(str(kv["max_inner_runs_per_cycle"])) if "max_inner_runs_per_cycle" in kv else None
         ),
     )
-    log.debug("inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate.value)
+    log.debug(
+        "inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate.value
+    )
     return config
 
 
@@ -220,11 +231,13 @@ def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstrai
         check = fields.get("check", "")
         if not name or not check:
             continue
-        constraints.append(HardConstraint(
-            name=name,
-            check=check,
-            description=fields.get("description", ""),
-        ))
+        constraints.append(
+            HardConstraint(
+                name=name,
+                check=check,
+                description=fields.get("description", ""),
+            )
+        )
     return constraints
 
 
@@ -466,11 +479,17 @@ class ExperimentStore:
         parallel = _parse_parallel(parsed.get("parallel_experiments", parsed.get("parallel", [])))
 
         clean_pr_raw = parsed.get("clean_pr", "")
-        clean_pr = str(clean_pr_raw).strip().lower() in ("true", "yes", "1") if clean_pr_raw else False
+        clean_pr = (
+            str(clean_pr_raw).strip().lower() in ("true", "yes", "1") if clean_pr_raw else False
+        )
         clean_pr_include_raw = parsed.get("clean_pr_include", [])
-        clean_pr_include = list(clean_pr_include_raw) if isinstance(clean_pr_include_raw, list) else []
+        clean_pr_include = (
+            list(clean_pr_include_raw) if isinstance(clean_pr_include_raw, list) else []
+        )
         clean_pr_exclude_raw = parsed.get("clean_pr_exclude", [])
-        clean_pr_exclude = list(clean_pr_exclude_raw) if isinstance(clean_pr_exclude_raw, list) else []
+        clean_pr_exclude = (
+            list(clean_pr_exclude_raw) if isinstance(clean_pr_exclude_raw, list) else []
+        )
 
         test_timeout_raw = parsed.get("test_timeout", "")
         try:
@@ -488,7 +507,9 @@ class ExperimentStore:
             eval_command=str(parsed.get("eval_command", "")),
             eval_threshold=float(parsed.get("eval_threshold", 0.0)),  # type: ignore[arg-type]
             constraints=list(parsed.get("constraints", [])),  # type: ignore[arg-type]
-            hypothesis_budget=HypothesisBudget(**budget_kwargs) if budget_kwargs else HypothesisBudget(),  # type: ignore[arg-type]
+            hypothesis_budget=HypothesisBudget(**budget_kwargs)
+            if budget_kwargs
+            else HypothesisBudget(),  # type: ignore[arg-type]
             target_branch=str(parsed.get("target_branch", "main")),
             smoke_test=smoke_test,
             project_eval=project_eval_dims,
@@ -524,11 +545,7 @@ class ExperimentStore:
         if not experiments_dir.exists():
             log.debug("next_id_no_experiments_dir")
             return 1
-        ids = [
-            int(d.name)
-            for d in experiments_dir.iterdir()
-            if d.is_dir() and d.name.isdigit()
-        ]
+        ids = [int(d.name) for d in experiments_dir.iterdir() if d.is_dir() and d.name.isdigit()]
         next_val = max(ids) + 1 if ids else 1
         log.debug("next_id_computed", next_id=next_val, existing_count=len(ids))
         return next_val
@@ -552,6 +569,7 @@ class ExperimentStore:
 
         try:
             from factory.registry import register_project
+
             register_project(self.project_path)
         except Exception as exc:
             log.debug("registry_begin_failed", error=str(exc))
@@ -571,19 +589,6 @@ class ExperimentStore:
         (exp_dir / filename).write_text(
             json.dumps(score.model_dump(), indent=2, default=str) + "\n"
         )
-
-    async def save_diff(self, exp_id: int) -> None:
-        """Capture git diff HEAD~1 into changes.diff."""
-        log.debug("save_diff", exp_id=exp_id)
-        exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
-        result = subprocess.run(
-            ["git", "diff", "HEAD~1"],
-            cwd=self.project_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        (exp_dir / "changes.diff").write_text(result.stdout)
 
     async def finalize(self, exp_id: int, record: ExperimentRecord) -> None:
         """Write verdict.json and append row to results.tsv.
@@ -616,24 +621,27 @@ class ExperimentStore:
             tsv_path = self.factory_dir / "results.tsv"
             with open(tsv_path, "a", newline="") as f:
                 writer = csv.writer(f, dialect="excel-tab")
-                writer.writerow([
-                    record.id,
-                    record.timestamp.isoformat(),
-                    record.hypothesis,
-                    record.change_summary,
-                    record.issue_number if record.issue_number is not None else "",
-                    record.pr_number if record.pr_number is not None else "",
-                    record.score_before if record.score_before is not None else "",
-                    record.score_after if record.score_after is not None else "",
-                    delta if delta is not None else "",
-                    record.verdict,
-                    record.cost_usd if record.cost_usd is not None else "",
-                    record.notes,
-                    "|".join(record.research_citations) if record.research_citations else "",
-                ])
+                writer.writerow(
+                    [
+                        record.id,
+                        record.timestamp.isoformat(),
+                        record.hypothesis,
+                        record.change_summary,
+                        record.issue_number if record.issue_number is not None else "",
+                        record.pr_number if record.pr_number is not None else "",
+                        record.score_before if record.score_before is not None else "",
+                        record.score_after if record.score_after is not None else "",
+                        delta if delta is not None else "",
+                        record.verdict,
+                        record.cost_usd if record.cost_usd is not None else "",
+                        record.notes,
+                        "|".join(record.research_citations) if record.research_citations else "",
+                    ]
+                )
 
         try:
             from factory.registry import update_project_stats
+
             update_project_stats(
                 self.project_path,
                 experiment_count=record.id,
@@ -654,6 +662,7 @@ class ExperimentStore:
         with open(tsv_path, newline="") as f:
             reader = csv.DictReader(f, dialect="excel-tab")
             for row in reader:
+
                 def _safe_int(val: str) -> int | None:
                     if not val or val in ("-", "n/a"):
                         return None
@@ -682,21 +691,23 @@ class ExperimentStore:
                     else []
                 )
 
-                records.append(ExperimentRecord(
-                    id=int(row["id"]),
-                    timestamp=datetime.fromisoformat(row["timestamp"]),
-                    hypothesis=row["hypothesis"],
-                    change_summary=row["change_summary"],
-                    issue_number=_safe_int(row["issue_number"]),
-                    pr_number=_safe_int(row["pr_number"]),
-                    score_before=_safe_float(row["score_before"]),
-                    score_after=_safe_float(row["score_after"]),
-                    delta=_safe_float(row["delta"]),
-                    verdict=verdict_raw,  # type: ignore[arg-type]
-                    cost_usd=_safe_float(row["cost_usd"]),
-                    notes=row["notes"],
-                    research_citations=citations,
-                ))
+                records.append(
+                    ExperimentRecord(
+                        id=int(row["id"]),
+                        timestamp=datetime.fromisoformat(row["timestamp"]),
+                        hypothesis=row["hypothesis"],
+                        change_summary=row["change_summary"],
+                        issue_number=_safe_int(row["issue_number"]),
+                        pr_number=_safe_int(row["pr_number"]),
+                        score_before=_safe_float(row["score_before"]),
+                        score_after=_safe_float(row["score_after"]),
+                        delta=_safe_float(row["delta"]),
+                        verdict=verdict_raw,  # type: ignore[arg-type]
+                        cost_usd=_safe_float(row["cost_usd"]),
+                        notes=row["notes"],
+                        research_citations=citations,
+                    )
+                )
         log.debug("load_history_complete", record_count=len(records))
         return records
 
@@ -716,7 +727,9 @@ class ExperimentStore:
                 "Run 'factory init --reparse' to regenerate it from factory.md."
             ) from exc
         try:
-            return FactoryConfig.model_validate(data, strict=False)  # strict=False needed to coerce enum strings from JSON (e.g. AggregateMethod)
+            return FactoryConfig.model_validate(
+                data, strict=False
+            )  # strict=False needed to coerce enum strings from JSON (e.g. AggregateMethod)
         except (ValidationError, TypeError, KeyError) as exc:
             raise ValueError(
                 f"{config_path} failed validation: {exc}. "

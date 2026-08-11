@@ -144,7 +144,9 @@ def _obsidian_available() -> bool:
     try:
         result = subprocess.run(
             ["obsidian", "vault", "list"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -156,26 +158,20 @@ def _obsidian_create(name: str, content: str, vault: str = "factory") -> bool:
     try:
         result = subprocess.run(
             [
-                "obsidian", "create",
-                f"vault={vault}", f"name={name}", f"content={content}", "silent",
+                "obsidian",
+                "create",
+                f"vault={vault}",
+                f"name={name}",
+                f"content={content}",
+                "silent",
             ],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
-
-
-def _obsidian_read(name: str, vault: str = "factory") -> str | None:
-    """Read a note via obsidian-cli. Returns content or None."""
-    try:
-        result = subprocess.run(
-            ["obsidian", "read", f"vault={vault}", f"file={name}"],
-            capture_output=True, text=True, timeout=10,
-        )
-        return result.stdout if result.returncode == 0 else None
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
 
 
 def _obsidian_search(query: str, vault: str = "factory", limit: int = 10) -> str | None:
@@ -183,10 +179,15 @@ def _obsidian_search(query: str, vault: str = "factory", limit: int = 10) -> str
     try:
         result = subprocess.run(
             [
-                "obsidian", "search",
-                f"vault={vault}", f"query={query}", f"limit={limit}",
+                "obsidian",
+                "search",
+                f"vault={vault}",
+                f"query={query}",
+                f"limit={limit}",
             ],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return result.stdout if result.returncode == 0 else None
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -194,7 +195,9 @@ def _obsidian_search(query: str, vault: str = "factory", limit: int = 10) -> str
 
 
 def obsidian_search_vault(
-    query: str, vault: str = "factory", limit: int = 10,
+    query: str,
+    vault: str = "factory",
+    limit: int = 10,
 ) -> str | None:
     """Search the factory vault. Returns results from obsidian-cli, or None if unavailable."""
     return _obsidian_search(query, vault, limit)
@@ -292,7 +295,9 @@ def write_experiment_note(
 
     Returns ``None`` when the vault is not configured.
     """
-    log.debug("write_experiment_note", project=project_name, exp_id=record.id, verdict=record.verdict)
+    log.debug(
+        "write_experiment_note", project=project_name, exp_id=record.id, verdict=record.verdict
+    )
     vault = _auto_init_vault()
     if vault is None:
         log.debug("write_experiment_note_skipped", reason="vault not configured")
@@ -337,11 +342,13 @@ def write_experiment_note(
 
     # Add eval details table if scores available
     if score_before and score_after:
-        lines.extend([
-            "## Eval Details",
-            "| Dimension | Before | After | Delta |",
-            "|-----------|--------|-------|-------|",
-        ])
+        lines.extend(
+            [
+                "## Eval Details",
+                "| Dimension | Before | After | Delta |",
+                "|-----------|--------|-------|-------|",
+            ]
+        )
         before_map = {r.name: r.score for r in score_before.results}
         for r in score_after.results:
             b = before_map.get(r.name, 0.0)
@@ -352,10 +359,12 @@ def write_experiment_note(
     if record.notes:
         lines.extend(["## Notes", record.notes, ""])
 
-    lines.extend([
-        "## Links",
-        f"- [[{project_name} Dashboard]]",
-    ])
+    lines.extend(
+        [
+            "## Links",
+            f"- [[{project_name} Dashboard]]",
+        ]
+    )
     if record.issue_number:
         lines.append(f"- Issue: #{record.issue_number}")
     if record.pr_number:
@@ -533,11 +542,13 @@ def update_memory_index(projects: list[dict] | None = None) -> Path | None:
                     exp_match = re.search(r"\*\*Experiments Run\*\*:\s*(\d+)", content)
                     if exp_match:
                         exp_count = int(exp_match.group(1))
-                projects.append({
-                    "name": name,
-                    "score": score,
-                    "experiments": exp_count,
-                })
+                projects.append(
+                    {
+                        "name": name,
+                        "score": score,
+                        "experiments": exp_count,
+                    }
+                )
 
     lines = [
         "# Factory Memory Index",
@@ -550,9 +561,7 @@ def update_memory_index(projects: list[dict] | None = None) -> Path | None:
 
     if projects:
         for p in projects:
-            lines.append(
-                f"- [[{p['name']}]] — score: {p['score']}, {p['experiments']} experiments"
-            )
+            lines.append(f"- [[{p['name']}]] — score: {p['score']}, {p['experiments']} experiments")
     else:
         lines.append("(none yet)")
 

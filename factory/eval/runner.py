@@ -21,25 +21,13 @@ from pathlib import Path
 from factory.eval.growth import compute_growth_results
 from factory.eval.hygiene import compute_hygiene_results
 from factory.eval.scorer import compute_composite
-from factory.models import CompositeScore, EvalResult, EvalWeights, ProjectEvalDimension, TierWeights
-
-
-def _error_score(message: str, details: str = "") -> CompositeScore:
-    """Return a CompositeScore representing an error."""
-    return CompositeScore(
-        total=0.0,
-        results=[
-            EvalResult(
-                name="error",
-                score=0.0,
-                weight=1.0,
-                passed=False,
-                details=details or message,
-            )
-        ],
-        guard_violations=[],
-        passed=False,
-    )
+from factory.models import (
+    CompositeScore,
+    EvalResult,
+    EvalWeights,
+    ProjectEvalDimension,
+    TierWeights,
+)
 
 
 def _effective_weights(
@@ -159,9 +147,7 @@ async def _run_project_eval(
             cwd=project_path,
             env=env,
         )
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
@@ -196,20 +182,24 @@ async def _run_single_project_dimension(
             cwd=project_path,
             env=env,
         )
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=dim.timeout
-        )
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=dim.timeout)
     except asyncio.TimeoutError:
         proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
         return EvalResult(
-            name=dim.name, score=0.0, weight=dim.weight,
-            passed=False, details=f"Timed out after {dim.timeout}s",
+            name=dim.name,
+            score=0.0,
+            weight=dim.weight,
+            passed=False,
+            details=f"Timed out after {dim.timeout}s",
         )
     except FileNotFoundError:
         return EvalResult(
-            name=dim.name, score=0.0, weight=dim.weight,
-            passed=False, details=f"Command not found: {parts[0]}",
+            name=dim.name,
+            score=0.0,
+            weight=dim.weight,
+            passed=False,
+            details=f"Command not found: {parts[0]}",
         )
 
     stdout = stdout_bytes.decode()
@@ -221,21 +211,29 @@ async def _run_single_project_dimension(
             raw_score = float(data.get("score", 0.0))
             score = max(0.0, min(1.0, raw_score))
             return EvalResult(
-                name=dim.name, score=score, weight=dim.weight,
+                name=dim.name,
+                score=score,
+                weight=dim.weight,
                 passed=score >= 0.5,
                 details=str(data.get("details", stdout[:500])),
             )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return EvalResult(
-                name=dim.name, score=0.0, weight=dim.weight,
-                passed=False, details=f"Invalid JSON: {stdout[:200]}",
+                name=dim.name,
+                score=0.0,
+                weight=dim.weight,
+                passed=False,
+                details=f"Invalid JSON: {stdout[:200]}",
             )
 
     # exit_code parse mode
     passed = proc.returncode == 0
     return EvalResult(
-        name=dim.name, score=1.0 if passed else 0.0, weight=dim.weight,
-        passed=passed, details=(stdout or stderr).strip()[-500:],
+        name=dim.name,
+        score=1.0 if passed else 0.0,
+        weight=dim.weight,
+        passed=passed,
+        details=(stdout or stderr).strip()[-500:],
     )
 
 
@@ -293,6 +291,7 @@ async def run_eval(
     # Step 4b: Auto-promote executable eval_spec items to project eval
     if eval_spec and not skip_project_eval:
         from factory.discovery.eval_spec import generate_project_eval_from_spec
+
         auto_promoted = generate_project_eval_from_spec(eval_spec, project_path)
         if auto_promoted:
             auto_results = await _run_custom_project_eval(auto_promoted, project_path)
@@ -301,16 +300,20 @@ async def run_eval(
     # Convert TierWeights to sparse override dicts
     h_overrides = (
         {k: v for k, v in hygiene_weights.model_dump().items() if v is not None}
-        if hygiene_weights else None
+        if hygiene_weights
+        else None
     )
     g_overrides = (
         {k: v for k, v in growth_weights.model_dump().items() if v is not None}
-        if growth_weights else None
+        if growth_weights
+        else None
     )
 
     # Step 5: Merge all dimensions with weight split
     merged = _merge_all(
-        hygiene_results, project_results, growth_results,
+        hygiene_results,
+        project_results,
+        growth_results,
         custom_project_results=custom_results,
         eval_weights=eval_weights,
         hygiene_weight_overrides=h_overrides or None,

@@ -8,7 +8,6 @@ or indirectly (content hints like "do NOT use subtraction").
 from __future__ import annotations
 
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,34 +20,179 @@ import structlog
 log = structlog.get_logger()
 
 # Tokens that appear in almost every codebase — not distinctive enough to flag
-_STOPWORDS: frozenset[str] = frozenset({
-    # Python keywords / builtins
-    "def", "class", "return", "import", "from", "if", "else", "elif",
-    "for", "while", "try", "except", "with", "as", "in", "not", "and",
-    "or", "is", "none", "true", "false", "self", "cls", "pass", "break",
-    "continue", "raise", "yield", "lambda", "assert", "global", "nonlocal",
-    "finally", "del", "async", "await",
-    # JS/TS keywords
-    "var", "let", "const", "function", "new", "this", "typeof", "instanceof",
-    "null", "undefined", "void", "throw", "catch", "export", "default",
-    # Common programming terms
-    "test", "tests", "error", "errors", "data", "result", "results",
-    "value", "values", "name", "type", "types", "path", "file", "files",
-    "list", "dict", "set", "map", "get", "put", "post", "delete",
-    "init", "main", "run", "start", "stop", "open", "close", "read",
-    "write", "print", "log", "debug", "info", "warn", "config",
-    "input", "output", "args", "kwargs", "key", "item", "items",
-    "index", "count", "size", "length", "string", "number", "int",
-    "float", "bool", "byte", "bytes", "char", "array", "object",
-    "node", "text", "content", "body", "header", "status", "code",
-    "message", "response", "request", "url", "port", "host",
-    "the", "and", "for", "with", "that", "this", "from", "have",
-    "are", "was", "were", "been", "has", "had", "will", "would",
-    "should", "could", "can", "may", "must", "shall", "might",
-    "use", "using", "used", "make", "made", "add", "added",
-    "fix", "fixed", "update", "updated", "change", "changed",
-    "create", "created", "remove", "removed", "check", "checked",
-})
+_STOPWORDS: frozenset[str] = frozenset(
+    {
+        # Python keywords / builtins
+        "def",
+        "class",
+        "return",
+        "import",
+        "from",
+        "if",
+        "else",
+        "elif",
+        "for",
+        "while",
+        "try",
+        "except",
+        "with",
+        "as",
+        "in",
+        "not",
+        "and",
+        "or",
+        "is",
+        "none",
+        "true",
+        "false",
+        "self",
+        "cls",
+        "pass",
+        "break",
+        "continue",
+        "raise",
+        "yield",
+        "lambda",
+        "assert",
+        "global",
+        "nonlocal",
+        "finally",
+        "del",
+        "async",
+        "await",
+        # JS/TS keywords
+        "var",
+        "let",
+        "const",
+        "function",
+        "new",
+        "this",
+        "typeof",
+        "instanceof",
+        "null",
+        "undefined",
+        "void",
+        "throw",
+        "catch",
+        "export",
+        "default",
+        # Common programming terms
+        "test",
+        "tests",
+        "error",
+        "errors",
+        "data",
+        "result",
+        "results",
+        "value",
+        "values",
+        "name",
+        "type",
+        "types",
+        "path",
+        "file",
+        "files",
+        "list",
+        "dict",
+        "set",
+        "map",
+        "get",
+        "put",
+        "post",
+        "delete",
+        "init",
+        "main",
+        "run",
+        "start",
+        "stop",
+        "open",
+        "close",
+        "read",
+        "write",
+        "print",
+        "log",
+        "debug",
+        "info",
+        "warn",
+        "config",
+        "input",
+        "output",
+        "args",
+        "kwargs",
+        "key",
+        "item",
+        "items",
+        "index",
+        "count",
+        "size",
+        "length",
+        "string",
+        "number",
+        "int",
+        "float",
+        "bool",
+        "byte",
+        "bytes",
+        "char",
+        "array",
+        "object",
+        "node",
+        "text",
+        "content",
+        "body",
+        "header",
+        "status",
+        "code",
+        "message",
+        "response",
+        "request",
+        "url",
+        "port",
+        "host",
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "have",
+        "are",
+        "was",
+        "were",
+        "been",
+        "has",
+        "had",
+        "will",
+        "would",
+        "should",
+        "could",
+        "can",
+        "may",
+        "must",
+        "shall",
+        "might",
+        "use",
+        "using",
+        "used",
+        "make",
+        "made",
+        "add",
+        "added",
+        "fix",
+        "fixed",
+        "update",
+        "updated",
+        "change",
+        "changed",
+        "create",
+        "created",
+        "remove",
+        "removed",
+        "check",
+        "checked",
+    }
+)
 
 # Minimum token length to consider
 _MIN_TOKEN_LEN = 3
@@ -191,12 +335,14 @@ def _check_token_overlap(
         jaccard = len(overlap) / len(text_tokens | fp_tokens)
         if jaccard >= threshold:
             top_tokens = sorted(overlap)[:5]
-            findings.append(LeakageFinding(
-                source_file=source_file,
-                leaked_token=", ".join(top_tokens),
-                context=f"Jaccard overlap={jaccard:.2f} ({len(overlap)} shared tokens)",
-                leak_type="token_overlap",
-            ))
+            findings.append(
+                LeakageFinding(
+                    source_file=source_file,
+                    leaked_token=", ".join(top_tokens),
+                    context=f"Jaccard overlap={jaccard:.2f} ({len(overlap)} shared tokens)",
+                    leak_type="token_overlap",
+                )
+            )
     return findings
 
 
@@ -220,12 +366,14 @@ def _check_negation_hints(
                 source = token_sources[negated_word]
                 start = max(0, match.start() - 20)
                 end = min(len(text), match.end() + 20)
-                findings.append(LeakageFinding(
-                    source_file=source,
-                    leaked_token=negated_word,
-                    context=text[start:end].strip(),
-                    leak_type="negation_hint",
-                ))
+                findings.append(
+                    LeakageFinding(
+                        source_file=source,
+                        leaked_token=negated_word,
+                        context=text[start:end].strip(),
+                        leak_type="negation_hint",
+                    )
+                )
     return findings
 
 
@@ -246,12 +394,14 @@ def _check_specific_values(
             idx = text.find(val)
             start = max(0, idx - 20)
             end = min(len(text), idx + len(val) + 20)
-            findings.append(LeakageFinding(
-                source_file=source_file,
-                leaked_token=val,
-                context=text[start:end].strip() if idx >= 0 else val,
-                leak_type="specific_value",
-            ))
+            findings.append(
+                LeakageFinding(
+                    source_file=source_file,
+                    leaked_token=val,
+                    context=text[start:end].strip() if idx >= 0 else val,
+                    leak_type="specific_value",
+                )
+            )
     return findings
 
 
@@ -391,18 +541,3 @@ def validate_research_config(
                     )
 
     return errors
-
-
-def get_diff_text(project_path: Path, baseline_sha: str) -> str:
-    """Get the diff between baseline and HEAD."""
-    try:
-        result = subprocess.run(
-            ["git", "diff", f"{baseline_sha}..HEAD"],
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return ""
