@@ -43,7 +43,9 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=1200),
     "health_checker": AgentConfig(role=AgentRole.HEALTH_CHECKER, model="opus", timeout=600),
     "code_reviewer": AgentConfig(role=AgentRole.CODE_REVIEWER, model="opus", timeout=900),
-    "adversarial_tester": AgentConfig(role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800),
+    "adversarial_tester": AgentConfig(
+        role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800
+    ),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
@@ -207,6 +209,30 @@ class Study(FnNode):
     focus: str | None = None
 
 
+# ── workflow IO ─────────────────────────────────────────────────
+
+
+class WorkflowIO(BaseModel):
+    """Typed input/output contract for a workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    inputs: set[str] = Field(default_factory=set)
+    outputs: set[str] = Field(default_factory=set)
+    optional_inputs: set[str] = Field(default_factory=set)
+    optional_outputs: set[str] = Field(default_factory=set)
+
+
+class SubWorkflowNode(Node):
+    """Node that invokes another registered workflow by name."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    workflow_name: str
+    input_mapping: dict[str, str] = Field(default_factory=dict)
+    pass_context: bool = True
+
+
 # ── edges ────────────────────────────────────────────────────────
 
 
@@ -223,7 +249,17 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+NodeType = (
+    AgentNode
+    | FnNode
+    | GateNode
+    | ForkNode
+    | JoinNode
+    | SubgraphForkNode
+    | SelectionNode
+    | Study
+    | SubWorkflowNode
+)
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]
@@ -239,11 +275,13 @@ class Workflow(BaseModel):
     edges: list[Edge]
     start_node: str
     terminal: bool = False
+    io: WorkflowIO | None = None
     trigger: TriggerFn | None = Field(default=None, exclude=True)
 
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""
         from factory.workflow.validation import validate_workflow
+
         return validate_workflow(self)
 
     def subgraph(
@@ -284,7 +322,9 @@ class Factory(BaseModel):
     config: FactoryConfig | None = None
 
     def select_workflow(
-        self, state: ProjectState, context: dict[str, Any] | None = None,
+        self,
+        state: ProjectState,
+        context: dict[str, Any] | None = None,
     ) -> Workflow | None:
         ctx = context or {}
         for wf in self.workflows.values():
