@@ -3,6 +3,26 @@
     "edges": [
       {
         "condition": null,
+        "source": "adversarial_tester",
+        "target": "gate_qa"
+      },
+      {
+        "condition": null,
+        "source": "archivist_plan",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": null,
         "source": "fork_research",
         "target": "researcher_existing"
       },
@@ -15,6 +35,81 @@
         "condition": null,
         "source": "fork_research",
         "target": "researcher_practices"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_research",
+        "target": "fork_research"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_strategy",
+        "target": "archivist_plan"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_strategy",
+        "target": "strategist"
+      },
+      {
+        "condition": null,
+        "source": "health_checker",
+        "target": "code_reviewer"
+      },
+      {
+        "condition": null,
+        "source": "join_research",
+        "target": "gate_research"
       },
       {
         "condition": null,
@@ -33,103 +128,8 @@
       },
       {
         "condition": null,
-        "source": "join_research",
-        "target": "gate_research"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_research",
-        "target": "strategist"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_research",
-        "target": "fork_research"
-      },
-      {
-        "condition": null,
         "source": "strategist",
         "target": "gate_strategy"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_strategy",
-        "target": "archivist_plan"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_strategy",
-        "target": "strategist"
-      },
-      {
-        "condition": null,
-        "source": "archivist_plan",
-        "target": "builder"
-      },
-      {
-        "condition": null,
-        "source": "builder",
-        "target": "gate_build"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_build",
-        "target": "health_checker"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_build",
-        "target": "builder"
-      },
-      {
-        "condition": null,
-        "source": "health_checker",
-        "target": "code_reviewer"
-      },
-      {
-        "condition": null,
-        "source": "code_reviewer",
-        "target": "gate_review"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_review",
-        "target": "adversarial_tester"
-      },
-      {
-        "condition": null,
-        "source": "adversarial_tester",
-        "target": "gate_qa"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_qa",
-        "target": "gate_doc_freshness"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_qa",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_doc_freshness",
-        "target": "gate_precheck"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_doc_freshness",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_precheck",
-        "target": "archivist_build"
-      },
-      {
-        "condition": "halt",
-        "source": "gate_precheck",
-        "target": "archivist_build"
       }
     ],
     "name": "create",

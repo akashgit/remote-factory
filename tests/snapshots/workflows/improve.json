@@ -3,18 +3,78 @@
     "edges": [
       {
         "condition": null,
-        "source": "study",
-        "target": "researcher"
+        "source": "adversarial_tester",
+        "target": "gate_qa"
       },
       {
         "condition": null,
-        "source": "researcher",
-        "target": "gate_research"
+        "source": "apply_spec_diff",
+        "target": "begin"
+      },
+      {
+        "condition": null,
+        "source": "archivist",
+        "target": "spec_update"
+      },
+      {
+        "condition": null,
+        "source": "begin",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": null,
+        "source": "finalize",
+        "target": "archivist"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
       },
       {
         "condition": "proceed",
-        "source": "gate_research",
-        "target": "strategist"
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "finalize"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
       },
       {
         "condition": "reloop",
@@ -22,9 +82,14 @@
         "target": "researcher"
       },
       {
-        "condition": null,
-        "source": "strategist",
-        "target": "gate_strategy"
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
       },
       {
         "condition": "proceed",
@@ -38,88 +103,23 @@
       },
       {
         "condition": null,
-        "source": "apply_spec_diff",
-        "target": "begin"
-      },
-      {
-        "condition": null,
-        "source": "begin",
-        "target": "builder"
-      },
-      {
-        "condition": null,
-        "source": "builder",
-        "target": "gate_build"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_build",
-        "target": "health_checker"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_build",
-        "target": "builder"
-      },
-      {
-        "condition": null,
         "source": "health_checker",
         "target": "code_reviewer"
       },
       {
         "condition": null,
-        "source": "code_reviewer",
-        "target": "gate_review"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_review",
-        "target": "adversarial_tester"
+        "source": "researcher",
+        "target": "gate_research"
       },
       {
         "condition": null,
-        "source": "adversarial_tester",
-        "target": "gate_qa"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_qa",
-        "target": "gate_doc_freshness"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_qa",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_doc_freshness",
-        "target": "gate_precheck"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_doc_freshness",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_precheck",
-        "target": "finalize"
-      },
-      {
-        "condition": "halt",
-        "source": "gate_precheck",
-        "target": "archivist"
+        "source": "strategist",
+        "target": "gate_strategy"
       },
       {
         "condition": null,
-        "source": "finalize",
-        "target": "archivist"
-      },
-      {
-        "condition": null,
-        "source": "archivist",
-        "target": "spec_update"
+        "source": "study",
+        "target": "researcher"
       }
     ],
     "name": "improve",

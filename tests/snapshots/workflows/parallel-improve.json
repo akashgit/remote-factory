@@ -3,18 +3,68 @@
     "edges": [
       {
         "condition": null,
-        "source": "study",
-        "target": "researcher"
+        "source": "exp_adversarial_tester",
+        "target": "exp_gate_qa"
       },
       {
         "condition": null,
-        "source": "researcher",
-        "target": "gate_research"
+        "source": "exp_begin",
+        "target": "exp_builder"
+      },
+      {
+        "condition": null,
+        "source": "exp_builder",
+        "target": "exp_gate_build"
+      },
+      {
+        "condition": null,
+        "source": "exp_code_reviewer",
+        "target": "exp_gate_review"
+      },
+      {
+        "condition": "reloop",
+        "source": "exp_gate_build",
+        "target": "exp_builder"
       },
       {
         "condition": "proceed",
-        "source": "gate_research",
-        "target": "strategist"
+        "source": "exp_gate_build",
+        "target": "exp_health_checker"
+      },
+      {
+        "condition": "halt",
+        "source": "exp_gate_precheck",
+        "target": "exp_eval"
+      },
+      {
+        "condition": "proceed",
+        "source": "exp_gate_precheck",
+        "target": "exp_eval"
+      },
+      {
+        "condition": "reloop",
+        "source": "exp_gate_qa",
+        "target": "exp_builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "exp_gate_qa",
+        "target": "exp_gate_precheck"
+      },
+      {
+        "condition": "proceed",
+        "source": "exp_gate_review",
+        "target": "exp_adversarial_tester"
+      },
+      {
+        "condition": null,
+        "source": "exp_health_checker",
+        "target": "exp_code_reviewer"
+      },
+      {
+        "condition": null,
+        "source": "fork_experiments",
+        "target": "join_experiments"
       },
       {
         "condition": "reloop",
@@ -22,9 +72,9 @@
         "target": "researcher"
       },
       {
-        "condition": null,
-        "source": "strategist",
-        "target": "gate_strategy"
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
       },
       {
         "condition": "proceed",
@@ -38,78 +88,28 @@
       },
       {
         "condition": null,
-        "source": "exp_begin",
-        "target": "exp_builder"
-      },
-      {
-        "condition": null,
-        "source": "exp_builder",
-        "target": "exp_gate_build"
-      },
-      {
-        "condition": "proceed",
-        "source": "exp_gate_build",
-        "target": "exp_health_checker"
-      },
-      {
-        "condition": "reloop",
-        "source": "exp_gate_build",
-        "target": "exp_builder"
-      },
-      {
-        "condition": null,
-        "source": "exp_health_checker",
-        "target": "exp_code_reviewer"
-      },
-      {
-        "condition": null,
-        "source": "exp_code_reviewer",
-        "target": "exp_gate_review"
-      },
-      {
-        "condition": "proceed",
-        "source": "exp_gate_review",
-        "target": "exp_adversarial_tester"
-      },
-      {
-        "condition": null,
-        "source": "exp_adversarial_tester",
-        "target": "exp_gate_qa"
-      },
-      {
-        "condition": "proceed",
-        "source": "exp_gate_qa",
-        "target": "exp_gate_precheck"
-      },
-      {
-        "condition": "reloop",
-        "source": "exp_gate_qa",
-        "target": "exp_builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "exp_gate_precheck",
-        "target": "exp_eval"
-      },
-      {
-        "condition": "halt",
-        "source": "exp_gate_precheck",
-        "target": "exp_eval"
-      },
-      {
-        "condition": null,
-        "source": "fork_experiments",
-        "target": "join_experiments"
-      },
-      {
-        "condition": null,
         "source": "join_experiments",
         "target": "select_best"
       },
       {
         "condition": null,
+        "source": "researcher",
+        "target": "gate_research"
+      },
+      {
+        "condition": null,
         "source": "select_best",
         "target": "archivist"
+      },
+      {
+        "condition": null,
+        "source": "strategist",
+        "target": "gate_strategy"
+      },
+      {
+        "condition": null,
+        "source": "study",
+        "target": "researcher"
       }
     ],
     "name": "parallel-improve",

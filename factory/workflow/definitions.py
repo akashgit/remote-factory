@@ -268,6 +268,76 @@ def _strategy_subgraph(*, config: StrategyConfig) -> tuple[dict[str, Any], list[
     )
 
 
+@dataclass(frozen=True)
+class PrefixConfig:
+    """Configuration for the shared improve prefix (study → strategy gate)."""
+
+    strategist_prompt: str = ""
+    strategy_gate_prompt: str = ""
+
+
+def _shared_prefix_subgraph(*, config: PrefixConfig) -> tuple[dict[str, Any], list[Edge]]:
+    """Study → researcher → gate_research → strategist → gate_strategy.
+
+    The common prefix shared by improve and parallel_improve. The caller
+    owns the strategy gate's PROCEED exit edge; all RELOOP edges loop
+    back inside the prefix.
+    """
+    nodes: dict[str, Any] = {
+        "study": Study(
+            id="study",
+            command="factory study {project_path}",
+            writes={".factory/strategy/observations.md"},
+        ),
+        "researcher": AgentNode(
+            id="researcher",
+            role=AgentRole.RESEARCHER,
+            prompt_template=(
+                "Deep research for the project. "
+                "Read observations at .factory/strategy/observations.md. "
+                "Analyze codebase structure, eval scores, and experiment history. "
+                "Search the web for best practices relevant to weak dimensions. "
+                "Check .factory/archive/ for prior knowledge. "
+                "Write findings to .factory/strategy/research-local.md."
+            ),
+            reads={".factory/strategy/observations.md"},
+            writes={".factory/strategy/research-local.md"},
+        ),
+        "gate_research": GateNode(
+            id="gate_research",
+            evaluator_type="agent",
+            evaluator_role=AgentRole.CEO,
+            gate_prompt=(
+                "Are observations grounded in data? Did web research surface useful patterns? "
+                "Any blind spots in the analysis?"
+            ),
+            reads={".factory/strategy/research-local.md"},
+        ),
+    }
+    s_nodes, s_edges = _strategy_subgraph(
+        config=StrategyConfig(
+            prompt_template=config.strategist_prompt,
+            reads=frozenset(
+                {
+                    ".factory/strategy/research-local.md",
+                    ".factory/strategy/observations.md",
+                }
+            ),
+            gate_prompt=config.strategy_gate_prompt,
+        ),
+    )
+    nodes.update(s_nodes)
+    edges: list[Edge] = [
+        Edge(source="study", target="researcher"),
+        Edge(source="researcher", target="gate_research"),
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
+        *s_edges,
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+    ]
+    return nodes, edges
+
+
 # ── W₁: Build Mode ──────────────────────────────────────────────
 
 # Shared with the research-standalone workflow (factory/workflow/research.py).
@@ -769,45 +839,10 @@ def improve_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # Study
-    nodes["study"] = Study(
-        id="study",
-        command="factory study {project_path}",
-        writes={".factory/strategy/observations.md"},
-    )
-
-    # Researcher
-    nodes["researcher"] = AgentNode(
-        id="researcher",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Deep research for the project. "
-            "Read observations at .factory/strategy/observations.md. "
-            "Analyze codebase structure, eval scores, and experiment history. "
-            "Search the web for best practices relevant to weak dimensions. "
-            "Check .factory/archive/ for prior knowledge. "
-            "Write findings to .factory/strategy/research-local.md."
-        ),
-        reads={".factory/strategy/observations.md"},
-        writes={".factory/strategy/research-local.md"},
-    )
-
-    # CEO gate on research
-    nodes["gate_research"] = GateNode(
-        id="gate_research",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "Are observations grounded in data? Did web research surface useful patterns? "
-            "Any blind spots in the analysis?"
-        ),
-        reads={".factory/strategy/research-local.md"},
-    )
-
-    # Strategy subgraph: strategist → CEO gate
-    s_nodes, s_edges = _strategy_subgraph(
-        config=StrategyConfig(
-            prompt_template=(
+    # Shared prefix: study → researcher → gate_research → strategist → gate_strategy
+    p_nodes, p_edges = _shared_prefix_subgraph(
+        config=PrefixConfig(
+            strategist_prompt=(
                 "Generate prioritized hypotheses. "
                 "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
                 "Read Hypothesis Budget from observations for constraints. "
@@ -817,13 +852,7 @@ def improve_workflow() -> Workflow:
                 "Tag backlog items with **Backlog item:** and new items with **New:**. "
                 "Write to .factory/strategy/current.md."
             ),
-            reads=frozenset(
-                {
-                    ".factory/strategy/research-local.md",
-                    ".factory/strategy/observations.md",
-                }
-            ),
-            gate_prompt=(
+            strategy_gate_prompt=(
                 "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
                 "Expected eval impact realistic? Follows FEEC priority? "
                 "Not redundant with reverted experiment? "
@@ -832,7 +861,7 @@ def improve_workflow() -> Workflow:
             ),
         ),
     )
-    nodes.update(s_nodes)
+    nodes.update(p_nodes)
 
     # Apply SPEC Diff from strategy to SPEC.md (no-op if absent)
     nodes["apply_spec_diff"] = FnNode(
@@ -950,18 +979,10 @@ def improve_workflow() -> Workflow:
     )
 
     edges = [
-        # Study → researcher
-        Edge(source="study", target="researcher"),
-        # Researcher → research gate
-        Edge(source="researcher", target="gate_research"),
-        # Research gate
-        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
-        Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-        # Strategy subgraph internal edges
-        *s_edges,
+        # Shared prefix edges
+        *p_edges,
         # Strategy gate → apply spec diff → begin
         Edge(source="gate_strategy", target="apply_spec_diff", condition=VerdictType.PROCEED),
-        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
         # apply_spec_diff → begin
         Edge(source="apply_spec_diff", target="begin"),
         # begin → builder
@@ -4060,72 +4081,32 @@ def parallel_improve_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Shared prefix (identical to improve) ──
+    # ── Shared prefix (parallel variant of improve) ──
 
-    nodes["study"] = Study(
-        id="study",
-        command="factory study {project_path}",
-        writes={".factory/strategy/observations.md"},
-    )
-
-    nodes["researcher"] = AgentNode(
-        id="researcher",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Deep research for the project. "
-            "Read observations at .factory/strategy/observations.md. "
-            "Analyze codebase structure, eval scores, and experiment history. "
-            "Search the web for best practices relevant to weak dimensions. "
-            "Check .factory/archive/ for prior knowledge. "
-            "Write findings to .factory/strategy/research-local.md."
+    p_nodes, p_edges = _shared_prefix_subgraph(
+        config=PrefixConfig(
+            strategist_prompt=(
+                "Generate prioritized hypotheses for PARALLEL execution. "
+                "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
+                "Read Hypothesis Budget from observations for constraints. "
+                "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+                "Generate MULTIPLE independent hypotheses that can run concurrently. "
+                "Each hypothesis must target different files/areas to avoid merge conflicts. "
+                "Tag backlog items with **Backlog item:** and new items with **New:**. "
+                "Write to .factory/strategy/current.md with each hypothesis under a "
+                "## Hypothesis N heading."
+            ),
+            strategy_gate_prompt=(
+                "HARD GATE for parallel experiments. Check: "
+                "Are hypotheses independent (target different files/areas)? "
+                "Would merge conflicts be unlikely? "
+                "Each specific enough to implement? Scoped to one PR each? "
+                "Expected eval impact realistic? Follows FEEC priority? "
+                "Write PLAN APPROVED with approved hypotheses."
+            ),
         ),
-        reads={".factory/strategy/observations.md"},
-        writes={".factory/strategy/research-local.md"},
     )
-
-    nodes["gate_research"] = GateNode(
-        id="gate_research",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "Are observations grounded in data? Did web research surface useful patterns? "
-            "Any blind spots in the analysis?"
-        ),
-        reads={".factory/strategy/research-local.md"},
-    )
-
-    nodes["strategist"] = AgentNode(
-        id="strategist",
-        role=AgentRole.STRATEGIST,
-        prompt_template=(
-            "Generate prioritized hypotheses for PARALLEL execution. "
-            "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
-            "Read Hypothesis Budget from observations for constraints. "
-            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
-            "Generate MULTIPLE independent hypotheses that can run concurrently. "
-            "Each hypothesis must target different files/areas to avoid merge conflicts. "
-            "Tag backlog items with **Backlog item:** and new items with **New:**. "
-            "Write to .factory/strategy/current.md with each hypothesis under a "
-            "## Hypothesis N heading."
-        ),
-        reads={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
-        writes={".factory/strategy/current.md"},
-    )
-
-    nodes["gate_strategy"] = GateNode(
-        id="gate_strategy",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "HARD GATE for parallel experiments. Check: "
-            "Are hypotheses independent (target different files/areas)? "
-            "Would merge conflicts be unlikely? "
-            "Each specific enough to implement? Scoped to one PR each? "
-            "Expected eval impact realistic? Follows FEEC priority? "
-            "Write PLAN APPROVED with approved hypotheses."
-        ),
-        reads={".factory/strategy/current.md"},
-    )
+    nodes.update(p_nodes)
 
     # ── Per-experiment subgraph (runs N times in parallel worktrees) ──
 
@@ -4259,13 +4240,8 @@ def parallel_improve_workflow() -> Workflow:
 
     # Shared prefix
     edges = [
-        Edge(source="study", target="researcher"),
-        Edge(source="researcher", target="gate_research"),
-        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
-        Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-        Edge(source="strategist", target="gate_strategy"),
+        *p_edges,
         Edge(source="gate_strategy", target="fork_experiments", condition=VerdictType.PROCEED),
-        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
     ]
 
     # Per-experiment subgraph edges

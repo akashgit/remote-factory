@@ -37,8 +37,18 @@ SNAPSHOT_WORKFLOWS: list[str] = [
 
 
 def _canonical(wf: Workflow) -> dict:
-    """Deterministic canonical form, matching skill_cache checksum semantics."""
-    return _sort_recursive(wf.model_dump(mode="json"))
+    """Deterministic canonical form, matching skill_cache checksum semantics.
+
+    Edges are additionally sorted by (source, target, condition) because
+    _sort_recursive cannot order lists of dicts — edge ORDER is not part
+    of graph semantics, edge SET is.
+    """
+    payload = _sort_recursive(wf.model_dump(mode="json"))
+    payload["edges"] = sorted(
+        payload["edges"],
+        key=lambda e: (e.get("source", ""), e.get("target", ""), str(e.get("condition"))),
+    )
+    return payload
 
 
 def _snapshot_path(name: str) -> Path:

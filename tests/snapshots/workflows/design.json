@@ -3,6 +3,41 @@
     "edges": [
       {
         "condition": null,
+        "source": "adversarial_tester",
+        "target": "gate_qa"
+      },
+      {
+        "condition": null,
+        "source": "archivist_build",
+        "target": "spec_generate"
+      },
+      {
+        "condition": null,
+        "source": "archivist_plan",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": null,
+        "source": "discover",
+        "target": "study"
+      },
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_pitfalls"
+      },
+      {
+        "condition": null,
         "source": "fork_research",
         "target": "researcher_similar"
       },
@@ -12,34 +47,54 @@
         "target": "researcher_techstack"
       },
       {
-        "condition": null,
-        "source": "fork_research",
-        "target": "researcher_pitfalls"
-      },
-      {
-        "condition": null,
-        "source": "researcher_similar",
-        "target": "join_research"
-      },
-      {
-        "condition": null,
-        "source": "researcher_techstack",
-        "target": "join_research"
-      },
-      {
-        "condition": null,
-        "source": "researcher_pitfalls",
-        "target": "join_research"
-      },
-      {
-        "condition": null,
-        "source": "join_research",
-        "target": "gate_research"
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
       },
       {
         "condition": "proceed",
-        "source": "gate_research",
-        "target": "strategist"
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_has_factory",
+        "target": "discover"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_has_factory",
+        "target": "study"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
       },
       {
         "condition": "reloop",
@@ -47,9 +102,14 @@
         "target": "fork_research"
       },
       {
-        "condition": null,
-        "source": "strategist",
-        "target": "gate_strategy"
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
       },
       {
         "condition": "proceed",
@@ -63,93 +123,33 @@
       },
       {
         "condition": null,
-        "source": "archivist_plan",
-        "target": "builder"
-      },
-      {
-        "condition": null,
-        "source": "builder",
-        "target": "gate_build"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_build",
-        "target": "health_checker"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_build",
-        "target": "builder"
-      },
-      {
-        "condition": null,
         "source": "health_checker",
         "target": "code_reviewer"
       },
       {
         "condition": null,
-        "source": "code_reviewer",
-        "target": "gate_review"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_review",
-        "target": "adversarial_tester"
+        "source": "join_research",
+        "target": "gate_research"
       },
       {
         "condition": null,
-        "source": "adversarial_tester",
-        "target": "gate_qa"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_qa",
-        "target": "gate_doc_freshness"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_qa",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_doc_freshness",
-        "target": "gate_precheck"
-      },
-      {
-        "condition": "reloop",
-        "source": "gate_doc_freshness",
-        "target": "builder"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_precheck",
-        "target": "archivist_build"
-      },
-      {
-        "condition": "halt",
-        "source": "gate_precheck",
-        "target": "archivist_build"
+        "source": "researcher_pitfalls",
+        "target": "join_research"
       },
       {
         "condition": null,
-        "source": "archivist_build",
-        "target": "spec_generate"
-      },
-      {
-        "condition": "proceed",
-        "source": "gate_has_factory",
-        "target": "study"
-      },
-      {
-        "condition": "halt",
-        "source": "gate_has_factory",
-        "target": "discover"
+        "source": "researcher_similar",
+        "target": "join_research"
       },
       {
         "condition": null,
-        "source": "discover",
-        "target": "study"
+        "source": "researcher_techstack",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "strategist",
+        "target": "gate_strategy"
       },
       {
         "condition": null,
