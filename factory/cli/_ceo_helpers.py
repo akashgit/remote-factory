@@ -109,6 +109,20 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "- All Sacred Rules still apply — delegate to agents, review output, "
         "do not write code\n"
         '- Start by running "next" to get your first task\n'
+        "\n"
+        "## Loop Context\n"
+        "\n"
+        "When a gate triggers a RELOOP and the tool rewinds to a prior node, "
+        "subsequent calls to \"next\" automatically inject a **## LOOP CONTEXT** "
+        "section into the node's task description. This section shows:\n"
+        "- Which gate triggered the reloop and the current iteration count\n"
+        "- The gate's criteria and feedback text from the failed evaluation\n"
+        "- The full loop topology (all nodes from this node through the gate)\n"
+        "- Feedback history from previous iterations (last 2, truncated to 500 chars)\n"
+        "\n"
+        "Use this context to craft more targeted agent task descriptions on "
+        "re-invocation. No separate command is needed — context is injected "
+        "automatically by the tool engine when iteration > 0.\n"
     )
 
     return protocol
