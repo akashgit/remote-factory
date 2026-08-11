@@ -1,0 +1,64 @@
+#!/bin/bash
+set -euo pipefail
+
+# Einstein Arena verifier wrapper
+SOLUTION_FILE="/workspace/solution.json"
+SCORE_FILE="/workspace/score.txt"
+
+if [ ! -f "$SOLUTION_FILE" ]; then
+    echo "ERROR: solution.json not found at $SOLUTION_FILE" >&2
+    exit 1
+fi
+
+# Create verifier script
+cat > /tmp/verifier.py << 'VERIFIER_EOF'
+import numpy as np
+
+def evaluate(data):
+    vectors = np.array(data["vectors"], dtype=np.float64)
+    assert vectors.shape == (50, 3), f"Expected (50, 3), got {vectors.shape}"
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms[norms < 1e-12] = 1e-12
+    vectors = vectors / norms
+    diffs = vectors[:, None, :] - vectors[None, :, :]
+    dist_sq = np.sum(diffs**2, axis=2)
+    iu = np.triu_indices(50, k=1)
+    dists = np.sqrt(dist_sq[iu])
+    return float(np.min(dists))
+
+# Wrapper to read from file and handle errors
+if __name__ == "__main__":
+    import json
+    import sys
+
+    try:
+        with open("/workspace/solution.json", "r") as f:
+            data = json.load(f)
+
+        score = evaluate(data)
+
+        # Write score to file
+        with open("/workspace/score.txt", "w") as f:
+            f.write(str(score))
+
+        print(f"Score: {score}")
+        sys.exit(0)
+
+    except Exception as e:
+        print(f"Verifier failed: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+VERIFIER_EOF
+
+# Run verifier
+python3 /tmp/verifier.py
+EXIT_CODE=$?
+
+if [ -f "$SCORE_FILE" ]; then
+    echo "Verification complete. Score: $(cat $SCORE_FILE)"
+else
+    echo "ERROR: Verifier did not produce a score" >&2
+fi
+
+exit $EXIT_CODE
