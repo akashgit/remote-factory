@@ -53,6 +53,8 @@ The same graph definition produces two execution formats:
 - **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
 - **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
+Stages are decomposed into reusable subgraph helpers (`_research_subgraph`, `_strategy_subgraph`, `_build_subgraph`, `_deep_qa_subgraph`, `_finalize_subgraph`, `_shared_prefix_subgraph`) that return `(nodes, edges)` tuples merged into parent workflows. Standalone stage factories (`research-standalone`, `strategy-standalone`, `build-standalone`, `finalize-standalone`) wrap these helpers as registered, runnable workflows in `factory/workflow/{research,strategy,build,finalize}.py` — the "factories of factories" seam (V2, see `docs/PLAN_v2_migration.md`).
+
 ### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
 
 The CEO prompt is split into two parts:

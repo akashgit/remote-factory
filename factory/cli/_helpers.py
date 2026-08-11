@@ -16,7 +16,7 @@ log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
 
-CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "design", "interactive", "parallel-improve", "research", "review", "deep-qa", "create", "swebench", "frontend-design", "frontend-design-discover", "frontend-design-scan", "evolve"]
+CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "design", "interactive", "parallel-improve", "research", "review", "deep-qa", "create", "swebench", "frontend-design", "frontend-design-discover", "frontend-design-scan", "evolve", "research-standalone", "strategy-standalone", "build-standalone", "finalize-standalone"]  # noqa: E501  # V2-INTERIM: stage-standalone modes; replaced by registry-driven resolution in Phase 4
 
 
 RUN_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "parallel-improve", "research", "swebench", "frontend-design-scan"]

@@ -532,6 +532,12 @@ class CycleState(BaseModel):
         "research",
         "review",
         "swebench",
+        # V2-INTERIM: stage-standalone modes; replaced by registry-driven
+        # resolution in Phase 4.
+        "research-standalone",
+        "strategy-standalone",
+        "build-standalone",
+        "finalize-standalone",
     ]
     initial_prompt: str = ""
     respawns: int = 0

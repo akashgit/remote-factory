@@ -150,3 +150,19 @@ class TestFinalizeStandaloneWorkflow:
 
         assert "finalize-standalone" in WORKFLOW_META
         assert WORKFLOW_META["finalize-standalone"]["description"]
+
+    def test_dry_run_executes_to_completion(self, tmp_path) -> None:
+        """Regression: gate_precheck reads must be cleared at the standalone
+        boundary, or the executor's _wait_for_reads blocks 60s then halts."""
+        import asyncio
+
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.primitives import DEFAULT_AGENT_POOL
+
+        wf = self._get_wf()
+        executor = WorkflowExecutor(
+            wf, tmp_path, agent_pool=DEFAULT_AGENT_POOL, dry_run=True
+        )
+        result = asyncio.run(executor.execute())
+        assert result.success
+        assert not result.halted

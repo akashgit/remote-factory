@@ -33,7 +33,8 @@ def workflow() -> Workflow:
 
     # Standalone boundary: the finalize step's reads (QA reviews) have no
     # predecessor here — clear them (validation requires reads ⊆ pred writes).
-    f_nodes["finalize"] = f_nodes["finalize"].model_copy(update={"reads": set()})
+    for nid in ("finalize", "gate_precheck"):
+        f_nodes[nid] = f_nodes[nid].model_copy(update={"reads": set()})
 
     nodes: dict[str, Any] = {**f_nodes}
     edges: list[Edge] = [*f_edges]

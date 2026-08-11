@@ -392,7 +392,9 @@ class TestStrategistIdeationMode:
         assert "Open Questions" in strategist_prompt
 
     def test_references_research_file(self, strategist_prompt: str) -> None:
-        assert "research.md" in strategist_prompt
+        # Ideation is fed by the build-mode researchers via research-combined.md
+        # (definitions.py design_workflow join_research), not research-local.md.
+        assert "research-combined.md" in strategist_prompt
 
     def test_has_research_configuration_section(self, strategist_prompt: str) -> None:
         """Strategist ideation output format includes Research Configuration section."""

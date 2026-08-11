@@ -354,6 +354,49 @@ def _detect_incomplete(
             reason=f"build.incomplete: {completed}/{planned} phases have verdicts",
         )
 
+    # V2-INTERIM: standalone stage factories — complete when their output
+    # artifact exists. Replaced by per-factory eval verdicts in Phase 2+.
+    elif mode == "research-standalone":
+        if (project_path / ".factory/strategy/research-combined.md").exists():
+            return None
+        return IncompleteGap(
+            planned=1,
+            completed=0,
+            next_item="fork_research",
+            reason="research-standalone.incomplete: research-combined.md not produced",
+            mode=mode,
+        )
+    elif mode == "strategy-standalone":
+        if (project_path / ".factory/strategy/current.md").exists():
+            return None
+        return IncompleteGap(
+            planned=1,
+            completed=0,
+            next_item="strategist",
+            reason="strategy-standalone.incomplete: current.md not produced",
+            mode=mode,
+        )
+    elif mode == "build-standalone":
+        if (project_path / ".factory/reviews/builder-latest.md").exists():
+            return None
+        return IncompleteGap(
+            planned=1,
+            completed=0,
+            next_item="builder",
+            reason="build-standalone.incomplete: builder-latest.md not produced",
+            mode=mode,
+        )
+    elif mode == "finalize-standalone":
+        if (project_path / ".factory/experiments/verdict.json").exists():
+            return None
+        return IncompleteGap(
+            planned=1,
+            completed=0,
+            next_item="gate_precheck",
+            reason="finalize-standalone.incomplete: no experiment verdict recorded",
+            mode=mode,
+        )
+
     # Unknown mode — assume complete
     return None
 

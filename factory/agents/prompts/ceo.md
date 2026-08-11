@@ -326,6 +326,12 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 - `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
 - `--mode founder` → read `skills/workflow-founder/SKILL.md`
 
+**Standalone stage modes (V2-INTERIM):**
+- `--mode research-standalone` → read `skills/workflow-research-standalone/SKILL.md`
+- `--mode strategy-standalone` → read `skills/workflow-strategy-standalone/SKILL.md`
+- `--mode build-standalone` → read `skills/workflow-build-standalone/SKILL.md`
+- `--mode finalize-standalone` → read `skills/workflow-finalize-standalone/SKILL.md`
+
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 
 ---
