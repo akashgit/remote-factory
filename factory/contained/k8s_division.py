@@ -26,11 +26,13 @@ asserts its absence, and it is the one check that fails when something succeeds.
 
 from __future__ import annotations
 
+
 from factory.contained.k8s import (
     LABEL_RUN,
     REQUEST_DIR,
     RESULT_DIR,
     build_api_resources_argv,
+    sidecar_command,  # noqa: F401 — re-exported
 )
 from factory.contained.k8s import sweep_argv as _sweep_argv
 
