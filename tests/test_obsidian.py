@@ -33,12 +33,18 @@ def set_vault_path(obsidian_vault, monkeypatch):
 @pytest.fixture
 def sample_record() -> ExperimentRecord:
     return ExperimentRecord(
-        id=1, timestamp=datetime(2026, 4, 11, 12, 0),
+        id=1,
+        timestamp=datetime(2026, 4, 11, 12, 0),
         hypothesis="Add session timeout handling",
         change_summary="Added timeout check in gateway.py",
-        issue_number=11, pr_number=12,
-        score_before=0.82, score_after=0.87, delta=0.05,
-        verdict="keep", cost_usd=1.5, notes="",
+        issue_number=11,
+        pr_number=12,
+        score_before=0.82,
+        score_after=0.87,
+        delta=0.05,
+        verdict="keep",
+        cost_usd=1.5,
+        notes="",
     )
 
 
@@ -71,11 +77,15 @@ class TestExperimentNote:
 
     def test_note_with_eval_details(self, sample_record, obsidian_vault):
         before = CompositeScore(
-            total=0.82, passed=True, guard_violations=[],
+            total=0.82,
+            passed=True,
+            guard_violations=[],
             results=[EvalResult(name="tests", score=1.0, weight=0.5, passed=True, details="ok")],
         )
         after = CompositeScore(
-            total=0.87, passed=True, guard_violations=[],
+            total=0.87,
+            passed=True,
+            guard_violations=[],
             results=[EvalResult(name="tests", score=1.0, weight=0.5, passed=True, details="ok")],
         )
         path = write_experiment_note("cloud-gateway", sample_record, before, after)
@@ -226,12 +236,18 @@ class TestAutoInit:
         assert not vault.exists()
 
         record = ExperimentRecord(
-            id=1, timestamp=datetime(2026, 4, 11, 12, 0),
+            id=1,
+            timestamp=datetime(2026, 4, 11, 12, 0),
             hypothesis="Test auto-init",
             change_summary="Auto-init test",
-            issue_number=None, pr_number=None,
-            score_before=0.5, score_after=0.6, delta=0.1,
-            verdict="keep", cost_usd=None, notes="",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.5,
+            score_after=0.6,
+            delta=0.1,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         path = write_experiment_note("test-project", record)
         assert path.exists()
@@ -241,26 +257,6 @@ class TestAutoInit:
 
 
 class TestObsidianCli:
-    def test_obsidian_available_when_missing(self, monkeypatch):
-        """obsidian_available returns False when CLI not found."""
-        monkeypatch.setattr(
-            "factory.obsidian.notes.subprocess.run",
-            Mock(side_effect=FileNotFoundError),
-        )
-        from factory.obsidian.notes import _obsidian_available
-
-        assert _obsidian_available() is False
-
-    def test_obsidian_available_when_timeout(self, monkeypatch):
-        """obsidian_available returns False on timeout."""
-        monkeypatch.setattr(
-            "factory.obsidian.notes.subprocess.run",
-            Mock(side_effect=subprocess.TimeoutExpired("obsidian", 5)),
-        )
-        from factory.obsidian.notes import _obsidian_available
-
-        assert _obsidian_available() is False
-
     def test_obsidian_create_success(self, monkeypatch):
         """obsidian_create returns True on success."""
         mock_run = Mock(return_value=Mock(returncode=0))
@@ -282,7 +278,10 @@ class TestObsidianCli:
         assert _obsidian_create("test", "content") is False
 
     def test_write_experiment_tries_cli_first(
-        self, monkeypatch, sample_record, obsidian_vault,
+        self,
+        monkeypatch,
+        sample_record,
+        obsidian_vault,
     ):
         """write_experiment_note tries obsidian-cli before file write."""
         calls: list[list[str]] = []

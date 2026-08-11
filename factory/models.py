@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -364,17 +364,6 @@ class ProjectProfile(BaseModel):
 # ── experiments ───────────────────────────────────────────────────
 
 
-class Hypothesis(BaseModel):
-    """A proposed change generated during the observe/hypothesize phase."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    description: str
-    rationale: str
-    expected_impact: str
-    target_files: list[str]
-
-
 class ExperimentRecord(BaseModel):
     """One row in results.tsv + the experiment directory."""
 
@@ -465,21 +454,6 @@ class AgentUsage(BaseModel):
     duration_ms: float = 0.0
     num_turns: int = 0
     model: str = ""
-
-
-# ── cost tracking ─────────────────────────────────────────────────
-
-
-class CostBudget(BaseModel):
-    """Cost guardrails for factory sessions."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    per_experiment_max: float = 2.0
-    per_session_max: float = 10.0
-    per_month_max: float = 100.0
-    current_session_spent: float = 0.0
-    current_month_spent: float = 0.0
 
 
 # ── session summary ──────────────────────────────────────────
@@ -604,21 +578,6 @@ class ProjectRegistry(BaseModel):
 
     projects: list[ProjectEntry] = []
     updated_at: datetime
-
-
-# ── protocols ─────────────────────────────────────────────────────
-
-
-@runtime_checkable
-class Notifier(Protocol):
-    """Interface for sending experiment digests."""
-
-    async def send_digest(
-        self,
-        project_name: str,
-        records: list[ExperimentRecord],
-        composite: CompositeScore | None,
-    ) -> None: ...
 
 
 # ── refinement state ─────────────────────────────────────────────

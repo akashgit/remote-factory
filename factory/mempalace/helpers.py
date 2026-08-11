@@ -29,16 +29,6 @@ def get_kg():
     return KnowledgeGraph()
 
 
-def is_mempalace_available() -> bool:
-    """Check if mempalace is importable."""
-    try:
-        import mempalace  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 # ── Read wrappers ──────────────────────────────────────────────
 
 
@@ -53,7 +43,10 @@ def search_episodes(palace: str, wing: str, query: str, n_results: int = 5) -> s
 
 
 def kg_query_entity(
-    name: str, direction: str = "both", as_of: str | None = None, kg: object | None = None,
+    name: str,
+    direction: str = "both",
+    as_of: str | None = None,
+    kg: object | None = None,
 ) -> list[dict]:
     """Query KG for entity triples."""
     if kg is None:
@@ -99,9 +92,7 @@ def kg_supersede(subject: str, predicate: str, old_obj: str, new_obj: str, at: s
     kg.supersede(subject, predicate, old_obj, new_obj, at=at)
 
 
-def store_drawer(
-    palace: str, wing: str, room: str, content: str, source_file: str
-) -> None:
+def store_drawer(palace: str, wing: str, room: str, content: str, source_file: str) -> None:
     """Store content as an episodic drawer in the palace."""
     from mempalace.ids import make_drawer_id_from_content
     from mempalace.miner import _build_drawer_metadata

@@ -17,7 +17,6 @@ from factory.runners.opencode import (
     _check_auth,
     _check_binary_compat,
     _has_opencode_auth,
-    _parse_opencode_output,
     is_opencode_dry_run,
 )
 
@@ -150,48 +149,6 @@ class TestCheckBinaryCompat:
             ):
                 _check_binary_compat()
         assert oc_module._compat_checked is True
-
-
-# ---------------------------------------------------------------------------
-# _parse_opencode_output
-# ---------------------------------------------------------------------------
-
-
-class TestParseOpenCodeOutput:
-    def test_parses_json_with_content(self) -> None:
-        raw = json.dumps({"content": "Hello world", "sessionId": "sess-123"})
-        text, session_id = _parse_opencode_output(raw)
-        assert text == "Hello world"
-        assert session_id == "sess-123"
-
-    def test_parses_json_with_text_field(self) -> None:
-        raw = json.dumps({"text": "Result", "session_id": "s1"})
-        text, session_id = _parse_opencode_output(raw)
-        assert text == "Result"
-        assert session_id == "s1"
-
-    def test_parses_json_with_message_field(self) -> None:
-        raw = json.dumps({"message": "Done"})
-        text, session_id = _parse_opencode_output(raw)
-        assert text == "Done"
-        assert session_id is None
-
-    def test_falls_back_on_non_json(self) -> None:
-        raw = "plain text output"
-        text, session_id = _parse_opencode_output(raw)
-        assert text == raw
-        assert session_id is None
-
-    def test_multiline_parses_last_json(self) -> None:
-        raw = "some progress\nmore output\n" + json.dumps({"content": "final"})
-        text, session_id = _parse_opencode_output(raw)
-        assert text == "final"
-
-    def test_empty_content_falls_back(self) -> None:
-        raw = json.dumps({"content": "", "sessionId": "s1"})
-        text, session_id = _parse_opencode_output(raw)
-        assert text == raw.strip()
-        assert session_id is None
 
 
 # ---------------------------------------------------------------------------
@@ -478,9 +435,7 @@ class TestOpenCodeHeadless:
                 "factory.runners.opencode.run_subprocess",
                 new_callable=AsyncMock,
             ) as mock_run:
-                mock_run.return_value = AgentRunResult(
-                    stdout="output", return_code=0
-                )
+                mock_run.return_value = AgentRunResult(stdout="output", return_code=0)
                 result = await runner.headless(
                     AgentRunRequest(
                         prompt="You are a test agent.",
@@ -539,7 +494,9 @@ class TestOpenCodeHeadless:
             with patch(
                 "factory.runners.opencode.check_ceilings",
                 side_effect=CeilingExceededError(
-                    "per-cycle", 8, 8,
+                    "per-cycle",
+                    8,
+                    8,
                     "FACTORY_OPENCODE_MAX_INVOCATIONS_PER_CYCLE",
                     "opencode",
                 ),

@@ -248,8 +248,17 @@ def probe_argv(image: str, host: str, port: int = DIVISION_PORT) -> list[str]:
     connect at all.
     """
     return [
-        "podman", "run", "--rm", image,
-        "curl", "-sS", "--max-time", "3", "-o", "/dev/null", f"http://{host}:{port}/mcp",
+        "podman",
+        "run",
+        "--rm",
+        image,
+        "curl",
+        "-sS",
+        "--max-time",
+        "3",
+        "-o",
+        "/dev/null",
+        f"http://{host}:{port}/mcp",
     ]
 
 
@@ -297,12 +306,12 @@ def port_owner() -> str | None:
         except (OSError, ValueError):
             continue
         try:
-            os.kill(pid, 0)                       # signal 0: does the process still exist?
+            os.kill(pid, 0)  # signal 0: does the process still exist?
         except ProcessLookupError:
-            pid_file.unlink(missing_ok=True)      # stale; the run is gone
+            pid_file.unlink(missing_ok=True)  # stale; the run is gone
             continue
         except PermissionError:
-            pass                                  # alive, owned by someone else
+            pass  # alive, owned by someone else
         return candidate.name
     return None
 
@@ -444,8 +453,3 @@ def _with_division(plan: ContainerPlan, endpoint: str) -> ContainerPlan:
             files={DIVISION_BRIEF_PATH: DIVISION_BRIEF.format(server=MCP_SERVER_NAME)},
         ),
     )
-
-
-def brief_path(workspace: Path) -> Path:
-    """Where the brief lands in a workspace. Used by tests and by the k8s division."""
-    return workspace / DIVISION_BRIEF_PATH

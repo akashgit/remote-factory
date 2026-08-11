@@ -9,12 +9,9 @@ from factory.adversarial import (
     detect_convergence,
     format_adversarial_state,
     get_active_component,
-    get_active_phase,
     load_adversarial_state,
-    record_phase_result,
     reset_adversarial_state,
     save_adversarial_state,
-    should_switch_phase,
 )
 from factory.models import (
     AdversarialComponent,
@@ -193,8 +190,12 @@ class TestAdversarialStateModel:
 
     def test_state_with_history(self):
         rec = AdversarialPhaseRecord(
-            round=1, active_role="generator", score=0.3,
-            metric_name="m", timestamp="2026-01-01T00:00:00", switched=False,
+            round=1,
+            active_role="generator",
+            score=0.3,
+            metric_name="m",
+            timestamp="2026-01-01T00:00:00",
+            switched=False,
         )
         state = AdversarialState(history=[rec])
         assert len(state.history) == 1
@@ -278,48 +279,6 @@ class TestResetAdversarialState:
         reset_adversarial_state(adv_project)
 
 
-# ── phase transition tests ──────────────────────────────────────
-
-
-class TestShouldSwitchPhase:
-    def test_below_threshold_no_switch(self, adv_config):
-        state = AdversarialState(consecutive_above=0)
-        assert not should_switch_phase(state, adv_config, 0.2)
-
-    def test_above_threshold_once_no_switch_with_hysteresis(self, adv_config):
-        state = AdversarialState(consecutive_above=0)
-        assert not should_switch_phase(state, adv_config, 0.5)
-
-    def test_above_threshold_consecutive_triggers_switch(self, adv_config):
-        state = AdversarialState(consecutive_above=2)
-        assert should_switch_phase(state, adv_config, 0.5)
-
-    def test_score_dip_resets_counter(self, adv_config):
-        state = AdversarialState(consecutive_above=2)
-        assert not should_switch_phase(state, adv_config, 0.1)
-
-    def test_hysteresis_of_one(self, gen_component, disc_component):
-        config = AdversarialConfig(
-            generator=gen_component,
-            discriminator=disc_component,
-            hysteresis=1,
-        )
-        state = AdversarialState(consecutive_above=0)
-        assert should_switch_phase(state, config, 0.5)
-
-    def test_exactly_at_threshold_counts_as_above(self, adv_config):
-        state = AdversarialState(consecutive_above=2)
-        assert should_switch_phase(state, adv_config, 0.4)
-
-    def test_discriminator_threshold(self, adv_config):
-        state = AdversarialState(
-            active_role="discriminator",
-            consecutive_above=2,
-        )
-        assert should_switch_phase(state, adv_config, 0.8)
-        assert not should_switch_phase(state, adv_config, 0.79)
-
-
 # ── convergence tests ───────────────────────────────────────────
 
 
@@ -371,19 +330,6 @@ class TestDetectConvergence:
         assert detect_convergence(state, config)
 
 
-# ── active phase query tests ────────────────────────────────────
-
-
-class TestGetActivePhase:
-    def test_default_is_generator(self):
-        state = AdversarialState()
-        assert get_active_phase(state) == "generator"
-
-    def test_returns_discriminator(self):
-        state = AdversarialState(active_role="discriminator")
-        assert get_active_phase(state) == "discriminator"
-
-
 class TestGetActiveComponent:
     def test_generator_active(self, adv_config):
         state = AdversarialState(active_role="generator")
@@ -396,123 +342,6 @@ class TestGetActiveComponent:
         component = get_active_component(adv_config, state)
         assert component.role == "discriminator"
         assert component.eval_command == "python eval/disc.py"
-
-
-# ── record phase result tests ──────────────────────────────────
-
-
-class TestRecordPhaseResult:
-    def test_records_round_and_increments(self, adv_project, adv_config):
-        record = record_phase_result(adv_project, adv_config, 0.2)
-        assert record.round == 1
-        assert record.active_role == "generator"
-        assert record.score == 0.2
-        assert not record.switched
-
-        state = load_adversarial_state(adv_project)
-        assert state.current_round == 1
-        assert state.consecutive_above == 0
-        assert len(state.history) == 1
-
-    def test_increments_consecutive_above(self, adv_project, adv_config):
-        record_phase_result(adv_project, adv_config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.consecutive_above == 1
-        assert state.generator_consecutive_above == 1
-
-    def test_resets_consecutive_on_dip(self, adv_project, adv_config):
-        record_phase_result(adv_project, adv_config, 0.5)
-        record_phase_result(adv_project, adv_config, 0.5)
-        record_phase_result(adv_project, adv_config, 0.1)
-        state = load_adversarial_state(adv_project)
-        assert state.consecutive_above == 0
-        assert state.generator_consecutive_above == 0
-
-    def test_switches_phase_after_hysteresis(self, adv_project, adv_config):
-        record_phase_result(adv_project, adv_config, 0.5)
-        record_phase_result(adv_project, adv_config, 0.5)
-        record = record_phase_result(adv_project, adv_config, 0.5)
-        assert record.switched
-
-        state = load_adversarial_state(adv_project)
-        assert state.active_role == "discriminator"
-        assert state.consecutive_above == 0
-
-    def test_generator_streak_preserved_after_switch(self, adv_project, adv_config):
-        for _ in range(3):
-            record_phase_result(adv_project, adv_config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.generator_consecutive_above == 3
-        assert state.active_role == "discriminator"
-
-    def test_discriminator_phase_scoring(self, adv_project, adv_config):
-        for _ in range(3):
-            record_phase_result(adv_project, adv_config, 0.5)
-        record = record_phase_result(adv_project, adv_config, 0.9)
-        assert record.active_role == "discriminator"
-        state = load_adversarial_state(adv_project)
-        assert state.discriminator_consecutive_above == 1
-
-    def test_full_cycle_both_phases(self, adv_project, adv_config):
-        for _ in range(3):
-            record_phase_result(adv_project, adv_config, 0.5)
-        for _ in range(3):
-            record_phase_result(adv_project, adv_config, 0.9)
-
-        state = load_adversarial_state(adv_project)
-        assert state.active_role == "generator"
-        assert state.current_round == 6
-        assert state.generator_consecutive_above == 3
-        assert state.discriminator_consecutive_above == 3
-
-    def test_detects_convergence(self, adv_project, gen_component, disc_component):
-        config = AdversarialConfig(
-            generator=gen_component,
-            discriminator=disc_component,
-            hysteresis=2,
-            convergence_window=2,
-        )
-        record_phase_result(adv_project, config, 0.5)
-        record_phase_result(adv_project, config, 0.5)
-        record_phase_result(adv_project, config, 0.9)
-        record_phase_result(adv_project, config, 0.9)
-
-        state = load_adversarial_state(adv_project)
-        assert state.converged
-        assert state.generator_consecutive_above == 2
-        assert state.discriminator_consecutive_above == 2
-
-    def test_convergence_stays_true(self, adv_project, gen_component, disc_component):
-        config = AdversarialConfig(
-            generator=gen_component,
-            discriminator=disc_component,
-            hysteresis=2,
-            convergence_window=2,
-        )
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.5)
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.9)
-        record_phase_result(adv_project, config, 0.1)
-
-        state = load_adversarial_state(adv_project)
-        assert state.converged
-
-    def test_history_appended(self, adv_project, adv_config):
-        record_phase_result(adv_project, adv_config, 0.3)
-        record_phase_result(adv_project, adv_config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert len(state.history) == 2
-        assert state.history[0].score == 0.3
-        assert state.history[1].score == 0.5
-
-    def test_metric_name_recorded(self, adv_project, adv_config):
-        record = record_phase_result(adv_project, adv_config, 0.3)
-        assert record.metric_name == "evasion_rate"
-
-    def test_timestamp_recorded(self, adv_project, adv_config):
-        record = record_phase_result(adv_project, adv_config, 0.3)
-        assert record.timestamp
 
 
 # ── format tests ────────────────────────────────────────────────
@@ -528,8 +357,11 @@ class TestFormatAdversarialState:
 
     def test_with_history_shows_entries(self):
         rec = AdversarialPhaseRecord(
-            round=1, active_role="generator", score=0.35,
-            metric_name="evasion_rate", timestamp="2026-07-02T10:00:00",
+            round=1,
+            active_role="generator",
+            score=0.35,
+            metric_name="evasion_rate",
+            timestamp="2026-07-02T10:00:00",
             switched=False,
         )
         state = AdversarialState(current_round=1, history=[rec])
@@ -545,8 +377,11 @@ class TestFormatAdversarialState:
 
     def test_switch_marker(self):
         rec = AdversarialPhaseRecord(
-            round=3, active_role="generator", score=0.5,
-            metric_name="evasion_rate", timestamp="2026-07-02T10:00:00",
+            round=3,
+            active_role="generator",
+            score=0.5,
+            metric_name="evasion_rate",
+            timestamp="2026-07-02T10:00:00",
             switched=True,
         )
         state = AdversarialState(current_round=3, history=[rec])
@@ -556,8 +391,11 @@ class TestFormatAdversarialState:
     def test_truncates_long_history(self):
         records = [
             AdversarialPhaseRecord(
-                round=i, active_role="generator", score=0.3,
-                metric_name="m", timestamp="2026-07-02T10:00:00",
+                round=i,
+                active_role="generator",
+                score=0.3,
+                metric_name="m",
+                timestamp="2026-07-02T10:00:00",
                 switched=False,
             )
             for i in range(15)
@@ -709,6 +547,7 @@ class TestParseAdversarial:
 class TestCLIAdversarialState:
     def test_subcommand_registered(self):
         from factory.cli import build_parser
+
         parser = build_parser()
         ns = parser.parse_args(["adversarial-state", "/tmp/test"])
         assert ns.command == "adversarial-state"
@@ -716,18 +555,21 @@ class TestCLIAdversarialState:
 
     def test_reset_flag(self):
         from factory.cli import build_parser
+
         parser = build_parser()
         ns = parser.parse_args(["adversarial-state", "/tmp/test", "--reset"])
         assert ns.reset is True
 
     def test_reset_defaults_false(self):
         from factory.cli import build_parser
+
         parser = build_parser()
         ns = parser.parse_args(["adversarial-state", "/tmp/test"])
         assert ns.reset is False
 
     def test_handler_in_dispatch(self):
         from factory.cli import cmd_adversarial_state
+
         assert callable(cmd_adversarial_state)
 
     def test_cmd_adversarial_state_inspect(self, adv_project):
@@ -751,85 +593,6 @@ class TestCLIAdversarialState:
     def test_handlers_dict_contains_entry(self):
         from factory.cli import main
         import inspect
+
         source = inspect.getsource(main)
         assert '"adversarial-state"' in source
-
-
-# ── edge case tests ─────────────────────────────────────────────
-
-
-class TestEdgeCases:
-    def test_multiple_full_cycles(self, adv_project, gen_component, disc_component):
-        """Run through multiple complete generator/discriminator cycles."""
-        config = AdversarialConfig(
-            generator=gen_component,
-            discriminator=disc_component,
-            hysteresis=2,
-            convergence_window=4,
-        )
-        # Generator phase: 2 rounds above threshold → switch
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.active_role == "discriminator"
-
-        # Discriminator phase: 2 rounds above threshold → switch
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.9)
-        state = load_adversarial_state(adv_project)
-        assert state.active_role == "generator"
-
-        # Generator phase again: 2 more above → switch
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.active_role == "discriminator"
-        assert state.generator_consecutive_above == 4
-        assert state.discriminator_consecutive_above == 2
-        assert not state.converged  # disc only at 2, need 4
-
-        # Discriminator phase: 2 more above → switch, disc now at 4
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.9)
-        state = load_adversarial_state(adv_project)
-        assert state.discriminator_consecutive_above == 4
-        assert state.converged
-
-    def test_failure_resets_per_role_counter(self, adv_project, adv_config):
-        """Scoring below threshold resets the active role's per-role counter."""
-        record_phase_result(adv_project, adv_config, 0.5)
-        record_phase_result(adv_project, adv_config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.generator_consecutive_above == 2
-
-        record_phase_result(adv_project, adv_config, 0.1)
-        state = load_adversarial_state(adv_project)
-        assert state.generator_consecutive_above == 0
-        assert state.consecutive_above == 0
-
-    def test_inactive_role_counter_frozen(self, adv_project, gen_component, disc_component):
-        """Per-role counters don't change when the role is inactive."""
-        config = AdversarialConfig(
-            generator=gen_component,
-            discriminator=disc_component,
-            hysteresis=2,
-            convergence_window=10,
-        )
-        for _ in range(2):
-            record_phase_result(adv_project, config, 0.5)
-        state = load_adversarial_state(adv_project)
-        assert state.generator_consecutive_above == 2
-        assert state.discriminator_consecutive_above == 0
-
-        record_phase_result(adv_project, config, 0.1)
-        state = load_adversarial_state(adv_project)
-        assert state.generator_consecutive_above == 2
-        assert state.discriminator_consecutive_above == 0
-
-    def test_convergence_not_possible_without_both_active(self, adv_project, adv_config):
-        """If only the generator ever runs, convergence can't happen."""
-        for _ in range(10):
-            record_phase_result(adv_project, adv_config, 0.2)
-        state = load_adversarial_state(adv_project)
-        assert not state.converged
-        assert state.active_role == "generator"

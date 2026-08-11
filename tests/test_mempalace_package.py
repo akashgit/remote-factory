@@ -12,7 +12,6 @@ import pytest
 from factory.mempalace.helpers import (
     get_palace_path,
     get_project_name,
-    is_mempalace_available,
 )
 
 
@@ -52,10 +51,6 @@ class TestHelpers:
         p = Path("/tmp/MyProject")
         result = get_project_name(p)
         assert "MyProject" in result
-
-    def test_is_mempalace_available_returns_bool(self) -> None:
-        result = is_mempalace_available()
-        assert isinstance(result, bool)
 
 
 class TestExtractTaskTerms:
@@ -184,7 +179,10 @@ class TestMempalaceBrowse:
         from factory.cli.mempalace import _do_browse
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer=None,
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result == 1
@@ -194,7 +192,10 @@ class TestMempalaceBrowse:
         from factory.cli.mempalace import _do_browse
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer=None,
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result in (0, 1)
@@ -206,10 +207,19 @@ class TestMempalaceBrowse:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="test content", source_file="test.md")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="experiments",
+            content="test content",
+            source_file="test.md",
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer=None,
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -224,10 +234,19 @@ class TestMempalaceBrowse:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="reviews", content="review data", source_file="review.md")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="reviews",
+            content="review data",
+            source_file="review.md",
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=wing, room=None, drawer=None,
+            project_path=str(tmp_path),
+            wing=wing,
+            room=None,
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -244,17 +263,27 @@ class TestMempalaceBrowse:
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
         content = "full drawer content for browse test"
-        store_drawer(isolated_palace, wing=wing, room="decisions", content=content, source_file="verdict.json")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="decisions",
+            content=content,
+            source_file="verdict.json",
+        )
 
         collection = get_collection(isolated_palace)
         all_items = collection.get(
-            where={"$and": [{"wing": wing}, {"room": "decisions"}]}, include=["documents"],
+            where={"$and": [{"wing": wing}, {"room": "decisions"}]},
+            include=["documents"],
         )
         assert all_items["ids"], "Expected at least one drawer"
         drawer_id = all_items["ids"][0]
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer=drawer_id,
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer=drawer_id,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -372,7 +401,9 @@ class TestMpWriteHappyPaths:
         )
         monkeypatch.setattr(
             "factory.mempalace.writer.store_drawer",
-            lambda palace, wing, room, content, source_file: self.drawers.append((room, content[:50])),
+            lambda palace, wing, room, content, source_file: self.drawers.append(
+                (room, content[:50])
+            ),
         )
         monkeypatch.setattr("factory.mempalace.writer.get_palace_path", lambda: str(tmp_path / "p"))
 
@@ -558,19 +589,37 @@ class TestMpReadHappyPaths:
                 return [{"subject": name, "predicate": "has", "object": "value"}]
 
             def timeline(self, entity_name=None):
-                return [{"valid_from": "2026-01-01", "subject": entity_name, "predicate": "created", "object": "v1"}]
+                return [
+                    {
+                        "valid_from": "2026-01-01",
+                        "subject": entity_name,
+                        "predicate": "created",
+                        "object": "v1",
+                    }
+                ]
 
         monkeypatch.setattr("factory.mempalace.reader.get_kg", FakeKG)
         monkeypatch.setattr(
             "factory.mempalace.reader.kg_query_entity",
             lambda name, direction="both", as_of=None, kg=None: (
-                kg.query_entity(name, direction, as_of) if kg else [{"subject": name, "predicate": "has", "object": "value"}]
+                kg.query_entity(name, direction, as_of)
+                if kg
+                else [{"subject": name, "predicate": "has", "object": "value"}]
             ),
         )
         monkeypatch.setattr(
             "factory.mempalace.reader.kg_timeline",
             lambda entity_name, kg=None: (
-                kg.timeline(entity_name=entity_name) if kg else [{"valid_from": "2026-01-01", "subject": entity_name, "predicate": "created", "object": "v1"}]
+                kg.timeline(entity_name=entity_name)
+                if kg
+                else [
+                    {
+                        "valid_from": "2026-01-01",
+                        "subject": entity_name,
+                        "predicate": "created",
+                        "object": "v1",
+                    }
+                ]
             ),
         )
         monkeypatch.setattr("factory.mempalace.reader.get_palace_path", lambda: str(tmp_path / "p"))
@@ -654,7 +703,9 @@ class TestCliMempalace:
         )
         from factory.cli.mempalace import cmd_mempalace
 
-        args = argparse.Namespace(mempalace_action="read", project_path=str(tmp_path), task_hint=None)
+        args = argparse.Namespace(
+            mempalace_action="read", project_path=str(tmp_path), task_hint=None
+        )
         result = cmd_mempalace(args)
         assert result == 0
         assert "read output" in capsys.readouterr().out
@@ -701,10 +752,19 @@ class TestCliMempalace:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="research", content="research data here", source_file="r.md")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="research",
+            content="research data here",
+            source_file="r.md",
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=wing, room="research", drawer=None,
+            project_path=str(tmp_path),
+            wing=wing,
+            room="research",
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -719,10 +779,16 @@ class TestCliMempalace:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md")
+        store_drawer(
+            isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md"
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer=None, all=True,
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer=None,
+            all=True,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -734,7 +800,10 @@ class TestCliMempalace:
         from factory.cli.mempalace import _do_browse
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing="project:nonexistent", room=None, drawer=None,
+            project_path=str(tmp_path),
+            wing="project:nonexistent",
+            room=None,
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result in (0, 1)
@@ -746,10 +815,15 @@ class TestCliMempalace:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md")
+        store_drawer(
+            isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md"
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=wing, room="nonexistent", drawer=None,
+            project_path=str(tmp_path),
+            wing=wing,
+            room="nonexistent",
+            drawer=None,
         )
         result = _do_browse(tmp_path, args)
         assert result == 0
@@ -763,10 +837,15 @@ class TestCliMempalace:
 
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md")
+        store_drawer(
+            isolated_palace, wing=wing, room="experiments", content="data", source_file="a.md"
+        )
 
         args = argparse.Namespace(
-            project_path=str(tmp_path), wing=None, room=None, drawer="nonexistent-id",
+            project_path=str(tmp_path),
+            wing=None,
+            room=None,
+            drawer="nonexistent-id",
         )
         result = _do_browse(tmp_path, args)
         assert result == 1
@@ -783,8 +862,20 @@ class TestContentAddressedDrawers:
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
 
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="identical content", source_file="a.md")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="experiments",
+            content="identical content",
+            source_file="a.md",
+        )
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="experiments",
+            content="identical content",
+            source_file="a.md",
+        )
 
         collection = get_collection(isolated_palace)
         results = collection.get(
@@ -802,8 +893,20 @@ class TestContentAddressedDrawers:
         pn = get_project_name(tmp_path)
         wing = "project:" + pn
 
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="content alpha", source_file="a.md")
-        store_drawer(isolated_palace, wing=wing, room="experiments", content="content beta", source_file="a.md")
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="experiments",
+            content="content alpha",
+            source_file="a.md",
+        )
+        store_drawer(
+            isolated_palace,
+            wing=wing,
+            room="experiments",
+            content="content beta",
+            source_file="a.md",
+        )
 
         collection = get_collection(isolated_palace)
         results = collection.get(

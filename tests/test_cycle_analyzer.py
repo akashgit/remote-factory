@@ -26,16 +26,24 @@ def factory_dir(tmp_path: Path) -> Path:
 
 
 def _write_events(factory_dir: Path, events: list[dict]) -> None:
-    (factory_dir / "events.jsonl").write_text(
-        "\n".join(json.dumps(e) for e in events) + "\n"
-    )
+    (factory_dir / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
 
 
 def _write_results_tsv(factory_dir: Path, rows: list[dict]) -> None:
     cols = [
-        "id", "timestamp", "hypothesis", "change_summary", "issue_number",
-        "pr_number", "score_before", "score_after", "delta", "verdict",
-        "cost_usd", "notes", "research_citations",
+        "id",
+        "timestamp",
+        "hypothesis",
+        "change_summary",
+        "issue_number",
+        "pr_number",
+        "score_before",
+        "score_after",
+        "delta",
+        "verdict",
+        "cost_usd",
+        "notes",
+        "research_citations",
     ]
     lines = ["\t".join(cols)]
     for row in rows:
@@ -61,50 +69,60 @@ def _make_events(
 
     for i in range(n_experiments):
         minute = i * 15
-        events.append({
-            "type": "experiment.begin",
-            "timestamp": f"2026-07-22T10:{minute:02d}:00+00:00",
-            "project": "test",
-            "agent": None,
-            "data": {"exp_id": i + 1, "hypothesis": f"hypothesis {i + 1}"},
-        })
-        events.append({
-            "type": "agent.started",
-            "timestamp": f"2026-07-22T10:{minute:02d}:01+00:00",
-            "project": "test",
-            "agent": "builder",
-            "data": {},
-        })
-        events.append({
-            "type": "agent.completed",
-            "timestamp": f"2026-07-22T10:{minute + 5:02d}:00+00:00",
-            "project": "test",
-            "agent": "builder",
-            "data": {
-                "return_code": 0,
-                "total_cost_usd": agent_costs[i],
-                "output_tokens": 1000,
-                "duration_ms": 300000,
-            },
-        })
-        events.append({
-            "type": "eval.completed",
-            "timestamp": f"2026-07-22T10:{minute + 6:02d}:00+00:00",
-            "project": "test",
-            "agent": None,
-            "data": {"composite": scores[i], "passed": True},
-        })
-        events.append({
-            "type": "experiment.finalize",
-            "timestamp": f"2026-07-22T10:{minute + 7:02d}:00+00:00",
-            "project": "test",
-            "agent": None,
-            "data": {
-                "exp_id": i + 1,
-                "verdict": verdicts[i],
-                "hypothesis": f"hypothesis {i + 1}",
-            },
-        })
+        events.append(
+            {
+                "type": "experiment.begin",
+                "timestamp": f"2026-07-22T10:{minute:02d}:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"exp_id": i + 1, "hypothesis": f"hypothesis {i + 1}"},
+            }
+        )
+        events.append(
+            {
+                "type": "agent.started",
+                "timestamp": f"2026-07-22T10:{minute:02d}:01+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {},
+            }
+        )
+        events.append(
+            {
+                "type": "agent.completed",
+                "timestamp": f"2026-07-22T10:{minute + 5:02d}:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {
+                    "return_code": 0,
+                    "total_cost_usd": agent_costs[i],
+                    "output_tokens": 1000,
+                    "duration_ms": 300000,
+                },
+            }
+        )
+        events.append(
+            {
+                "type": "eval.completed",
+                "timestamp": f"2026-07-22T10:{minute + 6:02d}:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"composite": scores[i], "passed": True},
+            }
+        )
+        events.append(
+            {
+                "type": "experiment.finalize",
+                "timestamp": f"2026-07-22T10:{minute + 7:02d}:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {
+                    "exp_id": i + 1,
+                    "verdict": verdicts[i],
+                    "hypothesis": f"hypothesis {i + 1}",
+                },
+            }
+        )
     return events
 
 
@@ -142,9 +160,12 @@ class TestCycleAnalyzerParseEvents:
 
     def test_skips_schema_invalid_events(self, factory_dir: Path) -> None:
         (factory_dir / "events.jsonl").write_text(
-            json.dumps({"no_type": True, "timestamp": "2026-07-22T10:00:00Z"}) + "\n"
-            + json.dumps({"type": "test", "no_timestamp": True}) + "\n"
-            + json.dumps({"type": "detect", "timestamp": "2026-07-22T10:00:00Z", "data": {}}) + "\n"
+            json.dumps({"no_type": True, "timestamp": "2026-07-22T10:00:00Z"})
+            + "\n"
+            + json.dumps({"type": "test", "no_timestamp": True})
+            + "\n"
+            + json.dumps({"type": "detect", "timestamp": "2026-07-22T10:00:00Z", "data": {}})
+            + "\n"
         )
         r = CycleAnalyzer(factory_dir).latest()
         assert r is not None
@@ -169,11 +190,20 @@ class TestCycleAnalyzerParseEvents:
 
     def test_extracts_failed_agent(self, factory_dir: Path) -> None:
         events = [
-            {"type": "agent.started", "timestamp": "2026-07-22T10:00:00+00:00",
-             "project": "test", "agent": "builder", "data": {}},
-            {"type": "agent.failed", "timestamp": "2026-07-22T10:05:00+00:00",
-             "project": "test", "agent": "builder",
-             "data": {"return_code": 1, "stderr": "timed out"}},
+            {
+                "type": "agent.started",
+                "timestamp": "2026-07-22T10:00:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {},
+            },
+            {
+                "type": "agent.failed",
+                "timestamp": "2026-07-22T10:05:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {"return_code": 1, "stderr": "timed out"},
+            },
         ]
         _write_events(factory_dir, events)
         r = CycleAnalyzer(factory_dir).latest()
@@ -211,10 +241,18 @@ class TestCycleAnalyzerResultsTsv:
     def test_enriches_from_tsv(self, factory_dir: Path) -> None:
         events = _make_events(n_experiments=1, verdicts=["keep"])
         _write_events(factory_dir, events)
-        _write_results_tsv(factory_dir, [
-            {"id": "1", "hypothesis": "better hypothesis", "score_before": "0.3",
-             "score_after": "0.5", "verdict": "keep"},
-        ])
+        _write_results_tsv(
+            factory_dir,
+            [
+                {
+                    "id": "1",
+                    "hypothesis": "better hypothesis",
+                    "score_before": "0.3",
+                    "score_after": "0.5",
+                    "verdict": "keep",
+                },
+            ],
+        )
         r = CycleAnalyzer(factory_dir).latest()
         assert r is not None
         assert r.experiments[0].score_before == 0.3
@@ -222,12 +260,25 @@ class TestCycleAnalyzerResultsTsv:
         assert r.experiments[0].score_delta == pytest.approx(0.2)
 
     def test_adds_missing_experiments(self, factory_dir: Path) -> None:
-        _write_results_tsv(factory_dir, [
-            {"id": "1", "hypothesis": "h1", "score_before": "0.3",
-             "score_after": "0.5", "verdict": "keep"},
-            {"id": "2", "hypothesis": "h2", "score_before": "0.5",
-             "score_after": "0.4", "verdict": "revert"},
-        ])
+        _write_results_tsv(
+            factory_dir,
+            [
+                {
+                    "id": "1",
+                    "hypothesis": "h1",
+                    "score_before": "0.3",
+                    "score_after": "0.5",
+                    "verdict": "keep",
+                },
+                {
+                    "id": "2",
+                    "hypothesis": "h2",
+                    "score_before": "0.5",
+                    "score_after": "0.4",
+                    "verdict": "revert",
+                },
+            ],
+        )
         r = CycleAnalyzer(factory_dir).latest()
         assert r is not None
         assert len(r.experiments) == 2
@@ -235,11 +286,14 @@ class TestCycleAnalyzerResultsTsv:
         assert r.reverted == 1
 
     def test_tsv_scores_override_events(self, factory_dir: Path) -> None:
-        _write_results_tsv(factory_dir, [
-            {"id": "1", "score_after": "0.5", "verdict": "keep"},
-            {"id": "2", "score_after": "0.8", "verdict": "keep"},
-            {"id": "3", "score_after": "1.0", "verdict": "keep"},
-        ])
+        _write_results_tsv(
+            factory_dir,
+            [
+                {"id": "1", "score_after": "0.5", "verdict": "keep"},
+                {"id": "2", "score_after": "0.8", "verdict": "keep"},
+                {"id": "3", "score_after": "1.0", "verdict": "keep"},
+            ],
+        )
         r = CycleAnalyzer(factory_dir).latest()
         assert r is not None
         assert r.score_trajectory == [0.5, 0.8, 1.0]
@@ -263,9 +317,12 @@ class TestCycleAnalyzerEvalArtifacts:
         assert not any("hypothesis.md" in a for a in artifacts)
 
     def test_discovers_zero_padded_dirs(self, factory_dir: Path) -> None:
-        _write_results_tsv(factory_dir, [
-            {"id": "1", "verdict": "keep"},
-        ])
+        _write_results_tsv(
+            factory_dir,
+            [
+                {"id": "1", "verdict": "keep"},
+            ],
+        )
         exp_dir = factory_dir / "experiments" / "001"
         exp_dir.mkdir(parents=True)
         (exp_dir / "eval_after.json").write_text("{}")
@@ -304,18 +361,6 @@ class TestCycleAnalyzerApi:
         _write_events(factory_dir, events)
         assert CycleAnalyzer(factory_dir).trajectory() == [0.5, 0.8]
 
-    def test_to_jsonl(self, factory_dir: Path, tmp_path: Path) -> None:
-        events = _make_events(n_experiments=1)
-        _write_events(factory_dir, events)
-        out = tmp_path / "cycles.jsonl"
-        CycleAnalyzer(factory_dir).to_jsonl(out)
-        CycleAnalyzer(factory_dir).to_jsonl(out)
-        lines = out.read_text().strip().split("\n")
-        assert len(lines) == 2
-        d = json.loads(lines[0])
-        assert "cycle_number" in d
-        assert "score_trajectory" in d
-
     def test_duration(self, factory_dir: Path) -> None:
         events = _make_events(n_experiments=1)
         _write_events(factory_dir, events)
@@ -327,12 +372,22 @@ class TestCycleAnalyzerApi:
 class TestCycleAnalyzerDagMapping:
     def test_node_trace_with_workflow(self, factory_dir: Path) -> None:
         from factory.workflow.definitions import evolve_workflow
+
         events = [
-            {"type": "agent.started", "timestamp": "2026-07-22T10:00:00+00:00",
-             "project": "test", "agent": "researcher", "data": {}},
-            {"type": "agent.completed", "timestamp": "2026-07-22T10:05:00+00:00",
-             "project": "test", "agent": "researcher",
-             "data": {"return_code": 0, "total_cost_usd": 1.0}},
+            {
+                "type": "agent.started",
+                "timestamp": "2026-07-22T10:00:00+00:00",
+                "project": "test",
+                "agent": "researcher",
+                "data": {},
+            },
+            {
+                "type": "agent.completed",
+                "timestamp": "2026-07-22T10:05:00+00:00",
+                "project": "test",
+                "agent": "researcher",
+                "data": {"return_code": 0, "total_cost_usd": 1.0},
+            },
         ]
         _write_events(factory_dir, events)
         wf = evolve_workflow()
@@ -353,12 +408,22 @@ class TestCycleAnalyzerDagMapping:
 
     def test_agent_step_maps_to_node(self, factory_dir: Path) -> None:
         from factory.workflow.definitions import evolve_workflow
+
         events = [
-            {"type": "agent.started", "timestamp": "2026-07-22T10:00:00+00:00",
-             "project": "test", "agent": "builder", "data": {}},
-            {"type": "agent.completed", "timestamp": "2026-07-22T10:05:00+00:00",
-             "project": "test", "agent": "builder",
-             "data": {"return_code": 0, "total_cost_usd": 2.0}},
+            {
+                "type": "agent.started",
+                "timestamp": "2026-07-22T10:00:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {},
+            },
+            {
+                "type": "agent.completed",
+                "timestamp": "2026-07-22T10:05:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {"return_code": 0, "total_cost_usd": 2.0},
+            },
         ]
         _write_events(factory_dir, events)
         wf = evolve_workflow()
@@ -374,10 +439,17 @@ class TestCycleAnalyzerDagMapping:
 class TestCirclePackingEvaluator:
     def test_parse_valid(self, tmp_path: Path) -> None:
         f = tmp_path / "eval.json"
-        f.write_text(json.dumps({
-            "sum_radii": 2.1, "target_ratio": 0.8,
-            "validity": 1.0, "eval_time": 1.5, "combined_score": 0.8,
-        }))
+        f.write_text(
+            json.dumps(
+                {
+                    "sum_radii": 2.1,
+                    "target_ratio": 0.8,
+                    "validity": 1.0,
+                    "eval_time": 1.5,
+                    "combined_score": 0.8,
+                }
+            )
+        )
         r = CirclePackingEvaluator().parse(f)
         assert r.score == 0.8
         assert r.valid is True
@@ -455,10 +527,18 @@ class TestInnerLoopCollect:
         proj.mkdir()
         fd = proj / ".factory"
         fd.mkdir()
-        _write_results_tsv(fd, [
-            {"id": "1", "hypothesis": "h1", "score_before": "0.3",
-             "score_after": "0.5", "verdict": "keep"},
-        ])
+        _write_results_tsv(
+            fd,
+            [
+                {
+                    "id": "1",
+                    "hypothesis": "h1",
+                    "score_before": "0.3",
+                    "score_after": "0.5",
+                    "verdict": "keep",
+                },
+            ],
+        )
         loop = InnerLoop(proj, mode="evolve")
         r = loop.collect()
         assert r.mode == "evolve"
@@ -474,9 +554,15 @@ class TestInnerLoopCollect:
         _write_events(fd, events)
         exp_dir = fd / "experiments" / "1"
         exp_dir.mkdir(parents=True)
-        (exp_dir / "eval_after.json").write_text(json.dumps({
-            "combined_score": 0.85, "validity": 1.0, "sum_radii": 2.1,
-        }))
+        (exp_dir / "eval_after.json").write_text(
+            json.dumps(
+                {
+                    "combined_score": 0.85,
+                    "validity": 1.0,
+                    "sum_radii": 2.1,
+                }
+            )
+        )
 
         evaluator = CirclePackingEvaluator()
         loop = InnerLoop(proj, mode="evolve", evaluator=evaluator)
@@ -514,10 +600,12 @@ class TestInnerLoopDirectives:
         proj.mkdir()
         (proj / ".factory").mkdir()
         loop = InnerLoop(proj, mode="evolve")
-        loop._write_directives({
-            "prefer_categories": ["algorithm-change"],
-            "target_score": 1.0,
-        })
+        loop._write_directives(
+            {
+                "prefer_categories": ["algorithm-change"],
+                "target_score": 1.0,
+            }
+        )
         msg_dir = proj / ".factory" / "messages"
         assert msg_dir.exists()
         files = list(msg_dir.iterdir())

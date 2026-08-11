@@ -5,7 +5,6 @@ from factory.eval.hygiene import (
     _find_sub_projects,
     compute_hygiene_results,
     eval_config_parser,
-    eval_coverage,
     eval_lint,
     eval_tests,
     eval_type_check,
@@ -19,7 +18,11 @@ class TestHygieneWeights:
 
     def test_all_six_dimensions(self):
         assert set(HYGIENE_WEIGHTS.keys()) == {
-            "tests", "lint", "type_check", "coverage", "config_parser",
+            "tests",
+            "lint",
+            "type_check",
+            "coverage",
+            "config_parser",
             "architecture",
         }
 
@@ -78,13 +81,6 @@ class TestEvalTypeCheck:
     def test_no_type_checker_returns_neutral(self, tmp_path):
         result = eval_type_check(tmp_path)
         assert result["name"] == "type_check"
-        assert result["score"] == 0.5
-
-
-class TestEvalCoverage:
-    def test_no_coverage_tool_returns_neutral(self, tmp_path):
-        result = eval_coverage(tmp_path)
-        assert result["name"] == "coverage"
         assert result["score"] == 0.5
 
 
