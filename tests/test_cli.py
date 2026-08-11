@@ -28,7 +28,6 @@ from factory.cli._path_resolver import (
     _resolve_input,
 )
 from factory.cli._helpers import _is_github_url
-from factory.cli._wizard import _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -422,8 +421,10 @@ class TestCmdCeoDesign:
         mock_invoke = _mock_invoke_agent_ok()
         with (
             patch("factory.agents.runner.invoke_agent", mock_invoke),
-            patch("factory.worktree.create_worktree",
-                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
             patch("factory.worktree.remove_worktree"),
             patch("factory.worktree.prune_stale", return_value=[]),
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
@@ -453,7 +454,19 @@ class TestCmdCeoDesign:
         )
         validated = _validate_ceo_flags(args)
         assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
-        _mode, headless, _bg, _bg_agents, _prompt, _focus, _dir, _refine, auto_approve, _from_plan, _just_plan = validated
+        (
+            _mode,
+            headless,
+            _bg,
+            _bg_agents,
+            _prompt,
+            _focus,
+            _dir,
+            _refine,
+            auto_approve,
+            _from_plan,
+            _just_plan,
+        ) = validated
         assert headless is True
         assert auto_approve is True
 
@@ -500,8 +513,10 @@ class TestAutoApproveEvent:
         mock_invoke = _mock_invoke_agent_ok()
         with (
             patch("factory.agents.runner.invoke_agent", mock_invoke),
-            patch("factory.worktree.create_worktree",
-                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
             patch("factory.worktree.remove_worktree"),
             patch("factory.worktree.prune_stale", return_value=[]),
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
@@ -523,7 +538,8 @@ class TestAutoApproveEvent:
             result = main(["ceo", str(tmp_path), "--mode", "design"])
         assert result == 0
         auto_approve_calls = [
-            c for c in mock_emit.call_args_list
+            c
+            for c in mock_emit.call_args_list
             if len(c.args) >= 2 and c.args[1] == "auto_approve.enabled"
         ]
         assert len(auto_approve_calls) == 0
@@ -2490,148 +2506,6 @@ class TestRefinerPromptExists:
         )
 
 
-class TestWizardLongInputRedirect:
-    """Tests for wizard long-input redirect to ~/.factory/wizard_input.md."""
-
-    def _make_input_fn(self, first_response):
-        """Return an input() replacement that returns first_response then raises EOFError."""
-        call_count = 0
-
-        def _input(prompt=""):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return first_response
-            raise EOFError
-
-        return _input
-
-    def test_long_input_triggers_file_write(self, tmp_path, monkeypatch):
-        """Input >200 chars is written to ~/.factory/wizard_input.md with matching content."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_input = "a" * 250
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
-
-        _welcome_wizard()
-
-        assert wizard_file.exists()
-        assert wizard_file.read_text() == long_input
-
-    def test_short_input_no_file_written(self, tmp_path, monkeypatch):
-        """Input <=200 chars does NOT write a file."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        short_input = "Build a weather CLI"
-        monkeypatch.setattr("builtins.input", self._make_input_fn(short_input))
-
-        with patch(
-            "factory.cli._wizard._classify_with_llm",
-            return_value=(
-                [],
-                [
-                    {
-                        "label": "Build",
-                        "explanation": "Build it.",
-                        "command": "factory ceo 'Build a weather CLI' --mode build",
-                    },
-                ],
-            ),
-        ):
-            _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_long_path_not_redirected(self, tmp_path, monkeypatch):
-        """A long string that is an existing directory is NOT redirected."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_dir = tmp_path / ("a" * 210)
-        long_dir.mkdir()
-
-        monkeypatch.setattr("builtins.input", self._make_input_fn(str(long_dir)))
-
-        _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_long_url_not_redirected(self, tmp_path, monkeypatch):
-        """A long GitHub URL is NOT redirected."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_url = "https://github.com/user/" + "r" * 200
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_url))
-
-        _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_wizard_file_inside_factory_dir(self, tmp_path, monkeypatch):
-        """The written file is inside ~/.factory/."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-
-        long_input = "x" * 250
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
-
-        _welcome_wizard()
-
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        assert wizard_file.exists()
-        assert wizard_file.parent == fake_home / ".factory"
-
-
-class TestQuickClassifyWizardFile:
-    """Tests for _quick_classify returning None for wizard-generated files (LLM fallthrough)."""
-
-    def test_wizard_file_returns_none(self, tmp_path, monkeypatch):
-        """_quick_classify returns None for wizard_input.md so LLM classifies the content."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        wizard_file.parent.mkdir(parents=True)
-        wizard_file.write_text("some long idea text")
-
-        result = _quick_classify(str(wizard_file))
-        assert result is None
-
-    def test_regular_file_returns_one_option(self, tmp_path):
-        """_quick_classify returns one option for a regular spec file."""
-        spec_file = tmp_path / "spec.md"
-        spec_file.write_text("# My project spec")
-
-        result = _quick_classify(str(spec_file))
-        assert result is not None
-        assert len(result) == 1
-        assert result[0]["label"] == "Build from this spec file"
-
-    def test_wizard_file_with_tilde_path_returns_none(self, tmp_path, monkeypatch):
-        """_quick_classify returns None for ~/.factory/wizard_input.md with tilde expansion."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        wizard_file.parent.mkdir(parents=True)
-        wizard_file.write_text("idea content")
-
-        result = _quick_classify("~/.factory/wizard_input.md")
-        assert result is None
-
-
 class TestMaterializeProject:
     """Tests for _materialize_project — deferred directory creation."""
 
@@ -2762,13 +2636,26 @@ class TestFromPlanFlag:
 
     def test_from_plan_mutually_exclusive_with_focus(self, capsys):
         """--from-plan and --focus cannot be used together."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--from-plan", "plan.md", "--focus", "auth"])
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--from-plan", "plan.md", "--focus", "auth"]
+        )
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
     def test_from_plan_mutually_exclusive_with_prompt(self, capsys):
         """--from-plan and --prompt cannot be used together."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--from-plan", "plan.md", "--prompt", "spec.md"])
+        result = main(
+            [
+                "ceo",
+                "/some/path",
+                "--mode",
+                "design",
+                "--from-plan",
+                "plan.md",
+                "--prompt",
+                "spec.md",
+            ]
+        )
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
@@ -2849,12 +2736,23 @@ class TestResolvePlanSource:
 
         (tmp_path / ".git").mkdir()
         subprocess.run(
-            ["git", "init"], cwd=tmp_path, capture_output=True, check=True,
+            ["git", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
-            ["git", "-C", str(tmp_path), "remote", "add", "origin",
-             "git@github.com:owner/repo.git"],
-            capture_output=True, check=True,
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:owner/repo.git",
+            ],
+            capture_output=True,
+            check=True,
         )
 
         from factory.issue import IssueSpec
@@ -2879,17 +2777,30 @@ class TestResolvePlanSource:
 
         (tmp_path / ".git").mkdir()
         subprocess.run(
-            ["git", "init"], cwd=tmp_path, capture_output=True, check=True,
+            ["git", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
-            ["git", "-C", str(tmp_path), "remote", "add", "origin",
-             "git@github.com:owner/repo.git"],
-            capture_output=True, check=True,
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:owner/repo.git",
+            ],
+            capture_output=True,
+            check=True,
         )
 
         from factory.issue import IssueSpec
 
-        mock_issue = IssueSpec(number=99, title="My Plan", body="fuzzy plan body", url="", forge="github")
+        mock_issue = IssueSpec(
+            number=99, title="My Plan", body="fuzzy plan body", url="", forge="github"
+        )
         search_result = json.dumps([{"number": 99, "title": "My Plan"}])
 
         with (
@@ -2945,7 +2856,10 @@ class TestResolvePlanSource:
             )
             result = _resolve_plan_source("10", tmp_path)
         assert len(result.feedback) == 2
-        assert "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good." in result.feedback[0]
+        assert (
+            "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good."
+            in result.feedback[0]
+        )
         assert result.feedback[1] == "short comment"
 
 
@@ -2971,7 +2885,8 @@ class TestBuildCeoTaskFromPlan:
     def test_build_ceo_task_from_plan_with_feedback_includes_reconciliation(self, tmp_path):
         """from_plan with feedback includes Strategist reconciliation instructions."""
         task = _build_ceo_task(
-            tmp_path, "design",
+            tmp_path,
+            "design",
             from_plan="## Phase 1\nBuild it",
             from_plan_feedback=["Please add auth", "Also need caching"],
         )
@@ -2984,7 +2899,8 @@ class TestBuildCeoTaskFromPlan:
     def test_build_ceo_task_from_plan_without_feedback_skips_strategist(self, tmp_path):
         """from_plan without feedback skips the Strategist step."""
         task = _build_ceo_task(
-            tmp_path, "design",
+            tmp_path,
+            "design",
             from_plan="## Phase 1\nBuild it",
             from_plan_feedback=[],
         )
@@ -2996,7 +2912,8 @@ class TestBuildCeoTaskFromPlan:
     def test_build_ceo_task_from_plan_feedback_none_skips_strategist(self, tmp_path):
         """from_plan with feedback=None behaves like no feedback."""
         task = _build_ceo_task(
-            tmp_path, "design",
+            tmp_path,
+            "design",
             from_plan="## Phase 1\nBuild it",
             from_plan_feedback=None,
         )
@@ -3006,7 +2923,8 @@ class TestBuildCeoTaskFromPlan:
     def test_build_ceo_task_from_plan_excludes_design_existing(self, tmp_path):
         """from_plan takes precedence over design_existing — no contradictory directives."""
         task = _build_ceo_task(
-            tmp_path, "design",
+            tmp_path,
+            "design",
             from_plan="## Phase 1\nBuild it",
             design_existing=True,
         )
@@ -3016,7 +2934,8 @@ class TestBuildCeoTaskFromPlan:
     def test_build_ceo_task_from_plan_excludes_design_idea(self, tmp_path):
         """from_plan takes precedence over design_idea — no contradictory directives."""
         task = _build_ceo_task(
-            tmp_path, "design",
+            tmp_path,
+            "design",
             from_plan="## Phase 1\nBuild it",
             design_idea="Build a weather CLI",
         )
@@ -3040,8 +2959,10 @@ class TestFromPlanFeedbackWritesFile:
         mock_invoke = _mock_invoke_agent_ok()
         with (
             patch("factory.agents.runner.invoke_agent", mock_invoke),
-            patch("factory.worktree.create_worktree",
-                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
             patch("factory.worktree.remove_worktree"),
             patch("factory.worktree.prune_stale", return_value=[]),
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
@@ -3050,7 +2971,9 @@ class TestFromPlanFeedbackWritesFile:
             patch("factory.graph.is_graphify_installed", return_value=False),
             patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "design", "--from-plan", "42", "--auto-approve"])
+            result = main(
+                ["ceo", str(tmp_path), "--mode", "design", "--from-plan", "42", "--auto-approve"]
+            )
         assert result == 0
         feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
         assert feedback_file.exists()
@@ -3070,8 +2993,10 @@ class TestFromPlanFeedbackWritesFile:
         mock_invoke = _mock_invoke_agent_ok()
         with (
             patch("factory.agents.runner.invoke_agent", mock_invoke),
-            patch("factory.worktree.create_worktree",
-                  side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
             patch("factory.worktree.remove_worktree"),
             patch("factory.worktree.prune_stale", return_value=[]),
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
@@ -3080,7 +3005,17 @@ class TestFromPlanFeedbackWritesFile:
             patch("factory.graph.is_graphify_installed", return_value=False),
             patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "design", "--from-plan", "plan.md", "--auto-approve"])
+            result = main(
+                [
+                    "ceo",
+                    str(tmp_path),
+                    "--mode",
+                    "design",
+                    "--from-plan",
+                    "plan.md",
+                    "--auto-approve",
+                ]
+            )
         assert result == 0
         feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
         assert not feedback_file.exists()
@@ -3097,13 +3032,17 @@ class TestJustPlanFlag:
 
     def test_just_plan_mutually_exclusive_with_from_plan(self, capsys):
         """--just-plan and --from-plan cannot be used together."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--just-plan", "--from-plan", "plan.md"])
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--just-plan", "--from-plan", "plan.md"]
+        )
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
     def test_just_plan_mutually_exclusive_with_prompt(self, capsys):
         """--just-plan and --prompt cannot be used together."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--just-plan", "--prompt", "spec.md"])
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--just-plan", "--prompt", "spec.md"]
+        )
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
