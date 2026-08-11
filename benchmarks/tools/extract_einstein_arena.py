@@ -114,6 +114,7 @@ timeout_sec = 600.0
         description = problem["description"]
         solution_schema = problem["solutionSchema"]
         scoring = problem["scoring"]
+        min_improvement = problem.get("minImprovement", 0)
 
         # 添加 solution schema 说明
         schema_section = "\n\n## Solution Format\n\n"
@@ -128,7 +129,13 @@ timeout_sec = 600.0
         scoring_section = f"\n\n## Scoring Direction\n\n**{scoring.upper()}**\n"
         scoring_section += "\nThe verifier will evaluate your solution and return a numerical score.\n"
 
-        return description + schema_section + scoring_section
+        # 添加 minImprovement 说明
+        improvement_section = ""
+        if min_improvement > 0:
+            improvement_section = f"\n\n## Minimum Improvement\n\n"
+            improvement_section += f"To claim a better score on the leaderboard, your solution must improve upon the current best by at least **{min_improvement}**.\n"
+
+        return description + schema_section + scoring_section + improvement_section
 
     def generate_test_sh(self, problem: dict) -> str:
         """生成 tests/test.sh（包装 verifier）"""

@@ -33,3 +33,8 @@ Submit a JSON file named `solution.json` with the following structure:
 **MAXIMIZE**
 
 The verifier will evaluate your solution and return a numerical score.
+
+
+## Minimum Improvement
+
+To claim a better score on the leaderboard, your solution must improve upon the current best by at least **1e-10**.
