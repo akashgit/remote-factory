@@ -42,6 +42,7 @@ class CompressOuterLoop:
         self.mutator = mutator
         self._cycle_count = 0
         self._plateau_count = 0
+        self._plateau_detected = False
         self.reason: str | None = None
 
     def converged(self) -> bool:
@@ -65,7 +66,10 @@ class CompressOuterLoop:
             for r in history
             if r.score_end is not None
         ]
-        if detect_research_plateau(summaries, threshold=self.plateau_threshold):
+        self._plateau_detected = detect_research_plateau(
+            summaries, threshold=self.plateau_threshold
+        )
+        if self._plateau_detected:
             self._plateau_count += 1
             if self.mutator and self._plateau_count < 3:
                 log.info(
@@ -108,24 +112,15 @@ class CompressOuterLoop:
 
     def step(self) -> CycleRecord:
         """Run one outer-loop iteration: generate directives, run inner loop, check plateau."""
-        summaries = [
-            {"metric_value": r.score_end}
-            for r in self.inner.history()
-            if r.score_end is not None
-        ]
-        plateau_detected = detect_research_plateau(
-            summaries, threshold=self.plateau_threshold
-        )
+        plateau_detected = self._plateau_detected
 
-        if plateau_detected:
-            self._plateau_count += 1
-            if self.mutator and self._plateau_count >= 2 and self.inner.workflow:
-                log.info("triggering_workflow_mutation", plateau_count=self._plateau_count)
-                self.inner.workflow = self.mutator.mutate(
-                    self.inner.workflow,
-                    self.inner.history(),
-                )
-                self._plateau_count = 0
+        if plateau_detected and self.mutator and self._plateau_count >= 2 and self.inner.workflow:
+            log.info("triggering_workflow_mutation", plateau_count=self._plateau_count)
+            self.inner.workflow = self.mutator.mutate(
+                self.inner.workflow,
+                self.inner.history(),
+            )
+            self._plateau_count = 0
 
         directives = self.generate_directives(plateau_detected=plateau_detected)
         record = self.inner.step(directives=directives)

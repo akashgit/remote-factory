@@ -333,6 +333,49 @@ class TestCompressOuterLoop:
             assert record.score_end == 0.6
             assert outer._cycle_count == 1
 
+    def test_run_plateau_counting_with_mutator(self, tmp_path: Path) -> None:
+        """Verify _plateau_count increments once per iteration in run(), not twice."""
+        workflow = _make_workflow()
+        inner = CompressInnerLoop(tmp_path, workflow=workflow, frozen_nodes=frozenset())
+        mutator = WorkflowMutator(frozen_nodes=frozenset({"gate_review"}))
+        config = OuterLoopConfig(max_outer_cycles=10)
+        outer = CompressOuterLoop(
+            inner, config, mutator=mutator, plateau_threshold=2, target_score=0.99,
+        )
+
+        inner._history.extend([
+            _make_cycle_record(cycle_number=1, score_end=0.5, score_delta=0.1, hypothesis="good"),
+            _make_cycle_record(cycle_number=2, score_end=0.5, score_delta=-0.1, hypothesis="bad"),
+            _make_cycle_record(cycle_number=3, score_end=0.5, score_delta=0.0),
+        ])
+
+        step_call_count = 0
+        original_prompt = inner.workflow.nodes["researcher"].prompt_template
+
+        def fake_step(*, directives: dict | None = None) -> CycleRecord:
+            nonlocal step_call_count
+            step_call_count += 1
+            rec = _make_cycle_record(
+                cycle_number=3 + step_call_count, score_end=0.5, score_delta=0.0,
+            )
+            inner._history.append(rec)
+            return rec
+
+        with patch.object(inner, "step", side_effect=fake_step):
+            # First iteration: plateau detected → _plateau_count goes to 1 (not 2).
+            # Mutator should NOT fire (count < 2).
+            assert not outer.converged()
+            outer.step()
+            assert outer._plateau_count == 1
+            assert inner.workflow.nodes["researcher"].prompt_template == original_prompt
+
+            # Second iteration: plateau again → _plateau_count goes to 2.
+            # Mutator SHOULD fire (count >= 2), then reset to 0.
+            assert not outer.converged()
+            outer.step()
+            assert outer._plateau_count == 0
+            assert inner.workflow.nodes["researcher"].prompt_template != original_prompt
+
     def test_best_overall_technique_delegates(self, tmp_path: Path) -> None:
         inner = CompressInnerLoop(tmp_path)
         config = OuterLoopConfig(max_outer_cycles=5)
@@ -441,6 +484,7 @@ class TestWorkflowMutator:
             score_delta=0.05,
         )
         with patch.object(inner, "step", return_value=mock_record):
+            assert not outer.converged()
             outer.step()
 
         assert inner.workflow.nodes["researcher"].prompt_template != original_prompt
