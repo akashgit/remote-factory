@@ -5,7 +5,7 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import structlog
 from filelock import FileLock
@@ -15,7 +15,6 @@ from factory.models import (
     AdversarialComponent,
     AdversarialConfig,
     AggregateMethod,
-    CompositeScore,
     CostBudgetConfig,
     EvalProfile,
     EvalWeights,
@@ -576,20 +575,6 @@ class ExperimentStore:
 
         return exp_id
 
-    async def save_eval(
-        self,
-        exp_id: int,
-        phase: Literal["before", "after"],
-        score: CompositeScore,
-    ) -> None:
-        """Write eval_before.json or eval_after.json into the experiment dir."""
-        log.debug("save_eval", exp_id=exp_id, phase=phase, score=score.total)
-        exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
-        filename = f"eval_{phase}.json"
-        (exp_dir / filename).write_text(
-            json.dumps(score.model_dump(), indent=2, default=str) + "\n"
-        )
-
     async def finalize(self, exp_id: int, record: ExperimentRecord) -> None:
         """Write verdict.json and append row to results.tsv.
 
@@ -765,10 +750,3 @@ class ExperimentStore:
             return None
         log.debug("read_strategy_loaded", path=str(strategy_path))
         return strategy_path.read_text()
-
-    async def write_strategy(self, content: str) -> None:
-        """Write strategy/current.md."""
-        log.info("write_strategy", content_length=len(content))
-        strategy_path = self.factory_dir / "strategy" / "current.md"
-        strategy_path.parent.mkdir(parents=True, exist_ok=True)
-        strategy_path.write_text(content)

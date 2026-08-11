@@ -20,7 +20,9 @@ async def _setup_factory_project(
     await store.init(config)
 
     if with_strategy:
-        await store.write_strategy("## Current Strategy\n\nFocus on tests.\n")
+        strategy_path = store.factory_dir / "strategy" / "current.md"
+        strategy_path.parent.mkdir(parents=True, exist_ok=True)
+        strategy_path.write_text("## Current Strategy\n\nFocus on tests.\n")
 
     if with_eval_profile:
         from factory.models import EvalDimension, EvalProfile
@@ -51,9 +53,14 @@ def test_export_produces_valid_json(tmp_project: Path, sample_config: FactoryCon
     """Export a project with .factory/ and verify valid JSON output."""
     import asyncio
 
-    asyncio.run(_setup_factory_project(
-        tmp_project, sample_config, with_strategy=True, with_eval_profile=True,
-    ))
+    asyncio.run(
+        _setup_factory_project(
+            tmp_project,
+            sample_config,
+            with_strategy=True,
+            with_eval_profile=True,
+        )
+    )
 
     code = main(["export", str(tmp_project)])
     assert code == 0
@@ -116,9 +123,7 @@ def test_export_minimal_factory(tmp_project: Path, sample_config: FactoryConfig,
     assert data["experiments"] == []
 
 
-def test_export_with_experiment_history(
-    tmp_project: Path, sample_config: FactoryConfig, capsys
-):
+def test_export_with_experiment_history(tmp_project: Path, sample_config: FactoryConfig, capsys):
     """Export includes experiment records from results.tsv."""
     import asyncio
     from datetime import datetime

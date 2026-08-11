@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from pathlib import Path
@@ -49,12 +48,6 @@ class ConsecutiveAgentFailureError(Exception):
             "Check .factory/events.jsonl for details. "
             "This usually means BOBSHELL_API_KEY is not being propagated to subprocesses."
         )
-
-
-def reset_failure_counter() -> None:
-    """Reset the consecutive failure counter. Call at start of a cycle."""
-    global _consecutive_failures
-    _consecutive_failures = 0
 
 
 IDENTITY_REANCHOR = """\
@@ -534,82 +527,3 @@ def complete_cycle_session(
         flush()
     except Exception:
         logger.debug("Failed to complete cycle trace", exc_info=True)
-
-
-async def invoke_agents_parallel(
-    tasks: list[tuple[AgentRole, str]],
-    project_path: Path,
-    *,
-    timeout: float = 600.0,
-    dangerously_skip_permissions: bool = True,
-    model: str | None = None,
-    runner_name: str | None = None,
-    tmux_persist: bool = False,
-    background: bool = False,
-    review_tags: list[str | None] | None = None,
-) -> list[tuple[str, int]]:
-    """Invoke multiple agents concurrently. Returns list of (output, return_code).
-
-    Args:
-        review_tags: Optional list of review tags, one per task. When not
-            provided, auto-generates numeric tags (0, 1, 2, …) for any role
-            that appears more than once in *tasks* so their review files don't
-            clobber each other.
-
-    Raises:
-        ConsecutiveAgentFailureError: If all agents in the batch fail, indicating
-            infrastructure problems (e.g., API key not propagating to subprocesses).
-    """
-    # Auto-generate tags for duplicate roles when none are provided
-    if review_tags is None:
-        from collections import Counter
-
-        role_counts = Counter(role for role, _ in tasks)
-        duplicated_roles = {role for role, count in role_counts.items() if count > 1}
-        if duplicated_roles:
-            role_idx: dict[str, int] = {}
-            review_tags = []
-            for role, _ in tasks:
-                if role in duplicated_roles:
-                    idx = role_idx.get(role, 0)
-                    review_tags.append(str(idx))
-                    role_idx[role] = idx + 1
-                else:
-                    review_tags.append(None)
-        else:
-            review_tags = [None] * len(tasks)
-
-    coros = [
-        invoke_agent(
-            role,
-            task,
-            project_path,
-            timeout=timeout,
-            dangerously_skip_permissions=dangerously_skip_permissions,
-            model=model,
-            runner_name=runner_name,
-            _track_failures=False,  # Avoid race condition; track locally below
-            tmux_persist=tmux_persist,
-            background=background,
-            review_tag=tag,
-        )
-        for (role, task), tag in zip(tasks, review_tags)
-    ]
-    results = list(await asyncio.gather(*coros))
-
-    # Track failures locally to avoid race condition with global counter
-    failure_count = sum(1 for _, code in results if code != 0)
-    if failure_count >= _FAILURE_ABORT_THRESHOLD and failure_count == len(results):
-        # All agents failed — likely infrastructure issue
-        _emit_safe(
-            project_path,
-            "cycle.aborted",
-            data={
-                "reason": "consecutive_agent_failures",
-                "failure_count": failure_count,
-                "last_agent": "parallel_batch",
-            },
-        )
-        raise ConsecutiveAgentFailureError(failure_count, "parallel_batch")
-
-    return results

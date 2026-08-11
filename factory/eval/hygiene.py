@@ -130,20 +130,6 @@ def eval_type_check(project_path: Path) -> dict:
 # ── Dimension 4: coverage (weight 0.25) ───────────────────────────
 
 
-def eval_coverage(project_path: Path) -> dict:
-    """Run test coverage across detected sub-projects."""
-    sub_projects = _find_sub_projects(project_path)
-    fragments = []
-    for sp in sub_projects:
-        for evaluator in detect_languages(sp):
-            result = evaluator.run_coverage(sp)
-            if result is not None:
-                fragments.append(result)
-    if not fragments:
-        return _neutral("coverage", "no coverage tool detected")
-    return _aggregate(fragments, "coverage")
-
-
 # ── Dimension 5: config_parser (weight 0.10) ──────────────────────
 
 
@@ -361,8 +347,16 @@ def _collect_test_and_coverage(project_path: Path, timeout: int = 300) -> tuple[
             if cov_frag is not None:
                 cov_fragments.append(cov_frag)
 
-    test_result = _aggregate(test_fragments, "tests") if test_fragments else _neutral("tests", "no test suite detected")
-    cov_result = _aggregate(cov_fragments, "coverage") if cov_fragments else _neutral("coverage", "no coverage tool detected")
+    test_result = (
+        _aggregate(test_fragments, "tests")
+        if test_fragments
+        else _neutral("tests", "no test suite detected")
+    )
+    cov_result = (
+        _aggregate(cov_fragments, "coverage")
+        if cov_fragments
+        else _neutral("coverage", "no coverage tool detected")
+    )
     return test_result, cov_result
 
 

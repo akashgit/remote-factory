@@ -964,7 +964,9 @@ class TestCmdArchive:
             notes="",
         )
         asyncio.run(store.finalize(exp_id, record))
-        asyncio.run(store.write_strategy("Focus on reliability."))
+        strategy_path = store.factory_dir / "strategy" / "current.md"
+        strategy_path.parent.mkdir(parents=True, exist_ok=True)
+        strategy_path.write_text("Focus on reliability.")
 
         with (
             patch("factory.obsidian.notes.write_experiment_note") as mock_exp,
