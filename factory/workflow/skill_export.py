@@ -21,6 +21,7 @@ from factory.workflow.primitives import (
     AgentNode,
     DEFAULT_AGENT_POOL,
     Edge,
+    FactoryContract,
     FnNode,
     ForkNode,
     GateNode,
@@ -683,6 +684,52 @@ def _selection_to_instruction(node: SelectionNode, workflow: Workflow) -> str:
     return "\n".join(lines)
 
 
+def _factory_contract_to_instruction(node: FactoryContract, workflow: Workflow) -> str:
+    """Convert a FactoryContract to a peer-factory instruction block."""
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    reads_ann = ", ".join(sorted(node.reads)) if node.reads else "none"
+    writes_ann = ", ".join(sorted(node.writes)) if node.writes else "none"
+
+    annotations = [
+        f"<!-- node: FactoryContract id={node.id} transform_type={node.transform_type} -->",
+        f"<!-- transform: {node.transform} -->",
+        f"<!-- eval_command: {node.eval_command} -->",
+        f"<!-- reads: {reads_ann} -->",
+        f"<!-- writes: {writes_ann} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [*annotations, ""]
+    lines.append(f"**Peer Factory** (`{node.id}`)\n")
+
+    if node.input_contract:
+        lines.append("**Input contract:**")
+        for name, path in sorted(node.input_contract.items()):
+            lines.append(f"- `{name}` ← `{path}`")
+        lines.append("")
+
+    if node.transform_type == "workflow":
+        lines.append(f"**Transform:** run workflow `{node.transform}`")
+    else:
+        cmd = node.transform.replace("{project_path}", "$PROJECT_PATH")
+        lines.append(f"**Transform:** `{cmd}`")
+    lines.append("")
+
+    if node.output_contract:
+        lines.append("**Output contract:**")
+        for name, path in sorted(node.output_contract.items()):
+            lines.append(f"- `{name}` → `{path}`")
+        lines.append("")
+
+    eval_cmd = node.eval_command.replace("{project_path}", "$PROJECT_PATH")
+    lines.append(f"**Eval:** `{eval_cmd}`")
+    lines.append("")
+    lines.append("State summary written to `.factory/state/{id}.summary.json`.")
+
+    return "\n".join(lines)
+
+
 # ── frontmatter builder ────────────────────────────────────────
 
 
@@ -798,6 +845,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
                 section_title = f"{role_title} — {node_title}"
             sections.append(f"## Phase {phase_num}: {section_title}\n")
             sections.append(_agent_to_instruction(node, workflow))
+            phase_num += 1
+
+        elif isinstance(node, FactoryContract):
+            node_title = nid.replace("_", " ").title()
+            sections.append(f"## Phase {phase_num}: {node_title} (Factory)\n")
+            sections.append(_factory_contract_to_instruction(node, workflow))
             phase_num += 1
 
         elif isinstance(node, FnNode):

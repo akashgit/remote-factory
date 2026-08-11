@@ -207,6 +207,18 @@ class Study(FnNode):
     focus: str | None = None
 
 
+class FactoryContract(Node):
+    """A peer factory — independently evaluable unit with its own harness."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    input_contract: dict[str, str] = Field(default_factory=dict)
+    output_contract: dict[str, str] = Field(default_factory=dict)
+    eval_command: str
+    transform: str
+    transform_type: Literal["workflow", "command"] = "workflow"
+
+
 # ── edges ────────────────────────────────────────────────────────
 
 
@@ -223,7 +235,7 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study | FactoryContract
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]

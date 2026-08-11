@@ -26,6 +26,7 @@ from factory.workflow.primitives import (
     AgentConfig,
     AgentNode,
     Edge,
+    FactoryContract,
     FnNode,
     ForkNode,
     GateNode,
@@ -214,6 +215,10 @@ class WorkflowExecutor:
 
         if isinstance(node, GateNode):
             await self._execute_gate(node)
+            return
+
+        if isinstance(node, FactoryContract):
+            await self._execute_factory_contract(node)
             return
 
         await self._execute_action_node(node)
@@ -774,6 +779,132 @@ class WorkflowExecutor:
         )
 
         next_id = self._next_unconditional(node.id)
+        if next_id:
+            await self._execute_from(next_id)
+
+    async def _execute_factory_contract(self, node: FactoryContract) -> None:
+        """Execute a FactoryContract: validate inputs, run transform, validate outputs, eval, summarize."""
+        from factory.workflow.protocol import summarize_factory_output, write_summary
+        from factory.workflow.registry import WorkflowRegistry
+
+        node_id = node.id
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="FactoryContract",
+            ),
+        )
+        start = time.monotonic()
+
+        # 1. Validate input contract
+        for name, rel_path in node.input_contract.items():
+            full_path = self.project_path / rel_path
+            if not self.dry_run and not full_path.exists():
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=node_id,
+                        node_type="FactoryContract",
+                        error=f"input contract '{name}' missing: {rel_path}",
+                    ),
+                )
+                self.result.halted = True
+                self.result.halt_reason = f"factory '{node_id}' input '{name}' missing: {rel_path}"
+                return
+
+        # 2. Run the transform
+        if self.dry_run:
+            output = f"[dry-run] factory contract {node_id} executed"
+        elif node.transform_type == "workflow":
+            wf = WorkflowRegistry.get_workflow(node.transform, self.project_path)
+            if wf is None:
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=node_id,
+                        node_type="FactoryContract",
+                        error=f"workflow '{node.transform}' not found in registry",
+                    ),
+                )
+                self.result.halted = True
+                self.result.halt_reason = f"factory '{node_id}' workflow '{node.transform}' not found"
+                return
+            sub_executor = WorkflowExecutor(
+                wf,
+                self.project_path,
+                agent_pool=self.agent_pool,
+                dry_run=self.dry_run,
+            )
+            sub_result = await sub_executor.execute()
+            if sub_result.halted:
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=node_id,
+                        node_type="FactoryContract",
+                        error=f"sub-workflow halted: {sub_result.halt_reason}",
+                    ),
+                )
+                self.result.halted = True
+                self.result.halt_reason = f"factory '{node_id}' sub-workflow halted: {sub_result.halt_reason}"
+                return
+            output = json.dumps({"sub_workflow": node.transform, "nodes_executed": sub_result.nodes_executed})
+        else:
+            cmd = node.transform.replace("{project_path}", str(self.project_path))
+            output = await self._run_shell(cmd)
+
+        # 3. Validate output contract
+        for name, rel_path in node.output_contract.items():
+            full_path = self.project_path / rel_path
+            if not self.dry_run and not full_path.exists():
+                log.warning(
+                    "factory_contract.output_missing",
+                    node=node_id,
+                    output=name,
+                    path=rel_path,
+                )
+
+        # 4. Run eval_command
+        eval_result: dict[str, Any] | None = None
+        if not self.dry_run:
+            eval_cmd = node.eval_command.replace("{project_path}", str(self.project_path))
+            eval_output = await self._run_shell(eval_cmd)
+            eval_result = json.loads(eval_output)
+
+        # 5. Write StateSummary
+        summary = summarize_factory_output(
+            node_id, node.output_contract, eval_result, self.project_path,
+        )
+        state_dir = self.project_path / ".factory" / "state"
+        write_summary(summary, state_dir / f"{node_id}.summary.json")
+
+        elapsed = (time.monotonic() - start) * 1000
+        self.result.node_outputs[node_id] = output
+        self.completed_files |= node.writes
+        self.result.nodes_executed += 1
+
+        self._emit(
+            "node.completed",
+            NodeCompleted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="FactoryContract",
+                files_written=sorted(node.writes),
+                duration_ms=elapsed,
+            ),
+        )
+
+        next_id = self._next_unconditional(node_id)
         if next_id:
             await self._execute_from(next_id)
 

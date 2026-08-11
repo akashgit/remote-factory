@@ -99,6 +99,32 @@ def _validate_fork_join_nodes(workflow: Workflow, issues: list[str]) -> None:
                 issues.append(f"subgraph_fork '{nid}' exit '{exit_node}' not in nodes")
 
 
+def _validate_factory_contracts(workflow: Workflow, issues: list[str]) -> None:
+    for nid, node in workflow.nodes.items():
+        if type(node).__name__ != "FactoryContract":
+            continue
+
+        if node.transform_type == "workflow":  # type: ignore[union-attr]
+            transform_name = node.transform  # type: ignore[union-attr]
+            if not transform_name:
+                issues.append(f"factory_contract '{nid}' has empty transform name")
+
+        for contract_name, path in node.input_contract.items():  # type: ignore[union-attr]
+            if not path or path != path.strip():
+                issues.append(
+                    f"factory_contract '{nid}' input contract '{contract_name}' has malformed path"
+                )
+
+        for contract_name, path in node.output_contract.items():  # type: ignore[union-attr]
+            if not path or path != path.strip():
+                issues.append(
+                    f"factory_contract '{nid}' output contract '{contract_name}' has malformed path"
+                )
+
+        if not node.eval_command:  # type: ignore[union-attr]
+            issues.append(f"factory_contract '{nid}' has empty eval_command")
+
+
 def validate_workflow(workflow: Workflow) -> list[str]:
     """Validate a workflow graph. Returns a list of issues (empty = valid)."""
     issues: list[str] = []
@@ -128,6 +154,7 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     _validate_cycles(g, workflow, issues)
     _validate_data_dependencies(g, workflow, issues)
     _validate_fork_join_nodes(workflow, issues)
+    _validate_factory_contracts(workflow, issues)
 
     for nid, node in nodes.items():
         if type(node).__name__ == "SubgraphForkNode":
