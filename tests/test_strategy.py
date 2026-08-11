@@ -8,9 +8,7 @@ from factory.strategy import (
     _format_tier3,
     _record_to_dict,
     categorize_hypothesis,
-    detect_stuck,
     format_tiered_history,
-    rank_hypotheses,
 )
 
 
@@ -101,137 +99,16 @@ class TestCategorizeHypothesis:
         assert result == FEECCategory.FIX
 
 
-# ── rank_hypotheses ──────────────────────────────────────────────────
-
-
-class TestRankHypotheses:
-    def test_sorts_by_feec_priority(self):
-        hypotheses = [
-            {"description": "Add a new endpoint"},
-            {"description": "Fix the crash"},
-            {"description": "Combine auth modules"},
-            {"description": "Improve test coverage"},
-        ]
-        ranked = rank_hypotheses(hypotheses)
-        categories = [h["category"] for h in ranked]
-        assert categories == ["FIX", "EXPLOIT", "EXPLORE", "COMBINE"]
-
-    def test_stable_sort_within_category(self):
-        hypotheses = [
-            {"description": "Fix the crash in login"},
-            {"description": "Fix the error in signup"},
-        ]
-        ranked = rank_hypotheses(hypotheses)
-        assert ranked[0]["description"] == "Fix the crash in login"
-        assert ranked[1]["description"] == "Fix the error in signup"
-
-    def test_empty_list(self):
-        assert rank_hypotheses([]) == []
-
-    def test_single_hypothesis(self):
-        ranked = rank_hypotheses([{"description": "Add feature"}])
-        assert len(ranked) == 1
-        assert ranked[0]["category"] == "EXPLORE"
-
-    def test_injects_category_key(self):
-        ranked = rank_hypotheses([{"description": "Fix a bug"}])
-        assert "category" in ranked[0]
-        assert ranked[0]["category"] == "FIX"
-
-    def test_all_same_category(self):
-        hypotheses = [
-            {"description": "Fix error A"},
-            {"description": "Fix bug B"},
-            {"description": "Fix crash C"},
-        ]
-        ranked = rank_hypotheses(hypotheses)
-        assert all(h["category"] == "FIX" for h in ranked)
-        # Order preserved
-        assert ranked[0]["description"] == "Fix error A"
-        assert ranked[2]["description"] == "Fix crash C"
-
-
-# ── detect_stuck ─────────────────────────────────────────────────────
-
-
-class TestDetectStuck:
-    def test_stuck_three_consecutive_same_category(self):
-        history = [
-            {"hypothesis": "Fix error 1", "verdict": "revert"},
-            {"hypothesis": "Fix crash 2", "verdict": "revert"},
-            {"hypothesis": "Fix bug 3", "verdict": "revert"},
-        ]
-        assert detect_stuck(history) is True
-
-    def test_not_stuck_different_categories(self):
-        history = [
-            {"hypothesis": "Fix error 1", "verdict": "revert"},
-            {"hypothesis": "Improve coverage", "verdict": "revert"},
-            {"hypothesis": "Fix crash 3", "verdict": "revert"},
-        ]
-        assert detect_stuck(history) is False
-
-    def test_not_stuck_below_threshold(self):
-        history = [
-            {"hypothesis": "Fix error 1", "verdict": "revert"},
-            {"hypothesis": "Fix crash 2", "verdict": "revert"},
-        ]
-        assert detect_stuck(history) is False
-
-    def test_not_stuck_keep_breaks_streak(self):
-        history = [
-            {"hypothesis": "Fix error 1", "verdict": "revert"},
-            {"hypothesis": "Fix crash 2", "verdict": "keep"},
-            {"hypothesis": "Fix bug 3", "verdict": "revert"},
-        ]
-        assert detect_stuck(history) is False
-
-    def test_empty_history(self):
-        assert detect_stuck([]) is False
-
-    def test_custom_threshold(self):
-        history = [
-            {"hypothesis": "Fix a", "verdict": "revert"},
-            {"hypothesis": "Fix b", "verdict": "revert"},
-        ]
-        assert detect_stuck(history, threshold=2) is True
-
-    def test_stuck_only_considers_tail(self):
-        """Only the most recent consecutive reverts matter."""
-        history = [
-            {"hypothesis": "Add endpoint", "verdict": "keep"},
-            {"hypothesis": "Fix error 1", "verdict": "revert"},
-            {"hypothesis": "Fix crash 2", "verdict": "revert"},
-            {"hypothesis": "Fix bug 3", "verdict": "revert"},
-        ]
-        assert detect_stuck(history) is True
-
-    def test_not_stuck_when_mixed_verdicts_in_tail(self):
-        history = [
-            {"hypothesis": "Fix a", "verdict": "revert"},
-            {"hypothesis": "Add feature", "verdict": "keep"},
-            {"hypothesis": "Fix b", "verdict": "revert"},
-            {"hypothesis": "Fix c", "verdict": "revert"},
-        ]
-        # Only last 2 are consecutive reverts
-        assert detect_stuck(history) is False
-
-    def test_missing_hypothesis_key(self):
-        """Entries without hypothesis key default to EXPLORE."""
-        history = [
-            {"verdict": "revert"},
-            {"verdict": "revert"},
-            {"verdict": "revert"},
-        ]
-        # All default to EXPLORE -> stuck
-        assert detect_stuck(history) is True
-
-
 # ── _format_tier1 ───────────────────────────────────────────────
 
 
-def _make_record(exp_id: int, verdict: str = "keep", delta: float | None = 0.05,
-                 hypothesis: str = "Add feature", change_summary: str = "Changed foo.py") -> dict:
+def _make_record(
+    exp_id: int,
+    verdict: str = "keep",
+    delta: float | None = 0.05,
+    hypothesis: str = "Add feature",
+    change_summary: str = "Changed foo.py",
+) -> dict:
     return {
         "id": exp_id,
         "verdict": verdict,
@@ -297,8 +174,7 @@ class TestFormatTier2:
 class TestFormatTier3:
     def test_aggregate_stats(self):
         records = [
-            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i)
-            for i in range(1, 6)
+            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i) for i in range(1, 6)
         ]
         out = _format_tier3(records)
         assert "5 older experiments" in out
@@ -381,8 +257,7 @@ class TestFormatTieredHistory:
 
     def test_fifteen_records_all_three_tiers(self):
         records = [
-            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i)
-            for i in range(1, 16)
+            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i) for i in range(1, 16)
         ]
         out = format_tiered_history(records)
         assert "Tier 1" in out
@@ -412,6 +287,7 @@ class TestFormatTieredHistory:
 
     def test_accepts_object_records(self):
         """Records can be objects with attrs instead of dicts."""
+
         class FakeRecord:
             def __init__(self, exp_id: int):
                 self.id = exp_id
