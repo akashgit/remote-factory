@@ -144,27 +144,29 @@ def _strip_harbor_suffix(name: str) -> str:
 
 
 def _parse_trial_results(jobs_dir: Path) -> list[TaskResult]:
-    """Parse per-task verifier outputs from preserved trial directories."""
+    """Parse per-task verifier outputs from Harbor job directories.
+
+    Harbor structure: jobs_dir/TIMESTAMP/TASK_ID__SUFFIX/verifier/reward.json
+    Uses rglob to find reward.json at any depth.
+    """
     if not jobs_dir.is_dir():
         return []
 
     results: list[TaskResult] = []
-    for trial in sorted(jobs_dir.iterdir()):
-        if not trial.is_dir():
-            continue
+    for reward_file in sorted(jobs_dir.rglob("verifier/reward.json")):
+        trial_dir = reward_file.parent.parent
+        task_id = _strip_harbor_suffix(trial_dir.name)
 
-        reward_file = trial / "verifier" / "reward.json"
         reward = 0.0
-        if reward_file.exists():
-            try:
-                data = json.loads(reward_file.read_text())
-                reward = float(data.get("reward", 0.0))
-            except (json.JSONDecodeError, OSError, ValueError):
-                pass
+        try:
+            data = json.loads(reward_file.read_text())
+            reward = float(data.get("reward", 0.0))
+        except (json.JSONDecodeError, OSError, ValueError):
+            pass
 
         predicted = ""
         gold = ""
-        stdout_file = trial / "verifier" / "test-stdout.txt"
+        stdout_file = reward_file.parent / "test-stdout.txt"
         if stdout_file.exists():
             try:
                 for line in stdout_file.read_text().splitlines():
@@ -175,7 +177,6 @@ def _parse_trial_results(jobs_dir: Path) -> list[TaskResult]:
             except OSError:
                 pass
 
-        task_id = _strip_harbor_suffix(trial.name)
         results.append(
             TaskResult(
                 task_id=task_id,

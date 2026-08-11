@@ -177,6 +177,15 @@ class HarborBenchmark:
         if jobs_dir.exists():
             task_results = _parse_trial_results(jobs_dir)
 
+            # Enrich with question text from instruction.md
+            tasks_base = project_dir / "benchmarks" / f"{self.dataset}-harbor" / "train"
+            for tr in task_results:
+                inst = tasks_base / tr.task_id / "instruction.md"
+                if inst.exists():
+                    txt = inst.read_text()
+                    if "## Question" in txt:
+                        tr.question = txt.split("## Question")[1].split("##")[0].strip()
+
         n_correct = sum(1 for t in task_results if t.reward > 0)
         n_total = len(task_results)
         acc = n_correct / n_total if n_total else 0.0
@@ -194,6 +203,7 @@ class HarborBenchmark:
             duration_s=round(duration, 1),
         )
 
+        # Clean up after parsing
         if self.cleanup_jobs and jobs_dir.exists():
             shutil.rmtree(jobs_dir, ignore_errors=True)
         if self.cleanup_jobs and split_tmp and split_tmp.exists():

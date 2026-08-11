@@ -58,28 +58,28 @@ class SearchQAEvaluator:
 
 def create_searchqa_splits(
     tasks_dir: Path,
-    train_ratio: float = 0.6,
-    dev_ratio: float = 0.2,
-    eval_ratio: float = 0.1,
-    test_ratio: float = 0.1,
+    dev_size: int = 20,
+    eval_ratio: float = 0.10,
+    test_ratio: float = 0.10,
     seed: int = 42,
 ) -> BenchmarkSplits:
-    """Partition SearchQA task IDs into train/dev/eval/test splits."""
+    """Partition SearchQA task IDs into train/dev/eval/test splits.
+
+    dev is a subset of train (not disjoint). eval and test are held out.
+    """
     task_ids = sorted(d.name for d in tasks_dir.iterdir() if d.is_dir())
     rng = random.Random(seed)
     rng.shuffle(task_ids)
     n = len(task_ids)
-    n_train = int(n * train_ratio)
-    n_dev = int(n * (train_ratio + dev_ratio)) - n_train
-    n_eval = int(n * (train_ratio + dev_ratio + eval_ratio)) - n_train - n_dev
-    idx = 0
-    train_ids = task_ids[idx : idx + n_train]
-    idx += n_train
-    dev_ids = task_ids[idx : idx + n_dev]
-    idx += n_dev
-    eval_ids = task_ids[idx : idx + n_eval]
-    idx += n_eval
-    test_ids = task_ids[idx:]
+    n_eval = int(n * eval_ratio)
+    n_test = int(n * test_ratio)
+    n_train = n - n_eval - n_test
+
+    train_ids = task_ids[:n_train]
+    eval_ids = task_ids[n_train : n_train + n_eval]
+    test_ids = task_ids[n_train + n_eval :]
+    dev_ids = train_ids[:dev_size]
+
     return BenchmarkSplits(
         train_ids=train_ids,
         dev_ids=dev_ids,
