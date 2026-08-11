@@ -29,6 +29,7 @@ from factory.workflow.primitives import (
     AgentRole,
     ArtifactCheck,
     Edge,
+    FactoryContract,
     FnNode,
     ForkNode,
     GateNode,
@@ -48,7 +49,8 @@ __all__ = [
     "build_workflow",
     "design_workflow",
     "improve_workflow",
-
+    "improve_research_workflow",
+    "improve_v2_workflow",
     "research_workflow",
     "meta_workflow",
     "discover_workflow",
@@ -959,6 +961,317 @@ def improve_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
+        trigger=trigger,
+    )
+
+
+# ── W₃a: Improve Research (standalone) ────────────────────────
+
+
+def improve_research_workflow() -> Workflow:
+    """Standalone research workflow for improve mode.
+
+    study → researcher → gate_research_internal (fn-based quality gate, max 3 RELOOPs)
+
+    Intended for use as a FactoryContract transform within improve_v2.
+    The gate runs eval_research_quality as a pass/fail check — CEO steering
+    stays at the parent improve_v2 level.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    nodes["researcher"] = AgentNode(
+        id="researcher",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Deep research for the project. "
+            "Read observations at .factory/strategy/observations.md. "
+            "Analyze codebase structure, eval scores, and experiment history. "
+            "Search the web for best practices relevant to weak dimensions. "
+            "Check .factory/archive/ for prior knowledge. "
+            "Write findings to .factory/strategy/research-local.md."
+        ),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/research-local.md"},
+    )
+
+    nodes["gate_research_internal"] = GateNode(
+        id="gate_research_internal",
+        evaluator_type="fn",
+        evaluator_command=(
+            "python3 -c \""
+            "from factory.eval.qualitative import eval_research_quality; "
+            "from pathlib import Path; "
+            "r = eval_research_quality(Path('{project_path}/.factory/strategy/research-local.md')); "
+            "import json, sys; print(json.dumps(r)); "
+            "sys.exit(0 if r['score'] >= 0.5 else 1)"
+            "\""
+        ),
+        reads={".factory/strategy/research-local.md"},
+    )
+
+    edges = [
+        Edge(source="study", target="researcher"),
+        Edge(source="researcher", target="gate_research_internal"),
+        Edge(source="gate_research_internal", target="researcher", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="improve-research",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+    )
+
+
+# ── W₃b: Improve V2 (FactoryContract-based) ──────────────────
+
+
+def improve_v2_workflow() -> Workflow:
+    """W₃b: Improve V2 — improve_workflow with research phase extracted into a FactoryContract.
+
+    FactoryContract(research_factory) → CEO gate → Strategist → CEO gate →
+    per-hypothesis: begin → Builder → CEO gate → deep-QA → gate_qa(max 3) →
+    Precheck → finalize → Archivist(async)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Research factory — delegates to improve-research workflow
+    nodes["research_factory"] = FactoryContract(
+        id="research_factory",
+        input_contract={
+            "config": ".factory/config.json",
+            "backlog": ".factory/strategy/backlog.md",
+        },
+        output_contract={
+            "research": ".factory/strategy/research-local.md",
+            "observations": ".factory/strategy/observations.md",
+        },
+        eval_command=(
+            "python3 -c \""
+            "from factory.eval.qualitative import eval_research_quality; "
+            "from pathlib import Path; import json; "
+            "r = eval_research_quality(Path('{project_path}/.factory/strategy/research-local.md')); "
+            "print(json.dumps(r))"
+            "\""
+        ),
+        transform="improve-research",
+        transform_type="workflow",
+        writes={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
+    )
+
+    # CEO gate on research — stays at improve_v2 level
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Are observations grounded in data? Did web research surface useful patterns? "
+            "Any blind spots in the analysis?"
+        ),
+        reads={".factory/strategy/research-local.md"},
+    )
+
+    # Strategist (verbatim from improve_workflow)
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Generate prioritized hypotheses. "
+            "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
+            "Read Hypothesis Budget from observations for constraints. "
+            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+            "Each hypothesis must be specific, scoped to one PR, tied to observations, "
+            "with expected impact on eval dimensions. "
+            "Tag backlog items with **Backlog item:** and new items with **New:**. "
+            "Write to .factory/strategy/current.md."
+        ),
+        reads={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    # CEO gate on strategy — HARD GATE (verbatim from improve_workflow)
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
+            "Expected eval impact realistic? Follows FEEC priority? "
+            "Not redundant with reverted experiment? "
+            "At least one growth hypothesis? Backlog convergence? "
+            "Write PLAN APPROVED with approved hypotheses in priority order."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Apply SPEC Diff (verbatim from improve_workflow)
+    nodes["apply_spec_diff"] = FnNode(
+        id="apply_spec_diff",
+        command="factory spec apply-diff {project_path}",
+        notes="Apply the SPEC Diff section from the strategist's plan to SPEC.md. No-op if no SPEC Diff section exists.",
+        reads={".factory/strategy/current.md"},
+        writes={"SPEC.md"},
+    )
+
+    # Per-hypothesis nodes (verbatim from improve_workflow)
+    nodes["begin"] = FnNode(
+        id="begin",
+        command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
+        notes="Open a new experiment for the current hypothesis. The CEO must substitute $HYPOTHESIS with the hypothesis text.",
+        writes={".factory/experiments/current_id"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the current hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md. Read the CEO strategy approval. "
+            "Implement exactly what the hypothesis describes. Run tests. "
+            "Commit and open a draft PR."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and PR diff. Does work match the hypothesis? "
+            "No scope creep? Tests included? REDIRECT if off-scope."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    # Deep-QA subgraph (verbatim from improve_workflow)
+    dq_nodes, dq_edges = _deep_qa_subgraph()
+    nodes.update(dq_nodes)
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+        ),
+        notes="Close the experiment with a keep/revert verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
+        reads={".factory/reviews/adversarial-qa.md"},
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive experiment results and learnings.",
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/archive/experiment.md"},
+        blocking=False,
+    )
+
+    nodes["spec_update"] = FnNode(
+        id="spec_update",
+        command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "import subprocess, sys; "
+            "sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; "
+            "r = subprocess.run(['factory', 'workflow', 'run', 'spec-update', '{project_path}'], "
+            "capture_output=True, text=True); "
+            "print(r.stdout); print(r.stderr, file=sys.stderr); "
+            "sys.exit(0)"
+            '"'
+        ),
+        notes="Update SPEC.md via the gated spec-update workflow if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
+        blocking=False,
+    )
+
+    edges = [
+        # Research factory → CEO gate
+        Edge(source="research_factory", target="gate_research"),
+        # Research gate
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="research_factory", condition=VerdictType.RELOOP),
+        # Strategist → strategy gate
+        Edge(source="strategist", target="gate_strategy"),
+        # Strategy gate → apply spec diff → begin
+        Edge(source="gate_strategy", target="apply_spec_diff", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # apply_spec_diff → begin
+        Edge(source="apply_spec_diff", target="begin"),
+        # begin → builder
+        Edge(source="begin", target="builder"),
+        # Builder → build gate
+        Edge(source="builder", target="gate_build"),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        # Deep-QA internal edges
+        *dq_edges,
+        # adversarial_tester → gate_qa
+        Edge(source="adversarial_tester", target="gate_qa"),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
+        # Precheck → finalize (proceed) or halt → archivist (error handling)
+        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
+        # Finalize → archivist → spec_update (non-blocking)
+        Edge(source="finalize", target="archivist"),
+        Edge(source="archivist", target="spec_update"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.HAS_FACTORY
+
+    return Workflow(
+        name="improve-v2",
+        nodes=nodes,
+        edges=edges,
+        start_node="research_factory",
         trigger=trigger,
     )
 
@@ -3955,6 +4268,8 @@ def _get_builtin_registry() -> dict[str, Any]:
         "discover": discover_workflow,
         "review": review_workflow,
         "improve": improve_workflow,
+        "improve-research": improve_research_workflow,
+        "improve-v2": improve_v2_workflow,
         "research": research_workflow,
         "meta": meta_workflow,
         "refine": refine_workflow,
