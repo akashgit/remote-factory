@@ -22,7 +22,7 @@ def cmd_optimize(args: argparse.Namespace) -> int:
 
     benchmark = getattr(args, "benchmark", None) or "searchqa"
     benchmark_dir_str = getattr(args, "benchmark_dir", None)
-    git_ref = getattr(args, "git_ref", None) or "main"
+    git_ref = getattr(args, "git_ref", None) or os.environ.get("FACTORY_GIT_REF", "main")
     docker_host = getattr(args, "docker_host", None) or os.environ.get("DOCKER_HOST", "")
     concurrency = getattr(args, "concurrency", 5)
     steps = getattr(args, "steps", 3)
@@ -69,7 +69,15 @@ def cmd_optimize(args: argparse.Namespace) -> int:
                 from factory.optimization.benchmarks.searchqa import SearchQAEvaluator, create_searchqa_splits
 
                 model = getattr(args, "model", None) or "sonnet"
-                surface = Surface()
+                default_skill = (
+                    "# Question Answering Skill\n\n"
+                    "(No learned rules yet.)\n\n"
+                    "## Instructions\n\n"
+                    "Read the question and search results from /tmp/task-instruction.md.\n"
+                    "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
+                    "Also include your answer in <answer> tags in your response.\n"
+                )
+                surface = Surface(prompt_slots={"skill": default_skill})
                 skill_path = getattr(args, "skill_path", None)
                 if skill_path:
                     sp = Path(skill_path)
