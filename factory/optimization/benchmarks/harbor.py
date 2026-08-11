@@ -22,7 +22,7 @@ import structlog
 
 from factory.optimization.executors.harbor import _parse_trial_results
 from factory.optimization.surface import Surface
-from factory.optimization.types import ExecutionResult, TaskResult
+from factory.optimization.types import BenchmarkSplits, ExecutionResult, SplitName, TaskResult
 
 log = structlog.get_logger()
 
@@ -55,6 +55,7 @@ class HarborBenchmark:
         cleanup_jobs: bool = True,
         agent_class: str = "factory_harbor_agent:SearchQAFactoryCeo",
         dataset: str = "searchqa",
+        splits: BenchmarkSplits | None = None,
     ) -> None:
         self.git_ref = git_ref
         self.subset_dir = Path(subset_dir) if subset_dir else None
@@ -65,10 +66,25 @@ class HarborBenchmark:
         self.cleanup_jobs = cleanup_jobs
         self.agent_class = agent_class
         self.dataset = dataset
+        self.splits = splits
         self._run = 0
 
+    def _create_split_dir(
+        self, project_dir: Path, task_ids: list[str], split: SplitName,
+    ) -> Path:
+        split_dir = Path(tempfile.mkdtemp(prefix=f"split-{split}-{self._run}-"))
+        source_dir = project_dir / "benchmarks" / f"{self.dataset}-harbor" / "train"
+        if not source_dir.is_dir():
+            source_dir = project_dir / "benchmarks" / f"{self.dataset}-harbor" / "tasks"
+        for tid in task_ids:
+            src = source_dir / tid
+            dst = split_dir / tid
+            if src.is_dir():
+                dst.symlink_to(src)
+        return split_dir
+
     def execute(
-        self, project_dir: Path, surface: Surface, **kwargs: Any
+        self, project_dir: Path, surface: Surface, split: SplitName | None = None, **kwargs: Any
     ) -> ExecutionResult:
         self._run += 1
         start = time.monotonic()
@@ -98,7 +114,12 @@ class HarborBenchmark:
             "--jobs-dir", str(jobs_dir),
         ]
 
-        if self.subset_dir:
+        split_tmp: Path | None = None
+        if self.splits and split is not None:
+            task_ids = self.splits.get_ids(split)
+            split_tmp = self._create_split_dir(project_dir, task_ids, split)
+            cmd += ["-p", str(split_tmp)]
+        elif self.subset_dir:
             cmd += ["-p", str(self.subset_dir)]
         else:
             task_dir = project_dir / "benchmarks" / f"{self.dataset}-harbor" / "train"
@@ -175,6 +196,8 @@ class HarborBenchmark:
 
         if self.cleanup_jobs and jobs_dir.exists():
             shutil.rmtree(jobs_dir, ignore_errors=True)
+        if self.cleanup_jobs and split_tmp and split_tmp.exists():
+            shutil.rmtree(split_tmp, ignore_errors=True)
 
         return ExecutionResult(
             returncode=result.returncode,

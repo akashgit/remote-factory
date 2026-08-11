@@ -8,12 +8,72 @@ Absorbs concepts from:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from factory.models import AggregateMethod
+
+SplitName = Literal["train", "dev", "eval", "test"]
+
+_SPLIT_NAMES: tuple[SplitName, ...] = ("train", "dev", "eval", "test")
+
+
+@dataclass
+class BenchmarkSplits:
+    """Task-ID partitions for train/dev/eval/test splits."""
+
+    train_ids: list[str] = field(default_factory=list)
+    dev_ids: list[str] = field(default_factory=list)
+    eval_ids: list[str] = field(default_factory=list)
+    test_ids: list[str] = field(default_factory=list)
+
+    def get_ids(self, split: SplitName) -> list[str]:
+        return list(getattr(self, f"{split}_ids"))
+
+    def validate(self) -> list[str]:
+        warnings: list[str] = []
+        splits = {name: set(self.get_ids(name)) for name in _SPLIT_NAMES}
+        for i, (n1, s1) in enumerate(splits.items()):
+            for n2, s2 in list(splits.items())[i + 1 :]:
+                overlap = s1 & s2
+                if overlap:
+                    warnings.append(
+                        f"overlap between {n1} and {n2}: {sorted(overlap)}"
+                    )
+        if not self.dev_ids:
+            warnings.append("dev split is empty")
+        if not self.test_ids:
+            warnings.append("test split is empty")
+        return warnings
+
+    @classmethod
+    def from_jsonl_dir(cls, splits_dir: Path) -> BenchmarkSplits:
+        kwargs: dict[str, list[str]] = {}
+        for name in _SPLIT_NAMES:
+            fpath = splits_dir / f"{name}.jsonl"
+            ids: list[str] = []
+            if fpath.exists():
+                for line in fpath.read_text().splitlines():
+                    line = line.strip()
+                    if line:
+                        ids.append(json.loads(line)["id"])
+            kwargs[f"{name}_ids"] = ids
+        return cls(**kwargs)
+
+    def to_jsonl_dir(self, splits_dir: Path) -> None:
+        splits_dir.mkdir(parents=True, exist_ok=True)
+        for name in _SPLIT_NAMES:
+            ids = self.get_ids(name)
+            fpath = splits_dir / f"{name}.jsonl"
+            fpath.write_text(
+                "\n".join(json.dumps({"id": tid}) for tid in ids) + "\n"
+                if ids
+                else ""
+            )
 
 
 @dataclass
