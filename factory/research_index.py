@@ -51,11 +51,13 @@ def backfill_citations(project_path: Path) -> dict[str, list[str]]:
         reader = csv.DictReader(f, dialect="excel-tab")
         for row in reader:
             exp_id = row["id"]
-            text = " ".join([
-                row.get("hypothesis", ""),
-                row.get("change_summary", ""),
-                row.get("notes", ""),
-            ])
+            text = " ".join(
+                [
+                    row.get("hypothesis", ""),
+                    row.get("change_summary", ""),
+                    row.get("notes", ""),
+                ]
+            )
             citations = extract_citations(text)
             if citations:
                 index[exp_id] = citations
@@ -121,14 +123,3 @@ def citation_coverage(project_path: Path) -> float:
         coverage=coverage,
     )
     return coverage
-
-
-def uncited_experiments(project_path: Path) -> list[int]:
-    """Return experiment IDs without citations from recent history (last 10)."""
-    all_rows = _load_citations_from_tsv(project_path)
-    if not all_rows:
-        return []
-    recent = all_rows[-10:]
-    uncited = [exp_id for exp_id, citations in recent if not citations]
-    log.debug("uncited_experiments_found", count=len(uncited))
-    return uncited

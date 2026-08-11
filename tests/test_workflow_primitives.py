@@ -10,7 +10,6 @@ from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     Edge,
-    Factory,
     FnNode,
     ForkNode,
     GateNode,
@@ -291,31 +290,3 @@ class TestAgentConfig:
         c = AgentConfig(role=AgentRole.RESEARCHER, model="sonnet")
         assert c.role == AgentRole.RESEARCHER
         assert c.model == "sonnet"
-
-
-# ── Factory ──────────────────────────────────────────────────────
-
-
-class TestFactory:
-    def test_select_workflow(self) -> None:
-        from factory.models import ProjectState
-
-        wf = Workflow(
-            name="test",
-            nodes={"a": FnNode(id="a", command="echo a")},
-            edges=[],
-            start_node="a",
-            trigger=lambda s, c: s == ProjectState.HAS_FACTORY,
-        )
-
-        factory = Factory(
-            agent_pool={},
-            workflows={"test": wf},
-        )
-
-        selected = factory.select_workflow(ProjectState.HAS_FACTORY)
-        assert selected is not None
-        assert selected.name == "test"
-
-        none_selected = factory.select_workflow(ProjectState.NO_REPO)
-        assert none_selected is None

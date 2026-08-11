@@ -466,32 +466,6 @@ def scan_for_leakage(
     return LeakageReport(flagged=True, risk_level=risk_level, findings=all_findings)
 
 
-def scan_diff_for_leakage(
-    diff_text: str,
-    fingerprints: dict[str, set[str]],
-    sensitivity: str = "medium",
-) -> LeakageReport:
-    """Scan a PR diff for ground truth leakage.
-
-    Extracts only added lines (+ prefix) from the diff to avoid false positives
-    from unchanged context lines, then runs the standard leakage scanner.
-    """
-    if not diff_text or not fingerprints:
-        return LeakageReport(flagged=False, risk_level="none")
-
-    # Extract only added lines (strip the + prefix)
-    added_lines: list[str] = []
-    for line in diff_text.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            added_lines.append(line[1:])
-
-    if not added_lines:
-        return LeakageReport(flagged=False, risk_level="none")
-
-    added_text = "\n".join(added_lines)
-    return scan_for_leakage(added_text, fingerprints, sensitivity)
-
-
 def validate_research_config(
     config: FactoryConfig,
     project_path: Path,
