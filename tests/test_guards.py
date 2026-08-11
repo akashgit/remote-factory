@@ -12,9 +12,23 @@ from factory.eval.guards import (
     check_fixed_surfaces,
     check_git_clean,
     check_scope,
-    snapshot_eval_tree,
     check_all,
 )
+
+
+def snapshot_eval_tree(project_path: Path) -> str:
+    """Take a snapshot of eval/ tree for later comparison (test helper)."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "HEAD", "eval/"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return ""
 
 
 def _git(args: list[str], cwd: Path, **kwargs) -> subprocess.CompletedProcess:
@@ -27,8 +41,13 @@ def _git(args: list[str], cwd: Path, **kwargs) -> subprocess.CompletedProcess:
         "PATH": "/usr/bin:/bin:/usr/local/bin",
     }
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True,
-        check=True, env=env, **kwargs,
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+        **kwargs,
     )
 
 
@@ -221,7 +240,8 @@ class TestCheckAll:
         _git(["add", "."], git_project)
         _git(["commit", "-m", "modify truth"], git_project)
         violations = check_all(
-            git_project, baseline,
+            git_project,
+            baseline,
             fixed_surfaces=["truth.json"],
         )
         assert any("Fixed surface" in v for v in violations)

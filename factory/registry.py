@@ -140,25 +140,3 @@ def discover_projects(projects_dir: Path) -> list[Path]:
             projects.append(child)
     log.info("discover_projects_complete", count=len(projects), dir=str(projects_dir))
     return projects
-
-
-def populate_from_directory(projects_dir: Path, registry_path: Path | None = None) -> int:
-    """Auto-populate registry by scanning a directory for .factory/results.tsv.
-
-    Used as migration path from discover_projects() to the registry.
-    Returns the number of newly registered projects.
-    """
-    existing = _load_registry(registry_path)
-    existing_paths = {e.path for e in existing.projects}
-
-    discovered = discover_projects(projects_dir)
-    added = 0
-    for path in discovered:
-        resolved = str(path.resolve())
-        if resolved not in existing_paths:
-            register_project(path, registry_path)
-            added += 1
-
-    if added:
-        log.info("registry_populated", added=added, dir=str(projects_dir))
-    return added

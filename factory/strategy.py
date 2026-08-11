@@ -21,7 +21,6 @@ from typing import Any
 
 import structlog
 
-from factory.models import ExperimentRecord
 
 log = structlog.get_logger()
 
@@ -30,13 +29,30 @@ MAX_INLINE_HISTORY = 10
 # ── keywords per category (lowercase) ───────────────────────────────
 
 _FIX_KEYWORDS: list[str] = [
-    "fix", "error", "bug", "crash", "fail", "regression", "broken", "repair",
+    "fix",
+    "error",
+    "bug",
+    "crash",
+    "fail",
+    "regression",
+    "broken",
+    "repair",
 ]
 _EXPLOIT_KEYWORDS: list[str] = [
-    "improve", "increase", "extend", "enhance", "build on", "optimize", "boost",
+    "improve",
+    "increase",
+    "extend",
+    "enhance",
+    "build on",
+    "optimize",
+    "boost",
 ]
 _COMBINE_KEYWORDS: list[str] = [
-    "combine", "merge", "integrate", "unify", "consolidate",
+    "combine",
+    "merge",
+    "integrate",
+    "unify",
+    "consolidate",
 ]
 
 
@@ -77,141 +93,6 @@ def categorize_hypothesis(
 
     log.debug("categorize_hypothesis", category="EXPLORE", text=text[:80])
     return FEECCategory.EXPLORE
-
-
-def rank_hypotheses(hypotheses: list[dict]) -> list[dict]:
-    """Sort *hypotheses* by FEEC priority (Fix > Exploit > Explore > Combine).
-
-    Each dict must contain a ``"description"`` key whose value is used for
-    categorization.  A ``"category"`` key is injected (or overwritten) with
-    the resolved :class:`FEECCategory` name.
-
-    The sort is **stable**: hypotheses in the same category keep their
-    original relative order.
-    """
-    for h in hypotheses:
-        cat = categorize_hypothesis(h.get("description", ""))
-        h["category"] = cat.name
-    ranked = sorted(hypotheses, key=lambda h: FEECCategory[h["category"]].value)
-    log.info(
-        "rank_hypotheses",
-        count=len(ranked),
-        order=[h["category"] for h in ranked],
-    )
-    return ranked
-
-
-def detect_stuck(
-    history: list[dict],
-    threshold: int = 3,
-) -> bool:
-    """Return ``True`` when the last *threshold* consecutive reverts share a category.
-
-    Each entry in *history* must have ``"verdict"`` and ``"hypothesis"`` keys.
-    Only entries whose verdict is ``"revert"`` are considered consecutive; a
-    ``"keep"`` verdict resets the streak.
-    """
-    if len(history) < threshold:
-        return False
-
-    # Walk backwards through history collecting consecutive reverts
-    consecutive_reverts: list[FEECCategory] = []
-    for entry in reversed(history):
-        if entry.get("verdict") != "revert":
-            break
-        cat = categorize_hypothesis(entry.get("hypothesis", ""))
-        consecutive_reverts.append(cat)
-
-    if len(consecutive_reverts) < threshold:
-        return False
-
-    # Check if the last `threshold` reverts are all in the same category
-    tail = consecutive_reverts[:threshold]
-    stuck = len(set(tail)) == 1
-    if stuck:
-        log.warning(
-            "stuck_detected",
-            category=tail[0].name,
-            consecutive=len(tail),
-        )
-    return stuck
-
-
-# ── plateau detection ────────────────────────────────────────────
-
-
-def detect_research_plateau(
-    run_summaries: list[dict],
-    threshold: int = 3,
-) -> bool:
-    """Return ``True`` when the last *threshold* cycles showed no metric improvement.
-
-    *run_summaries* should be ordered oldest-first.  Each dict must contain a
-    ``metric_value`` key.  Requires at least ``threshold + 1`` entries (one
-    baseline plus *threshold* cycles).
-    """
-    if threshold <= 0:
-        return False
-
-    if len(run_summaries) < threshold + 1:
-        return False
-
-    pre_window = run_summaries[:-threshold]
-    best_before = max(s["metric_value"] for s in pre_window)
-
-    window = run_summaries[-threshold:]
-    best_in_window = max(s["metric_value"] for s in window)
-
-    plateaued = best_in_window <= best_before
-    if plateaued:
-        log.warning(
-            "plateau_detected",
-            threshold=threshold,
-            best_before=best_before,
-            best_in_window=best_in_window,
-        )
-    return plateaued
-
-
-def detect_plateau(
-    history: list[ExperimentRecord],
-    threshold: int = 3,
-) -> bool:
-    """Return ``True`` if the last *threshold* consecutive experiments showed no metric improvement.
-
-    "No improvement" means the ``score_after`` did not exceed the running best
-    score at that point in the history.  Experiments without a ``score_after``
-    are skipped (not counted toward the streak).
-
-    Returns ``False`` if there are fewer than *threshold* scored experiments.
-    """
-    scored = [r for r in history if r.score_after is not None]
-    if len(scored) < threshold:
-        return False
-
-    # Walk the scored history and compute whether each experiment improved
-    # over the previous best.
-    best = scored[0].score_after
-    assert best is not None  # guaranteed by filter above
-    no_improvement_streak = 0
-
-    for record in scored[1:]:
-        assert record.score_after is not None
-        if record.score_after > best:
-            best = record.score_after
-            no_improvement_streak = 0
-        else:
-            no_improvement_streak += 1
-
-    plateau = no_improvement_streak >= threshold
-    if plateau:
-        log.warning(
-            "plateau_detected",
-            streak=no_improvement_streak,
-            threshold=threshold,
-            best_score=best,
-        )
-    return plateau
 
 
 # ── hypothesis similarity ────────────────────────────────────────

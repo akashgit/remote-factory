@@ -43,7 +43,9 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=1200),
     "health_checker": AgentConfig(role=AgentRole.HEALTH_CHECKER, model="opus", timeout=600),
     "code_reviewer": AgentConfig(role=AgentRole.CODE_REVIEWER, model="opus", timeout=900),
-    "adversarial_tester": AgentConfig(role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800),
+    "adversarial_tester": AgentConfig(
+        role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800
+    ),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
@@ -223,7 +225,9 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+NodeType = (
+    AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+)
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]
@@ -244,6 +248,7 @@ class Workflow(BaseModel):
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""
         from factory.workflow.validation import validate_workflow
+
         return validate_workflow(self)
 
     def subgraph(
@@ -282,12 +287,3 @@ class Factory(BaseModel):
     agent_pool: dict[str, AgentConfig]
     workflows: dict[str, Workflow]
     config: FactoryConfig | None = None
-
-    def select_workflow(
-        self, state: ProjectState, context: dict[str, Any] | None = None,
-    ) -> Workflow | None:
-        ctx = context or {}
-        for wf in self.workflows.values():
-            if wf.trigger and wf.trigger(state, ctx):
-                return wf
-        return None

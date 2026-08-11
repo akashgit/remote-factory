@@ -232,18 +232,6 @@ def build_rm_argv(name: str, *, force: bool = True) -> list[str]:
     return cmd
 
 
-def build_stop_argv(name: str) -> list[str]:
-    return ["podman", "stop", name]
-
-
-def build_logs_argv(name: str, *, tail: int | None = None) -> list[str]:
-    cmd = ["podman", "logs"]
-    if tail is not None:
-        cmd += ["--tail", str(tail)]
-    cmd.append(name)
-    return cmd
-
-
 def build_ps_argv(*, all_states: bool = True) -> list[str]:
     """List every container the factory created — and nothing else.
 
@@ -255,10 +243,6 @@ def build_ps_argv(*, all_states: bool = True) -> list[str]:
         cmd.append("--all")
     cmd += ["--filter", f"label={LABEL_CONTAINED}=true", "--format", "json"]
     return cmd
-
-
-def build_inspect_argv(name: str) -> list[str]:
-    return ["podman", "inspect", name, "--format", "json"]
 
 
 def build_image_exists_argv(reference: str) -> list[str]:
@@ -281,9 +265,9 @@ def build_info_argv() -> list[str]:
 def build_stat_argv(image: str, mount: Mount, *, user: str | None = None) -> list[str]:
     """Compose a throwaway container that reports a mount's ownership as the container sees it.
 
-   .2 refuses to encode an identity rule that is wrong for one of rootless / rootful / macOS.
-    This is the measurement that replaces the rule: mount the path, ask the kernel inside the
-    container who owns it, and match the run's identity to the answer.
+    .2 refuses to encode an identity rule that is wrong for one of rootless / rootful / macOS.
+     This is the measurement that replaces the rule: mount the path, ask the kernel inside the
+     container who owns it, and match the run's identity to the answer.
     """
     cmd = ["podman", "run", "--rm", "-v", mount.as_flag()]
     if user:

@@ -1,5 +1,6 @@
 """Tests for factory.analysis — experiment comparison and explanation."""
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,14 @@ from factory.analysis import (
 )
 from factory.models import CompositeScore, EvalResult, ExperimentRecord
 from factory.store import ExperimentStore
+
+
+def _write_eval(store: ExperimentStore, exp_id: int, phase: str, score: CompositeScore) -> None:
+    """Write eval JSON directly (replaces the removed ExperimentStore.save_eval)."""
+    exp_dir = store.factory_dir / "experiments" / f"{exp_id:03d}"
+    (exp_dir / f"eval_{phase}.json").write_text(
+        json.dumps(score.model_dump(), indent=2, default=str) + "\n"
+    )
 
 
 @pytest.fixture
@@ -57,8 +66,8 @@ def analysis_store(tmp_path: Path) -> ExperimentStore:
         guard_violations=[],
         passed=True,
     )
-    asyncio.run(store.save_eval(exp1, "before", score_before_1))
-    asyncio.run(store.save_eval(exp1, "after", score_after_1))
+    _write_eval(store, exp1, "before", score_before_1)
+    _write_eval(store, exp1, "after", score_after_1)
     record1 = ExperimentRecord(
         id=exp1,
         timestamp=datetime(2026, 1, 10, 12, 0, 0),
@@ -95,8 +104,8 @@ def analysis_store(tmp_path: Path) -> ExperimentStore:
         guard_violations=[],
         passed=False,
     )
-    asyncio.run(store.save_eval(exp2, "before", score_before_2))
-    asyncio.run(store.save_eval(exp2, "after", score_after_2))
+    _write_eval(store, exp2, "before", score_before_2)
+    _write_eval(store, exp2, "after", score_after_2)
     record2 = ExperimentRecord(
         id=exp2,
         timestamp=datetime(2026, 1, 11, 14, 0, 0),
@@ -249,7 +258,7 @@ class TestCompareExperiments:
         # Compares eval_after of exp1 vs eval_after of exp2
         tests_diff = next(d for d in diffs if d["name"] == "tests")
         assert tests_diff["before"] == 0.9  # exp1 after
-        assert tests_diff["after"] == 0.7   # exp2 after
+        assert tests_diff["after"] == 0.7  # exp2 after
 
     def test_comparison_no_evals(self, store_no_evals: ExperimentStore):
         result = compare_experiments(store_no_evals, 1, 1)

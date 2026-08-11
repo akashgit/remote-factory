@@ -9,16 +9,13 @@ detected when both sides sustain above-threshold performance.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 import structlog
 
 from factory.models import (
     AdversarialComponent,
     AdversarialConfig,
-    AdversarialPhaseRecord,
     AdversarialState,
 )
 
@@ -66,11 +63,6 @@ def reset_adversarial_state(project_path: Path) -> None:
 # ── phase queries ───────────────────────────────────────────────
 
 
-def get_active_phase(state: AdversarialState) -> Literal["generator", "discriminator"]:
-    """Return the currently active role."""
-    return state.active_role
-
-
 def get_active_component(
     config: AdversarialConfig,
     state: AdversarialState,
@@ -79,27 +71,6 @@ def get_active_component(
     if state.active_role == "generator":
         return config.generator
     return config.discriminator
-
-
-# ── phase transition ────────────────────────────────────────────
-
-
-def should_switch_phase(
-    state: AdversarialState,
-    config: AdversarialConfig,
-    current_score: float,
-) -> bool:
-    """Check whether the active phase should switch.
-
-    Returns True when the active component has scored at or above its
-    threshold for ``config.hysteresis`` consecutive rounds.
-
-    Does NOT mutate state — the caller updates counters.
-    """
-    component = get_active_component(config, state)
-    if current_score < component.threshold:
-        return False
-    return (state.consecutive_above + 1) >= config.hysteresis
 
 
 # ── convergence ─────────────────────────────────────────────────
@@ -118,73 +89,6 @@ def detect_convergence(
         state.generator_consecutive_above >= config.convergence_window
         and state.discriminator_consecutive_above >= config.convergence_window
     )
-
-
-# ── record + transition ────────────────────────────────────────
-
-
-def record_phase_result(
-    project_path: Path,
-    config: AdversarialConfig,
-    score: float,
-) -> AdversarialPhaseRecord:
-    """Record a phase result, potentially transitioning phases.
-
-    1. Load state, increment round
-    2. Update consecutive counters for the active role
-    3. Switch phase if hysteresis threshold met
-    4. Check convergence
-    5. Save state and return the record
-    """
-    state = load_adversarial_state(project_path)
-    state.current_round += 1
-
-    component = get_active_component(config, state)
-    active_role = state.active_role
-
-    # Update counters
-    if score >= component.threshold:
-        state.consecutive_above += 1
-        if active_role == "generator":
-            state.generator_consecutive_above += 1
-        else:
-            state.discriminator_consecutive_above += 1
-    else:
-        state.consecutive_above = 0
-        if active_role == "generator":
-            state.generator_consecutive_above = 0
-        else:
-            state.discriminator_consecutive_above = 0
-
-    # Phase switch check
-    switched = state.consecutive_above >= config.hysteresis
-    if switched:
-        state.active_role = "discriminator" if active_role == "generator" else "generator"
-        state.consecutive_above = 0
-        log.info(
-            "adversarial_phase_switch",
-            from_role=active_role,
-            to_role=state.active_role,
-            round=state.current_round,
-        )
-
-    # Convergence check
-    if not state.converged and detect_convergence(state, config):
-        state.converged = True
-        log.info("adversarial_converged", round=state.current_round)
-
-    record = AdversarialPhaseRecord(
-        round=state.current_round,
-        active_role=active_role,
-        score=score,
-        metric_name=component.metric_name,
-        timestamp=datetime.now().isoformat(),
-        switched=switched,
-    )
-    state.history.append(record)
-
-    save_adversarial_state(project_path, state)
-    return record
 
 
 # ── formatting ──────────────────────────────────────────────────

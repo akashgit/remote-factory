@@ -7,12 +7,10 @@ a cluster the user had already decided against.
 
 from __future__ import annotations
 
-import json
-import shlex
 import subprocess
 from unittest.mock import patch
 
-from factory.contained import k8s_division, k8s_review, style
+from factory.contained import k8s_review, style
 from factory.contained.k8s_division import openshift_available
 
 
@@ -50,22 +48,6 @@ def test_a_cluster_query_that_times_out_is_not_available() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# The two rendering helpers
-# --------------------------------------------------------------------------------------------
-
-
-def test_the_registration_is_stable_json_so_two_renderings_compare() -> None:
-    payload = k8s_division.registration_json("ns")
-    assert json.loads(payload) == k8s_division.mcp_config("ns")
-    assert payload == json.dumps(json.loads(payload), sort_keys=True)
-
-
-def test_the_sidecar_command_is_quoted_for_embedding_in_another_command_line() -> None:
-    """It is spliced into a shell line; unquoted, its own newlines end the command early."""
-    assert k8s_division.quoted_sidecar_command() == shlex.quote(k8s_division.sidecar_command())
-
-
-# --------------------------------------------------------------------------------------------
 # The review walk's keypress handling
 # --------------------------------------------------------------------------------------------
 
@@ -96,16 +78,21 @@ def test_an_unrecognised_key_shows_the_options_rather_than_choosing_one() -> Non
 
 
 def test_a_diff_that_cannot_be_run_is_reported_as_unknown_not_as_current() -> None:
-    """"Unknown" prompts the user; "current" silently skips an object the cluster may not have."""
+    """ "Unknown" prompts the user; "current" silently skips an object the cluster may not have."""
     from factory.contained.bundle import BundleObject
 
     obj = BundleObject(
-        kind="role", name="factory", purpose="lets the run manage its own pod",
+        kind="role",
+        name="factory",
+        purpose="lets the run manage its own pod",
         manifest="kind: Role\n",
     )
-    with patch("factory.contained.k8s_review._run", side_effect=[
-        subprocess.CompletedProcess([], 0, "", ""),   # `get` — the object exists
-        None,                                         # `diff` — could not run
-    ]):
+    with patch(
+        "factory.contained.k8s_review._run",
+        side_effect=[
+            subprocess.CompletedProcess([], 0, "", ""),  # `get` — the object exists
+            None,  # `diff` — could not run
+        ],
+    ):
         state = k8s_review._inspect_one(obj, "ns", "oc")
     assert state.status == k8s_review.UNKNOWN
