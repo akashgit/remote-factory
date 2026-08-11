@@ -37,6 +37,7 @@ from factory.workflow.primitives import (
     SubgraphForkNode,
     VerdictType,
     Workflow,
+    WorkflowIO,
 )
 
 # Re-export for test convenience
@@ -45,7 +46,6 @@ __all__ = [
     "build_workflow",
     "design_workflow",
     "improve_workflow",
-
     "research_workflow",
     "meta_workflow",
     "discover_workflow",
@@ -63,6 +63,11 @@ __all__ = [
     "frontend_design_discover_workflow",
     "frontend_design_scan_workflow",
     "evolve_workflow",
+    "research_pipeline_workflow",
+    "strategize_workflow",
+    "deep_qa_workflow",
+    "build_verify_workflow",
+    "precheck_finalize_workflow",
     "register_all",
     "_get_builtin_registry",
 ]
@@ -439,7 +444,6 @@ def build_workflow() -> Workflow:
     )
 
 
-
 # ── W₂: Design Mode ─────────────────────────────────────────────
 
 
@@ -463,9 +467,9 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         evaluator_type="fn",
         evaluator_command=(
             'python3 -c "'
-            'from pathlib import Path; '
-            'exists = Path(\"{project_path}/.factory/config.json\").exists(); '
-            'print(\"PROCEED\" if exists else \"HALT\")'
+            "from pathlib import Path; "
+            'exists = Path("{project_path}/.factory/config.json").exists(); '
+            'print("PROCEED" if exists else "HALT")'
             '"'
         ),
         reads={".factory/config.json"},
@@ -483,12 +487,14 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         writes={".factory/strategy/observations.md"},
     )
 
-    wf.edges.extend([
-        Edge(source="gate_has_factory", target="study", condition=VerdictType.PROCEED),
-        Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
-        Edge(source="discover", target="study"),
-        Edge(source="study", target="fork_research"),
-    ])
+    wf.edges.extend(
+        [
+            Edge(source="gate_has_factory", target="study", condition=VerdictType.PROCEED),
+            Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+            Edge(source="discover", target="study"),
+            Edge(source="study", target="fork_research"),
+        ]
+    )
 
     wf.start_node = "gate_has_factory"
 
@@ -509,16 +515,16 @@ def design_workflow(just_plan: bool = False) -> Workflow:
             evaluator_command=(
                 ': > "{project_path}/.factory/strategy/prior-plans.md"; '
                 'if [ -n "$FOCUS" ]; then '
-                '  if gh auth status >/dev/null 2>&1 && git remote -v 2>/dev/null | grep -q .; then '
+                "  if gh auth status >/dev/null 2>&1 && git remote -v 2>/dev/null | grep -q .; then "
                 '    gh issue list --label plan --search "$FOCUS" --json number,title,url '
                 '      --jq ".[] | \\"#\\(.number) \\(.title) — \\(.url)\\"" '
                 '      > "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
-                '  fi; '
+                "  fi; "
                 '  if [ ! -s "{project_path}/.factory/strategy/prior-plans.md" ]; then '
                 '    grep -Frl "$FOCUS" "{project_path}/.factory/archive/" --include="plan-*.md" '
                 '      >> "{project_path}/.factory/strategy/prior-plans.md" 2>/dev/null || true; '
-                '  fi; '
-                'fi; '
+                "  fi; "
+                "fi; "
                 '[ -s "{project_path}/.factory/strategy/prior-plans.md" ]'
             ),
             gate_prompt=(
@@ -548,16 +554,16 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         wf.nodes["publish_github"] = FnNode(
             id="publish_github",
             command=(
-                'bash -c \''
-                'set -e; '
+                "bash -c '"
+                "set -e; "
                 'echo "none" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
-                'if ! gh auth status >/dev/null 2>&1; then '
+                "if ! gh auth status >/dev/null 2>&1; then "
                 '  echo "SKIP: gh not authenticated — plan saved locally only"; exit 0; '
-                'fi; '
-                'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then '
+                "fi; "
+                "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then "
                 '  echo "SKIP: not inside a git repository"; exit 0; '
-                'fi; '
-                'if ! git remote -v 2>/dev/null | grep -q .; then '
+                "fi; "
+                "if ! git remote -v 2>/dev/null | grep -q .; then "
                 '  SLUG=$(basename "{project_path}"); '
                 '  echo "Creating GitHub repository: $SLUG..."; '
                 '  if gh repo create "$SLUG" --public --source=. --remote=origin --push 2>&1; then '
@@ -568,11 +574,11 @@ def design_workflow(just_plan: bool = False) -> Workflow:
                 '    REMOTE_URL=$(gh repo view "$SLUG" --json sshUrl -q .sshUrl 2>/dev/null || '
                 '      gh repo view "$SLUG" --json url -q .url); '
                 '    git remote add origin "$REMOTE_URL" 2>/dev/null || true; '
-                '    git push -u origin HEAD 2>/dev/null || true; '
-                '  else '
+                "    git push -u origin HEAD 2>/dev/null || true; "
+                "  else "
                 '    echo "SKIP: could not create GitHub repo — plan saved locally only"; exit 0; '
-                '  fi; '
-                'fi; '
+                "  fi; "
+                "fi; "
                 'gh label create plan --description "Approved plan" --color 0366d6 --force 2>/dev/null || true; '
                 'FOCUS="${FOCUS:-}"; '
                 'ISSUE_NUM=""; '
@@ -580,20 +586,20 @@ def design_workflow(just_plan: bool = False) -> Workflow:
                 '  ISSUE_NUM="$FOCUS"; '
                 'elif echo "$FOCUS" | grep -qoE "#([0-9]+)"; then '
                 '  ISSUE_NUM=$(echo "$FOCUS" | grep -oE "[0-9]+" | tail -1); '
-                'fi; '
+                "fi; "
                 'if [ -n "$ISSUE_NUM" ]; then '
                 '  gh issue comment "$ISSUE_NUM" --body-file "{project_path}/.factory/strategy/current.md"; '
                 '  gh issue edit "$ISSUE_NUM" --add-label plan; '
                 '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
                 '  echo "Plan posted to issue #$ISSUE_NUM"; '
-                'else '
+                "else "
                 '  TITLE="Plan: ${FOCUS:-project}"; '
                 '  ISSUE_URL=$(gh issue create --title "$TITLE" --body-file "{project_path}/.factory/strategy/current.md" --label plan); '
                 '  ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE "[0-9]+$"); '
                 '  echo "$ISSUE_NUM" > "{project_path}/.factory/strategy/github-issue-ref.txt"; '
                 '  echo "Created plan issue: $ISSUE_URL"; '
-                'fi'
-                '\''
+                "fi"
+                "'"
             ),
             reads={".factory/strategy/current.md"},
             writes={".factory/strategy/github-issue-ref.txt"},
@@ -639,10 +645,18 @@ def design_workflow(just_plan: bool = False) -> Workflow:
 
         # ── Remove build-phase nodes that are unreachable in plan mode ──
         build_phase_nodes = {
-            "archivist_plan", "builder", "gate_build",
-            "health_checker", "code_reviewer", "gate_review",
-            "adversarial_tester", "gate_qa", "gate_doc_freshness",
-            "gate_precheck", "archivist_build", "spec_generate",
+            "archivist_plan",
+            "builder",
+            "gate_build",
+            "health_checker",
+            "code_reviewer",
+            "gate_review",
+            "adversarial_tester",
+            "gate_qa",
+            "gate_doc_freshness",
+            "gate_precheck",
+            "archivist_build",
+            "spec_generate",
         }
         for node_id in build_phase_nodes:
             wf.nodes.pop(node_id, None)
@@ -652,17 +666,31 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         wf.edges = [e for e in wf.edges if e.source not in removed and e.target not in removed]
 
         # Replace study → fork_research with study → check_prior_plans
-        wf.edges = [e for e in wf.edges if not (e.source == "study" and e.target == "fork_research")]
+        wf.edges = [
+            e for e in wf.edges if not (e.source == "study" and e.target == "fork_research")
+        ]
 
         # Add plan-specific edges
-        wf.edges.extend([
-            Edge(source="study", target="check_prior_plans"),
-            Edge(source="check_prior_plans", target="gate_prior_plans", condition=VerdictType.PROCEED),
-            Edge(source="check_prior_plans", target="fork_research", condition=VerdictType.HALT),
-            Edge(source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED),
-            Edge(source="gate_strategy", target="publish_github", condition=VerdictType.PROCEED),
-            Edge(source="publish_github", target="seed_backlog"),
-        ])
+        wf.edges.extend(
+            [
+                Edge(source="study", target="check_prior_plans"),
+                Edge(
+                    source="check_prior_plans",
+                    target="gate_prior_plans",
+                    condition=VerdictType.PROCEED,
+                ),
+                Edge(
+                    source="check_prior_plans", target="fork_research", condition=VerdictType.HALT
+                ),
+                Edge(
+                    source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED
+                ),
+                Edge(
+                    source="gate_strategy", target="publish_github", condition=VerdictType.PROCEED
+                ),
+                Edge(source="publish_github", target="seed_backlog"),
+            ]
+        )
 
         wf.name = "plan"
         wf.start_node = "gate_has_factory"
@@ -675,9 +703,11 @@ def design_workflow(just_plan: bool = False) -> Workflow:
         return wf
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE, ProjectState.HAS_FACTORY} and ctx.get(
-            "interactive", False
-        )
+        return state in {
+            ProjectState.NO_REPO,
+            ProjectState.REPO_INCOMPLETE,
+            ProjectState.HAS_FACTORY,
+        } and ctx.get("interactive", False)
 
     wf.trigger = trigger
     return wf
@@ -2638,8 +2668,11 @@ def frontend_design_workflow() -> Workflow:
     nodes["join_design_research"] = JoinNode(
         id="join_design_research",
         sources=[
-            "researcher_tokens", "researcher_components", "researcher_patterns",
-            "researcher_ux", "researcher_infra",
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+            "researcher_infra",
         ],
         reads={
             ".factory/design-system/token-audit.md",
@@ -2844,15 +2877,15 @@ def frontend_design_workflow() -> Workflow:
             "'package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
             "ROOT='.'; "
             "else for d in studio web app frontend client; do "
-            "if [ -f \"$d/package.json\" ] && node -e "
+            'if [ -f "$d/package.json" ] && node -e '
             "\"process.exit(JSON.parse(require('fs').readFileSync("
             "'$d/package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
-            "ROOT=\"$d\"; break; fi; done; fi; "
+            'ROOT="$d"; break; fi; done; fi; '
             "if [ \"$ROOT\" = '.' ] && ! node -e "
             "\"process.exit(JSON.parse(require('fs').readFileSync("
             "'package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
             "echo 'pass: no dev server script found'; exit 0; fi; "
-            "cd \"$ROOT\" && npm run dev </dev/null >/dev/null 2>&1 & "
+            'cd "$ROOT" && npm run dev </dev/null >/dev/null 2>&1 & '
             "DEV_PID=$!; FOUND=0; "
             "for i in $(seq 1 30); do "
             "for port in 5173 3000 4200 8080; do "
@@ -2863,7 +2896,7 @@ def frontend_design_workflow() -> Workflow:
             "echo 'reloop: dev server crashed on startup'; exit 0; fi; "
             "sleep 2; done; "
             "kill $DEV_PID 2>/dev/null; wait $DEV_PID 2>/dev/null; "
-            "if [ \"$FOUND\" -eq 1 ]; then "
+            'if [ "$FOUND" -eq 1 ]; then '
             "echo 'pass: dev server started and responded'; "
             "else echo 'reloop: dev server did not respond within 60s'; fi "
             ")"
@@ -2881,15 +2914,15 @@ def frontend_design_workflow() -> Workflow:
             "PR=$(gh pr view --json number -q .number 2>/dev/null) || true; "
             "if [ -z \"$PR\" ]; then echo 'pass: no PR found'; exit 0; fi; "
             "for i in $(seq 1 20); do "
-            "BUCKETS=$(gh pr checks \"$PR\" --json bucket "
+            'BUCKETS=$(gh pr checks "$PR" --json bucket '
             "--jq '.[].bucket' 2>/dev/null) || true; "
-            "if [ -z \"$BUCKETS\" ]; then "
+            'if [ -z "$BUCKETS" ]; then '
             "echo 'pass: no CI checks configured'; exit 0; fi; "
             "if echo \"$BUCKETS\" | grep -qE '^(fail|cancel)$'; then "
-            "NAMES=$(gh pr checks \"$PR\" --json name,bucket "
-            "--jq '[.[] | select(.bucket==\"fail\" or .bucket==\"cancel\") "
-            "| .name] | join(\", \")' 2>/dev/null); "
-            "echo \"reloop: CI failed for PR #$PR - $NAMES\"; exit 0; fi; "
+            'NAMES=$(gh pr checks "$PR" --json name,bucket '
+            '--jq \'[.[] | select(.bucket=="fail" or .bucket=="cancel") '
+            '| .name] | join(", ")\' 2>/dev/null); '
+            'echo "reloop: CI failed for PR #$PR - $NAMES"; exit 0; fi; '
             "if ! echo \"$BUCKETS\" | grep -qE '^pending$'; then "
             "echo 'pass: all CI checks passed'; exit 0; fi; "
             "sleep 30; done; "
@@ -3071,9 +3104,7 @@ def frontend_design_workflow() -> Workflow:
         # Deep-QA: health_checker → code_reviewer → gate_review → consistency_tester
         Edge(source="health_checker", target="code_reviewer"),
         Edge(source="code_reviewer", target="gate_review"),
-        Edge(
-            source="gate_review", target="consistency_tester", condition=VerdictType.PROCEED
-        ),
+        Edge(source="gate_review", target="consistency_tester", condition=VerdictType.PROCEED),
         Edge(source="gate_review", target="builder", condition=VerdictType.RELOOP),
         # Consistency tester → consistency gate
         Edge(source="consistency_tester", target="gate_consistency"),
@@ -3139,7 +3170,12 @@ def frontend_design_scan_workflow() -> Workflow:
 
     nodes["join_scan_research"] = JoinNode(
         id="join_scan_research",
-        sources=["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"],
+        sources=[
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+        ],
         reads={
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
@@ -3329,8 +3365,11 @@ def frontend_design_discover_workflow() -> Workflow:
     nodes["join_discover_research"] = JoinNode(
         id="join_discover_research",
         sources=[
-            "researcher_tokens", "researcher_components", "researcher_patterns",
-            "researcher_ux", "researcher_infra",
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+            "researcher_infra",
         ],
         reads={
             ".factory/design-system/token-audit.md",
@@ -3495,7 +3534,6 @@ def frontend_design_discover_workflow() -> Workflow:
         start_node="fork_discover_research",
         trigger=trigger,
     )
-
 
 
 # ── W₁₅: Evolve Mode ──────────────────────────────────────────────
@@ -3686,7 +3724,7 @@ def evolve_workflow() -> Workflow:
             "- ONLY modify code between EVOLVE-BLOCK-START and EVOLVE-BLOCK-END markers\n"
             "- Preserve ALL code outside evolution markers (imports, helpers, return format)\n"
             "- Maintain function signatures and return types expected by the evaluator\n"
-            "- No external dependencies beyond what\'s in the initial program\n"
+            "- No external dependencies beyond what's in the initial program\n"
             "- Validate Python syntax (AST parse check)\n"
             "Write the complete modified program to .factory/experiments/$EXP_ID/candidate.py. "
             "Also copy it to .factory/evolve/candidate.py for the evaluator."
@@ -3806,7 +3844,7 @@ def evolve_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Review the evaluation verdict at .factory/reviews/health-check.md.\n"
-            "Read the Health Checker\'s KEEP/REVERT recommendation and rationale.\n"
+            "Read the Health Checker's KEEP/REVERT recommendation and rationale.\n"
             "If KEEP:\n"
             "  - Update .factory/evolve/current_best.py with the candidate code\n"
             "  - Update .factory/evolve/current_score.json with the new score\n"
@@ -3900,12 +3938,10 @@ def evolve_workflow() -> Workflow:
         Edge(source="researcher", target="gate_research"),
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-
         # Strategist → strategy gate
         Edge(source="strategist", target="gate_strategy"),
         Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
-
         # Begin → pre_eval → builder (pre_eval copies current_score.json → eval_before.json)
         Edge(source="begin", target="pre_eval"),
         Edge(source="pre_eval", target="builder"),
@@ -3913,18 +3949,14 @@ def evolve_workflow() -> Workflow:
         Edge(source="builder", target="gate_build"),
         Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-
         # Health checker → post_eval → eval gate (post_eval emits eval.completed event)
         Edge(source="health_checker", target="post_eval"),
         Edge(source="post_eval", target="gate_eval"),
         Edge(source="gate_eval", target="finalize", condition=VerdictType.PROCEED),
-
         # Finalize → archivist (async)
         Edge(source="finalize", target="archivist"),
-
         # Archivist → convergence gate
         Edge(source="archivist", target="gate_convergence"),
-
         # Convergence: RELOOP to strategist for next cycle, PROCEED to final archivist
         Edge(source="gate_convergence", target="strategist", condition=VerdictType.RELOOP),
         Edge(source="gate_convergence", target="archivist_final", condition=VerdictType.PROCEED),
@@ -3939,6 +3971,396 @@ def evolve_workflow() -> Workflow:
         edges=edges,
         start_node="baseline",
         trigger=trigger,
+    )
+
+
+# ── Sub-Workflows (Phase 3: Composable Building Blocks) ────────
+
+
+def research_pipeline_workflow() -> Workflow:
+    """Standalone 3-researcher fork/join/gate pattern.
+
+    Extracted from build_workflow() — the parallel research pipeline
+    with similar, techstack, and pitfalls researchers.
+
+    fork_research → [researcher_similar, researcher_techstack, researcher_pitfalls]
+    → join_research → gate_research
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["fork_research"] = ForkNode(
+        id="fork_research",
+        targets=["researcher_similar", "researcher_techstack", "researcher_pitfalls"],
+    )
+
+    nodes["researcher_similar"] = AgentNode(
+        id="researcher_similar",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Similar projects research. "
+            "Search the web for similar projects, existing solutions, and prior art. "
+            "Analyze their strengths, weaknesses, and market positioning. "
+            "Check .factory/archive/ for prior knowledge on similar builds. "
+            "Write findings to .factory/strategy/research-similar.md covering: "
+            "similar projects found (with links), what they do well and what's missing, "
+            "differentiation opportunities."
+        ),
+        writes={".factory/strategy/research-similar.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-similar.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+    nodes["researcher_techstack"] = AgentNode(
+        id="researcher_techstack",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Tech stack research. "
+            "Identify the best technology stack for this type of project. "
+            "Find architecture patterns and best practices. "
+            "Evaluate framework/library options with trade-offs. "
+            "Write findings to .factory/strategy/research-techstack.md covering: "
+            "recommended tech stack with rationale, architecture patterns, "
+            "framework comparisons."
+        ),
+        writes={".factory/strategy/research-techstack.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+    nodes["researcher_pitfalls"] = AgentNode(
+        id="researcher_pitfalls",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Pitfalls and scope research. "
+            "Identify potential pitfalls and common mistakes for this type of project. "
+            "Research MVP scope best practices. "
+            "Check .factory/archive/ for lessons from past builds. "
+            "Write findings to .factory/strategy/research-pitfalls.md covering: "
+            "potential pitfalls to avoid, MVP scope recommendation, "
+            "lessons from similar past builds."
+        ),
+        writes={".factory/strategy/research-pitfalls.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50
+            )
+        ],
+    )
+
+    nodes["join_research"] = JoinNode(
+        id="join_research",
+        sources=["researcher_similar", "researcher_techstack", "researcher_pitfalls"],
+        reads={
+            ".factory/strategy/research-similar.md",
+            ".factory/strategy/research-techstack.md",
+            ".factory/strategy/research-pitfalls.md",
+        },
+        writes={".factory/strategy/research-combined.md"},
+    )
+
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Is the research relevant? Does it cover the technology landscape adequately? "
+            "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
+        ),
+        reads={".factory/strategy/research-combined.md"},
+    )
+
+    edges = [
+        Edge(source="fork_research", target="researcher_similar"),
+        Edge(source="fork_research", target="researcher_techstack"),
+        Edge(source="fork_research", target="researcher_pitfalls"),
+        Edge(source="researcher_similar", target="join_research"),
+        Edge(source="researcher_techstack", target="join_research"),
+        Edge(source="researcher_pitfalls", target="join_research"),
+        Edge(source="join_research", target="gate_research"),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="research-pipeline",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_research",
+        io=WorkflowIO(
+            inputs=set(),
+            outputs={".factory/strategy/research-combined.md"},
+            optional_inputs={".factory/archive/"},
+            optional_outputs={
+                ".factory/strategy/research-similar.md",
+                ".factory/strategy/research-techstack.md",
+                ".factory/strategy/research-pitfalls.md",
+            },
+        ),
+    )
+
+
+def strategize_workflow(gate_type: str = "agent") -> Workflow:
+    """Standalone strategist + gate pattern.
+
+    Parameterized by gate_type: 'agent' for CEO auto-approve,
+    'user' for interactive approval.
+
+    strategist → gate_strategy
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Synthesize a project specification from research. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
+            "Every Phase must have substantive What/Why/Expected impact fields. "
+            "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
+            "Write the plan to .factory/strategy/current.md."
+        ),
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+                must_contain=["### Phase 1", "### Architecture"],
+            )
+        ],
+    )
+
+    evaluator: str = gate_type if gate_type in ("agent", "user", "fn") else "agent"
+
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type=evaluator,  # type: ignore[arg-type]
+        evaluator_role=AgentRole.CEO if evaluator == "agent" else None,
+        gate_prompt=(
+            "HARD GATE — Builder MUST NOT start until approved. Check: "
+            "1) Depth: every hypothesis has Category/What/Why/Expected impact. "
+            "2) Research grounding: architecture and rationale cite research findings. "
+            "3) Buildability: a Builder could implement each phase without clarifying questions. "
+            "4) Phase 1 is scaffold + eval harness. "
+            "5) Deferred section only contains items requiring human intervention. "
+            "Write PLAN APPROVED in verdict if all checks pass."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    edges = [
+        Edge(source="strategist", target="gate_strategy"),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="strategize",
+        nodes=nodes,
+        edges=edges,
+        start_node="strategist",
+        io=WorkflowIO(
+            inputs={".factory/strategy/research-combined.md"},
+            outputs={".factory/strategy/current.md"},
+        ),
+    )
+
+
+def deep_qa_workflow() -> Workflow:
+    """Standalone deep-QA verification pipeline.
+
+    Promoted from _deep_qa_subgraph() helper to a full workflow with IO contract.
+
+    health_checker → code_reviewer → gate_review → adversarial_tester
+    """
+    dq_nodes, dq_edges = _deep_qa_subgraph()
+
+    for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+        node = dq_nodes[nid]
+        assert isinstance(node, AgentNode)
+        dq_nodes[nid] = node.model_copy(update={"reads": set()})
+
+    return Workflow(
+        name="deep-qa",
+        nodes=dq_nodes,
+        edges=dq_edges,
+        start_node="health_checker",
+        io=WorkflowIO(
+            inputs={
+                ".factory/reviews/builder-latest.md",
+                ".factory/strategy/current.md",
+            },
+            outputs={
+                ".factory/reviews/health-check.md",
+                ".factory/reviews/code-review.md",
+                ".factory/reviews/adversarial-qa.md",
+            },
+        ),
+    )
+
+
+def build_verify_workflow() -> Workflow:
+    """Core builder + QA iteration loop.
+
+    builder → gate_build → [deep-qa subgraph] → gate_qa → gate_doc_freshness
+    Reloop: gate_qa → builder (max 3), gate_doc_freshness → builder
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the next phase from .factory/strategy/current.md. "
+            "Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. "
+            "Read CLAUDE.md and factory.md if they exist. "
+            "Implement exactly what the current phase describes. Run tests. "
+            "Commit changes and open a draft PR."
+        ),
+        writes={".factory/reviews/builder-latest.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/builder-latest.md",
+                must_exist=True,
+                min_size=500,
+                must_contain=["commit"],
+            )
+        ],
+    )
+
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output. Check git log and diff. "
+            "Does the work match the plan for this phase? "
+            "If the Builder opened a PR, read it. "
+            "REDIRECT if off-scope or missed key requirements."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    dq_nodes, dq_edges = _deep_qa_subgraph()
+    for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+        node = dq_nodes[nid]
+        assert isinstance(node, AgentNode)
+        dq_nodes[nid] = node.model_copy(
+            update={"reads": node.reads - {".factory/strategy/current.md"}}
+        )
+    nodes.update(dq_nodes)
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    edges = [
+        Edge(source="builder", target="gate_build"),
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        *dq_edges,
+        Edge(source="adversarial_tester", target="gate_qa"),
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="build-verify",
+        nodes=nodes,
+        edges=edges,
+        start_node="builder",
+        io=WorkflowIO(
+            inputs={".factory/strategy/current.md"},
+            outputs={
+                ".factory/reviews/builder-latest.md",
+                ".factory/reviews/health-check.md",
+                ".factory/reviews/code-review.md",
+                ".factory/reviews/adversarial-qa.md",
+            },
+        ),
+    )
+
+
+def precheck_finalize_workflow() -> Workflow:
+    """Terminal cleanup sub-workflow.
+
+    gate_precheck → finalize → archivist(async)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+    )
+
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+        ),
+        notes=(
+            "Close the experiment with a keep/revert verdict. "
+            "The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS."
+        ),
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive experiment results and learnings.",
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/archive/experiment.md"},
+        blocking=False,
+    )
+
+    edges = [
+        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
+        Edge(source="finalize", target="archivist"),
+    ]
+
+    return Workflow(
+        name="precheck-finalize",
+        nodes=nodes,
+        edges=edges,
+        start_node="gate_precheck",
+        io=WorkflowIO(
+            inputs={".factory/reviews/adversarial-qa.md"},
+            outputs={".factory/experiments/verdict.json"},
+            optional_outputs={".factory/archive/experiment.md"},
+        ),
     )
 
 
@@ -3974,9 +4396,11 @@ def _get_builtin_registry() -> dict[str, Any]:
         "parallel-improve": parallel_improve_workflow,
         "plan": lambda: design_workflow(just_plan=True),
         "evolve": evolve_workflow,
-        "deep-qa": lambda: __import__(
-            "factory.workflow.deep_qa", fromlist=["workflow"]
-        ).workflow(),
+        "research-pipeline": research_pipeline_workflow,
+        "strategize": strategize_workflow,
+        "deep-qa": deep_qa_workflow,
+        "build-verify": build_verify_workflow,
+        "precheck-finalize": precheck_finalize_workflow,
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]
         ).workflow(),
