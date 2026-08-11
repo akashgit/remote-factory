@@ -582,6 +582,24 @@ class LegacybenchFactoryCeo(FactoryCeo):
         )
 
 
+class DevOpsGymFactoryCeo(FactoryCeo):
+    """Runs the deterministic devopsgym workflow for DevOps Gym build/config tasks."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "devopsgym-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run devopsgym . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
 class TerminalbenchFactoryCeo(FactoryCeo):
     """Runs the deterministic terminalbench workflow instead of generic factory ceo."""
 

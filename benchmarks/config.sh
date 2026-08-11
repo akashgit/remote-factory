@@ -4,7 +4,7 @@
 # benchmark_all_names, and benchmark_instance_id.
 
 benchmark_all_names() {
-    echo "swebench mini-swebench featurebench terminalbench programbench harborindex tomswe salitrap"
+    echo "swebench mini-swebench featurebench terminalbench programbench harborindex tomswe salitrap devopsgym"
 }
 
 benchmark_config() {
@@ -78,9 +78,15 @@ benchmark_config() {
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
             BENCH_FILTER_STYLE="exact"
             ;;
+        devopsgym)
+            BENCH_DATASET="devops-gym/devops-gym-build"
+            BENCH_AGENT_CLASS="factory_harbor_agent:DevOpsGymFactoryCeo"
+            BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
+            BENCH_FILTER_STYLE="glob"
+            ;;
         *)
             echo "ERROR: Unknown benchmark '${name}'"
-            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe, salitrap"
+            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe, salitrap, devopsgym"
             return 1
             ;;
     esac

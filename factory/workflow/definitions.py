@@ -4015,6 +4015,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "mini-swebench": lambda: __import__(
             "factory.workflow.contributed.mini_swebench", fromlist=["workflow"]
         ).workflow(),
+        "devopsgym": lambda: __import__(
+            "factory.workflow.contributed.devopsgym", fromlist=["workflow"]
+        ).workflow(),
     }
     return _BUILTIN_REGISTRY
 

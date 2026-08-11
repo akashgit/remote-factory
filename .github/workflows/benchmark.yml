@@ -18,6 +18,7 @@ on:
           - harborindex
           - tomswe
           - salitrap
+          - devopsgym
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -96,6 +97,10 @@ jobs:
             solver: factory
             default_instance: 'salitrap-001'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'salitrap' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          - benchmark: devopsgym
+            solver: factory
+            default_instance: 'build-maven-dependency-resolution'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'devopsgym' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
@@ -129,6 +134,10 @@ jobs:
             solver: claude-code
             default_instance: 'salitrap-001'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'salitrap' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: devopsgym
+            solver: claude-code
+            default_instance: 'build-maven-dependency-resolution'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'devopsgym' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
