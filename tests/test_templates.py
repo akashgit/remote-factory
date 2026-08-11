@@ -8,9 +8,6 @@ from factory.obsidian.templates import (
     PROJECT_TAG,
     STRATEGY_FRONTMATTER,
     STRATEGY_TAG,
-    experiment_tags,
-    project_tags,
-    strategy_tags,
 )
 
 
@@ -72,60 +69,3 @@ class TestStrategyFrontmatter:
 
     def test_has_two_fields(self):
         assert len(STRATEGY_FRONTMATTER) == 2
-
-
-class TestExperimentTags:
-    def test_returns_list(self):
-        result = experiment_tags("my-proj")
-        assert isinstance(result, list)
-
-    def test_includes_factory_tag(self):
-        result = experiment_tags("my-proj")
-        assert FACTORY_TAG in result
-
-    def test_includes_experiment_tag(self):
-        result = experiment_tags("my-proj")
-        assert EXPERIMENT_TAG in result
-
-    def test_includes_project_name(self):
-        result = experiment_tags("my-proj")
-        assert "my-proj" in result
-
-    def test_has_three_tags(self):
-        assert len(experiment_tags("x")) == 3
-
-
-class TestProjectTags:
-    def test_returns_list(self):
-        result = project_tags("my-proj")
-        assert isinstance(result, list)
-
-    def test_includes_factory_tag(self):
-        assert FACTORY_TAG in project_tags("my-proj")
-
-    def test_includes_project_tag(self):
-        assert PROJECT_TAG in project_tags("my-proj")
-
-    def test_includes_project_name(self):
-        assert "my-proj" in project_tags("my-proj")
-
-    def test_has_three_tags(self):
-        assert len(project_tags("x")) == 3
-
-
-class TestStrategyTags:
-    def test_returns_list(self):
-        result = strategy_tags("my-proj")
-        assert isinstance(result, list)
-
-    def test_includes_factory_tag(self):
-        assert FACTORY_TAG in strategy_tags("my-proj")
-
-    def test_includes_strategy_tag(self):
-        assert STRATEGY_TAG in strategy_tags("my-proj")
-
-    def test_includes_project_name(self):
-        assert "my-proj" in strategy_tags("my-proj")
-
-    def test_has_three_tags(self):
-        assert len(strategy_tags("x")) == 3

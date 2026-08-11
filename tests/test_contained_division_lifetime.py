@@ -20,10 +20,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from factory.contained.division import (
-    DIVISION_BRIEF_PATH,
     DIVISION_PORT,
     Division,
-    brief_path,
     pid_file_for,
     port_in_use,
     port_owner,
@@ -72,7 +70,7 @@ def test_stopping_a_dry_run_division_is_a_no_op() -> None:
 
 
 def test_stopping_a_server_that_already_exited_says_so_rather_than_signalling(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Signalling a dead PID's number is how an unrelated process gets killed."""
     process = _process(poll=0)
@@ -91,8 +89,10 @@ def test_stopping_signals_the_whole_process_group(
     pid_file.parent.mkdir(parents=True)
     pid_file.write_text("4242")
     process = _process()
-    with patch("factory.contained.division.os.getpgid", return_value=99), \
-         patch("factory.contained.division.os.killpg") as killpg:
+    with (
+        patch("factory.contained.division.os.getpgid", return_value=99),
+        patch("factory.contained.division.os.killpg") as killpg,
+    ):
         Division(plan=MagicMock(), endpoint="e", process=process, pid_file=pid_file).stop()
     killpg.assert_called_once_with(99, signal.SIGTERM)
     assert not pid_file.exists()
@@ -102,8 +102,10 @@ def test_stopping_signals_the_whole_process_group(
 def test_a_server_that_ignores_sigterm_is_killed() -> None:
     process = _process()
     process.wait.side_effect = subprocess.TimeoutExpired(cmd="npx", timeout=10)
-    with patch("factory.contained.division.os.getpgid", return_value=99), \
-         patch("factory.contained.division.os.killpg"):
+    with (
+        patch("factory.contained.division.os.getpgid", return_value=99),
+        patch("factory.contained.division.os.killpg"),
+    ):
         Division(plan=MagicMock(), endpoint="e", process=process).stop()
     process.kill.assert_called_once()
 
@@ -128,15 +130,17 @@ def test_a_recorded_division_is_stopped_and_its_record_removed(contained_root: P
     pid_file = pid_file_for("rta-abc123")
     pid_file.parent.mkdir(parents=True)
     pid_file.write_text("4242")
-    with patch("factory.contained.division.os.getpgid", return_value=99), \
-         patch("factory.contained.division.os.killpg") as killpg:
+    with (
+        patch("factory.contained.division.os.getpgid", return_value=99),
+        patch("factory.contained.division.os.killpg") as killpg,
+    ):
         assert stop_recorded("rta-abc123") is True
     killpg.assert_called_once()
     assert not pid_file.exists()
 
 
 def test_a_corrupt_pid_file_stops_nothing_rather_than_signalling_a_guess(
-    contained_root: Path
+    contained_root: Path,
 ) -> None:
     pid_file = pid_file_for("rta-abc123")
     pid_file.parent.mkdir(parents=True)
@@ -163,7 +167,7 @@ def test_a_live_pid_file_identifies_the_owning_run(contained_root: Path) -> None
 
 
 def test_a_stale_pid_file_is_cleaned_up_and_ownership_moves_on(contained_root: Path) -> None:
-    (contained_root / "gone" ).mkdir(parents=True)
+    (contained_root / "gone").mkdir(parents=True)
     stale = contained_root / "gone" / "division.pid"
     stale.write_text("4242")
     with patch("factory.contained.division.os.kill", side_effect=ProcessLookupError):
@@ -171,9 +175,7 @@ def test_a_stale_pid_file_is_cleaned_up_and_ownership_moves_on(contained_root: P
     assert not stale.exists()
 
 
-def test_a_process_owned_by_someone_else_still_counts_as_the_owner(
-    contained_root: Path
-) -> None:
+def test_a_process_owned_by_someone_else_still_counts_as_the_owner(contained_root: Path) -> None:
     """`PermissionError` from signal 0 means the process exists — which is the question asked."""
     (contained_root / "rta-abc123").mkdir(parents=True)
     (contained_root / "rta-abc123" / "division.pid").write_text("4242")
@@ -211,8 +213,10 @@ def test_waiting_returns_as_soon_as_the_server_binds() -> None:
     but it must not add latency once the server is up."""
     socket = MagicMock()
     socket.__enter__.return_value.connect_ex.return_value = 0
-    with patch("factory.contained.division.socket.socket", return_value=socket), \
-         patch("factory.contained.division.time.sleep") as sleep:
+    with (
+        patch("factory.contained.division.socket.socket", return_value=socket),
+        patch("factory.contained.division.time.sleep") as sleep,
+    ):
         assert wait_for_listening(DIVISION_PORT, timeout=5) is True
     sleep.assert_not_called()
 
@@ -220,8 +224,10 @@ def test_waiting_returns_as_soon_as_the_server_binds() -> None:
 def test_waiting_gives_up_at_the_deadline() -> None:
     socket = MagicMock()
     socket.__enter__.return_value.connect_ex.return_value = 61
-    with patch("factory.contained.division.socket.socket", return_value=socket), \
-         patch("factory.contained.division.time.sleep"):
+    with (
+        patch("factory.contained.division.socket.socket", return_value=socket),
+        patch("factory.contained.division.time.sleep"),
+    ):
         assert wait_for_listening(DIVISION_PORT, timeout=0.01) is False
 
 
@@ -231,8 +237,10 @@ def test_waiting_gives_up_at_the_deadline() -> None:
 
 
 def test_the_first_reachable_candidate_wins_and_the_rest_are_not_tried() -> None:
-    with patch("factory.contained.division.subprocess.run",
-               return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+    with patch(
+        "factory.contained.division.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    ) as run:
         assert probe_host_alias("img", ("a", "b")) == "a"
     assert run.call_count == 1
 
@@ -249,8 +257,10 @@ def test_an_unreachable_candidate_is_skipped_for_the_next() -> None:
 
 
 def test_a_probe_that_cannot_run_is_skipped_rather_than_aborting_the_sweep() -> None:
-    results = [subprocess.TimeoutExpired(cmd="podman", timeout=60),
-               subprocess.CompletedProcess([], 0, "", "")]
+    results = [
+        subprocess.TimeoutExpired(cmd="podman", timeout=60),
+        subprocess.CompletedProcess([], 0, "", ""),
+    ]
     with patch("factory.contained.division.subprocess.run", side_effect=results):
         assert probe_host_alias("img", ("a", "b")) == "b"
 
@@ -258,15 +268,8 @@ def test_a_probe_that_cannot_run_is_skipped_rather_than_aborting_the_sweep() -> 
 def test_no_reachable_candidate_is_a_hard_none() -> None:
     """An agent given a tool endpoint it cannot reach fails on its first build with a connection
     error that reads like a podman fault."""
-    with patch("factory.contained.division.subprocess.run",
-               return_value=subprocess.CompletedProcess([], 7, "", "")):
+    with patch(
+        "factory.contained.division.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 7, "", ""),
+    ):
         assert probe_host_alias("img", ("a", "b")) is None
-
-
-# --------------------------------------------------------------------------------------------
-# The brief
-# --------------------------------------------------------------------------------------------
-
-
-def test_the_brief_lands_inside_the_workspace_where_the_agent_will_read_it() -> None:
-    assert brief_path(Path("/w/rta")) == Path("/w/rta") / DIVISION_BRIEF_PATH

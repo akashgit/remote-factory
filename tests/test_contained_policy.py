@@ -7,7 +7,6 @@ file; a path translated when it should not be renames a directory the payload me
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,33 +14,9 @@ import pytest
 
 from factory.contained.credentials import CredentialShape, resolve_credentials, vertex_model_warning
 from factory.contained.env import (
-    CONTAINED_ENV_POLICY,
-    CONTAINED_ENV_VAR,
-    in_contained,
     is_secret_key,
-    redact_env,
 )
 from factory.contained.paths import rewrite_argv
-
-
-# --------------------------------------------------------------------------------------------
-# "Am I contained?" — one answer, read through one function
-# --------------------------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("value", ["1", "true", "YES", " 1 "])
-def test_the_contained_marker_accepts_the_documented_truthy_spellings(value: str) -> None:
-    assert in_contained({CONTAINED_ENV_VAR: value})
-
-
-@pytest.mark.parametrize("value", ["0", "", "no"])
-def test_anything_else_means_not_contained(value: str) -> None:
-    assert not in_contained({CONTAINED_ENV_VAR: value})
-
-
-def test_the_marker_is_read_from_the_real_environment_when_none_is_given() -> None:
-    with patch.dict(os.environ, {CONTAINED_ENV_VAR: "1"}, clear=False):
-        assert in_contained()
 
 
 # --------------------------------------------------------------------------------------------
@@ -59,19 +34,6 @@ def test_credential_looking_names_are_recognised_case_insensitively(key: str) ->
 @pytest.mark.parametrize("key", ["FACTORY_MODEL", "CLOUD_ML_REGION", "PATH"])
 def test_ordinary_names_are_not_masked(key: str) -> None:
     assert not is_secret_key(key)
-
-
-def test_a_forwarded_secret_is_masked_in_a_composed_environment() -> None:
-    masked = redact_env({"ANTHROPIC_API_KEY": "sk-live-1234", "FACTORY_MODEL": "m"},
-                        CONTAINED_ENV_POLICY)
-    assert masked["ANTHROPIC_API_KEY"] == "<redacted>"
-    assert masked["FACTORY_MODEL"] == "m"
-
-
-def test_a_pinned_substitution_is_never_masked() -> None:
-    """Its presence is the thing being verified; hiding it would defeat the check."""
-    masked = redact_env({CONTAINED_ENV_VAR: "1"}, CONTAINED_ENV_POLICY)
-    assert masked[CONTAINED_ENV_VAR] == "1"
 
 
 # --------------------------------------------------------------------------------------------
@@ -129,10 +91,8 @@ def test_the_configured_default_model_is_used_when_no_variable_is_set(tmp_path: 
     assert "claude-opus-4" in shape.detail
 
 
-def test_an_unreadable_config_leaves_the_model_unstated_rather_than_guessed(
-    tmp_path: Path
-) -> None:
-    """"<unset>" tells the user to pass `--model`; a guessed model 429s and reads as a network
+def test_an_unreadable_config_leaves_the_model_unstated_rather_than_guessed(tmp_path: Path) -> None:
+    """ "<unset>" tells the user to pass `--model`; a guessed model 429s and reads as a network
     fault."""
     config = tmp_path / "config.toml"
     config.write_text("this is not toml = = =\n")

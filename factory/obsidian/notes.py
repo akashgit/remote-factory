@@ -139,20 +139,6 @@ def _ensure_dir(path: Path) -> None:
 # ── Obsidian CLI wrappers ────────────────────────────────────
 
 
-def _obsidian_available() -> bool:
-    """Check if the obsidian CLI is available and Obsidian is running."""
-    try:
-        result = subprocess.run(
-            ["obsidian", "vault", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
 def _obsidian_create(name: str, content: str, vault: str = "factory") -> bool:
     """Create a note via obsidian-cli. Returns True on success."""
     try:

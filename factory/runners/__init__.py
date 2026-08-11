@@ -58,7 +58,9 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
 
     _load_entrypoint_runners()
 
-    resolved = resolve("runner", cli_value=name, env_var="FACTORY_RUNNER", default="claude") or "claude"
+    resolved = (
+        resolve("runner", cli_value=name, env_var="FACTORY_RUNNER", default="claude") or "claude"
+    )
     resolved = resolved.lower().strip()
 
     if resolved not in _RUNNERS:
@@ -86,11 +88,6 @@ def get_all_runner_meta() -> list[RunnerMeta]:
         except (AttributeError, TypeError):
             pass
     return result
-
-
-def register_runner(name: str, runner_class: type[Runner]) -> None:
-    """Register a runner implementation."""
-    _RUNNERS[name] = runner_class
 
 
 _entrypoints_loaded = False

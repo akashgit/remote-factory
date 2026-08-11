@@ -37,18 +37,3 @@ DECISION_FRONTMATTER = [
     "context",
     "outcome",
 ]
-
-
-def experiment_tags(project_name: str) -> list[str]:
-    """Return standard tags for an experiment note."""
-    return [FACTORY_TAG, EXPERIMENT_TAG, project_name]
-
-
-def project_tags(project_name: str) -> list[str]:
-    """Return standard tags for a project dashboard note."""
-    return [FACTORY_TAG, PROJECT_TAG, project_name]
-
-
-def strategy_tags(project_name: str) -> list[str]:
-    """Return standard tags for a strategy note."""
-    return [FACTORY_TAG, STRATEGY_TAG, project_name]
