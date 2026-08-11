@@ -15,9 +15,11 @@ class _CountingExecutor:
     def __init__(self, artifacts: list[str] | None = None) -> None:
         self.call_count = 0
         self._artifacts = artifacts or []
+        self.split_args: list[str | None] = []
 
-    def execute(self, project_dir: Path, surface: Surface, **kwargs: Any) -> ExecutionResult:
+    def execute(self, project_dir: Path, surface: Surface, split: str | None = None, **kwargs: Any) -> ExecutionResult:
         self.call_count += 1
+        self.split_args.append(split)
         return ExecutionResult(returncode=0, artifacts=self._artifacts, duration_s=1.0)
 
 
@@ -124,7 +126,7 @@ class TestOptimizationLoopTrain:
         result = loop.train()
         assert isinstance(result, TrainResult)
         assert len(result.steps) == 6
-        assert executor.call_count == 6
+        assert executor.call_count == 7  # 6 dev steps + 1 test split
 
     def test_train_default_config(self, tmp_path: Path) -> None:
         loop = OptimizationLoop(
@@ -170,3 +172,50 @@ class TestPatchApplication:
         loop.step()
         assert "nonexistent" not in surface.prompt_slots
         assert surface.prompt_slots["skill"] == "original"
+
+
+class TestSplitAwareExecution:
+    def test_step_passes_dev_split(self, tmp_path: Path) -> None:
+        executor = _CountingExecutor()
+        loop = OptimizationLoop(
+            project_dir=tmp_path,
+            surface=Surface(),
+            executor=executor,
+            evaluator=_FixedScoreEvaluator(),
+            mutator=_NoOpMutator(),
+        )
+        loop.step()
+        assert executor.split_args == ["dev"]
+
+    def test_train_passes_dev_then_test(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "result.json"
+        artifact.write_text("{}")
+        executor = _CountingExecutor(artifacts=[str(artifact)])
+        config = LoopConfig(epochs=1, steps_per_epoch=2)
+        loop = OptimizationLoop(
+            project_dir=tmp_path,
+            surface=Surface(),
+            executor=executor,
+            evaluator=_FixedScoreEvaluator(score=0.5),
+            mutator=_NoOpMutator(),
+            config=config,
+        )
+        result = loop.train()
+        assert executor.split_args == ["dev", "dev", "test"]
+        assert result.dev_score is not None
+        assert result.test_score is not None
+
+    def test_train_result_has_dev_and_test_scores(self, tmp_path: Path) -> None:
+        artifact = tmp_path / "result.json"
+        artifact.write_text("{}")
+        executor = _CountingExecutor(artifacts=[str(artifact)])
+        loop = OptimizationLoop(
+            project_dir=tmp_path,
+            surface=Surface(),
+            executor=executor,
+            evaluator=_FixedScoreEvaluator(score=0.75),
+            mutator=_NoOpMutator(),
+        )
+        result = loop.train()
+        assert result.dev_score == 0.75
+        assert result.test_score == 0.75

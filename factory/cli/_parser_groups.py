@@ -266,6 +266,8 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
     p.add_argument("--git-ref", default=None, help="Git ref for Harbor agent (default: current branch)")
     p.add_argument("--docker-host", default=None, help="Docker host socket (default: from DOCKER_HOST env)")
     p.add_argument("--model", default="sonnet", help="Model for AgenticMutator (default: sonnet)")
+    p.add_argument("--split-seed", type=int, default=42, help="Seed for reproducible split generation (default: 42)")
+    p.add_argument("--splits-dir", default=None, help="Path to pre-generated JSONL split files")
 
 
 def add_configuration_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]

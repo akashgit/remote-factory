@@ -27,6 +27,9 @@ class TrainResult:
     best_score: float = 0.0
     best_step: int = 0
     final_score: float = 0.0
+    dev_score: float | None = None
+    eval_score: float | None = None
+    test_score: float | None = None
 
 
 class OptimizationLoop:
@@ -62,7 +65,7 @@ class OptimizationLoop:
         score_start = self._current_score
 
         execution_result = self.executor.execute(
-            self.project_dir, self.surface,
+            self.project_dir, self.surface, split="dev",
         )
 
         score_end = score_start
@@ -131,11 +134,30 @@ class OptimizationLoop:
                 best_score=round(self._best_score, 4),
             )
 
+        dev_score = self._current_score if self._history else None
+
+        test_score: float | None = None
+        try:
+            log.info("loop.test_split.start")
+            test_result = self.executor.execute(
+                self.project_dir, self.surface, split="test",
+            )
+            test_artifacts = [Path(a) for a in test_result.artifacts]
+            if test_artifacts:
+                test_eval = self.evaluator.parse_many(test_artifacts)
+                if test_eval.valid:
+                    test_score = test_eval.score
+            log.info("loop.test_split.done", test_score=round(test_score, 4) if test_score is not None else None)
+        except Exception:
+            log.warning("loop.test_split.failed", exc_info=True)
+
         return TrainResult(
             steps=list(self._history),
             best_score=self._best_score,
             best_step=self._best_step,
             final_score=self._current_score,
+            dev_score=dev_score,
+            test_score=test_score,
         )
 
     def history(self) -> list[StepRecord]:

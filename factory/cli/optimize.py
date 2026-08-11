@@ -18,6 +18,7 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     from factory.optimization import AgenticMutator, LoopConfig, OptimizationLoop, Surface
     from factory.optimization.benchmarks.harbor import HarborBenchmark
     from factory.optimization.protocols import Evaluator, Executor
+    from factory.optimization.types import BenchmarkSplits
 
     benchmark = getattr(args, "benchmark", None) or "searchqa"
     benchmark_dir_str = getattr(args, "benchmark_dir", None)
@@ -26,6 +27,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     concurrency = getattr(args, "concurrency", 5)
     steps = getattr(args, "steps", 3)
     epochs = getattr(args, "epochs", 1)
+    split_seed = getattr(args, "split_seed", 42)
+    splits_dir_str = getattr(args, "splits_dir", None)
 
     evaluator: Evaluator
     executor: Executor
@@ -63,7 +66,7 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     else:
         match benchmark:
             case "searchqa":
-                from factory.optimization.benchmarks.searchqa import SearchQAEvaluator
+                from factory.optimization.benchmarks.searchqa import SearchQAEvaluator, create_searchqa_splits
 
                 model = getattr(args, "model", None) or "sonnet"
                 surface = Surface()
@@ -72,11 +75,32 @@ def cmd_optimize(args: argparse.Namespace) -> int:
                     sp = Path(skill_path)
                     if sp.exists():
                         surface.prompt_slots["skill"] = sp.read_text()
+
+                splits: BenchmarkSplits | None = None
+                if splits_dir_str:
+                    splits = BenchmarkSplits.from_jsonl_dir(Path(splits_dir_str).resolve())
+                else:
+                    auto_dir = project / ".factory" / "eval" / "benchmark" / "splits"
+                    if auto_dir.is_dir():
+                        splits = BenchmarkSplits.from_jsonl_dir(auto_dir)
+                    else:
+                        tasks_dir = project / "benchmarks" / "searchqa-harbor" / "train"
+                        if tasks_dir.is_dir():
+                            splits = create_searchqa_splits(tasks_dir, seed=split_seed)
+
+                if splits:
+                    warnings = splits.validate()
+                    for w in warnings:
+                        print(f"  Split warning: {w}", file=sys.stderr)
+                    print(f"Splits: train={len(splits.train_ids)} dev={len(splits.dev_ids)} "
+                          f"eval={len(splits.eval_ids)} test={len(splits.test_ids)}")
+
                 executor = HarborBenchmark(
                     git_ref=git_ref,
                     concurrency=concurrency,
                     docker_host=docker_host,
                     model=model,
+                    splits=splits,
                 )
                 evaluator = SearchQAEvaluator()
 
@@ -129,6 +153,10 @@ def cmd_optimize(args: argparse.Namespace) -> int:
             print(f"  Step {s.step_number}: {s.score_start:.4f} -> {s.score_end:.4f} ({delta}) verdict={s.verdict}")
     print(f"Best score: {result.best_score:.4f} (step {result.best_step})")
     print(f"Final score: {result.final_score:.4f}")
+    if result.dev_score is not None:
+        print(f"Dev score:   {result.dev_score:.4f}")
+    if result.test_score is not None:
+        print(f"Test score:  {result.test_score:.4f}")
     if result.steps:
         total_delta = result.final_score - (result.steps[0].score_start or 0.0)
         print(f"Total improvement: {total_delta:+.4f}")
