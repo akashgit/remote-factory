@@ -93,39 +93,33 @@ def update_task_toml(slug: str, top1_score: float, top1_agent: str) -> bool:
             print(f"INFO: {slug} already has [metadata.sota], skipping", file=sys.stderr)
             return False
 
-        # 在 [metadata] section 后添加 SOTA 信息
+        # 找到 [metadata] section 结束位置（下一个 section 开始前）
         lines = content.split("\n")
-        new_lines = []
+        metadata_end_idx = None
 
         for i, line in enumerate(lines):
-            new_lines.append(line)
-
-            # 找到 [metadata] section 的结尾
             if line.startswith("[metadata]"):
-                # 找到下一个 section 开始的位置
-                next_section_idx = None
+                # 找到 [metadata] 后的下一个 section
                 for j in range(i + 1, len(lines)):
-                    if lines[j].strip().startswith("["):
-                        next_section_idx = j
+                    if lines[j].strip().startswith("[") and not lines[j].startswith("[metadata."):
+                        metadata_end_idx = j
                         break
+                break
 
-                # 在下一个 section 前插入 SOTA 信息
-                if next_section_idx:
-                    insert_idx = i + 1
-                    while insert_idx < next_section_idx:
-                        new_lines.append(lines[insert_idx])
-                        insert_idx += 1
+        if metadata_end_idx is None:
+            print(f"ERROR: Could not find metadata section end in {toml_path}", file=sys.stderr)
+            return False
 
-                    # 插入 SOTA section
-                    new_lines.append("")
-                    new_lines.append("[metadata.sota]")
-                    new_lines.append(f"score = {top1_score}")
-                    new_lines.append(f'agent = "{top1_agent}"')
-                    new_lines.append(f'source = "https://einsteinarena.com/"')
+        # 在 metadata section 结束前插入 SOTA subsection
+        sota_lines = [
+            "",
+            "[metadata.sota]",
+            f"score = {top1_score}",
+            f'agent = "{top1_agent}"',
+            f'source = "https://einsteinarena.com/"',
+        ]
 
-                    # 跳过已添加的行
-                    while i < next_section_idx - 1:
-                        i += 1
+        new_lines = lines[:metadata_end_idx] + sota_lines + lines[metadata_end_idx:]
 
         # 写回文件
         toml_path.write_text("\n".join(new_lines))
