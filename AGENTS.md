@@ -44,9 +44,9 @@ The factory is a three-layer system:
 
 1. **Python CLI** (`factory/cli/`): Pure tools that don't make decisions. Entry point is `factory/cli/_main.py`.
 2. **CEO Agent** (`factory/agents/prompts/ceo.md`): Orchestrates the full workflow. Spawned via `factory ceo /path`.
-3. **Specialist Agents** (`factory/agents/`): Eight subprocesses spawned by the CEO via `factory agent <role>`.
+3. **Specialist Agents** (`factory/agents/`): Subprocesses spawned by the CEO via `factory agent <role>`.
 
-Agent roles: Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, Failure Analyst, CEO.
+Agent roles: Researcher, Strategist, Builder, Archivist, Failure Analyst, Refiner, Profiler, CEO — plus the QA trio (Health Checker, Code Reviewer, Adversarial Tester).
 
 Key modules: `factory/adversarial.py` (GAN-style adversarial eval loops — phase transitions with hysteresis, convergence detection, state at `.factory/adversarial_state.json`).
 

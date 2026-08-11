@@ -1,0 +1,532 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_similar"
+      },
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_techstack"
+      },
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_pitfalls"
+      },
+      {
+        "condition": null,
+        "source": "researcher_similar",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "researcher_techstack",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "researcher_pitfalls",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "join_research",
+        "target": "gate_research"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_research",
+        "target": "fork_research"
+      },
+      {
+        "condition": null,
+        "source": "strategist",
+        "target": "gate_strategy"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_strategy",
+        "target": "archivist_plan"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_strategy",
+        "target": "strategist"
+      },
+      {
+        "condition": null,
+        "source": "archivist_plan",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "health_checker",
+        "target": "code_reviewer"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
+      },
+      {
+        "condition": null,
+        "source": "adversarial_tester",
+        "target": "gate_qa"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": null,
+        "source": "archivist_build",
+        "target": "spec_generate"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_has_factory",
+        "target": "study"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_has_factory",
+        "target": "discover"
+      },
+      {
+        "condition": null,
+        "source": "discover",
+        "target": "study"
+      },
+      {
+        "condition": null,
+        "source": "study",
+        "target": "fork_research"
+      }
+    ],
+    "name": "design",
+    "nodes": {
+      "adversarial_tester": {
+        "blocking": true,
+        "id": "adversarial_tester",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "adversarial_tester",
+        "timeout": 1800,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/adversarial-qa.md"
+        ]
+      },
+      "archivist_build": {
+        "blocking": false,
+        "id": "archivist_build",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Archive the build phase results.",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "role": "archivist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/archive/build.md"
+        ]
+      },
+      "archivist_plan": {
+        "blocking": false,
+        "id": "archivist_plan",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Archive the approved research and strategy.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "role": "archivist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/archive/plan.md"
+        ]
+      },
+      "builder": {
+        "blocking": true,
+        "id": "builder",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [
+          {
+            "min_size": 500,
+            "must_contain": [
+              "commit"
+            ],
+            "must_exist": true,
+            "path": ".factory/reviews/builder-latest.md"
+          }
+        ],
+        "prompt_template": "Implement the next phase from .factory/strategy/current.md. Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. Read CLAUDE.md and factory.md if they exist. Implement exactly what the current phase describes. Run tests. Commit changes and open a draft PR.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "role": "builder",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/builder-latest.md"
+        ]
+      },
+      "code_reviewer": {
+        "blocking": true,
+        "id": "code_reviewer",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "code_reviewer",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/code-review.md"
+        ]
+      },
+      "discover": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory discover {project_path}",
+        "id": "discover",
+        "notes": "",
+        "reads": [],
+        "writes": [
+          ".factory/eval_profile.json"
+        ]
+      },
+      "fork_research": {
+        "blocking": true,
+        "id": "fork_research",
+        "reads": [],
+        "targets": [
+          "researcher_pitfalls",
+          "researcher_similar",
+          "researcher_techstack"
+        ],
+        "writes": []
+      },
+      "gate_build": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Read builder output. Check git log and diff. Does the work match the plan for this phase? If the Builder opened a PR, read it. REDIRECT if off-scope or missed key requirements.",
+        "id": "gate_build",
+        "reads": [
+          ".factory/reviews/builder-latest.md"
+        ],
+        "writes": []
+      },
+      "gate_doc_freshness": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Check the PR diff for documentation freshness. If public APIs, CLI commands, configuration options, or architecture were changed or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy changes exist. RELOOP to builder if documentation is stale \u2014 specify exactly which changes need doc updates.",
+        "id": "gate_doc_freshness",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_has_factory": {
+        "blocking": true,
+        "evaluator_command": "python3 -c \"from pathlib import Path; exists = Path(\"{project_path}/.factory/config.json\").exists(); print(\"PROCEED\" if exists else \"HALT\")\"",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_has_factory",
+        "reads": [
+          ".factory/config.json"
+        ],
+        "writes": []
+      },
+      "gate_precheck": {
+        "blocking": true,
+        "evaluator_command": "factory precheck {project_path} --score-before 0 --score-after 0",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_precheck",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_qa": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.",
+        "id": "gate_qa",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md",
+          ".factory/reviews/code-review.md",
+          ".factory/reviews/health-check.md"
+        ],
+        "writes": []
+      },
+      "gate_research": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Is the research relevant? Does it cover the technology landscape adequately? Check for gaps in similar projects, tech stack analysis, and pitfall coverage.",
+        "id": "gate_research",
+        "reads": [
+          ".factory/strategy/research-combined.md"
+        ],
+        "writes": []
+      },
+      "gate_review": {
+        "blocking": true,
+        "evaluator_command": "if grep -q 'CRITICAL_FOUND' {project_path}/.factory/reviews/code-review.md; then echo 'FAIL: critical issues found'; else echo 'PROCEED'; fi",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_review",
+        "reads": [
+          ".factory/reviews/code-review.md"
+        ],
+        "writes": []
+      },
+      "gate_strategy": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": null,
+        "evaluator_type": "user",
+        "gate_prompt": "",
+        "id": "gate_strategy",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "writes": []
+      },
+      "health_checker": {
+        "blocking": true,
+        "id": "health_checker",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "health_checker",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/health-check.md"
+        ]
+      },
+      "join_research": {
+        "blocking": true,
+        "id": "join_research",
+        "reads": [
+          ".factory/strategy/research-pitfalls.md",
+          ".factory/strategy/research-similar.md",
+          ".factory/strategy/research-techstack.md"
+        ],
+        "sources": [
+          "researcher_pitfalls",
+          "researcher_similar",
+          "researcher_techstack"
+        ],
+        "writes": [
+          ".factory/strategy/research-combined.md"
+        ]
+      },
+      "researcher_pitfalls": {
+        "blocking": true,
+        "id": "researcher_pitfalls",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [
+          {
+            "min_size": 50,
+            "must_contain": [],
+            "must_exist": true,
+            "path": ".factory/strategy/research-pitfalls.md"
+          }
+        ],
+        "prompt_template": "Pitfalls and scope research. Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-pitfalls.md"
+        ]
+      },
+      "researcher_similar": {
+        "blocking": true,
+        "id": "researcher_similar",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [
+          {
+            "min_size": 50,
+            "must_contain": [],
+            "must_exist": true,
+            "path": ".factory/strategy/research-similar.md"
+          }
+        ],
+        "prompt_template": "Similar projects research. Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-similar.md"
+        ]
+      },
+      "researcher_techstack": {
+        "blocking": true,
+        "id": "researcher_techstack",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [
+          {
+            "min_size": 50,
+            "must_contain": [],
+            "must_exist": true,
+            "path": ".factory/strategy/research-techstack.md"
+          }
+        ],
+        "prompt_template": "Tech stack research. Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-techstack.md"
+        ]
+      },
+      "spec_generate": {
+        "blocking": false,
+        "callable_name": null,
+        "command": "factory workflow run spec-generate {project_path}",
+        "id": "spec_generate",
+        "notes": "Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
+        "reads": [],
+        "writes": []
+      },
+      "strategist": {
+        "blocking": true,
+        "id": "strategist",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [
+          {
+            "min_size": 200,
+            "must_contain": [
+              "### Architecture",
+              "### Phase 1"
+            ],
+            "must_exist": true,
+            "path": ".factory/strategy/current.md"
+          }
+        ],
+        "prompt_template": "Synthesize a project specification from research. Read ALL tagged research files at .factory/strategy/research-*.md. Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. Every Phase must have substantive What/Why/Expected impact fields. Build EVERYTHING in this pass. Only defer items requiring human intervention. Write the plan to .factory/strategy/current.md.",
+        "reads": [
+          ".factory/strategy/research-combined.md"
+        ],
+        "role": "strategist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/current.md"
+        ]
+      },
+      "study": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory study {project_path}",
+        "focus": null,
+        "id": "study",
+        "notes": "",
+        "reads": [],
+        "writes": [
+          ".factory/strategy/observations.md"
+        ]
+      }
+    },
+    "start_node": "gate_has_factory",
+    "terminal": false
+  },
+  "name": "design"
+}

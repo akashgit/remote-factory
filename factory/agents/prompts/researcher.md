@@ -80,7 +80,7 @@ If the CEO's task includes a Focus Directive (Targeted Mode), scope your researc
 
 ### Output (Research)
 
-Write to `$PROJECT_PATH/.factory/strategy/research.md` with this structure:
+Write to `$PROJECT_PATH/.factory/strategy/research-local.md` with this structure:
 
 ```markdown
 # Research Report
@@ -100,7 +100,7 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md` with this structure:
 
 Optionally write new source notes to `.factory/archive/sources/`.
 
-**Exit condition:** `research.md` written with at least Project Summary and Recommended Focus Areas sections.
+**Exit condition:** `research-local.md` written with at least Project Summary and Recommended Focus Areas sections.
 
 ---
 
@@ -155,7 +155,7 @@ Activate Mode 3 when ANY of these are true:
 
 ### Output
 
-Write to `$PROJECT_PATH/.factory/strategy/research.md` with these sections:
+Write to `$PROJECT_PATH/.factory/strategy/research-local.md` with these sections:
 
 ```markdown
 # Research Report — Self-Improvement
@@ -179,7 +179,7 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md` with these sections:
 <actionable insights for the Strategist, ranked by expected impact>
 ```
 
-**Exit condition:** `research.md` written with Self-Improvement Context and Recommendations by Dimension tables populated.
+**Exit condition:** `research-local.md` written with Self-Improvement Context and Recommendations by Dimension tables populated.
 
 ---
 
@@ -222,7 +222,7 @@ Activate Mode 4 when the task mentions "Mode 4 failure research" or references a
 
 ### Output
 
-Write to `$PROJECT_PATH/.factory/strategy/research.md` with this structure:
+Write to `$PROJECT_PATH/.factory/strategy/research-local.md` with this structure:
 
 ```markdown
 # Research — Failure-Targeted Solutions
@@ -254,4 +254,4 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md` with this structure:
 - <URLs and sources consulted>
 ```
 
-**Exit condition:** `research.md` written with at least Context, one Solution Research section for the dominant failure mode, and References.
+**Exit condition:** `research-local.md` written with at least Context, one Solution Research section for the dominant failure mode, and References.

@@ -4,6 +4,14 @@ Alternates between optimizing a generator and discriminator, each scored
 by its own metric.  Automatic phase switching when a component exceeds
 its threshold for N consecutive rounds (hysteresis).  Convergence is
 detected when both sides sustain above-threshold performance.
+
+NOTE (V2 quarantine, 2026-08-11): this module is DRIVERLESS in
+production — ``record_phase_result`` has no callers outside tests and
+the ``factory adversarial-state`` inspect/reset CLI.  No workflow node,
+CEO prompt, or skill references it, and no ``.factory/adversarial_state.json``
+has ever been produced.  It is kept intact (state machine + 835 lines of
+tests) pending a V2 decision on reviving it as a builder-vs-adversarial
+pairing; do not extend it until that decision is made.
 """
 
 from __future__ import annotations

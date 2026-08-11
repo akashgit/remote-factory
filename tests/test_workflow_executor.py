@@ -8,6 +8,9 @@ import pytest
 
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
+    ArtifactCheck,
     Edge,
     FnNode,
     ForkNode,
@@ -479,3 +482,156 @@ class TestAutoApprove:
         assert result.success
         auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
         assert len(auto_approved) == 0
+
+
+# ── Post-checks (headless enforcement) ──────────────────────────
+
+
+class TestPostChecks:
+    """Headless parity with skill-engine verification hooks.
+
+    AgentNode.post_checks must be enforced by the executor, not only by
+    the interactive SKILL.md path (verification.py hooks).
+    """
+
+    async def _run_agent_workflow(
+        self,
+        tmp_project: Path,
+        post_checks: list[ArtifactCheck],
+        monkeypatch: pytest.MonkeyPatch,
+        artifact_content: str | None = None,
+    ) -> WorkflowExecutor:
+        from factory.agents import runner as agent_runner
+
+        async def fake_invoke_agent(role, task, project_path, model=None, timeout=None):
+            if artifact_content is not None:
+                path = project_path / ".factory" / "strategy" / "research-local.md"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(artifact_content)
+            return ("ok", 0)
+
+        monkeypatch.setattr(agent_runner, "invoke_agent", fake_invoke_agent)
+
+        wf = Workflow(
+            name="post_checks",
+            nodes={
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="Write findings.",
+                    post_checks=post_checks,
+                ),
+            },
+            edges=[],
+            start_node="researcher",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+        await executor.execute()
+        return executor
+
+    async def test_missing_artifact_halts(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [ArtifactCheck(path=".factory/strategy/research-local.md", must_exist=True)],
+            monkeypatch,
+            artifact_content=None,
+        )
+        assert executor.result.halted
+        assert "post-check failed" in executor.result.halt_reason
+        assert "missing" in executor.result.halt_reason
+
+    async def test_empty_artifact_halts(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [ArtifactCheck(path=".factory/strategy/research-local.md", must_exist=True)],
+            monkeypatch,
+            artifact_content="",
+        )
+        assert executor.result.halted
+        assert "is empty" in executor.result.halt_reason
+
+    async def test_min_size_halts(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [
+                ArtifactCheck(
+                    path=".factory/strategy/research-local.md",
+                    must_exist=True,
+                    min_size=50,
+                )
+            ],
+            monkeypatch,
+            artifact_content="short",
+        )
+        assert executor.result.halted
+        assert "smaller than 50 bytes" in executor.result.halt_reason
+
+    async def test_sentinel_any_match_passes(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [
+                ArtifactCheck(
+                    path=".factory/strategy/research-local.md",
+                    must_exist=True,
+                    must_contain=["SENTINEL_A", "SENTINEL_B"],
+                )
+            ],
+            monkeypatch,
+            artifact_content="has SENTINEL_B only",
+        )
+        assert executor.result.success
+        assert not executor.result.halted
+
+    async def test_sentinel_missing_halts(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [
+                ArtifactCheck(
+                    path=".factory/strategy/research-local.md",
+                    must_exist=True,
+                    must_contain=["SENTINEL_A", "SENTINEL_B"],
+                )
+            ],
+            monkeypatch,
+            artifact_content="no sentinels here",
+        )
+        assert executor.result.halted
+        assert "missing required sentinel" in executor.result.halt_reason
+
+    async def test_passing_checks_succeed(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project,
+            [
+                ArtifactCheck(
+                    path=".factory/strategy/research-local.md",
+                    must_exist=True,
+                    min_size=4,
+                    must_contain=["### Phase 1"],
+                )
+            ],
+            monkeypatch,
+            artifact_content="### Phase 1\n### Architecture\n",
+        )
+        assert executor.result.success
+        assert not executor.result.halted
+
+    async def test_no_post_checks_untouched(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executor = await self._run_agent_workflow(
+            tmp_project, [], monkeypatch, artifact_content=None
+        )
+        assert executor.result.success
+        assert not executor.result.halted

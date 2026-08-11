@@ -1,0 +1,423 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_existing"
+      },
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_intent"
+      },
+      {
+        "condition": null,
+        "source": "fork_research",
+        "target": "researcher_practices"
+      },
+      {
+        "condition": null,
+        "source": "researcher_existing",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "researcher_intent",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "researcher_practices",
+        "target": "join_research"
+      },
+      {
+        "condition": null,
+        "source": "join_research",
+        "target": "gate_research"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_research",
+        "target": "fork_research"
+      },
+      {
+        "condition": null,
+        "source": "strategist",
+        "target": "gate_strategy"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_strategy",
+        "target": "archivist_plan"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_strategy",
+        "target": "strategist"
+      },
+      {
+        "condition": null,
+        "source": "archivist_plan",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "health_checker",
+        "target": "code_reviewer"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
+      },
+      {
+        "condition": null,
+        "source": "adversarial_tester",
+        "target": "gate_qa"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist_build"
+      }
+    ],
+    "name": "create",
+    "nodes": {
+      "adversarial_tester": {
+        "blocking": true,
+        "id": "adversarial_tester",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Run: factory workflow validate <name>, factory workflow show <name>, factory workflow export-skills --verify. Verify SKILL.md generated under skills/workflow-<name>/. Check CLI recognizes --mode <name>. Check workflow handles both interactive and headless paths.",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "adversarial_tester",
+        "timeout": 1800,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/adversarial-qa.md"
+        ]
+      },
+      "archivist_build": {
+        "blocking": false,
+        "id": "archivist_build",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Archive the new mode build results and learnings.",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "role": "archivist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/archive/create-build.md"
+        ]
+      },
+      "archivist_plan": {
+        "blocking": false,
+        "id": "archivist_plan",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Archive the approved workflow specification for the new mode.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "role": "archivist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/archive/create-plan.md"
+        ]
+      },
+      "builder": {
+        "blocking": true,
+        "id": "builder",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Implement the workflow changes from the approved specification. Read the approved spec at .factory/strategy/current.md. Read CLAUDE.md for project conventions. If the CEO task includes '## Create Mode (Update Existing Mode)', follow the update checklist: modify the existing workflow function in definitions.py, verify the register_all() entry still resolves, update WORKFLOW_META if needed, verify all 20 registration points from the CEO task, run factory workflow validate <name>, regenerate SKILL.md via factory workflow export-skills, update tests, run pytest and ruff check. Otherwise, follow the new-mode checklist: 1) Add the workflow function to factory/workflow/definitions.py 2) Register it in register_all() 3) Add WORKFLOW_META entry in factory/workflow/skill_export.py 4) Wire --mode in factory/cli.py (build_parser, cmd_ceo, _build_ceo_task) 5) Run factory workflow validate <name> to verify the graph 6) Run factory workflow export-skills to generate the SKILL.md 7) Write tests in tests/ 8) Run pytest and ruff check to verify Commit changes and open a draft PR.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "role": "builder",
+        "timeout": 1800,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/builder-latest.md"
+        ]
+      },
+      "code_reviewer": {
+        "blocking": true,
+        "id": "code_reviewer",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "code_reviewer",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/code-review.md"
+        ]
+      },
+      "fork_research": {
+        "blocking": true,
+        "id": "fork_research",
+        "reads": [],
+        "targets": [
+          "researcher_existing",
+          "researcher_intent",
+          "researcher_practices"
+        ],
+        "writes": []
+      },
+      "gate_build": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Read builder output and PR diff. Does work match the approved spec? Verify: workflow function exists, registered in register_all(), WORKFLOW_META entry added, CLI wiring complete, tests written. REDIRECT if any component is missing.",
+        "id": "gate_build",
+        "reads": [
+          ".factory/reviews/builder-latest.md"
+        ],
+        "writes": []
+      },
+      "gate_doc_freshness": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Check the PR diff for documentation freshness. If public APIs, CLI commands, configuration options, or architecture were changed or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy changes exist. RELOOP to builder if documentation is stale \u2014 specify exactly which changes need doc updates.",
+        "id": "gate_doc_freshness",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_precheck": {
+        "blocking": true,
+        "evaluator_command": "factory precheck {project_path} --score-before 0 --score-after 0",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_precheck",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_qa": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Review QA results for the new mode. PROCEED if all checks pass: workflow validates, SKILL.md generated, tests pass, CLI recognizes mode. RELOOP to builder (max 3 iterations) if issues found.",
+        "id": "gate_qa",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md",
+          ".factory/reviews/code-review.md",
+          ".factory/reviews/health-check.md"
+        ],
+        "writes": []
+      },
+      "gate_research": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Are the existing workflow patterns well-documented? Is the user's intent clearly structured into workflow requirements? Are best practices relevant to this type of mode? Any gaps?",
+        "id": "gate_research",
+        "reads": [
+          ".factory/strategy/research-combined.md"
+        ],
+        "writes": []
+      },
+      "gate_review": {
+        "blocking": true,
+        "evaluator_command": "if grep -q 'CRITICAL_FOUND' {project_path}/.factory/reviews/code-review.md; then echo 'FAIL: critical issues found'; else echo 'PROCEED'; fi",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_review",
+        "reads": [
+          ".factory/reviews/code-review.md"
+        ],
+        "writes": []
+      },
+      "gate_strategy": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": null,
+        "evaluator_type": "user",
+        "gate_prompt": "",
+        "id": "gate_strategy",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "writes": []
+      },
+      "health_checker": {
+        "blocking": true,
+        "id": "health_checker",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "health_checker",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/health-check.md"
+        ]
+      },
+      "join_research": {
+        "blocking": true,
+        "id": "join_research",
+        "reads": [
+          ".factory/strategy/research-existing.md",
+          ".factory/strategy/research-intent.md",
+          ".factory/strategy/research-practices.md"
+        ],
+        "sources": [
+          "researcher_existing",
+          "researcher_intent",
+          "researcher_practices"
+        ],
+        "writes": [
+          ".factory/strategy/research-combined.md"
+        ]
+      },
+      "researcher_existing": {
+        "blocking": true,
+        "id": "researcher_existing",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Existing workflow analysis. If the CEO task includes '## Create Mode (Update Existing Mode)', read the **Target mode:** field and focus your analysis on that specific mode's workflow definition via `factory workflow show <target_mode>`. Document its current node sequences, gate logic, edge wiring, trigger function, and reads/writes. Also read its SKILL.md at skills/workflow-<target_mode>/SKILL.md for the generated playbook. Otherwise, read factory/workflow/definitions.py and analyze all existing workflow definitions (build, design, improve, research, meta, discover, review, refine). Document common patterns: node sequences, gate conventions, fork/join patterns, archivist placement, edge wiring, trigger functions, reads/writes declarations. Read factory/workflow/primitives.py for available node types and their fields. Read factory/workflow/skill_export.py for WORKFLOW_META format. Write findings to .factory/strategy/research-existing.md covering: node type usage patterns, common subgraphs (builder\u2192gate\u2192qa\u2192gate loop), trigger function conventions, data flow patterns.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-existing.md"
+        ]
+      },
+      "researcher_intent": {
+        "blocking": true,
+        "id": "researcher_intent",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Mode description analysis. Read the user's mode description from the CEO task. If the CEO task includes '## Create Mode (Update Existing Mode)', parse the **Requested changes:** field and structure the requested modifications against the existing mode's current behavior. Identify which nodes, edges, prompts, or gates need to change and which must remain untouched. Otherwise, parse and structure the description into a new workflow specification: - Purpose and trigger conditions - Agent roles needed (which specialists) - Gate logic (user vs agent vs fn evaluators) - Data flow (what files are read/written) - Interactive vs headless requirements - Input format (text, file, drawing, flow) Write findings to .factory/strategy/research-intent.md covering: structured requirements, node candidates, suggested graph topology.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-intent.md"
+        ]
+      },
+      "researcher_practices": {
+        "blocking": true,
+        "id": "researcher_practices",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Workflow design best practices. Search the web for workflow and pipeline design patterns relevant to the described mode. Look for: DAG design patterns, agent orchestration patterns, quality gate strategies, error recovery approaches. Check .factory/archive/ for lessons from past mode creation or workflow changes. Write findings to .factory/strategy/research-practices.md covering: relevant design patterns, pitfalls to avoid, testing strategies.",
+        "reads": [],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-practices.md"
+        ]
+      },
+      "strategist": {
+        "blocking": true,
+        "id": "strategist",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Synthesize a workflow specification. Read ALL tagged research files at .factory/strategy/research-*.md. If the CEO task includes '## Create Mode (Update Existing Mode)', produce a change spec describing modifications to the existing workflow: which nodes/edges/prompts/gates to modify, what to add or remove, and a diff-oriented implementation plan. Include the 20-point verification checklist from the CEO task. Do NOT produce a complete new workflow definition \u2014 describe changes to the existing one. Otherwise, produce a complete specification for a new factory mode including: 1) Python code for the workflow function (nodes dict, edges list, trigger) 2) WORKFLOW_META entry (description, argument_hint) 3) CLI wiring changes (build_parser mode choices, cmd_ceo routing, _build_ceo_task section) 4) Test cases (graph validation, skill export, trigger function, registration) 5) Node details: for each node, specify id, type, role, prompt_template, reads, writes 6) Edge details: for each edge, specify source, target, condition 7) Interactive vs headless behavior Follow conventions from existing workflows \u2014 use the same patterns for builder\u2192gate\u2192QA\u2192gate loops, archivist placement, and research forks. Write the specification to .factory/strategy/current.md.",
+        "reads": [
+          ".factory/strategy/research-combined.md"
+        ],
+        "role": "strategist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/current.md"
+        ]
+      }
+    },
+    "start_node": "fork_research",
+    "terminal": false
+  },
+  "name": "create"
+}

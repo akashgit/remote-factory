@@ -839,7 +839,43 @@ class WorkflowExecutor:
         if code != 0:
             raise RuntimeError(f"agent {node.role.value} exited with code {code}")
 
+        self._enforce_post_checks(node)
+
         return stdout
+
+    def _enforce_post_checks(self, node: AgentNode) -> None:
+        """Enforce AgentNode.post_checks against the filesystem.
+
+        Headless parity with the skill engine's verification hooks: same
+        semantics as checks_to_bash() in factory/workflow/verification.py
+        (must_exist implies non-empty; must_contain is OR-matching).
+        Failures raise RuntimeError, which halts the workflow via the
+        existing node-failure path.
+        """
+        if not node.post_checks:
+            return
+        for check in node.post_checks:
+            path = self.project_path / check.path
+            if check.must_exist and not path.exists():
+                raise RuntimeError(
+                    f"post-check failed: node '{node.id}': {check.path} missing"
+                )
+            if check.must_exist and path.stat().st_size == 0:
+                raise RuntimeError(
+                    f"post-check failed: node '{node.id}': {check.path} is empty"
+                )
+            if check.min_size > 0 and path.exists() and path.stat().st_size < check.min_size:
+                raise RuntimeError(
+                    f"post-check failed: node '{node.id}': {check.path} smaller than "
+                    f"{check.min_size} bytes"
+                )
+            if check.must_contain and path.exists():
+                content = path.read_bytes()
+                if not any(s.encode() in content for s in check.must_contain):
+                    raise RuntimeError(
+                        f"post-check failed: node '{node.id}': {check.path} missing required "
+                        f"sentinel ({', '.join(check.must_contain)})"
+                    )
 
     async def _evaluate_gate(self, node: GateNode) -> Verdict:
         """Evaluate a gate and return a verdict."""

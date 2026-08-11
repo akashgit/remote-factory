@@ -1,0 +1,399 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "condition": null,
+        "source": "study",
+        "target": "researcher"
+      },
+      {
+        "condition": null,
+        "source": "researcher",
+        "target": "gate_research"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_research",
+        "target": "strategist"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_research",
+        "target": "researcher"
+      },
+      {
+        "condition": null,
+        "source": "strategist",
+        "target": "gate_strategy"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_strategy",
+        "target": "apply_spec_diff"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_strategy",
+        "target": "strategist"
+      },
+      {
+        "condition": null,
+        "source": "apply_spec_diff",
+        "target": "begin"
+      },
+      {
+        "condition": null,
+        "source": "begin",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "builder",
+        "target": "gate_build"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_build",
+        "target": "health_checker"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_build",
+        "target": "builder"
+      },
+      {
+        "condition": null,
+        "source": "health_checker",
+        "target": "code_reviewer"
+      },
+      {
+        "condition": null,
+        "source": "code_reviewer",
+        "target": "gate_review"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_review",
+        "target": "adversarial_tester"
+      },
+      {
+        "condition": null,
+        "source": "adversarial_tester",
+        "target": "gate_qa"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_qa",
+        "target": "gate_doc_freshness"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_qa",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_doc_freshness",
+        "target": "gate_precheck"
+      },
+      {
+        "condition": "reloop",
+        "source": "gate_doc_freshness",
+        "target": "builder"
+      },
+      {
+        "condition": "proceed",
+        "source": "gate_precheck",
+        "target": "finalize"
+      },
+      {
+        "condition": "halt",
+        "source": "gate_precheck",
+        "target": "archivist"
+      },
+      {
+        "condition": null,
+        "source": "finalize",
+        "target": "archivist"
+      },
+      {
+        "condition": null,
+        "source": "archivist",
+        "target": "spec_update"
+      }
+    ],
+    "name": "improve",
+    "nodes": {
+      "adversarial_tester": {
+        "blocking": true,
+        "id": "adversarial_tester",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "adversarial_tester",
+        "timeout": 1800,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/adversarial-qa.md"
+        ]
+      },
+      "apply_spec_diff": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory spec apply-diff {project_path}",
+        "id": "apply_spec_diff",
+        "notes": "Apply the SPEC Diff section from the strategist's plan to SPEC.md. No-op if no SPEC Diff section exists.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "writes": [
+          "SPEC.md"
+        ]
+      },
+      "archivist": {
+        "blocking": false,
+        "id": "archivist",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Archive experiment results and learnings.",
+        "reads": [
+          ".factory/experiments/verdict.json"
+        ],
+        "role": "archivist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/archive/experiment.md"
+        ]
+      },
+      "begin": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory begin {project_path} --hypothesis \"$HYPOTHESIS\"",
+        "id": "begin",
+        "notes": "Open a new experiment for the current hypothesis. The CEO must substitute $HYPOTHESIS with the hypothesis text.",
+        "reads": [],
+        "writes": [
+          ".factory/experiments/current_id"
+        ]
+      },
+      "builder": {
+        "blocking": true,
+        "id": "builder",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Implement the current hypothesis from .factory/strategy/current.md. Read CLAUDE.md and factory.md. Read the CEO strategy approval. Implement exactly what the hypothesis describes. Run tests. Commit and open a draft PR.",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "role": "builder",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/builder-latest.md"
+        ]
+      },
+      "code_reviewer": {
+        "blocking": true,
+        "id": "code_reviewer",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "code_reviewer",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/code-review.md"
+        ]
+      },
+      "finalize": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory finalize {project_path} --id $EXP_ID --verdict $VERDICT --hypothesis \"$HYPOTHESIS\"",
+        "id": "finalize",
+        "notes": "Close the experiment with a keep/revert verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": [
+          ".factory/experiments/verdict.json"
+        ]
+      },
+      "gate_build": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Read builder output and PR diff. Does work match the hypothesis? No scope creep? Tests included? REDIRECT if off-scope.",
+        "id": "gate_build",
+        "reads": [
+          ".factory/reviews/builder-latest.md"
+        ],
+        "writes": []
+      },
+      "gate_doc_freshness": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Check the PR diff for documentation freshness. If public APIs, CLI commands, configuration options, or architecture were changed or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy changes exist. RELOOP to builder if documentation is stale \u2014 specify exactly which changes need doc updates.",
+        "id": "gate_doc_freshness",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_precheck": {
+        "blocking": true,
+        "evaluator_command": "factory precheck {project_path} --score-before 0 --score-after 0",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_precheck",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md"
+        ],
+        "writes": []
+      },
+      "gate_qa": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.",
+        "id": "gate_qa",
+        "reads": [
+          ".factory/reviews/adversarial-qa.md",
+          ".factory/reviews/code-review.md",
+          ".factory/reviews/health-check.md"
+        ],
+        "writes": []
+      },
+      "gate_research": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "Are observations grounded in data? Did web research surface useful patterns? Any blind spots in the analysis?",
+        "id": "gate_research",
+        "reads": [
+          ".factory/strategy/research-local.md"
+        ],
+        "writes": []
+      },
+      "gate_review": {
+        "blocking": true,
+        "evaluator_command": "if grep -q 'CRITICAL_FOUND' {project_path}/.factory/reviews/code-review.md; then echo 'FAIL: critical issues found'; else echo 'PROCEED'; fi",
+        "evaluator_role": null,
+        "evaluator_type": "fn",
+        "gate_prompt": "",
+        "id": "gate_review",
+        "reads": [
+          ".factory/reviews/code-review.md"
+        ],
+        "writes": []
+      },
+      "gate_strategy": {
+        "blocking": true,
+        "evaluator_command": null,
+        "evaluator_role": "ceo",
+        "evaluator_type": "agent",
+        "gate_prompt": "HARD GATE. Check: specific enough to implement? Scoped to one PR? Expected eval impact realistic? Follows FEEC priority? Not redundant with reverted experiment? At least one growth hypothesis? Backlog convergence? Write PLAN APPROVED with approved hypotheses in priority order.",
+        "id": "gate_strategy",
+        "reads": [
+          ".factory/strategy/current.md"
+        ],
+        "writes": []
+      },
+      "health_checker": {
+        "blocking": true,
+        "id": "health_checker",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "",
+        "reads": [
+          ".factory/reviews/builder-latest.md",
+          ".factory/strategy/current.md"
+        ],
+        "role": "health_checker",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/reviews/health-check.md"
+        ]
+      },
+      "researcher": {
+        "blocking": true,
+        "id": "researcher",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Deep research for the project. Read observations at .factory/strategy/observations.md. Analyze codebase structure, eval scores, and experiment history. Search the web for best practices relevant to weak dimensions. Check .factory/archive/ for prior knowledge. Write findings to .factory/strategy/research-local.md.",
+        "reads": [
+          ".factory/strategy/observations.md"
+        ],
+        "role": "researcher",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/research-local.md"
+        ]
+      },
+      "spec_update": {
+        "blocking": false,
+        "callable_name": null,
+        "command": "python3 -c \"from pathlib import Path; import subprocess, sys; sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; r = subprocess.run(['factory', 'workflow', 'run', 'spec-update', '{project_path}'], capture_output=True, text=True); print(r.stdout); print(r.stderr, file=sys.stderr); sys.exit(0)\"",
+        "id": "spec_update",
+        "notes": "Update SPEC.md via the gated spec-update workflow if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
+        "reads": [],
+        "writes": []
+      },
+      "strategist": {
+        "blocking": true,
+        "id": "strategist",
+        "max_iterations": 1,
+        "model": "",
+        "post_checks": [],
+        "prompt_template": "Generate prioritized hypotheses. Read the backlog at .factory/strategy/backlog.md \u2014 clear as many items as possible. Read Hypothesis Budget from observations for constraints. Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. Each hypothesis must be specific, scoped to one PR, tied to observations, with expected impact on eval dimensions. Tag backlog items with **Backlog item:** and new items with **New:**. Write to .factory/strategy/current.md.",
+        "reads": [
+          ".factory/strategy/observations.md",
+          ".factory/strategy/research-local.md"
+        ],
+        "role": "strategist",
+        "timeout": null,
+        "tools": [],
+        "writes": [
+          ".factory/strategy/current.md"
+        ]
+      },
+      "study": {
+        "blocking": true,
+        "callable_name": null,
+        "command": "factory study {project_path}",
+        "focus": null,
+        "id": "study",
+        "notes": "",
+        "reads": [],
+        "writes": [
+          ".factory/strategy/observations.md"
+        ]
+      }
+    },
+    "start_node": "study",
+    "terminal": false
+  },
+  "name": "improve"
+}
