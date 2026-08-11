@@ -22,18 +22,86 @@
 
 ## Phase 1 — The extraction wave: stages become factories (3–4 days)
 
-**Step 0 (per Akash's advice)**: prompt the model to propose the decomposition — "the factory is materials-in/artifact-out; investigate the codebase and propose primitives" — review its proposal before writing code.
+**Step 0 (per Akash's advice)**: prompt the model to propose the decomposition — "the factory is materials-in/artifact-out; investigate the codebase and propose primitives" — review its proposal before writing code. The stage registry (`factory/workflow/stages/`) is the primitive-ops layer; it gets built from the model's proposal, reviewed by the team.
 
-Per stage (research, strategy, build, finalize; deep-QA already done):
-1. Extract `_<stage>_subgraph()` helpers returning `(nodes, edges)` — following `_research_subgraph` (definitions.py:154-222) and `_deep_qa_subgraph` (definitions.py:87-148).
-2. Create standalone wrappers (`factory/workflow/<stage>.py`: `meta` dict + `workflow()` fn, per registry.py:209-238 contract) — replicate `research.py`/`deep_qa.py` incl. the reads-clearing hack.
-3. Re-wire design/build/improve/research to consume the helpers (graph-identical; snapshot tests prove it).
-4. Extract the copy-pasted shared prefix in `parallel_improve` (definitions.py:4024-4087) into a real shared subgraph.
-5. Register in `_get_builtin_registry` (definitions.py:3952-4004) + `WORKFLOW_META` (skill_export.py:42-248) + bump count 31→34 (test_spec_generate.py:95).
-6. **Make stages runnable as modes (interim)**: add to `CEO_MODES`/`RUN_MODES` (cli/_helpers.py:19-22), `CycleState.mode` Literal (models.py:520-535), `_detect_incomplete` (ceo_completion.py:282-358, currently "unknown modes assumed complete" — dangerous), `InnerLoop` mode strings (inner_loop.py:172-176), ceo.md mode table. Label `# V2-INTERIM` with removal ticket.
-7. Watch sweep-all tests: `TestBuilderQaReachability` auto-picks up build-standalone — it must have edge-reachable deep-QA specialists.
+**Step 1 — Complete `research-standalone` first (it's the "done" stage, but broken):**
+- It has **no PROCEED exit edge** — the gate has no outgoing edges, so a run silently stops (research.py:24-93). Add proper exit wiring.
+- It has **no WORKFLOW_META entry** (skill_export.py:42-248) — SKILL.md export falls back to a generic template.
+- It's **not in `CEO_MODES`** — `factory ceo --mode research-standalone` fails at argparse (verified). Add with the other modes (Step 7).
+- It **lacks RELOOP edges** — a failing gate should loop back to `fork_research`, not halt (definitions.py:431-432 shows the parent pattern).
+- Prompt strings are duplicated in the wrapper vs definitions.py:239-279 — unify by importing shared constants instead of copy-paste.
 
-**Dual-engine done-criterion (per stage)**: (a) deterministic run via `factory workflow run <stage>-standalone` (reads/writes enforced), (b) skill run via `factory ceo --mode <stage>-standalone` (SKILL.md playbook + verification hooks). Snapshot-diff of parent graphs = empty.
+**Step 2 — Extract stage subgraph helpers** (per stage; template `_research_subgraph` definitions.py:154-222, `_deep_qa_subgraph` definitions.py:87-148):
+- `_strategy_subgraph()`: strategist + gate_strategy (design-mode user-gate variant stays parametric).
+- `_build_subgraph()`: builder + gate_build + artifact post-checks (min_size 500, must_contain "commit").
+- `_finalize_subgraph()`: finalize + archivist_build + spec_generate.
+- `_shared_prefix_subgraph()`: study→research→gate→strategist→gate (the copy-paste at definitions.py:4024-4087).
+- Contract: `def _<stage>_subgraph(*, <params>) -> tuple[dict[str, Any], list[Edge]]`; caller owns entry/exit edges; RELOOP targets wired by caller; fixed node IDs by convention.
+
+**Step 3 — Standalone wrappers** (`factory/workflow/strategy.py`, `build.py`, `finalize.py`; template `research.py`/`deep_qa.py`):
+- `meta` dict (name + description) + `workflow()` fn per registry.py:209-238.
+- Reads-clearing hack required: `node.model_copy(update={"reads": set()})` (research.py:76-79) — validation demands predecessor writes.
+- **RELOOP wiring is mandatory** (research-standalone's silent-stop bug must NOT be repeated): gate→producer loopback edges, not just PROCEED exit.
+- Standalone gates that are `evaluator_type="user"` in parents (design's gate_strategy) need an agent/fn fallback for standalone runs — decide per stage.
+
+**Step 4 — Re-wire parents (graph-identical):**
+- `build_workflow` (definitions.py:228): replace inline strategy/build/finalize nodes with helper splats (`nodes.update(...)` + `*edges`).
+- `design_workflow` (478): inherits via build; verify `just_plan` mutation (definitions.py:673-687) survives strategy extraction.
+- `improve_workflow` (721) + `research_workflow` (969): extend to the new helpers (already use `_deep_qa_subgraph`).
+- `parallel_improve_workflow` (4011): replace copy-pasted prefix with `_shared_prefix_subgraph()`.
+- **Proof**: Phase 0 snapshots must show **zero diff** (tests/test_workflow_snapshots.py). If they change, semantics changed — stop.
+
+**Step 5 — Register + metadata:**
+- `_get_builtin_registry` (definitions.py:3952-4004): lazy lambdas for the 3 new standalone workflows.
+- `WORKFLOW_META` (skill_export.py:42-248): description + argument_hint per workflow.
+- **Bump `tests/test_spec_generate.py:95`**: `len(all_wf) == 31` → **34** (same commit as registration).
+- Sweep-all tests auto-extend (good — they validate everything): `test_annotations.py`, `test_skill_export.py` (`test_all_registered_skills_exported`), `test_workflow_definitions.py` (`test_all_validate` + `TestBuilderQaReachability` — build-standalone MUST have edge-reachable deep-QA specialists or it fails).
+
+**Step 6 — Make stages runnable as modes (interim wiring, `# V2-INTERIM`):**
+- `CEO_MODES`/`RUN_MODES` (cli/_helpers.py:19-22)
+- `CycleState.mode` strict Literal (models.py:520-535) — runtime ValidationError otherwise
+- `_detect_incomplete` branch (ceo_completion.py:282-358) — currently "unknown modes assumed complete" — dangerous
+- `InnerLoop` mode strings (inner_loop.py:172-176)
+- ceo.md mode table
+- Verify deterministic engine resolution: mode→`WorkflowRegistry.get_workflow(ceo_mode)` (cli/_ceo_helpers.py:788)
+- Check whether stages need custom `--mode` handlers (deep-qa precedent: cli/ceo.py:45-46) or the default path suffices
+
+**Step 7 — Cross-cutting verification (per stage, both engines):**
+- **Skill cache**: adding workflows changes the canonical SHA-256 → `~/.factory/cache/skills/<checksum>/` auto-regens (skill_cache.py:30-87) — verify no stale-cache failures; hooks (`settings-<mode>.json` PostToolUse) generate for new modes.
+- **Worktree/experiment interplay**: verify `factory workflow run <stage>` inside `.factory-worktrees/` — does standalone `finalize` create experiments/? does `begin/finalize` (store.py:536-643) work in run worktrees? Decide per stage.
+- **Events/cycle_analyzer**: stage runs emit events; `cycle_analyzer.py:127` hardcodes `cycle_number=1` — standalone runs may pollute "latest cycle" reconstruction. Decide policy before finalize stage.
+- **Docs surface**: CLAUDE.md architecture section, `factory workflow list` output, `factory --help` mode lists, docs/index.md mode tables.
+- **Dual-engine e2e test**: heavier (subprocess CLI invocation) — needs `real_worktree`-style markers; commit one per stage.
+
+**Dual-engine done-criterion (per stage)**: (a) deterministic run via `factory workflow run <stage>-standalone <path>` — reads/writes + post-checks enforced; (b) skill run via `factory ceo --mode <stage>-standalone <path>` — SKILL.md playbook + verification hooks active. Snapshot-diff of parent graphs = empty.
+
+**Per-stage deliverable**:
+```
+factory/workflow/<stage>.py          # standalone wrapper (meta + workflow() + RELOOP wiring)
+definitions.py                       # helper + rewired parents + registry entry
+skill_export.py                      # WORKFLOW_META entry
+tests/test_workflow_<stage>.py       # helper unit + standalone contract + rewiring tests
+tests/test_spec_generate.py:95       # 31 → 34 (same commit as registration)
+mode wiring (6 files, V2-INTERIM)
+dual-engine e2e test                 # deterministic + skill, markers
+```
+
+**Stage order** (dependency-aware):
+1. **research-standalone completion** (Step 1 — unblocks the pattern for the rest)
+2. **strategy** (smallest, no sub-dependencies) — proves the pattern a third time
+3. **shared-prefix extraction** (kills copy-paste; de-risks parallel_improve)
+4. **build** (largest — deep-QA reachability requirement makes it the riskiest; after strategy)
+5. **finalize** (last — touches experiment lifecycle, highest blast radius on store.py contracts)
+
+**Test strategy (order matters)**:
+1. Snapshot preservation tests first (done in Phase 0 — the safety net)
+2. Helper unit tests (mirror `TestResearchSubgraph`, tests/test_workflow_research.py:27-120: node-id sets, edge tuples, fork targets, post_checks)
+3. Standalone contract tests (mirror `TestResearchStandaloneWorkflow`: name, start_node, node-set equality, reads cleared, registry membership, exit edges)
+4. Parent rewiring tests (existing preservation tests + snapshot-diff = empty)
+5. Sweep-all gates + count fix in the same commit as registration
+6. Executor dry-run + dual-engine e2e last
+
+**Timebox**: ~3-4 days solo; ~1 day if the team splits stages (the "15 factories" exercise — one stage per person, this branch is the coordination point).
 
 ## Phase 2 — Every factory gets an eval (3 days)
 
