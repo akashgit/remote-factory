@@ -45,6 +45,7 @@ __all__ = [
     "DOC_FRESHNESS_GATE_PROMPT",
     "build_workflow",
     "design_workflow",
+    "design_workflow_v2",
     "improve_workflow",
     "research_workflow",
     "meta_workflow",
@@ -4364,6 +4365,232 @@ def precheck_finalize_workflow() -> Workflow:
     )
 
 
+# ── W₂v₂: Design Mode (Recomposed) ────────────────────────────────
+
+
+def design_workflow_v2(just_plan: bool = False) -> Workflow:
+    """W₂v₂: Design Mode recomposed with SubWorkflowNode references.
+
+    Replaces inline nodes with sub-workflow references where possible:
+    - study + research-pipeline run IN PARALLEL via fork_observe/join_observe
+    - strategize is used inline (gate_type varies per mode)
+    - build-verify is a SubWorkflowNode reference
+    - Archivist and spec_generate remain as leaf nodes
+
+    When just_plan=True, truncates after strategy approval (no build phase).
+    """
+    from factory.workflow.primitives import SubWorkflowNode
+
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Entry gate: existing project vs new project ──
+    nodes["gate_has_factory"] = GateNode(
+        id="gate_has_factory",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            'exists = Path("{project_path}/.factory/config.json").exists(); '
+            'print("PROCEED" if exists else "HALT")'
+            '"'
+        ),
+        reads={".factory/config.json"},
+    )
+
+    nodes["discover"] = FnNode(
+        id="discover",
+        command="factory discover {project_path}",
+        writes={".factory/eval_profile.json"},
+    )
+
+    # ── Parallel observe: study + research pipeline ──
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    nodes["sub_research"] = SubWorkflowNode(
+        id="sub_research",
+        workflow_name="research-pipeline",
+        writes={
+            ".factory/strategy/research-combined.md",
+            ".factory/strategy/research-similar.md",
+            ".factory/strategy/research-techstack.md",
+            ".factory/strategy/research-pitfalls.md",
+        },
+    )
+
+    nodes["fork_observe"] = ForkNode(
+        id="fork_observe",
+        targets=["study", "sub_research"],
+    )
+
+    nodes["join_observe"] = JoinNode(
+        id="join_observe",
+        sources=["study", "sub_research"],
+        reads={
+            ".factory/strategy/observations.md",
+            ".factory/strategy/research-combined.md",
+        },
+    )
+
+    # ── Strategist with user gate (design mode) ──
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Synthesize a project specification from research. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
+            "Every Phase must have substantive What/Why/Expected impact fields. "
+            "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
+            "Write the plan to .factory/strategy/current.md."
+        ),
+        reads={".factory/strategy/research-combined.md"},
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+                must_contain=["### Phase 1", "### Architecture"],
+            )
+        ],
+    )
+
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="user",
+        reads={".factory/strategy/current.md"},
+    )
+
+    # ── Archivist plan (async) ──
+    nodes["archivist_plan"] = AgentNode(
+        id="archivist_plan",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the approved research and strategy.",
+        reads={".factory/strategy/current.md"},
+        writes={".factory/archive/plan.md"},
+        blocking=False,
+    )
+
+    if just_plan:
+        # ── Plan-only mode: no build phase ──
+        edges = [
+            Edge(source="gate_has_factory", target="fork_observe", condition=VerdictType.PROCEED),
+            Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+            Edge(source="discover", target="fork_observe"),
+            # Fork parallel observe
+            Edge(source="fork_observe", target="study"),
+            Edge(source="fork_observe", target="sub_research"),
+            Edge(source="study", target="join_observe"),
+            Edge(source="sub_research", target="join_observe"),
+            # Join → strategist
+            Edge(source="join_observe", target="strategist"),
+            Edge(source="strategist", target="gate_strategy"),
+            Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
+            Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        ]
+
+        wf_name = "plan-v2"
+        start = "gate_has_factory"
+        terminal = True
+
+        def plan_trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+            return ctx.get("just_plan") is True
+
+        return Workflow(
+            name=wf_name,
+            nodes=nodes,
+            edges=edges,
+            start_node=start,
+            terminal=terminal,
+            trigger=plan_trigger,
+        )
+
+    # ── Build-verify via SubWorkflowNode ──
+    nodes["sub_build_verify"] = SubWorkflowNode(
+        id="sub_build_verify",
+        workflow_name="build-verify",
+        writes={
+            ".factory/reviews/builder-latest.md",
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+
+    # ── Precheck gate ──
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    # ── Archivist build (async) ──
+    nodes["archivist_build"] = AgentNode(
+        id="archivist_build",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the build phase results.",
+        reads={".factory/reviews/adversarial-qa.md"},
+        writes={".factory/archive/build.md"},
+        blocking=False,
+    )
+
+    # ── Spec generate (async) ──
+    nodes["spec_generate"] = FnNode(
+        id="spec_generate",
+        command="factory workflow run spec-generate {project_path}",
+        notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
+        blocking=False,
+    )
+
+    # ── Edges ──
+    edges = [
+        # Entry gate
+        Edge(source="gate_has_factory", target="fork_observe", condition=VerdictType.PROCEED),
+        Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+        Edge(source="discover", target="fork_observe"),
+        # Fork parallel observe
+        Edge(source="fork_observe", target="study"),
+        Edge(source="fork_observe", target="sub_research"),
+        Edge(source="study", target="join_observe"),
+        Edge(source="sub_research", target="join_observe"),
+        # Join → strategist
+        Edge(source="join_observe", target="strategist"),
+        Edge(source="strategist", target="gate_strategy"),
+        Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # Archivist → build-verify
+        Edge(source="archivist_plan", target="sub_build_verify"),
+        # Build-verify → precheck
+        Edge(source="sub_build_verify", target="gate_precheck"),
+        # Precheck → archivist build (proceed or halt)
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
+        # Archivist → spec generate
+        Edge(source="archivist_build", target="spec_generate"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state in {
+            ProjectState.NO_REPO,
+            ProjectState.REPO_INCOMPLETE,
+            ProjectState.HAS_FACTORY,
+        } and ctx.get("interactive", False)
+
+    return Workflow(
+        name="design-v2",
+        nodes=nodes,
+        edges=edges,
+        start_node="gate_has_factory",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 _BUILTIN_REGISTRY: dict[str, Any] | None = None
@@ -4377,6 +4604,7 @@ def _get_builtin_registry() -> dict[str, Any]:
     _BUILTIN_REGISTRY = {
         "build": build_workflow,
         "design": design_workflow,
+        "design-v2": design_workflow_v2,
         "discover": discover_workflow,
         "review": review_workflow,
         "improve": improve_workflow,
@@ -4398,6 +4626,8 @@ def _get_builtin_registry() -> dict[str, Any]:
         "evolve": evolve_workflow,
         "research-pipeline": research_pipeline_workflow,
         "strategize": strategize_workflow,
+        "strategize-user": lambda: strategize_workflow(gate_type="user"),
+        "strategize-agent": lambda: strategize_workflow(gate_type="agent"),
         "deep-qa": deep_qa_workflow,
         "build-verify": build_verify_workflow,
         "precheck-finalize": precheck_finalize_workflow,
