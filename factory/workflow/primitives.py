@@ -209,6 +209,30 @@ class Study(FnNode):
     focus: str | None = None
 
 
+# ── workflow IO ─────────────────────────────────────────────────
+
+
+class WorkflowIO(BaseModel):
+    """Typed input/output contract for a workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    inputs: set[str] = Field(default_factory=set)
+    outputs: set[str] = Field(default_factory=set)
+    optional_inputs: set[str] = Field(default_factory=set)
+    optional_outputs: set[str] = Field(default_factory=set)
+
+
+class SubWorkflowNode(Node):
+    """Node that invokes another registered workflow by name."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    workflow_name: str
+    input_mapping: dict[str, str] = Field(default_factory=dict)
+    pass_context: bool = True
+
+
 # ── edges ────────────────────────────────────────────────────────
 
 
@@ -226,7 +250,15 @@ class Edge(BaseModel):
 
 
 NodeType = (
-    AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+    AgentNode
+    | FnNode
+    | GateNode
+    | ForkNode
+    | JoinNode
+    | SubgraphForkNode
+    | SelectionNode
+    | Study
+    | SubWorkflowNode
 )
 
 
@@ -243,6 +275,7 @@ class Workflow(BaseModel):
     edges: list[Edge]
     start_node: str
     terminal: bool = False
+    io: WorkflowIO | None = None
     trigger: TriggerFn | None = Field(default=None, exclude=True)
 
     def validate_graph(self) -> list[str]:

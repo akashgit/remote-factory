@@ -14,6 +14,7 @@ import structlog
 
 from factory.workflow.events import (
     GateVerdictEvent,
+    HandoffEvent,
     NodeCompleted,
     NodeFailed,
     NodeStarted,
@@ -33,6 +34,7 @@ from factory.workflow.primitives import (
     NodeType,
     SelectionNode,
     Study,
+    SubWorkflowNode,
     SubgraphForkNode,
     Verdict,
     VerdictType,
@@ -137,11 +139,13 @@ class WorkflowExecutor:
         node_timings: list[dict[str, Any]] = []
         for ev in self.result.events:
             if ev.get("type") == "node.completed" and "duration_ms" in ev:
-                node_timings.append({
-                    "id": ev.get("node_id", ""),
-                    "type": ev.get("node_type", ""),
-                    "duration_ms": round(ev["duration_ms"], 1),
-                })
+                node_timings.append(
+                    {
+                        "id": ev.get("node_id", ""),
+                        "type": ev.get("node_type", ""),
+                        "duration_ms": round(ev["duration_ms"], 1),
+                    }
+                )
         node_timings.sort(key=lambda n: n["duration_ms"], reverse=True)
         node_total_ms = sum(n["duration_ms"] for n in node_timings)
         log.info(
@@ -207,6 +211,13 @@ class WorkflowExecutor:
         if isinstance(node, JoinNode):
             self.result.nodes_executed += 1
             self.completed_files |= node.writes
+            next_id = self._next_unconditional(node_id)
+            if next_id:
+                await self._execute_from(next_id)
+            return
+
+        if isinstance(node, SubWorkflowNode):
+            await self._execute_sub_workflow(node)
             next_id = self._next_unconditional(node_id)
             if next_id:
                 await self._execute_from(next_id)
@@ -424,6 +435,16 @@ class WorkflowExecutor:
             target = self.workflow.nodes.get(target_id)
             if not target:
                 return
+
+            if isinstance(target, SubWorkflowNode):
+                try:
+                    await self._execute_sub_workflow(target)
+                except Exception as exc:
+                    if not self.result.halted:
+                        self.result.halt_reason = f"fork branch '{target_id}' failed: {exc}"
+                    self.result.halted = True
+                return
+
             node_type = type(target).__name__
             self._emit(
                 "node.started",
@@ -530,10 +551,14 @@ class WorkflowExecutor:
 
         # Collect subgraph node IDs by walking edges from entry to exit
         subgraph_ids = _collect_subgraph_nodes(
-            self.workflow, node.subgraph_entry, node.subgraph_exit,
+            self.workflow,
+            node.subgraph_entry,
+            node.subgraph_exit,
         )
         sub_workflow = self.workflow.subgraph(
-            subgraph_ids, name=f"{self.workflow.name}__branch", start_node=node.subgraph_entry,
+            subgraph_ids,
+            name=f"{self.workflow.name}__branch",
+            start_node=node.subgraph_entry,
         )
 
         branch_results: list[dict[str, Any]] = []
@@ -552,7 +577,9 @@ class WorkflowExecutor:
                 store = ExperimentStore(self.project_path)
                 exp_id = await store.begin(hypothesis)
                 wt_path, branch_name = create_experiment_worktree(
-                    self.project_path, exp_id, base_commit,
+                    self.project_path,
+                    exp_id,
+                    base_commit,
                 )
                 worktrees.append((wt_path, branch_name, exp_id))
 
@@ -588,9 +615,13 @@ class WorkflowExecutor:
         for r in results:
             if isinstance(r, BaseException):
                 log.warning("subgraph_branch_failed", error=str(r))
-                branch_results.append({
-                    "success": False, "halted": True, "halt_reason": str(r),
-                })
+                branch_results.append(
+                    {
+                        "success": False,
+                        "halted": True,
+                        "halt_reason": str(r),
+                    }
+                )
             else:
                 branch_results.append(r)  # type: ignore[arg-type]
 
@@ -646,7 +677,11 @@ class WorkflowExecutor:
                 continue
 
         if self.dry_run or not fork_output:
-            selection_result: dict[str, Any] = {"strategy": node.strategy, "winner": None, "reason": "dry-run"}
+            selection_result: dict[str, Any] = {
+                "strategy": node.strategy,
+                "winner": None,
+                "reason": "dry-run",
+            }
             self.result.node_outputs[node.id] = json.dumps(selection_result)
             self.completed_files |= node.writes
             elapsed = (time.monotonic() - start) * 1000
@@ -701,8 +736,14 @@ class WorkflowExecutor:
         winner_branch = best["branch"]
         try:
             sp.run(
-                ["git", "merge", winner_branch, "--no-edit", "-m",
-                 f"Merge parallel experiment winner (exp {best['exp_id']})"],
+                [
+                    "git",
+                    "merge",
+                    winner_branch,
+                    "--no-edit",
+                    "-m",
+                    f"Merge parallel experiment winner (exp {best['exp_id']})",
+                ],
                 cwd=self.project_path,
                 check=True,
                 capture_output=True,
@@ -724,9 +765,12 @@ class WorkflowExecutor:
 
             if branch is not best and exp_id is not None:
                 from factory.models import ExperimentRecord
+
                 record = ExperimentRecord(
                     id=exp_id,
-                    timestamp=__import__("datetime").datetime.now(tz=__import__("datetime").timezone.utc),
+                    timestamp=__import__("datetime").datetime.now(
+                        tz=__import__("datetime").timezone.utc
+                    ),
                     hypothesis=branch.get("hypothesis", ""),
                     change_summary="superseded by experiment " + str(best["exp_id"]),
                     issue_number=None,
@@ -776,6 +820,166 @@ class WorkflowExecutor:
         next_id = self._next_unconditional(node.id)
         if next_id:
             await self._execute_from(next_id)
+
+    async def _execute_sub_workflow(self, node: SubWorkflowNode) -> None:
+        """Resolve and execute a sub-workflow referenced by name."""
+        from factory.workflow.definitions import register_all
+
+        node_id = node.id
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="SubWorkflowNode",
+            ),
+        )
+
+        start = time.monotonic()
+        registry = register_all()
+        child_wf = registry.get(node.workflow_name)
+        if not child_wf:
+            self._emit(
+                "node.failed",
+                NodeFailed(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node_id,
+                    node_type="SubWorkflowNode",
+                    error=f"workflow '{node.workflow_name}' not found in registry",
+                ),
+            )
+            self.result.halted = True
+            self.result.halt_reason = f"sub-workflow '{node.workflow_name}' not found in registry"
+            return
+
+        # Validate IO inputs
+        files_handed: list[str] = []
+        files_missing: list[str] = []
+        if child_wf.io and child_wf.io.inputs:
+            for required in child_wf.io.inputs:
+                if required in self.completed_files:
+                    files_handed.append(required)
+                elif (self.project_path / required).exists():
+                    files_handed.append(required)
+                else:
+                    files_missing.append(required)
+
+            if files_missing:
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=node_id,
+                        node_type="SubWorkflowNode",
+                        error=f"missing inputs for '{node.workflow_name}': {files_missing}",
+                    ),
+                )
+                self.result.halted = True
+                self.result.halt_reason = (
+                    f"sub-workflow '{node.workflow_name}' missing inputs: {files_missing}"
+                )
+                return
+
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._emit(
+            "handoff.started",
+            HandoffEvent(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                source_node=node_id,
+                target_workflow=node.workflow_name,
+                files_handed=sorted(files_handed),
+                files_missing=sorted(files_missing),
+                timestamp=ts,
+            ),
+        )
+
+        # Create child executor
+        child_executor = WorkflowExecutor(
+            child_wf.model_copy(deep=True),
+            self.project_path,
+            agent_pool=self.agent_pool,
+            dry_run=self.dry_run,
+            auto_approve=self.auto_approve,
+        )
+
+        # Pass parent context to child
+        if node.pass_context:
+            child_executor.node_context.update(self.node_context)
+
+        # Pass parent completed_files so child can read them
+        child_executor.completed_files |= self.completed_files
+
+        child_result = await child_executor.execute()
+
+        # Propagate halt
+        if child_result.halted:
+            self._emit(
+                "node.failed",
+                NodeFailed(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node_id,
+                    node_type="SubWorkflowNode",
+                    error=f"sub-workflow '{node.workflow_name}' halted: {child_result.halt_reason}",
+                ),
+            )
+            self.result.halted = True
+            self.result.halt_reason = (
+                f"sub-workflow '{node.workflow_name}' halted: {child_result.halt_reason}"
+            )
+            return
+
+        # Verify IO outputs
+        if child_wf.io and child_wf.io.outputs:
+            missing_outputs = []
+            for expected in child_wf.io.outputs:
+                if (
+                    expected not in child_result.completed_files
+                    and not (self.project_path / expected).exists()
+                ):
+                    missing_outputs.append(expected)
+            if missing_outputs:
+                log.warning(
+                    "sub_workflow.missing_outputs",
+                    workflow=node.workflow_name,
+                    missing=missing_outputs,
+                )
+
+        # Merge child state into parent
+        self.completed_files |= child_result.completed_files
+        self.completed_files |= node.writes
+        self.result.nodes_executed += 1
+
+        elapsed = (time.monotonic() - start) * 1000
+        self._emit(
+            "node.completed",
+            NodeCompleted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="SubWorkflowNode",
+                files_written=sorted(node.writes | child_result.completed_files),
+                duration_ms=elapsed,
+            ),
+        )
+
+        ts_end = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._emit(
+            "handoff.completed",
+            HandoffEvent(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                source_node=node_id,
+                target_workflow=node.workflow_name,
+                files_handed=sorted(child_result.completed_files),
+                files_missing=[],
+                timestamp=ts_end,
+            ),
+        )
 
     async def _run_node(self, node: NodeType) -> str:
         """Execute a single node and return its output."""
@@ -854,7 +1058,8 @@ class WorkflowExecutor:
         if node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
+                    "{project_path}",
+                    shlex.quote(str(self.project_path)),
                 )
                 try:
                     output = await self._run_shell(cmd)
@@ -887,7 +1092,8 @@ class WorkflowExecutor:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
             return node.gate_prompt.replace(
-                "{project_path}", str(self.project_path),
+                "{project_path}",
+                str(self.project_path),
             )
 
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
@@ -939,7 +1145,9 @@ class WorkflowExecutor:
             if not target:
                 target = self._next_conditional(gate_id, VerdictType.RELOOP)
             if not target:
-                return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
+                return Verdict.halt(
+                    reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined"
+                )
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
             return Verdict.reloop(target=target, feedback=feedback)
 
@@ -988,9 +1196,7 @@ class WorkflowExecutor:
 
         if proc.returncode != 0:
             stderr = stderr_bytes.decode() if stderr_bytes else ""
-            raise RuntimeError(
-                f"command failed (exit {proc.returncode}): {cmd}\n{stderr[:500]}"
-            )
+            raise RuntimeError(f"command failed (exit {proc.returncode}): {cmd}\n{stderr[:500]}")
 
         return stdout
 

@@ -13,10 +13,12 @@ from factory.workflow.primitives import (
     JoinNode,
     SelectionNode,
     Study,
+    SubWorkflowNode,
     SubgraphForkNode,
     Verdict,
     VerdictType,
     Workflow,
+    WorkflowIO,
 )
 
 __all__ = [
@@ -32,9 +34,11 @@ __all__ = [
     "JoinNode",
     "SelectionNode",
     "Study",
+    "SubWorkflowNode",
     "SubgraphForkNode",
     "Verdict",
     "VerdictType",
     "Workflow",
     "WorkflowExecutor",
+    "WorkflowIO",
 ]

@@ -88,6 +88,20 @@ class WorkflowHalted(WorkflowEvent):
     halted_at_node: str
 
 
+class HandoffEvent(BaseModel):
+    """Tracks file handoff between workflows or sub-workflows."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    workflow_name: str
+    run_id: str
+    source_node: str
+    target_workflow: str
+    files_handed: list[str] = []
+    files_missing: list[str] = []
+    timestamp: str = ""
+
+
 def emit_workflow_event(
     project_path: Any,
     event_type: str,
