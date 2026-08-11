@@ -33,7 +33,7 @@ class TestFrontendDesignValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_workflow()
-        assert len(wf.nodes) == 26
+        assert len(wf.nodes) == 25
 
     def test_start_node(self) -> None:
         wf = frontend_design_workflow()
@@ -82,7 +82,7 @@ class TestDesignSystemGate:
         assert "rules.md" in gate.evaluator_command
         assert "infra-context.md" in gate.evaluator_command
 
-    def test_proceed_goes_to_staleness_checker(self) -> None:
+    def test_proceed_goes_to_spec_writer(self) -> None:
         wf = frontend_design_workflow()
         proceed = [
             e
@@ -90,7 +90,7 @@ class TestDesignSystemGate:
             if e.source == "gate_design_system" and e.condition == VerdictType.PROCEED
         ]
         assert len(proceed) == 1
-        assert proceed[0].target == "staleness_checker"
+        assert proceed[0].target == "spec_writer"
 
     def test_reloop_goes_to_fork(self) -> None:
         wf = frontend_design_workflow()
@@ -101,27 +101,6 @@ class TestDesignSystemGate:
         ]
         assert len(reloop) == 1
         assert reloop[0].target == "fork_design_research"
-
-    def test_staleness_checker_is_researcher(self) -> None:
-        wf = frontend_design_workflow()
-        node = wf.nodes["staleness_checker"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.RESEARCHER
-
-    def test_staleness_checker_writes_report(self) -> None:
-        wf = frontend_design_workflow()
-        node = wf.nodes["staleness_checker"]
-        assert ".factory/design-system/staleness-report.md" in node.writes
-
-    def test_staleness_checker_to_spec_writer(self) -> None:
-        wf = frontend_design_workflow()
-        edges = [
-            e
-            for e in wf.edges
-            if e.source == "staleness_checker" and e.condition is None
-        ]
-        assert len(edges) == 1
-        assert edges[0].target == "spec_writer"
 
 
 # ── Phase 1: Design Research ────────────────────────────────────

@@ -59,19 +59,37 @@ APPROVED_FONTS=$(echo "$APPROVED_FONTS_RAW" | sed 's/[.[\*^$()+?{}|]/\\&/g' | pa
 # Also allow generic CSS keywords and common system fallbacks
 APPROVED_GENERIC="inherit|initial|unset|sans-serif|serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|ui-rounded"
 
+# --- Auto-detect source directory for full-scan mode ---
+if [[ "${SCAN_MODE:-}" == "full" ]] && [[ -z "${SCAN_SRC_DIR:-}" ]]; then
+  if [[ -f "$BASELINE" ]]; then
+    SCAN_SRC_DIR=$(python3 -c "import json; print(json.load(open('$BASELINE')).get('source_root',''))" 2>/dev/null || true)
+  fi
+  if [[ -z "${SCAN_SRC_DIR:-}" ]]; then
+    for _d in src app pages lib; do
+      if [[ -d "$_d" ]]; then SCAN_SRC_DIR="$_d"; break; fi
+    done
+  fi
+  SCAN_SRC_DIR="${SCAN_SRC_DIR:-.}"
+fi
+
 # --- Gather files to check ---
 if [[ "${SCAN_MODE:-}" == "full" ]]; then
-  CHANGED=$(find "${SCAN_SRC_DIR:-src}" -type f \( -name '*.tsx' -o -name '*.ts' -o -name '*.css' \) 2>/dev/null | sort || true)
+  CHANGED=$(find "$SCAN_SRC_DIR" -type f \( -name '*.tsx' -o -name '*.ts' -o -name '*.css' \) 2>/dev/null | sort || true)
 else
   CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
   CHANGED=$(echo "$CHANGED_FILES" | grep -E '\.(tsx|ts|css)$' || true)
 fi
 
 if [[ -z "$CHANGED" ]]; then
-  if $SCORE_MODE; then
-    echo '{"score": 1.0, "details": "No changed files to check."}'
+  if [[ "${SCAN_MODE:-}" == "full" ]]; then
+    _MSG="No .tsx/.ts/.css files found in ${SCAN_SRC_DIR:-.}."
   else
-    echo "PASS: No changed .tsx/.ts/.css files to check."
+    _MSG="No changed .tsx/.ts/.css files to check."
+  fi
+  if $SCORE_MODE; then
+    echo "{\"score\": 1.0, \"details\": \"${_MSG}\"}"
+  else
+    echo "PASS: ${_MSG}"
   fi
   exit 0
 fi

@@ -13,6 +13,7 @@ from factory.workflow.primitives import (
     AgentRole,
     FnNode,
     ForkNode,
+    GateNode,
     JoinNode,
     VerdictType,
 )
@@ -33,7 +34,7 @@ class TestFrontendDesignScanValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_scan_workflow()
-        assert len(wf.nodes) == 17
+        assert len(wf.nodes) == 22
 
     def test_start_node(self) -> None:
         wf = frontend_design_scan_workflow()
@@ -112,6 +113,31 @@ class TestScanAuditorPhase:
         assert ".factory/design-system/design-baseline.json" in node.writes
 
 
+# ── Deploy Checks ─────────────────────────────────────────────
+
+
+class TestDeployChecks:
+    def test_deploy_checks_is_fn_node(self) -> None:
+        wf = frontend_design_scan_workflow()
+        node = wf.nodes["deploy_checks"]
+        assert isinstance(node, FnNode)
+
+    def test_auditor_to_deploy_checks(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "scan_auditor" and e.target == "deploy_checks"]
+        assert len(edges) == 1
+
+    def test_deploy_checks_to_fork(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "deploy_checks" and e.target == "fork_scan_checks"]
+        assert len(edges) == 1
+
+    def test_no_direct_auditor_to_fork(self) -> None:
+        wf = frontend_design_scan_workflow()
+        edges = [e for e in wf.edges if e.source == "scan_auditor" and e.target == "fork_scan_checks"]
+        assert len(edges) == 0
+
+
 # ── Phase 3: Check Scripts ─────────────────────────────────────
 
 
@@ -168,31 +194,71 @@ class TestScanReportPhase:
         assert node.blocking is False
 
 
-# ── No Builder/Spec/User Gates ─────────────────────────────────
+# ── Compliance Plan + Fix Pipeline ─────────────────────────────
 
 
-class TestScanNoBuilderNodes:
-    """Scan workflow must NOT contain builder, spec, or user gates."""
-
-    def test_no_builder(self) -> None:
-        wf = frontend_design_scan_workflow()
-        assert "builder" not in wf.nodes
+class TestScanCompliancePipeline:
+    """Scan workflow has compliance planner, user gate, builder, and build gate."""
 
     def test_no_spec_writer(self) -> None:
         wf = frontend_design_scan_workflow()
         assert "spec_writer" not in wf.nodes
 
-    def test_no_user_gate(self) -> None:
+    def test_compliance_planner_exists(self) -> None:
         wf = frontend_design_scan_workflow()
-        for nid, node in wf.nodes.items():
-            if hasattr(node, "evaluator_type"):
-                assert node.evaluator_type != "user", f"{nid} is a user gate"
+        node = wf.nodes["compliance_planner"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.STRATEGIST
 
-    def test_no_reloop_edges(self) -> None:
-        """Scan mode has no fix loops."""
+    def test_compliance_planner_writes_plan(self) -> None:
         wf = frontend_design_scan_workflow()
-        reloops = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
-        assert len(reloops) == 0
+        node = wf.nodes["compliance_planner"]
+        assert ".factory/design-system/compliance-plan.md" in node.writes
+
+    def test_user_gate_exists(self) -> None:
+        wf = frontend_design_scan_workflow()
+        gate = wf.nodes["gate_compliance_approve"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "user"
+
+    def test_user_gate_proceed_to_builder(self) -> None:
+        wf = frontend_design_scan_workflow()
+        proceed = [
+            e for e in wf.edges
+            if e.source == "gate_compliance_approve" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed) == 1
+        assert proceed[0].target == "compliance_builder"
+
+    def test_user_gate_halt_to_archivist(self) -> None:
+        wf = frontend_design_scan_workflow()
+        halt = [
+            e for e in wf.edges
+            if e.source == "gate_compliance_approve" and e.condition == VerdictType.HALT
+        ]
+        assert len(halt) == 1
+        assert halt[0].target == "archivist_scan"
+
+    def test_compliance_builder_exists(self) -> None:
+        wf = frontend_design_scan_workflow()
+        node = wf.nodes["compliance_builder"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.BUILDER
+
+    def test_build_gate_is_fn(self) -> None:
+        wf = frontend_design_scan_workflow()
+        gate = wf.nodes["gate_compliance_build"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_build_gate_reloops_to_builder(self) -> None:
+        wf = frontend_design_scan_workflow()
+        reloop = [
+            e for e in wf.edges
+            if e.source == "gate_compliance_build" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "compliance_builder"
 
 
 # ── Edge Completeness ──────────────────────────────────────────

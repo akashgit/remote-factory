@@ -475,11 +475,21 @@ class TestDocFreshnessGate:
 # ── Builder → QA reachability audit ────────────────────────────
 
 
+_QA_EXEMPT_WORKFLOWS = frozenset({
+    "frontend-design-scan",
+})
+
+
 def _workflows_with_builder() -> list[str]:
-    """Return names of workflows containing a Builder AgentNode."""
+    """Return names of workflows containing a Builder AgentNode.
+
+    Excludes scan-like workflows where QA is handled by check scripts.
+    """
     names = []
     for name, wf in register_all().items():
         if wf.terminal:
+            continue
+        if name in _QA_EXEMPT_WORKFLOWS:
             continue
         has_builder = any(
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER for n in wf.nodes.values()
