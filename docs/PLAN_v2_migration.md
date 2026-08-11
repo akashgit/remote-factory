@@ -149,3 +149,19 @@ dual-engine e2e test                 # deterministic + skill, markers
 - Week 1 = Phases 0–2 (+ manifest start)
 - Week 2 = Phase 3 finish + Phase 4 + hardening
 - Akash's 2-day single-person claim covers Phase 0 + 1 with the team doing one stage each.
+
+## Out of Scope
+
+Explicitly NOT part of this V2 push (tracked separately, or deferred by decision):
+
+- **JoinNode bugs** (#1188 materialize-writes, #1189 barrier-waiting) — filed as separate GitHub issues; the V2 branch works around them (declared writes + registry reads), and Phase 3's manifest work must not depend on fixing them.
+- **Reviving the adversarial GAN loop** (factory/adversarial.py) — decided against for research/strategy evals (Phase 2 uses per-stage single-component gates); revisit only as builder-vs-adversarial pairing, documented in the research report.
+- **New consumer modes** (PowerPoint factory, MCMC factory, Giorgio-style research toolkits) — V2 builds the machinery (stage factories + evals + protocol); the actual new modes are separate efforts built on top.
+- **Real benchmark verification inside factory graphs** — `gate_verify` greps the builder's own markdown; true pass/fail stays with the Harbor harness (outside the factory). Fixing this is Phase 5 follow-up, not V2 core.
+- **OpenCode runner v1.x rewrite** (backlog H1) + **runner-abstraction-v2 branch** — in-flight separate work touching runners/ + CLI; coordinate around it, do not absorb.
+- **Contained/k8s runtime improvements** (containers/, factory/contained/) — deployment story is separate; V2 only must not break it.
+- **MemPalace deep integration** — Phase 3 state hand-off uses the manifest, not MemPalace; MemPalace stays an offline archive layer.
+- **Deprecation of `frontend-design*` / `evolve` modes** — decided in Phase 0 to leave active until the team rules otherwise; deprecation-set drift is documentation, not V2 work.
+- **Environment/test-infra fixes** (legacybench GNU `timeout` on macOS, missing codex/opencode CLIs, unpinned agent CLIs in Containerfile) — pre-existing, unrelated to V2.
+- **Community PRs #1157/#1099/#961** — check absorb-vs-conflict before WorkflowRef (Phase 4), but implementing them is not V2 scope.
+- **Skill-engine e2e in CI** — requires live model credentials; V2 verification uses deterministic dry-runs + manual real runs, not CI gate.
