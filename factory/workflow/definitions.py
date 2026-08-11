@@ -338,6 +338,45 @@ def _shared_prefix_subgraph(*, config: PrefixConfig) -> tuple[dict[str, Any], li
     return nodes, edges
 
 
+@dataclass(frozen=True)
+class BuildConfig:
+    """Configuration for the build stage (builder → CEO gate)."""
+
+    id: str = "builder"
+    prompt_template: str = ""
+    reads: frozenset[str] = frozenset()
+    post_checks: tuple[ArtifactCheck, ...] = ()
+    gate_prompt: str = ""
+
+
+def _build_subgraph(*, config: BuildConfig) -> tuple[dict[str, Any], list[Edge]]:
+    """Build stage: builder AgentNode → gate_build GateNode.
+
+    Returns (nodes, internal_edges); the caller owns the exit edges
+    (gate PROCEED → next stage, gate RELOOP → builder).  The builder
+    writes .factory/reviews/builder-latest.md, which the gate reads.
+    """
+    builder = AgentNode(
+        id=config.id,
+        role=AgentRole.BUILDER,
+        prompt_template=config.prompt_template,
+        reads=set(config.reads),
+        writes={".factory/reviews/builder-latest.md"},
+        post_checks=list(config.post_checks),
+    )
+    gate = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=config.gate_prompt,
+        reads={".factory/reviews/builder-latest.md"},
+    )
+    return (
+        {config.id: builder, "gate_build": gate},
+        [Edge(source=config.id, target="gate_build")],
+    )
+
+
 # ── W₁: Build Mode ──────────────────────────────────────────────
 
 # Shared with the research-standalone workflow (factory/workflow/research.py).
@@ -449,40 +488,34 @@ def build_workflow() -> Workflow:
     )
 
     # Per-phase: Builder → CEO gate → deep-QA → gate_qa(max 3) → Precheck → Archivist(async)
-    nodes["builder"] = AgentNode(
-        id="builder",
-        role=AgentRole.BUILDER,
-        prompt_template=(
-            "Implement the next phase from .factory/strategy/current.md. "
-            "Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. "
-            "Read CLAUDE.md and factory.md if they exist. "
-            "Implement exactly what the current phase describes. Run tests. "
-            "Commit changes and open a draft PR."
+    # Build subgraph: builder → CEO gate
+    b_nodes, b_edges = _build_subgraph(
+        config=BuildConfig(
+            prompt_template=(
+                "Implement the next phase from .factory/strategy/current.md. "
+                "Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. "
+                "Read CLAUDE.md and factory.md if they exist. "
+                "Implement exactly what the current phase describes. Run tests. "
+                "Commit changes and open a draft PR."
+            ),
+            reads=frozenset({".factory/strategy/current.md"}),
+            post_checks=(
+                ArtifactCheck(
+                    path=".factory/reviews/builder-latest.md",
+                    must_exist=True,
+                    min_size=500,
+                    must_contain=["commit"],
+                ),
+            ),
+            gate_prompt=(
+                "Read builder output. Check git log and diff. "
+                "Does the work match the plan for this phase? "
+                "If the Builder opened a PR, read it. "
+                "REDIRECT if off-scope or missed key requirements."
+            ),
         ),
-        reads={".factory/strategy/current.md"},
-        writes={".factory/reviews/builder-latest.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/reviews/builder-latest.md",
-                must_exist=True,
-                min_size=500,
-                must_contain=["commit"],
-            )
-        ],
     )
-
-    nodes["gate_build"] = GateNode(
-        id="gate_build",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "Read builder output. Check git log and diff. "
-            "Does the work match the plan for this phase? "
-            "If the Builder opened a PR, read it. "
-            "REDIRECT if off-scope or missed key requirements."
-        ),
-        reads={".factory/reviews/builder-latest.md"},
-    )
+    nodes.update(b_nodes)
 
     # Deep-QA subgraph replaces monolithic QA
     dq_nodes, dq_edges = _deep_qa_subgraph()
@@ -548,8 +581,8 @@ def build_workflow() -> Workflow:
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
         # Archivist → builder
         Edge(source="archivist_plan", target="builder"),
-        # Builder → build gate
-        Edge(source="builder", target="gate_build"),
+        # Build subgraph internal edges
+        *b_edges,
         # Build gate → deep-qa (proceed) or builder (reloop)
         Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
@@ -4038,6 +4071,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         ).workflow(),
         "strategy-standalone": lambda: __import__(
             "factory.workflow.strategy", fromlist=["workflow"]
+        ).workflow(),
+        "build-standalone": lambda: __import__(
+            "factory.workflow.build", fromlist=["workflow"]
         ).workflow(),
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]

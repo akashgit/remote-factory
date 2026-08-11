@@ -110,6 +110,15 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "build-standalone": {
+        "description": (
+            "Standalone build pipeline — the Builder implements the current "
+            "phase from .factory/strategy/current.md, commits, opens a draft PR, "
+            "then a CEO gate reviews the work. RELOOP verdicts return to the "
+            "builder (max 3 iterations)."
+        ),
+        "argument_hint": "<project_path>",
+    },
     "research": {
         "description": (
             "Research mode — extends improve with baseline measurement, failure analysis, "
