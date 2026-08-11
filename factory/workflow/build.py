@@ -14,7 +14,6 @@ from typing import Any
 from factory.models import ProjectState
 from factory.workflow.definitions import BuildConfig, _build_subgraph, _deep_qa_subgraph
 from factory.workflow.primitives import (
-    AgentNode,
     AgentRole,
     ArtifactCheck,
     Edge,

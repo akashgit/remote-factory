@@ -119,6 +119,15 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "finalize-standalone": {
+        "description": (
+            "Standalone finalize factory — the precheck hard gate (non-overridable), "
+            "then closes the experiment with a keep/revert verdict via `factory finalize`, "
+            "archives results, and updates SPEC.md. Expects $EXP_ID, $VERDICT, "
+            "$HYPOTHESIS in the environment."
+        ),
+        "argument_hint": "<project_path>",
+    },
     "research": {
         "description": (
             "Research mode — extends improve with baseline measurement, failure analysis, "

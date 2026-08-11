@@ -21,7 +21,7 @@ critical bugs, replacing the monolithic QA agent.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from factory.models import ProjectState
 from factory.workflow.primitives import (
@@ -377,6 +377,120 @@ def _build_subgraph(*, config: BuildConfig) -> tuple[dict[str, Any], list[Edge]]
     )
 
 
+@dataclass(frozen=True)
+class FinalizeConfig:
+    """Configuration for the finalize stage (precheck gate + archival tail).
+
+    Two variants exist in the codebase:
+    - "experiment" (improve/research/refine): gate_precheck → finalize
+      ($EXP_ID/$VERDICT) → archivist → spec_update
+    - "archive" (build/design/create/frontend): gate_precheck →
+      archivist_build → spec_generate
+    """
+
+    mode: Literal["experiment", "archive"] = "experiment"
+
+
+def _finalize_subgraph(*, config: FinalizeConfig) -> tuple[dict[str, Any], list[Edge]]:
+    """Finalize stage: precheck hard gate + archival tail.
+
+    Returns (nodes, internal_edges).  The caller owns the entry edge
+    (→ gate_precheck).  All terminal nodes are non-blocking; no exit
+    edges exist.
+    """
+    nodes: dict[str, Any] = {
+        "gate_precheck": GateNode(
+            id="gate_precheck",
+            evaluator_type="fn",
+            evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+            reads={".factory/reviews/adversarial-qa.md"},
+        ),
+    }
+
+    if config.mode == "experiment":
+        nodes["finalize"] = FnNode(
+            id="finalize",
+            command=(
+                "factory finalize {project_path}"
+                " --id $EXP_ID"
+                " --verdict $VERDICT"
+                ' --hypothesis "$HYPOTHESIS"'
+            ),
+            notes=(
+                "Close the experiment with a keep/revert verdict. The CEO must "
+                "substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS."
+            ),
+            reads={".factory/reviews/adversarial-qa.md"},
+            writes={".factory/experiments/verdict.json"},
+        )
+        nodes["archivist"] = AgentNode(
+            id="archivist",
+            role=AgentRole.ARCHIVIST,
+            prompt_template="Archive experiment results and learnings.",
+            reads={".factory/experiments/verdict.json"},
+            writes={".factory/archive/experiment.md"},
+            blocking=False,
+        )
+        nodes["spec_update"] = FnNode(
+            id="spec_update",
+            command=(
+                'python3 -c "'
+                "from pathlib import Path; "
+                "import subprocess, sys; "
+                "sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; "
+                "r = subprocess.run(['factory', 'workflow', 'run', 'spec-update', '{project_path}'], "
+                "capture_output=True, text=True); "
+                "print(r.stdout); print(r.stderr, file=sys.stderr); "
+                "sys.exit(0)"
+                '"'
+            ),
+            notes=(
+                "Update SPEC.md via the gated spec-update workflow if it exists. "
+                "Runs non-blocking after archival; skips silently if no spec file is present."
+            ),
+            blocking=False,
+        )
+        internal_edges: list[Edge] = [
+            Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+            Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
+            Edge(source="finalize", target="archivist"),
+            Edge(source="archivist", target="spec_update"),
+        ]
+    else:
+        nodes["archivist_build"] = AgentNode(
+            id="archivist_build",
+            role=AgentRole.ARCHIVIST,
+            prompt_template="Archive the build phase results.",
+            reads={".factory/reviews/adversarial-qa.md"},
+            writes={".factory/archive/build.md"},
+            blocking=False,
+        )
+        nodes["spec_generate"] = FnNode(
+            id="spec_generate",
+            command="factory workflow run spec-generate {project_path}",
+            notes=(
+                "Generate the project specification via the gated spec-generate "
+                "workflow. Runs non-blocking after archival."
+            ),
+            blocking=False,
+        )
+        internal_edges = [
+            Edge(
+                source="gate_precheck",
+                target="archivist_build",
+                condition=VerdictType.PROCEED,
+            ),
+            Edge(
+                source="gate_precheck",
+                target="archivist_build",
+                condition=VerdictType.HALT,
+            ),
+            Edge(source="archivist_build", target="spec_generate"),
+        ]
+
+    return nodes, internal_edges
+
+
 # ── W₁: Build Mode ──────────────────────────────────────────────
 
 # Shared with the research-standalone workflow (factory/workflow/research.py).
@@ -544,28 +658,9 @@ def build_workflow() -> Workflow:
         reads={".factory/reviews/adversarial-qa.md"},
     )
 
-    nodes["gate_precheck"] = GateNode(
-        id="gate_precheck",
-        evaluator_type="fn",
-        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/adversarial-qa.md"},
-    )
-
-    nodes["archivist_build"] = AgentNode(
-        id="archivist_build",
-        role=AgentRole.ARCHIVIST,
-        prompt_template="Archive the build phase results.",
-        reads={".factory/reviews/adversarial-qa.md"},
-        writes={".factory/archive/build.md"},
-        blocking=False,
-    )
-
-    nodes["spec_generate"] = FnNode(
-        id="spec_generate",
-        command="factory workflow run spec-generate {project_path}",
-        notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
-        blocking=False,
-    )
+    # Finalize subgraph: precheck gate → archivist → spec-generate
+    f_nodes, f_edges = _finalize_subgraph(config=FinalizeConfig(mode="archive"))
+    nodes.update(f_nodes)
 
     # Edges
     edges = [
@@ -596,11 +691,8 @@ def build_workflow() -> Workflow:
         # Doc freshness → precheck (proceed) or builder (reloop)
         Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → archivist (proceed) or halt → archivist (error handling)
-        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
-        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
-        # Archivist → spec generate (non-blocking)
-        Edge(source="archivist_build", target="spec_generate"),
+        # Finalize subgraph internal edges
+        *f_edges,
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -964,52 +1056,9 @@ def improve_workflow() -> Workflow:
         reads={".factory/reviews/adversarial-qa.md"},
     )
 
-    nodes["gate_precheck"] = GateNode(
-        id="gate_precheck",
-        evaluator_type="fn",
-        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/adversarial-qa.md"},
-    )
-
-    nodes["finalize"] = FnNode(
-        id="finalize",
-        command=(
-            "factory finalize {project_path}"
-            " --id $EXP_ID"
-            " --verdict $VERDICT"
-            ' --hypothesis "$HYPOTHESIS"'
-        ),
-        notes="Close the experiment with a keep/revert verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
-        reads={".factory/reviews/adversarial-qa.md"},
-        writes={".factory/experiments/verdict.json"},
-    )
-
-    nodes["archivist"] = AgentNode(
-        id="archivist",
-        role=AgentRole.ARCHIVIST,
-        prompt_template="Archive experiment results and learnings.",
-        reads={".factory/experiments/verdict.json"},
-        writes={".factory/archive/experiment.md"},
-        blocking=False,
-    )
-
-    # Non-blocking spec update — runs if SPEC.md exists at project root
-    nodes["spec_update"] = FnNode(
-        id="spec_update",
-        command=(
-            'python3 -c "'
-            "from pathlib import Path; "
-            "import subprocess, sys; "
-            "sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; "
-            "r = subprocess.run(['factory', 'workflow', 'run', 'spec-update', '{project_path}'], "
-            "capture_output=True, text=True); "
-            "print(r.stdout); print(r.stderr, file=sys.stderr); "
-            "sys.exit(0)"
-            '"'
-        ),
-        notes="Update SPEC.md via the gated spec-update workflow if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
-        blocking=False,
-    )
+    # Finalize subgraph: precheck gate → finalize → archivist → spec-update
+    f_nodes, f_edges = _finalize_subgraph(config=FinalizeConfig(mode="experiment"))
+    nodes.update(f_nodes)
 
     edges = [
         # Shared prefix edges
@@ -1035,12 +1084,8 @@ def improve_workflow() -> Workflow:
         # Doc freshness → precheck (proceed) or builder (reloop)
         Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → finalize (proceed) or halt → archivist (error handling)
-        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
-        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → spec_update (non-blocking)
-        Edge(source="finalize", target="archivist"),
-        Edge(source="archivist", target="spec_update"),
+        # Finalize subgraph internal edges
+        *f_edges,
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -4074,6 +4119,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         ).workflow(),
         "build-standalone": lambda: __import__(
             "factory.workflow.build", fromlist=["workflow"]
+        ).workflow(),
+        "finalize-standalone": lambda: __import__(
+            "factory.workflow.finalize", fromlist=["workflow"]
         ).workflow(),
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]
