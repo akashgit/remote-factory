@@ -10,6 +10,14 @@ if TYPE_CHECKING:
 
 def _mode_suffix(mode: str, discover_only: bool) -> str:
     _SIMPLE_MODE_SUFFIXES = {
+        "compress": (
+            "\n\nRun Compress mode: iterative ML model compression research. "
+            "Study the project, research compression techniques (pruning, distillation, "
+            "quantization), generate compression hypotheses, implement and evaluate each. "
+            "Follow P-KD-Q ordering for multi-stage pipelines. Prefer structured pruning "
+            "for hardware compatibility. Each hypothesis: implement → QA → eval → verdict. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
         "build": (
             "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
             "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
