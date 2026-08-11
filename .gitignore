@@ -17,6 +17,7 @@ dist/
 .factory
 .factory/
 .factory-worktrees/
+.ra-worktrees/
 
 # macOS
 .DS_Store
