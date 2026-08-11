@@ -9,6 +9,7 @@ from factory.optimization.protocols import Evaluator as Evaluator
 from factory.optimization.protocols import Executor as Executor
 from factory.optimization.protocols import Mutator as Mutator
 from factory.optimization.surface import Surface as Surface
+from factory.optimization.types import BenchmarkSplits as BenchmarkSplits
 from factory.optimization.types import ExecutionResult as ExecutionResult
 from factory.optimization.types import GateResult as GateResult
 from factory.optimization.types import GraphMutation as GraphMutation
@@ -20,6 +21,7 @@ from factory.optimization.types import TaskResult as TaskResult
 
 __all__ = [
     "AgenticMutator",
+    "BenchmarkSplits",
     "Evaluator",
     "ExecutionResult",
     "Executor",

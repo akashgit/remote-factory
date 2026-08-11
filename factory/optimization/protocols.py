@@ -7,7 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from factory.inner_loop import EvalResult
 from factory.optimization.surface import Surface
-from factory.optimization.types import ExecutionResult, Patch, StepRecord
+from factory.optimization.types import ExecutionResult, Patch, SplitName, StepRecord
 
 
 @runtime_checkable
@@ -15,7 +15,7 @@ class Executor(Protocol):
     """Runs one inner-loop cycle and returns structured results."""
 
     def execute(
-        self, project_dir: Path, surface: Surface, **kwargs: Any
+        self, project_dir: Path, surface: Surface, split: SplitName | None = None, **kwargs: Any
     ) -> ExecutionResult: ...
 
 

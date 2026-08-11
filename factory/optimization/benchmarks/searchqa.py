@@ -8,6 +8,7 @@ and use SQuAD-style EM normalization for scoring.
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 import structlog
@@ -15,7 +16,7 @@ import structlog
 from factory.inner_loop import EvalResult
 from factory.optimization.executors.harbor import HarborExecutor
 from factory.optimization.surface import Surface
-from factory.optimization.types import LoopConfig
+from factory.optimization.types import BenchmarkSplits, LoopConfig
 
 log = structlog.get_logger()
 
@@ -53,6 +54,38 @@ class SearchQAEvaluator:
             "target": self.target,
             "metrics": ["accuracy", "em", "f1"],
         }
+
+
+def create_searchqa_splits(
+    tasks_dir: Path,
+    train_ratio: float = 0.6,
+    dev_ratio: float = 0.2,
+    eval_ratio: float = 0.1,
+    test_ratio: float = 0.1,
+    seed: int = 42,
+) -> BenchmarkSplits:
+    """Partition SearchQA task IDs into train/dev/eval/test splits."""
+    task_ids = sorted(d.name for d in tasks_dir.iterdir() if d.is_dir())
+    rng = random.Random(seed)
+    rng.shuffle(task_ids)
+    n = len(task_ids)
+    n_train = int(n * train_ratio)
+    n_dev = int(n * (train_ratio + dev_ratio)) - n_train
+    n_eval = int(n * (train_ratio + dev_ratio + eval_ratio)) - n_train - n_dev
+    idx = 0
+    train_ids = task_ids[idx : idx + n_train]
+    idx += n_train
+    dev_ids = task_ids[idx : idx + n_dev]
+    idx += n_dev
+    eval_ids = task_ids[idx : idx + n_eval]
+    idx += n_eval
+    test_ids = task_ids[idx:]
+    return BenchmarkSplits(
+        train_ids=train_ids,
+        dev_ids=dev_ids,
+        eval_ids=eval_ids,
+        test_ids=test_ids,
+    )
 
 
 def build_searchqa_surface(skill_path: Path | None = None) -> Surface:
