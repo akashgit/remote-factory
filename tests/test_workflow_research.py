@@ -311,3 +311,19 @@ class TestResearchStandaloneWorkflow:
     def test_register_all_includes_it(self) -> None:
         all_wf = register_all()
         assert "research-standalone" in all_wf
+
+    def test_reloop_edge_returns_to_fork(self) -> None:
+        wf = self._get_wf()
+        reloop = [
+            e
+            for e in wf.edges
+            if e.source == "gate_research" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "fork_research"
+
+    def test_meta_exported(self) -> None:
+        from factory.workflow.skill_export import WORKFLOW_META
+
+        assert "research-standalone" in WORKFLOW_META
+        assert WORKFLOW_META["research-standalone"]["description"]

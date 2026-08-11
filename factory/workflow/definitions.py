@@ -222,7 +222,97 @@ def _research_subgraph(
     return nodes, internal_edges
 
 
+@dataclass(frozen=True)
+class StrategyConfig:
+    """Configuration for the strategy stage (strategist → CEO/user gate).
+
+    Two variants exist in the codebase: build-plan synthesis (build/design
+    modes) and hypothesis generation (improve/research/meta modes).
+    """
+
+    id: str = "strategist"
+    prompt_template: str = ""
+    reads: frozenset[str] = frozenset()
+    post_checks: tuple[ArtifactCheck, ...] = ()
+    gate_prompt: str = ""
+    gate_evaluator_type: Literal["agent", "user"] = "agent"
+
+
+def _strategy_subgraph(*, config: StrategyConfig) -> tuple[dict[str, Any], list[Edge]]:
+    """Strategy stage: strategist AgentNode → gate_strategy GateNode.
+
+    Returns (nodes, internal_edges); the caller owns the exit edges
+    (gate PROCEED → next, gate RELOOP → strategist).  The strategist
+    writes .factory/strategy/current.md, which the gate reads.
+    """
+    strategist = AgentNode(
+        id=config.id,
+        role=AgentRole.STRATEGIST,
+        prompt_template=config.prompt_template,
+        reads=set(config.reads),
+        writes={".factory/strategy/current.md"},
+        post_checks=list(config.post_checks),
+    )
+    gate = GateNode(
+        id="gate_strategy",
+        evaluator_type=config.gate_evaluator_type,
+        evaluator_role=(
+            AgentRole.CEO if config.gate_evaluator_type == "agent" else None
+        ),
+        gate_prompt=config.gate_prompt,
+        reads={".factory/strategy/current.md"},
+    )
+    return (
+        {config.id: strategist, "gate_strategy": gate},
+        [Edge(source=config.id, target="gate_strategy")],
+    )
+
+
 # ── W₁: Build Mode ──────────────────────────────────────────────
+
+# Shared with the research-standalone workflow (factory/workflow/research.py).
+# Keep in sync with _CREATE_RESEARCHERS in create_workflow().
+BUILD_RESEARCHERS: list[ResearcherConfig] = [
+    ResearcherConfig(
+        id="similar",
+        prompt_template=(
+            "Similar projects research. "
+            "Search the web for similar projects, existing solutions, and prior art. "
+            "Analyze their strengths, weaknesses, and market positioning. "
+            "Check .factory/archive/ for prior knowledge on similar builds. "
+            "Write findings to .factory/strategy/research-similar.md covering: "
+            "similar projects found (with links), what they do well and what's missing, "
+            "differentiation opportunities."
+        ),
+        post_check_min_size=50,
+    ),
+    ResearcherConfig(
+        id="techstack",
+        prompt_template=(
+            "Tech stack research. "
+            "Identify the best technology stack for this type of project. "
+            "Find architecture patterns and best practices. "
+            "Evaluate framework/library options with trade-offs. "
+            "Write findings to .factory/strategy/research-techstack.md covering: "
+            "recommended tech stack with rationale, architecture patterns, "
+            "framework comparisons."
+        ),
+        post_check_min_size=50,
+    ),
+    ResearcherConfig(
+        id="pitfalls",
+        prompt_template=(
+            "Pitfalls and scope research. "
+            "Identify potential pitfalls and common mistakes for this type of project. "
+            "Research MVP scope best practices. "
+            "Check .factory/archive/ for lessons from past builds. "
+            "Write findings to .factory/strategy/research-pitfalls.md covering: "
+            "potential pitfalls to avoid, MVP scope recommendation, "
+            "lessons from similar past builds."
+        ),
+        post_check_min_size=50,
+    ),
+]
 
 
 def build_workflow() -> Workflow:
@@ -236,49 +326,8 @@ def build_workflow() -> Workflow:
     edges: list[Edge] = []
 
     # Research subgraph: fork → 3 researchers → join → CEO gate
-    _BUILD_RESEARCHERS = [
-        ResearcherConfig(
-            id="similar",
-            prompt_template=(
-                "Similar projects research. "
-                "Search the web for similar projects, existing solutions, and prior art. "
-                "Analyze their strengths, weaknesses, and market positioning. "
-                "Check .factory/archive/ for prior knowledge on similar builds. "
-                "Write findings to .factory/strategy/research-similar.md covering: "
-                "similar projects found (with links), what they do well and what's missing, "
-                "differentiation opportunities."
-            ),
-            post_check_min_size=50,
-        ),
-        ResearcherConfig(
-            id="techstack",
-            prompt_template=(
-                "Tech stack research. "
-                "Identify the best technology stack for this type of project. "
-                "Find architecture patterns and best practices. "
-                "Evaluate framework/library options with trade-offs. "
-                "Write findings to .factory/strategy/research-techstack.md covering: "
-                "recommended tech stack with rationale, architecture patterns, "
-                "framework comparisons."
-            ),
-            post_check_min_size=50,
-        ),
-        ResearcherConfig(
-            id="pitfalls",
-            prompt_template=(
-                "Pitfalls and scope research. "
-                "Identify potential pitfalls and common mistakes for this type of project. "
-                "Research MVP scope best practices. "
-                "Check .factory/archive/ for lessons from past builds. "
-                "Write findings to .factory/strategy/research-pitfalls.md covering: "
-                "potential pitfalls to avoid, MVP scope recommendation, "
-                "lessons from similar past builds."
-            ),
-            post_check_min_size=50,
-        ),
-    ]
     r_nodes, r_edges = _research_subgraph(
-        researchers=_BUILD_RESEARCHERS,
+        researchers=BUILD_RESEARCHERS,
         gate_prompt=(
             "Is the research relevant? Does it cover the technology landscape adequately? "
             "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
@@ -286,46 +335,38 @@ def build_workflow() -> Workflow:
     )
     nodes.update(r_nodes)
 
-    # Strategist
-    nodes["strategist"] = AgentNode(
-        id="strategist",
-        role=AgentRole.STRATEGIST,
-        prompt_template=(
-            "Synthesize a project specification from research. "
-            "Read ALL tagged research files at .factory/strategy/research-*.md. "
-            "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
-            "Every Phase must have substantive What/Why/Expected impact fields. "
-            "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
-            "Write the plan to .factory/strategy/current.md."
+    # Strategy subgraph: strategist → CEO gate
+    s_nodes, s_edges = _strategy_subgraph(
+        config=StrategyConfig(
+            prompt_template=(
+                "Synthesize a project specification from research. "
+                "Read ALL tagged research files at .factory/strategy/research-*.md. "
+                "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
+                "Every Phase must have substantive What/Why/Expected impact fields. "
+                "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
+                "Write the plan to .factory/strategy/current.md."
+            ),
+            reads=frozenset({".factory/strategy/research-combined.md"}),
+            post_checks=(
+                ArtifactCheck(
+                    path=".factory/strategy/current.md",
+                    must_exist=True,
+                    min_size=200,
+                    must_contain=["### Phase 1", "### Architecture"],
+                ),
+            ),
+            gate_prompt=(
+                "HARD GATE — Builder MUST NOT start until approved. Check: "
+                "1) Depth: every hypothesis has Category/What/Why/Expected impact. "
+                "2) Research grounding: architecture and rationale cite research findings. "
+                "3) Buildability: a Builder could implement each phase without clarifying questions. "
+                "4) Phase 1 is scaffold + eval harness. "
+                "5) Deferred section only contains items requiring human intervention. "
+                "Write PLAN APPROVED in verdict if all checks pass."
+            ),
         ),
-        reads={".factory/strategy/research-combined.md"},
-        writes={".factory/strategy/current.md"},
-        post_checks=[
-            ArtifactCheck(
-                path=".factory/strategy/current.md",
-                must_exist=True,
-                min_size=200,
-                must_contain=["### Phase 1", "### Architecture"],
-            )
-        ],
     )
-
-    # CEO gate on strategy quality — HARD GATE
-    nodes["gate_strategy"] = GateNode(
-        id="gate_strategy",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "HARD GATE — Builder MUST NOT start until approved. Check: "
-            "1) Depth: every hypothesis has Category/What/Why/Expected impact. "
-            "2) Research grounding: architecture and rationale cite research findings. "
-            "3) Buildability: a Builder could implement each phase without clarifying questions. "
-            "4) Phase 1 is scaffold + eval harness. "
-            "5) Deferred section only contains items requiring human intervention. "
-            "Write PLAN APPROVED in verdict if all checks pass."
-        ),
-        reads={".factory/strategy/current.md"},
-    )
+    nodes.update(s_nodes)
 
     # Archivist (async, non-blocking)
     nodes["archivist_plan"] = AgentNode(
@@ -430,8 +471,8 @@ def build_workflow() -> Workflow:
         # Research gate → strategist (proceed) or back to researchers (reloop)
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
-        # Strategist → strategy gate
-        Edge(source="strategist", target="gate_strategy"),
+        # Strategy subgraph internal edges
+        *s_edges,
         # Strategy gate → archivist (proceed) or back (reloop)
         Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
@@ -763,38 +804,35 @@ def improve_workflow() -> Workflow:
         reads={".factory/strategy/research-local.md"},
     )
 
-    # Strategist
-    nodes["strategist"] = AgentNode(
-        id="strategist",
-        role=AgentRole.STRATEGIST,
-        prompt_template=(
-            "Generate prioritized hypotheses. "
-            "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
-            "Read Hypothesis Budget from observations for constraints. "
-            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
-            "Each hypothesis must be specific, scoped to one PR, tied to observations, "
-            "with expected impact on eval dimensions. "
-            "Tag backlog items with **Backlog item:** and new items with **New:**. "
-            "Write to .factory/strategy/current.md."
+    # Strategy subgraph: strategist → CEO gate
+    s_nodes, s_edges = _strategy_subgraph(
+        config=StrategyConfig(
+            prompt_template=(
+                "Generate prioritized hypotheses. "
+                "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
+                "Read Hypothesis Budget from observations for constraints. "
+                "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+                "Each hypothesis must be specific, scoped to one PR, tied to observations, "
+                "with expected impact on eval dimensions. "
+                "Tag backlog items with **Backlog item:** and new items with **New:**. "
+                "Write to .factory/strategy/current.md."
+            ),
+            reads=frozenset(
+                {
+                    ".factory/strategy/research-local.md",
+                    ".factory/strategy/observations.md",
+                }
+            ),
+            gate_prompt=(
+                "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
+                "Expected eval impact realistic? Follows FEEC priority? "
+                "Not redundant with reverted experiment? "
+                "At least one growth hypothesis? Backlog convergence? "
+                "Write PLAN APPROVED with approved hypotheses in priority order."
+            ),
         ),
-        reads={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
-        writes={".factory/strategy/current.md"},
     )
-
-    # CEO gate on strategy — HARD GATE
-    nodes["gate_strategy"] = GateNode(
-        id="gate_strategy",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
-            "Expected eval impact realistic? Follows FEEC priority? "
-            "Not redundant with reverted experiment? "
-            "At least one growth hypothesis? Backlog convergence? "
-            "Write PLAN APPROVED with approved hypotheses in priority order."
-        ),
-        reads={".factory/strategy/current.md"},
-    )
+    nodes.update(s_nodes)
 
     # Apply SPEC Diff from strategy to SPEC.md (no-op if absent)
     nodes["apply_spec_diff"] = FnNode(
@@ -919,8 +957,8 @@ def improve_workflow() -> Workflow:
         # Research gate
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-        # Strategist → strategy gate
-        Edge(source="strategist", target="gate_strategy"),
+        # Strategy subgraph internal edges
+        *s_edges,
         # Strategy gate → apply spec diff → begin
         Edge(source="gate_strategy", target="apply_spec_diff", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
@@ -3976,6 +4014,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         ).workflow(),
         "research-standalone": lambda: __import__(
             "factory.workflow.research", fromlist=["workflow"]
+        ).workflow(),
+        "strategy-standalone": lambda: __import__(
+            "factory.workflow.strategy", fromlist=["workflow"]
         ).workflow(),
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]

@@ -92,6 +92,24 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "All analysis stays in .factory/reviews/ files."
         ),
     },
+    "research-standalone": {
+        "description": (
+            "Standalone parallel research pipeline — 3 researcher agents "
+            "(similar, techstack, pitfalls) forked in parallel, joined at a "
+            "barrier, then gated by the CEO for quality. RELOOP verdicts "
+            "return to the fork (max 3 iterations)."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "strategy-standalone": {
+        "description": (
+            "Standalone strategy pipeline — the Strategist synthesizes a "
+            "buildable phased plan into .factory/strategy/current.md, then a "
+            "CEO HARD GATE reviews it. RELOOP verdicts return to the "
+            "strategist (max 3 iterations)."
+        ),
+        "argument_hint": "<project_path>",
+    },
     "research": {
         "description": (
             "Research mode — extends improve with baseline measurement, failure analysis, "
