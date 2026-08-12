@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from typing import Any
+from typing import Any, Callable
 
 from factory.models import ProjectState
 from factory.workflow.primitives import (
@@ -986,7 +986,7 @@ def meta_workflow() -> Workflow:
 
     nodes["qa_verify"] = AgentNode(
         id="qa_verify",
-        role=AgentRole.QA,
+        role=AgentRole.QA_HEALTH,
         timeout=1800,
         prompt_template=(
             "Verify the test suite still passes after pruning. "
@@ -1870,18 +1870,23 @@ def skill_refine_workflow() -> Workflow:
 # ── Registry ─────────────────────────────────────────────────────
 
 
-def register_all() -> dict[str, Workflow]:
-    """Build and return all 11 workflow definitions."""
+def _get_builtin_registry() -> dict[str, Callable[[], Workflow]]:
+    """Return workflow factory callables (lazy — not instantiated)."""
     return {
-        "build": build_workflow(),
-        "design": design_workflow(),
-        "discover": discover_workflow(),
-        "review": review_workflow(),
-        "improve": improve_workflow(),
-        "qa": qa_workflow(),
-        "research": research_workflow(),
-        "meta": meta_workflow(),
-        "refine": refine_workflow(),
-        "create": create_workflow(),
-        "skill-refine": skill_refine_workflow(),
+        "build": build_workflow,
+        "design": design_workflow,
+        "discover": discover_workflow,
+        "review": review_workflow,
+        "improve": improve_workflow,
+        "qa": qa_workflow,
+        "research": research_workflow,
+        "meta": meta_workflow,
+        "refine": refine_workflow,
+        "create": create_workflow,
+        "skill-refine": skill_refine_workflow,
     }
+
+
+def register_all() -> dict[str, Workflow]:
+    """Build and return all workflow definitions."""
+    return {name: fn() for name, fn in _get_builtin_registry().items()}

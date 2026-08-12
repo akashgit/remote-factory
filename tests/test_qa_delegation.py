@@ -1,10 +1,10 @@
-"""Tests for deep-QA delegation patterns in CEO and specialist prompts.
+"""Tests for parallel QA delegation patterns in CEO and specialist prompts.
 
 Verifies that:
-- The specialist prompts exist for health_checker, code_reviewer, adversarial_tester
+- The specialist prompts exist for qa_health, qa_review, qa_adversarial
 - The CEO prompt references skill-based routing (mode sections moved to SKILL.md)
 - Generated workflow skills do not reference nonexistent agent roles
-- Builder precedes deep-QA pipeline in generated workflow skills (graph ordering)
+- Builder precedes parallel QA pipeline in generated workflow skills (graph ordering)
 - Event-based flow validation detects Builder→specialist sequencing
 """
 
@@ -33,7 +33,7 @@ def ceo_prompt() -> str:
 class TestSpecialistPromptStructure:
     def test_specialist_prompts_exist(self) -> None:
         """All 3 specialist agent prompts must exist."""
-        for role in ("health_checker", "code_reviewer", "adversarial_tester"):
+        for role in ("qa_health", "qa_review", "qa_adversarial"):
             prompt_path = PROMPTS_DIR / f"{role}.md"
             assert prompt_path.exists(), f"Missing prompt for {role}"
             content = prompt_path.read_text()
@@ -49,7 +49,7 @@ class TestCEODelegation:
     ) -> None:
         """CEO prompt must not contain standalone `factory eval` calls.
 
-        The CEO delegates all eval to the deep-QA pipeline. Mode-specific
+        The CEO delegates all eval to the parallel QA pipeline. Mode-specific
         pipelines now live in SKILL.md files, but the core CEO prompt should
         not contain any direct eval invocations.
         """
@@ -105,14 +105,14 @@ class TestCEODelegation:
 # ── Event-Based Flow Validation ──────────────────────────────────
 
 
-def _check_builder_deep_qa_sequence(events: list[dict]) -> bool:
-    """Return True if every builder.completed is followed by a deep-QA specialist start."""
-    deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
+def _check_builder_qa_sequence(events: list[dict]) -> bool:
+    """Return True if every builder.completed is followed by a QA specialist start."""
+    qa_roles = {"qa_health", "qa_review", "qa_adversarial"}
     for i, event in enumerate(events):
         if event.get("type") == "agent.completed" and event.get("role") == "builder":
             remaining = events[i + 1:]
             found_specialist = any(
-                e.get("type") == "agent.started" and e.get("role") in deep_qa_roles
+                e.get("type") == "agent.started" and e.get("role") in qa_roles
                 for e in remaining
             )
             if not found_specialist:
@@ -121,25 +121,25 @@ def _check_builder_deep_qa_sequence(events: list[dict]) -> bool:
 
 
 class TestEventsFlowValidation:
-    def test_events_jsonl_deep_qa_after_builder(self) -> None:
-        """Helper detects correct Builder→deep-QA sequencing in events."""
+    def test_events_jsonl_qa_after_builder(self) -> None:
+        """Helper detects correct Builder→QA sequencing in events."""
         events = [
             {"type": "agent.started", "role": "builder"},
             {"type": "agent.completed", "role": "builder"},
-            {"type": "agent.started", "role": "health_checker"},
-            {"type": "agent.completed", "role": "health_checker"},
+            {"type": "agent.started", "role": "qa_health"},
+            {"type": "agent.completed", "role": "qa_health"},
         ]
-        assert _check_builder_deep_qa_sequence(events) is True
+        assert _check_builder_qa_sequence(events) is True
 
-    def test_events_jsonl_detects_missing_deep_qa(self) -> None:
-        """Helper detects missing deep-QA after Builder in events."""
+    def test_events_jsonl_detects_missing_qa(self) -> None:
+        """Helper detects missing QA after Builder in events."""
         events = [
             {"type": "agent.started", "role": "builder"},
             {"type": "agent.completed", "role": "builder"},
             {"type": "agent.started", "role": "archivist"},
             {"type": "agent.completed", "role": "archivist"},
         ]
-        assert _check_builder_deep_qa_sequence(events) is False
+        assert _check_builder_qa_sequence(events) is False
 
 
 # ── Test Fixture Validation ──────────────────────────────────────

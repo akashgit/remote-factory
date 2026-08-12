@@ -8,16 +8,11 @@ import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import (
-    DOC_FRESHNESS_GATE_PROMPT,
     build_workflow,
     create_workflow,
     design_workflow,
-    doc_generate_workflow,
-    doc_update_workflow,
-    founder_workflow,
     improve_workflow,
     meta_workflow,
-
     refine_workflow,
     register_all,
     research_workflow,
@@ -29,8 +24,6 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
-    Study,
-    VerdictType,
 )
 
 
@@ -81,9 +74,6 @@ class TestTriggers:
         assert wf.trigger(ProjectState.NO_REPO, {"interactive": True})
         assert not wf.trigger(ProjectState.NO_REPO, {"interactive": False})
         assert not wf.trigger(ProjectState.NO_REPO, {})
-        # HAS_FACTORY now fires for design mode
-        assert wf.trigger(ProjectState.HAS_FACTORY, {"interactive": True})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"interactive": False})
 
     def test_improve_trigger(self) -> None:
         wf = improve_workflow()
@@ -122,90 +112,9 @@ class TestDesignIsBuiltWithUserGate:
         assert gate_w1.evaluator_type == "agent"
         assert gate_w2.evaluator_type == "user"
 
-    def test_design_shares_other_nodes(self) -> None:
-        """W₂ shares all build node IDs with W₁, plus gate_has_factory and study."""
-        w1 = build_workflow()
-        w2 = design_workflow()
-
-        w1_ids = set(w1.nodes.keys())
-        w2_ids = set(w2.nodes.keys())
-
-        # Design has 3 extra nodes: gate_has_factory, discover, and study
-        assert w2_ids == w1_ids | {"gate_has_factory", "discover", "study"}
-
     def test_design_name(self) -> None:
         wf = design_workflow()
         assert wf.name == "design"
-
-
-# ── Design study node tests ──────────────────────────────────────
-
-
-class TestDesignStudyNode:
-    """Verify design mode's conditional study path for existing projects."""
-
-    def test_design_has_study_node(self) -> None:
-        """Design workflow must contain a study node."""
-        wf = design_workflow()
-        assert "study" in wf.nodes
-        assert isinstance(wf.nodes["study"], Study)
-
-    def test_design_has_gate_has_factory(self) -> None:
-        """Design workflow must contain the gate_has_factory conditional gate."""
-        wf = design_workflow()
-        assert "gate_has_factory" in wf.nodes
-        gate = wf.nodes["gate_has_factory"]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "fn"
-
-    def test_design_study_writes_observations(self) -> None:
-        """Study node must write observations.md."""
-        wf = design_workflow()
-        study = wf.nodes["study"]
-        assert ".factory/strategy/observations.md" in study.writes
-
-    def test_design_study_to_fork_research_edge(self) -> None:
-        """There must be an unconditional edge from study to fork_research."""
-        wf = design_workflow()
-        assert any(
-            e.source == "study" and e.target == "fork_research" and e.condition is None
-            for e in wf.edges
-        )
-
-    def test_design_gate_routes_to_study(self) -> None:
-        """gate_has_factory PROCEED must route to study."""
-        wf = design_workflow()
-        assert any(
-            e.source == "gate_has_factory" and e.target == "study"
-            and e.condition == VerdictType.PROCEED
-            for e in wf.edges
-        )
-
-    def test_design_gate_routes_to_discover(self) -> None:
-        """gate_has_factory HALT must route to discover (not fork_research)."""
-        wf = design_workflow()
-        assert any(
-            e.source == "gate_has_factory" and e.target == "discover"
-            and e.condition == VerdictType.HALT
-            for e in wf.edges
-        )
-
-    def test_design_has_discover_node(self) -> None:
-        """Design workflow must contain a discover FnNode."""
-        wf = design_workflow()
-        assert "discover" in wf.nodes
-        node = wf.nodes["discover"]
-        assert isinstance(node, FnNode)
-        assert node.command == "factory discover {project_path}"
-        assert ".factory/eval_profile.json" in node.writes
-
-    def test_design_discover_to_study_edge(self) -> None:
-        """There must be an unconditional edge from discover to study."""
-        wf = design_workflow()
-        assert any(
-            e.source == "discover" and e.target == "study" and e.condition is None
-            for e in wf.edges
-        )
 
 
 # ── W₄ structural delta from W₃ ─────────────────────────────────
@@ -286,9 +195,9 @@ class TestAgentPool:
             "researcher": "sonnet",
             "strategist": "opus",
             "builder": "opus",
-            "health_checker": "opus",
-            "code_reviewer": "opus",
-            "adversarial_tester": "opus",
+            "qa_health": "opus",
+            "qa_review": "opus",
+            "qa_adversarial": "opus",
             "failure_analyst": "opus",
             "ceo": "opus",
             "archivist": "haiku",
@@ -309,12 +218,12 @@ class TestAgentPool:
 class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) >= 13, f"Expected at least 13 workflows, got {len(all_wf)}"
+        assert len(all_wf) >= 11, f"Expected at least 11 workflows, got {len(all_wf)}"
         required = {
             "build",
             "design",
             "improve",
-            "deep-qa",
+            "qa",
             "research",
             "meta",
             "discover",
@@ -322,9 +231,6 @@ class TestRegisterAll:
             "refine",
             "create",
             "skill-refine",
-            "spec-generate",
-            "spec-update",
-            "founder",
         }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -416,65 +322,6 @@ class TestCreateStructure:
         assert "User Approval" in skill_md
 
 
-# ── gate_doc_freshness ──────────────────────────────────────────
-
-
-class TestDocFreshnessGate:
-    @pytest.mark.parametrize(
-        "workflow_fn",
-        [build_workflow, improve_workflow, research_workflow, refine_workflow, create_workflow],
-        ids=["build", "improve", "research", "refine", "create"],
-    )
-    def test_gate_exists_as_gate_node(self, workflow_fn) -> None:
-        wf = workflow_fn()
-        assert "gate_doc_freshness" in wf.nodes
-        gate = wf.nodes["gate_doc_freshness"]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "agent"
-        assert gate.evaluator_role == AgentRole.CEO
-
-    @pytest.mark.parametrize(
-        "workflow_fn",
-        [build_workflow, improve_workflow, refine_workflow, create_workflow],
-        ids=["build", "improve", "refine", "create"],
-    )
-    def test_gate_uses_shared_prompt(self, workflow_fn) -> None:
-        wf = workflow_fn()
-        gate = wf.nodes["gate_doc_freshness"]
-        assert isinstance(gate, GateNode)
-        assert gate.gate_prompt is DOC_FRESHNESS_GATE_PROMPT
-
-    def test_design_inherits_gate(self) -> None:
-        wf = design_workflow()
-        assert "gate_doc_freshness" in wf.nodes
-        assert isinstance(wf.nodes["gate_doc_freshness"], GateNode)
-
-    @pytest.mark.parametrize(
-        "workflow_fn",
-        [build_workflow, improve_workflow, research_workflow, refine_workflow, create_workflow],
-        ids=["build", "improve", "research", "refine", "create"],
-    )
-    def test_edge_wiring(self, workflow_fn) -> None:
-        wf = workflow_fn()
-        edges = wf.edges
-        assert any(
-            e.source == "gate_qa" and e.target == "gate_doc_freshness"
-            and e.condition == VerdictType.PROCEED
-            for e in edges
-        ), "missing gate_qa -> gate_doc_freshness PROCEED edge"
-        assert any(
-            e.source == "gate_doc_freshness" and e.target == "gate_precheck"
-            and e.condition == VerdictType.PROCEED
-            for e in edges
-        ), "missing gate_doc_freshness -> gate_precheck PROCEED edge"
-        assert any(
-            e.source == "gate_doc_freshness" and e.target == "builder"
-            and e.condition == VerdictType.RELOOP
-            for e in edges
-        ), "missing gate_doc_freshness -> builder RELOOP edge"
-
-
-
 # ── Builder → QA reachability audit ────────────────────────────
 
 
@@ -492,7 +339,7 @@ def _workflows_with_builder() -> list[str]:
     return sorted(names)
 
 
-_QA_ROLES = {AgentRole.QA, AgentRole.QA_HEALTH, AgentRole.QA_REVIEW, AgentRole.QA_ADVERSARIAL}
+_QA_ROLES = {AgentRole.QA_HEALTH, AgentRole.QA_REVIEW, AgentRole.QA_ADVERSARIAL}
 
 
 def _is_reachable(workflow_name: str, source_id: str, target_id: str) -> bool:
@@ -569,326 +416,3 @@ def _get_workflow(name: str):
         "create": create_workflow,
     }[name]()
 
-
-
-
-class TestContributedWorkflows:
-    def test_register_all_includes_contributed(self) -> None:
-        """register_all() returns deep-qa and legacybench from contributed/."""
-        workflows = register_all()
-        assert "deep-qa" in workflows
-        assert "legacybench" in workflows
-
-    def test_contributed_workflows_valid(self) -> None:
-        workflows = register_all()
-        for name in ("deep-qa", "legacybench"):
-            wf = workflows[name]
-            issues = wf.validate_graph()
-            assert issues == [], f"{name} workflow has issues: {issues}"
-
-
-# ── Terminal flag defaults ──────────────────────────────────────
-
-
-class TestTerminalFlagDefaults:
-    """Standard workflows default to terminal=False."""
-
-    def test_build_not_terminal(self) -> None:
-        assert build_workflow().terminal is False
-
-    def test_improve_not_terminal(self) -> None:
-        assert improve_workflow().terminal is False
-
-    def test_research_not_terminal(self) -> None:
-        assert research_workflow().terminal is False
-
-    def test_meta_not_terminal(self) -> None:
-        assert meta_workflow().terminal is False
-
-    def test_design_is_terminal(self) -> None:
-        assert design_workflow().terminal is True
-
-
-# ── W₁₆: Founder structure ──────────────────────────────────────
-
-
-class TestFounderStructure:
-    def test_founder_valid(self) -> None:
-        wf = founder_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"founder workflow has issues: {issues}"
-
-    def test_founder_name(self) -> None:
-        wf = founder_workflow()
-        assert wf.name == "founder"
-
-    def test_founder_terminal(self) -> None:
-        wf = founder_workflow()
-        assert wf.terminal is True
-
-    def test_founder_trigger(self) -> None:
-        wf = founder_workflow()
-        assert wf.trigger is not None
-        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.NO_FACTORY, {"mode": "founder"})
-
-    def test_founder_node_count(self) -> None:
-        wf = founder_workflow()
-        assert len(wf.nodes) == 5
-
-    def test_founder_has_no_deep_qa(self) -> None:
-        wf = founder_workflow()
-        assert "health_checker" not in wf.nodes
-        assert "code_reviewer" not in wf.nodes
-        assert "adversarial_tester" not in wf.nodes
-
-    def test_founder_builder_max_iterations(self) -> None:
-        wf = founder_workflow()
-        builder = wf.nodes["builder"]
-        assert builder.max_iterations == 1
-
-    def test_founder_skill_export(self) -> None:
-        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
-        wf = founder_workflow()
-        skill_md = workflow_to_skill_md(wf)
-        issues = validate_skill(skill_md)
-        assert issues == [], f"founder skill has issues: {issues}"
-        assert "workflow-founder" in skill_md
-
-
-# ── W₁₁: Doc Generate structure ──────────────────────────────────
-
-
-class TestDocGenerateWorkflow:
-    def test_registered(self) -> None:
-        all_wf = register_all()
-        assert "doc-generate" in all_wf
-
-    def test_valid(self) -> None:
-        wf = doc_generate_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"doc-generate workflow has issues: {issues}"
-
-    def test_name(self) -> None:
-        assert doc_generate_workflow().name == "doc-generate"
-
-    def test_start_node(self) -> None:
-        assert doc_generate_workflow().start_node == "scan_project"
-
-    def test_no_trigger(self) -> None:
-        assert doc_generate_workflow().trigger is None
-
-    @pytest.mark.parametrize(
-        "node_id,expected_type",
-        [
-            ("scan_project", AgentNode),
-            ("gate_scan", GateNode),
-            ("generate_docs", AgentNode),
-            ("gate_docs", GateNode),
-            ("validate_docs", FnNode),
-            ("gate_validate", GateNode),
-        ],
-    )
-    def test_node_exists_and_type(self, node_id: str, expected_type: type) -> None:
-        wf = doc_generate_workflow()
-        assert node_id in wf.nodes
-        assert isinstance(wf.nodes[node_id], expected_type)
-
-    def test_agent_nodes_use_researcher(self) -> None:
-        wf = doc_generate_workflow()
-        for nid in ("scan_project", "generate_docs"):
-            node = wf.nodes[nid]
-            assert isinstance(node, AgentNode)
-            assert node.role == AgentRole.RESEARCHER
-
-    @pytest.mark.parametrize(
-        "gate_id",
-        ["gate_scan", "gate_docs", "gate_validate"],
-    )
-    def test_gates_are_ceo_agent(self, gate_id: str) -> None:
-        wf = doc_generate_workflow()
-        gate = wf.nodes[gate_id]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "agent"
-        assert gate.evaluator_role == AgentRole.CEO
-
-    def test_linear_pipeline_edges(self) -> None:
-        wf = doc_generate_workflow()
-        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
-        expected = [
-            ("scan_project", "gate_scan", None),
-            ("gate_scan", "generate_docs", VerdictType.PROCEED),
-            ("generate_docs", "gate_docs", None),
-            ("gate_docs", "validate_docs", VerdictType.PROCEED),
-            ("validate_docs", "gate_validate", None),
-        ]
-        for src, tgt, cond in expected:
-            assert (src, tgt, cond) in edge_set, f"missing edge {src} -> {tgt} ({cond})"
-
-    def test_reloop_edges(self) -> None:
-        wf = doc_generate_workflow()
-        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
-        expected_reloops = [
-            ("gate_scan", "scan_project", VerdictType.RELOOP),
-            ("gate_docs", "generate_docs", VerdictType.RELOOP),
-            ("gate_validate", "validate_docs", VerdictType.RELOOP),
-        ]
-        for src, tgt, cond in expected_reloops:
-            assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
-
-
-# ── W₁₂: Doc Update structure ────────────────────────────────────
-
-
-class TestDocUpdateWorkflow:
-    def test_registered(self) -> None:
-        all_wf = register_all()
-        assert "doc-update" in all_wf
-
-    def test_valid(self) -> None:
-        wf = doc_update_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"doc-update workflow has issues: {issues}"
-
-    def test_name(self) -> None:
-        assert doc_update_workflow().name == "doc-update"
-
-    def test_start_node(self) -> None:
-        assert doc_update_workflow().start_node == "diff_scope"
-
-    def test_no_trigger(self) -> None:
-        assert doc_update_workflow().trigger is None
-
-    @pytest.mark.parametrize(
-        "node_id,expected_type",
-        [
-            ("diff_scope", FnNode),
-            ("patch_docs", AgentNode),
-            ("gate_patch", GateNode),
-            ("revalidate", FnNode),
-            ("gate_revalidate", GateNode),
-        ],
-    )
-    def test_node_exists_and_type(self, node_id: str, expected_type: type) -> None:
-        wf = doc_update_workflow()
-        assert node_id in wf.nodes
-        assert isinstance(wf.nodes[node_id], expected_type)
-
-    def test_patch_docs_uses_researcher(self) -> None:
-        wf = doc_update_workflow()
-        node = wf.nodes["patch_docs"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.RESEARCHER
-
-    @pytest.mark.parametrize(
-        "gate_id",
-        ["gate_patch", "gate_revalidate"],
-    )
-    def test_gates_are_ceo_agent(self, gate_id: str) -> None:
-        wf = doc_update_workflow()
-        gate = wf.nodes[gate_id]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "agent"
-        assert gate.evaluator_role == AgentRole.CEO
-
-    def test_linear_pipeline_edges(self) -> None:
-        wf = doc_update_workflow()
-        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
-        expected = [
-            ("diff_scope", "patch_docs", None),
-            ("patch_docs", "gate_patch", None),
-            ("gate_patch", "revalidate", VerdictType.PROCEED),
-            ("revalidate", "gate_revalidate", None),
-        ]
-        for src, tgt, cond in expected:
-            assert (src, tgt, cond) in edge_set, f"missing edge {src} -> {tgt} ({cond})"
-
-    def test_reloop_edges(self) -> None:
-        wf = doc_update_workflow()
-        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
-        expected_reloops = [
-            ("gate_patch", "patch_docs", VerdictType.RELOOP),
-            ("gate_revalidate", "revalidate", VerdictType.RELOOP),
-        ]
-        for src, tgt, cond in expected_reloops:
-            assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
-
-
-# ── W₁₃: Founder Mode ───────────────────────────────────────────
-
-
-class TestFounderWorkflow:
-    def test_founder_workflow_graph(self) -> None:
-        wf = founder_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"founder workflow has issues: {issues}"
-
-    def test_founder_workflow_registration(self) -> None:
-        all_wf = register_all()
-        assert "founder" in all_wf
-
-    def test_founder_workflow_trigger(self) -> None:
-        wf = founder_workflow()
-        assert wf.trigger is not None
-        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
-        assert not wf.trigger(ProjectState.NO_REPO, {"mode": "founder"})
-
-    def test_founder_name(self) -> None:
-        wf = founder_workflow()
-        assert wf.name == "founder"
-
-    def test_founder_is_terminal(self) -> None:
-        wf = founder_workflow()
-        assert wf.terminal is True
-
-    def test_founder_start_node(self) -> None:
-        wf = founder_workflow()
-        assert wf.start_node == "study"
-
-    def test_founder_has_no_deep_qa(self) -> None:
-        wf = founder_workflow()
-        for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
-            assert nid not in wf.nodes, f"founder should not have {nid}"
-
-    def test_founder_nodes(self) -> None:
-        wf = founder_workflow()
-        assert "study" in wf.nodes
-        assert "strategist" in wf.nodes
-        assert "builder" in wf.nodes
-        assert "gate_tests" in wf.nodes
-        assert "finalize" in wf.nodes
-
-    def test_founder_gate_tests_is_fn(self) -> None:
-        wf = founder_workflow()
-        gate = wf.nodes["gate_tests"]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "fn"
-        assert "pytest" in gate.evaluator_command
-        assert "ruff" in gate.evaluator_command
-
-    def test_founder_finalize_uses_force(self) -> None:
-        wf = founder_workflow()
-        finalize = wf.nodes["finalize"]
-        assert isinstance(finalize, FnNode)
-        assert "--force" in finalize.command
-
-    def test_founder_reloop_to_builder(self) -> None:
-        wf = founder_workflow()
-        reloop_edges = [
-            e for e in wf.edges
-            if e.source == "gate_tests" and e.target == "builder"
-            and e.condition == VerdictType.RELOOP
-        ]
-        assert len(reloop_edges) == 1
-
-    def test_founder_skill_export(self) -> None:
-        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
-
-        wf = founder_workflow()
-        skill_md = workflow_to_skill_md(wf)
-        issues = validate_skill(skill_md)
-        assert issues == [], f"founder skill has issues: {issues}"
-        assert "workflow-founder" in skill_md
