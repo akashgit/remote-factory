@@ -506,9 +506,9 @@ class ExperimentStore:
             eval_command=str(parsed.get("eval_command", "")),
             eval_threshold=float(parsed.get("eval_threshold", 0.0)),  # type: ignore[arg-type]
             constraints=list(parsed.get("constraints", [])),  # type: ignore[arg-type]
-            hypothesis_budget=HypothesisBudget(**budget_kwargs)
+            hypothesis_budget=HypothesisBudget(**budget_kwargs)  # type: ignore[arg-type]
             if budget_kwargs
-            else HypothesisBudget(),  # type: ignore[arg-type]
+            else HypothesisBudget(),
             target_branch=str(parsed.get("target_branch", "main")),
             smoke_test=smoke_test,
             project_eval=project_eval_dims,
