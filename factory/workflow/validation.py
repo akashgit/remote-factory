@@ -24,7 +24,9 @@ def _validate_edges(workflow: Workflow, issues: list[str]) -> None:
 
 
 def _validate_reachability(
-    g: nx.DiGraph, workflow: Workflow, issues: list[str],  # type: ignore[type-arg]
+    g: nx.DiGraph,
+    workflow: Workflow,
+    issues: list[str],  # type: ignore[type-arg]
 ) -> None:
     reachable = nx.descendants(g, workflow.start_node) | {workflow.start_node}
     unreachable = set(workflow.nodes.keys()) - reachable
@@ -33,7 +35,9 @@ def _validate_reachability(
 
 
 def _validate_cycles(
-    g: nx.DiGraph, workflow: Workflow, issues: list[str],  # type: ignore[type-arg]
+    g: nx.DiGraph,
+    workflow: Workflow,
+    issues: list[str],  # type: ignore[type-arg]
 ) -> None:
     cycles = list(nx.simple_cycles(g))
     for cycle in cycles:
@@ -59,7 +63,9 @@ def _validate_cycles(
 
 
 def _validate_data_dependencies(
-    g: nx.DiGraph, workflow: Workflow, issues: list[str],  # type: ignore[type-arg]
+    g: nx.DiGraph,
+    workflow: Workflow,
+    issues: list[str],  # type: ignore[type-arg]
 ) -> None:
     for nid, node in workflow.nodes.items():
         if node.reads:
@@ -73,9 +79,7 @@ def _validate_data_dependencies(
                     available_writes |= pred_node.writes
             missing = node.reads - available_writes
             if missing:
-                issues.append(
-                    f"node '{nid}' reads {missing} but no predecessor writes them"
-                )
+                issues.append(f"node '{nid}' reads {missing} but no predecessor writes them")
 
 
 def _validate_fork_join_nodes(workflow: Workflow, issues: list[str]) -> None:
@@ -97,6 +101,99 @@ def _validate_fork_join_nodes(workflow: Workflow, issues: list[str]) -> None:
                 issues.append(f"subgraph_fork '{nid}' entry '{entry}' not in nodes")
             if exit_node not in workflow.nodes:
                 issues.append(f"subgraph_fork '{nid}' exit '{exit_node}' not in nodes")
+
+
+def _validate_parallel_io(workflow: Workflow, issues: list[str]) -> None:
+    from factory.workflow.primitives import ForkNode, SubWorkflowNode
+
+    for nid, node in workflow.nodes.items():
+        if not isinstance(node, ForkNode):
+            continue
+
+        sub_outputs: list[tuple[str, set[str]]] = []
+        for target_id in node.targets:
+            target = workflow.nodes.get(target_id)
+            if not isinstance(target, SubWorkflowNode):
+                continue
+
+            from factory.workflow.definitions import register_all
+
+            registry = register_all()
+            wf = registry.get(target.workflow_name)
+            if wf and wf.io:
+                sub_outputs.append((target_id, wf.io.outputs))
+
+        for i, (id_a, out_a) in enumerate(sub_outputs):
+            for id_b, out_b in sub_outputs[i + 1 :]:
+                overlap = out_a & out_b
+                if overlap:
+                    issues.append(
+                        f"parallel conflict: {id_a} and {id_b} both write {sorted(overlap)}"
+                    )
+
+
+def _validate_sub_workflow_io(workflow: Workflow, issues: list[str]) -> None:
+    from factory.workflow.primitives import SubWorkflowNode
+
+    for nid, node in workflow.nodes.items():
+        if not isinstance(node, SubWorkflowNode):
+            continue
+
+        from factory.workflow.definitions import register_all
+
+        registry = register_all()
+        wf = registry.get(node.workflow_name)
+        if not wf:
+            issues.append(
+                f"sub_workflow '{nid}': referenced workflow '{node.workflow_name}' "
+                f"not found in registry"
+            )
+            continue
+
+        if not wf.io:
+            issues.append(
+                f"sub_workflow '{nid}': referenced workflow '{node.workflow_name}' "
+                f"has no io contract defined"
+            )
+
+
+def _validate_sub_workflow_cycles(workflow: Workflow, issues: list[str]) -> None:
+    from factory.workflow.primitives import SubWorkflowNode
+
+    from factory.workflow.definitions import register_all
+
+    registry = register_all()
+
+    def _check_circular(
+        wf_name: str,
+        visited: set[str],
+    ) -> str | None:
+        if wf_name in visited:
+            return wf_name
+        visited.add(wf_name)
+        wf = registry.get(wf_name)
+        if not wf:
+            return None
+        for node in wf.nodes.values():
+            if isinstance(node, SubWorkflowNode):
+                result = _check_circular(node.workflow_name, visited.copy())
+                if result:
+                    return result
+        return None
+
+    for nid, node in workflow.nodes.items():
+        if not isinstance(node, SubWorkflowNode):
+            continue
+        cycle_target = _check_circular(
+            node.workflow_name,
+            {workflow.name},
+        )
+        if cycle_target:
+            issues.append(
+                f"sub_workflow '{nid}': circular reference detected "
+                f"(workflow '{node.workflow_name}' transitively references "
+                f"'{cycle_target}')"
+            )
 
 
 def validate_workflow(workflow: Workflow) -> list[str]:
@@ -138,5 +235,9 @@ def validate_workflow(workflow: Workflow) -> list[str]:
                     issues.append(
                         f"subgraph_fork '{nid}': no path from entry '{entry}' to exit '{exit_node}'"
                     )
+
+    _validate_parallel_io(workflow, issues)
+    _validate_sub_workflow_io(workflow, issues)
+    _validate_sub_workflow_cycles(workflow, issues)
 
     return issues
