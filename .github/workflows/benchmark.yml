@@ -57,8 +57,6 @@ permissions:
 
 jobs:
   benchmark:
-    # Only run on upstream repository, not on forks
-    if: github.repository == 'akashgit/remote-factory'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
