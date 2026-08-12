@@ -6,7 +6,9 @@ history tracking, and gate evaluation per step.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import shutil
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import structlog
@@ -112,6 +114,7 @@ class OptimizationLoop:
             patch=patch,
         )
         self._history.append(record)
+        self._save_step_artifacts(record, execution_result)
         log.info(
             "loop.step",
             step=self._global_step,
@@ -120,6 +123,47 @@ class OptimizationLoop:
             verdict=verdict,
         )
         return record
+
+    def _save_step_artifacts(self, record: StepRecord, execution_result: object) -> None:
+        """Persist per-step artifacts to .factory/optimization/steps/<N>/."""
+        steps_dir = self.project_dir / ".factory" / "optimization" / "steps" / str(record.step_number)
+        steps_dir.mkdir(parents=True, exist_ok=True)
+
+        skill = self.surface.prompt_slots.get("skill", "")
+        (steps_dir / "skill.md").write_text(skill)
+
+        gate_data = {
+            "step": record.step_number,
+            "score_start": record.score_start,
+            "score_end": record.score_end,
+            "score_delta": record.score_delta,
+            "verdict": record.verdict,
+            "duration_s": record.duration_s,
+        }
+        (steps_dir / "gate.json").write_text(json.dumps(gate_data, indent=2) + "\n")
+
+        if record.patch:
+            patch_data = {
+                "prompt_edits": [
+                    {"slot_name": e.slot_name, "old_value": e.old_value[:200], "new_value": e.new_value[:500]}
+                    for e in record.patch.prompt_edits
+                ],
+                "reasoning": record.patch.reasoning,
+            }
+            (steps_dir / "patch.json").write_text(json.dumps(patch_data, indent=2) + "\n")
+
+        if hasattr(execution_result, "task_results") and execution_result.task_results:
+            results_data = [
+                {"task_id": t.task_id, "reward": t.reward, "predicted": t.predicted, "gold": t.gold}
+                for t in execution_result.task_results
+            ]
+            (steps_dir / "results.json").write_text(json.dumps(results_data, indent=2) + "\n")
+
+        if record.verdict == "keep" and record.score_end == self._best_score:
+            best_dir = self.project_dir / ".factory" / "optimization" / "steps" / "best"
+            best_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(steps_dir / "skill.md", best_dir / "skill.md")
+            (best_dir / "step.txt").write_text(str(record.step_number))
 
     def train(self) -> TrainResult:
         """Full training loop with epochs and steps."""
