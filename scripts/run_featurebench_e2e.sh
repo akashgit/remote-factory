@@ -4,13 +4,13 @@
 # Prerequisites:
 #   - Docker installed and running
 #   - ANTHROPIC_API_KEY set in environment
-#   - Python 3.11+ available
+#   - Python 3.11+ with `datasets` package (for HuggingFace dataset access)
 #
 # This script:
 #   1. Installs FeatureBench
 #   2. Copies the factory adapter into FeatureBench's agent registry
 #   3. Creates a config.toml with the API key
-#   4. Runs fb infer on 1-2 easy L1 tasks from the lite split
+#   4. Selects 1-2 L1 tasks from the lite split via --task-id (avoids running all ~10)
 #   5. Validates output.jsonl format
 #   6. Runs fb eval on the output
 #
@@ -103,19 +103,37 @@ EOF
 
 echo "[OK] Config written to $WORKDIR/config.toml"
 
-# ── Step 4: Run fb infer on lite split ────────────────────────────
+# ── Step 4: Run fb infer on specific L1 tasks ───────────────────
 
 echo ""
 echo "=== Step 4: Running fb infer ==="
-echo "Using lite split for quick validation..."
+echo "Selecting 1-2 L1 tasks from the lite split..."
 
 cd "$WORKDIR"
 
-# Run on the lite split (smallest set of tasks)
+# Extract the first 2 instance_ids from the lite split to avoid running all ~10 tasks
+TASK_IDS=$(python3 -c "
+from datasets import load_dataset
+ds = load_dataset('LiberCoders/FeatureBench', split='lite')
+ids = [row['instance_id'] for row in ds if row.get('level', 0) == 1][:2]
+if not ids:
+    ids = [row['instance_id'] for row in ds][:2]
+print(' '.join(ids))
+")
+
+if [ -z "$TASK_IDS" ]; then
+    echo "ERROR: Could not extract task IDs from the lite split."
+    exit 1
+fi
+
+echo "Running on tasks: $TASK_IDS"
+
+# Run on specific tasks only (not the full lite split)
+# shellcheck disable=SC2086
 fb infer \
     --config-path "$WORKDIR/config.toml" \
     --agent factory \
-    --split lite \
+    --task-id $TASK_IDS \
     --timeout 7200 \
     2>&1 | tee "$WORKDIR/infer_output.log"
 
