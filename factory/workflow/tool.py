@@ -377,7 +377,13 @@ def tool_next(project_path: Path, dry_run: bool = False) -> str:
     if isinstance(node, GateNode) and node.evaluator_type == "user":
         return f"APPROVAL_NEEDED\n{node.gate_prompt}"
 
-    return _format_node_task(nid, node, wf, state, project_path)
+    result = _format_node_task(nid, node, wf, state, project_path)
+
+    loop_ctx = _find_loop_context(nid, wf, order, state, project_path)
+    if loop_ctx:
+        result += f"\n\n{loop_ctx}"
+
+    return result
 
 
 def tool_submit(project_path: Path, node_id: str, output: str) -> str:
@@ -609,101 +615,6 @@ def _format_progress(
     return "\n".join(lines)
 
 
-def _find_loop_context(
-    nid: str, wf: Workflow, state: dict, project_path: Path,
-) -> str:
-    """Build a LOOP CONTEXT section for a node that is a RELOOP target.
-
-    Returns an empty string when nid is not a reloop target. Otherwise,
-    always returns a markdown section showing the loop topology, gate
-    criteria, and iteration count — even on the first invocation (iteration
-    0). The feedback history subsection is only included when feedback
-    entries exist (i.e. after at least one RELOOP).
-    """
-    reloop_edges = [
-        e for e in wf.edges
-        if e.target == nid and e.condition == VerdictType.RELOOP
-    ]
-    if not reloop_edges:
-        return ""
-
-    topo = state.get("topo_order", [])
-    iteration_counts = state.get("iteration_counts", {})
-    feedback_log = state.get("feedback_log", {})
-
-    from factory.workflow.primitives import Edge as _Edge
-    latest_entry: dict | None = None
-    latest_gate_edge: _Edge | None = None
-    entries_for_node = feedback_log.get(nid, [])
-    if entries_for_node:
-        latest_entry = max(entries_for_node, key=lambda e: e.get("timestamp", 0))
-        for e in reloop_edges:
-            if e.source == latest_entry.get("gate"):
-                latest_gate_edge = e
-                break
-
-    active_edge = latest_gate_edge or reloop_edges[0]
-    gate_id = active_edge.source
-    iter_key = f"{gate_id}->{nid}"
-    count = iteration_counts.get(iter_key, 0)
-    max_iter = 3
-
-    lines: list[str] = [
-        "",
-        "## LOOP CONTEXT",
-        f"Iteration: {count}/{max_iter}",
-    ]
-    if count >= max_iter:
-        lines.append("⚠ FINAL ATTEMPT — this is the last iteration before HALT")
-
-    gate_node = wf.nodes.get(gate_id)
-    lines.append(f"Triggered by: {gate_id}")
-    if isinstance(gate_node, GateNode):
-        if gate_node.gate_prompt:
-            prompt_text = gate_node.gate_prompt.replace("{project_path}", str(project_path))
-            lines.append(f"Gate criteria: {prompt_text}")
-        if gate_node.evaluator_command:
-            cmd_text = gate_node.evaluator_command.replace("{project_path}", str(project_path))
-            lines.append(f"Gate command: {cmd_text}")
-
-    try:
-        nid_idx = topo.index(nid)
-        gate_idx = topo.index(gate_id)
-    except ValueError:
-        nid_idx = gate_idx = -1
-
-    if 0 <= nid_idx < gate_idx:
-        loop_path = topo[nid_idx:gate_idx + 1]
-        lines.append("")
-        lines.append("### Loop topology")
-        for loop_nid in loop_path:
-            loop_node = wf.nodes.get(loop_nid)
-            if loop_node is None:
-                continue
-            parts = [f"- **{loop_nid}**"]
-            if isinstance(loop_node, AgentNode):
-                parts.append(f"(agent: {_role_str(loop_node.role)})")
-                if loop_node.reads:
-                    parts.append(f"reads: {', '.join(sorted(loop_node.reads))}")
-                if loop_node.writes:
-                    parts.append(f"writes: {', '.join(sorted(loop_node.writes))}")
-            elif isinstance(loop_node, GateNode):
-                parts.append(f"(gate: {loop_node.evaluator_type})")
-            elif isinstance(loop_node, FnNode):
-                parts.append("(fn)")
-            lines.append(" ".join(parts))
-
-    if entries_for_node:
-        lines.append("")
-        lines.append("### Feedback history")
-        recent = sorted(entries_for_node, key=lambda e: e.get("timestamp", 0))[-2:]
-        for entry in recent:
-            fb_text = entry.get("feedback", "")[:500]
-            lines.append(f"- [{entry.get('gate', '?')} iter {entry.get('iteration', '?')}] {fb_text}")
-
-    return "\n".join(lines)
-
-
 def _format_node_task(
     nid: str, node: object, wf: Workflow, state: dict, project_path: Path,
 ) -> str:
@@ -756,7 +667,7 @@ def _format_node_task(
         lines.append(f"Targets: {', '.join(node.targets)}")
         lines.append("Execute all targets (listed as subsequent nodes).")
 
-    loop_ctx = _find_loop_context(nid, wf, state, project_path)
+    loop_ctx = _find_loop_context(nid, wf, state.get("topo_order", []), state, project_path)
     if loop_ctx:
         lines.append(loop_ctx)
 
@@ -920,6 +831,176 @@ def _auto_evaluate_fn_gate(
     state["pointer_idx"] = idx + 1
     _save_state(project_path, state)
     return None
+
+
+def tool_peek(project_path: Path, node_id: str) -> str:
+    """Return full details for any node without advancing the cursor.
+
+    Shows gate criteria, reads/writes, reloop targets, max iterations —
+    everything the CEO needs to understand what a downstream node does.
+    """
+    state = _load_state(project_path)
+    wf = _get_workflow_cached(state["workflow_name"], project_path)
+
+    node = wf.nodes.get(node_id)
+    if node is None:
+        return f"Unknown node: {node_id}"
+
+    lines = _format_node_task(node_id, node, wf, state, project_path).split("\n")
+
+    if isinstance(node, GateNode):
+        reloop_targets: list[str] = []
+        halt_targets: list[str] = []
+        for edge in wf.edges:
+            if edge.source == node_id:
+                if edge.condition == VerdictType.RELOOP:
+                    reloop_targets.append(edge.target)
+                elif edge.condition == VerdictType.HALT:
+                    halt_targets.append(edge.target)
+        if reloop_targets:
+            lines.append(f"Reloop to: {', '.join(reloop_targets)}")
+        if halt_targets:
+            lines.append(f"Halt skips to: {', '.join(halt_targets)}")
+
+        iter_key_prefix = f"{node_id}->"
+        for k, v in state.get("iteration_counts", {}).items():
+            if k.startswith(iter_key_prefix):
+                lines.append(f"Iterations used: {v}/3")
+
+    if isinstance(node, AgentNode) and node.max_iterations > 1:
+        lines.append(f"Max iterations: {node.max_iterations}")
+
+    status = "completed" if node_id in state["completed"] else (
+        "current" if state["topo_order"][state["pointer_idx"]] == node_id
+        and state["pointer_idx"] < len(state["topo_order"]) else "pending"
+    )
+    lines.append(f"Status: {status}")
+
+    return "\n".join(lines)
+
+
+def tool_lookahead(project_path: Path, count: int = 5) -> str:
+    """Return the next N nodes with full details, up to and including the next gate.
+
+    Gives the CEO downstream visibility without advancing the cursor.
+    """
+    state = _load_state(project_path)
+    wf = _get_workflow_cached(state["workflow_name"], project_path)
+    order = state["topo_order"]
+    idx = state["pointer_idx"]
+
+    if idx >= len(order):
+        return "DONE — no nodes ahead."
+
+    sections: list[str] = []
+    shown = 0
+    for i in range(idx + 1, len(order)):
+        if shown >= count:
+            remaining = len(order) - i
+            sections.append(f"... {remaining} more node(s)")
+            break
+
+        nid = order[i]
+        node = wf.nodes.get(nid)
+        if node is None:
+            continue
+
+        detail = tool_peek(project_path, nid)
+        sections.append(detail)
+        shown += 1
+
+    return "\n\n---\n\n".join(sections) if sections else "No nodes ahead."
+
+
+def _find_loop_context(
+    nid: str, wf: Workflow, order: list[str], state: dict, project_path: Path,
+) -> str | None:
+    """If nid is a RELOOP target, return the full loop context.
+
+    Traces from nid forward through the topo order until it reaches the gate
+    that RELOOP's back to nid. Returns a formatted description of every node
+    in the loop — gates with their criteria, agents with their roles and
+    artifact contracts, etc.
+    """
+    reloop_gates: list[str] = []
+    for edge in wf.edges:
+        if edge.condition == VerdictType.RELOOP and edge.target == nid:
+            reloop_gates.append(edge.source)
+
+    if not reloop_gates:
+        return None
+
+    try:
+        nid_idx = order.index(nid)
+    except ValueError:
+        return None
+
+    gate_indices = []
+    for g in reloop_gates:
+        try:
+            gate_indices.append((order.index(g), g))
+        except ValueError:
+            pass
+    if not gate_indices:
+        return None
+
+    farthest_gate_idx, farthest_gate = max(gate_indices, key=lambda x: x[0])
+
+    loop_nodes: list[str] = []
+    for i in range(nid_idx + 1, farthest_gate_idx + 1):
+        loop_nodes.append(order[i])
+
+    if not loop_nodes:
+        return None
+
+    lines = [
+        f"LOOP CONTEXT — after {nid}, your output goes through these steps "
+        f"(failures RELOOP back to {nid}):",
+        "",
+    ]
+
+    for loop_nid in loop_nodes:
+        node = wf.nodes.get(loop_nid)
+        if node is None:
+            continue
+
+        if isinstance(node, GateNode):
+            gate_type = node.evaluator_type
+            lines.append(f"  [{loop_nid}] Gate ({gate_type})")
+            if node.gate_prompt:
+                prompt = node.gate_prompt.replace("{project_path}", str(project_path))
+                lines.append(f"    Criteria: {prompt}")
+            if node.evaluator_command:
+                cmd = node.evaluator_command.replace("{project_path}", str(project_path))
+                lines.append(f"    Command: {cmd}")
+            if node.reads:
+                lines.append(f"    Reads: {', '.join(sorted(node.reads))}")
+            for edge in wf.edges:
+                if edge.source == loop_nid and edge.condition == VerdictType.RELOOP:
+                    lines.append(f"    On failure: RELOOP to {edge.target}")
+                elif edge.source == loop_nid and edge.condition == VerdictType.HALT:
+                    lines.append("    On HALT: skip remaining loop steps")
+
+        elif isinstance(node, AgentNode):
+            role = _role_str(node.role)
+            lines.append(f"  [{loop_nid}] Agent: {role}")
+            if node.prompt_template:
+                task = node.prompt_template.replace("{project_path}", str(project_path))
+                lines.append(f"    Will check: {task[:200]}")
+            if node.reads:
+                lines.append(f"    Reads: {', '.join(sorted(node.reads))}")
+            if node.writes:
+                lines.append(f"    Writes: {', '.join(sorted(node.writes))}")
+
+        elif isinstance(node, FnNode):
+            lines.append(f"  [{loop_nid}] Function")
+            if node.command:
+                cmd = node.command.replace("{project_path}", str(project_path))
+                lines.append(f"    Command: {cmd}")
+
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _find_reloop_target(wf: Workflow, gate_id: str) -> str | None:
