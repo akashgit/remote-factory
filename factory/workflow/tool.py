@@ -606,9 +606,11 @@ def _find_loop_context(
 ) -> str:
     """Build a LOOP CONTEXT section for a node that is a RELOOP target.
 
-    Returns an empty string when nid is not a reloop target or no iterations
-    have occurred yet. When iteration > 0, returns a markdown section showing
-    the loop topology, gate criteria, iteration counts, and feedback history.
+    Returns an empty string when nid is not a reloop target. Otherwise,
+    always returns a markdown section showing the loop topology, gate
+    criteria, and iteration count — even on the first invocation (iteration
+    0). The feedback history subsection is only included when feedback
+    entries exist (i.e. after at least one RELOOP).
     """
     reloop_edges = [
         e for e in wf.edges
@@ -620,13 +622,6 @@ def _find_loop_context(
     topo = state.get("topo_order", [])
     iteration_counts = state.get("iteration_counts", {})
     feedback_log = state.get("feedback_log", {})
-
-    has_iterations = any(
-        iteration_counts.get(f"{e.source}->{nid}", 0) > 0
-        for e in reloop_edges
-    )
-    if not has_iterations:
-        return ""
 
     from factory.workflow.primitives import Edge as _Edge
     latest_entry: dict | None = None

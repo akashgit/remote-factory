@@ -146,7 +146,7 @@ class TestFindLoopContext:
         result = _find_loop_context("archivist", wf, state, tmp_path)
         assert result == ""
 
-    def test_no_iterations_returns_empty(self, tmp_path: Path) -> None:
+    def test_first_invocation_returns_topology_without_feedback(self, tmp_path: Path) -> None:
         wf = _reloop_workflow()
         state = {
             "topo_order": ["builder", "gate_qa", "archivist"],
@@ -154,7 +154,25 @@ class TestFindLoopContext:
             "feedback_log": {},
         }
         result = _find_loop_context("builder", wf, state, tmp_path)
-        assert result == ""
+        assert "## LOOP CONTEXT" in result
+        assert "0/3" in result
+        assert "gate_qa" in result
+        assert "Run QA checks" in result
+        assert "Loop topology" in result
+        assert "Feedback history" not in result
+
+    def test_first_invocation_shows_zero_of_three(self, tmp_path: Path) -> None:
+        wf = _reloop_workflow()
+        state = {
+            "topo_order": ["builder", "gate_qa", "archivist"],
+            "iteration_counts": {"gate_qa->builder": 0},
+            "feedback_log": {},
+        }
+        result = _find_loop_context("builder", wf, state, tmp_path)
+        assert "## LOOP CONTEXT" in result
+        assert "0/3" in result
+        assert "FINAL ATTEMPT" not in result
+        assert "Feedback history" not in result
 
     def test_single_gate_reloop_at_iteration_1(self, tmp_path: Path) -> None:
         wf = _reloop_workflow()
@@ -458,7 +476,7 @@ class TestFeedbackLog:
 
 
 class TestFormatNodeTaskLoopContext:
-    def test_loop_context_absent_at_iteration_0(self, tmp_path: Path) -> None:
+    def test_loop_context_present_at_iteration_0(self, tmp_path: Path) -> None:
         wf = _reloop_workflow()
         state = {
             "topo_order": ["builder", "gate_qa", "archivist"],
@@ -466,7 +484,10 @@ class TestFormatNodeTaskLoopContext:
             "feedback_log": {},
         }
         result = _format_node_task("builder", wf.nodes["builder"], wf, state, tmp_path)
-        assert "LOOP CONTEXT" not in result
+        assert "LOOP CONTEXT" in result
+        assert "0/3" in result
+        assert "gate_qa" in result
+        assert "Feedback history" not in result
 
     def test_loop_context_appended_at_iteration_1(self, tmp_path: Path) -> None:
         wf = _reloop_workflow()
@@ -636,7 +657,7 @@ class TestLoopContextE2EComparison:
 
         Walks the workflow from builder through all intermediate nodes until
         a fn gate triggers RELOOP, then simulates CEO re-invocation of builder.
-        Returns {prompts: list[str], reloop_count: int, has_loop_context: bool}.
+        Returns {prompts, reloop_count, has_loop_context, has_feedback}.
         """
         _register_workflow(wf)
         (tmp_path / ".factory").mkdir(parents=True, exist_ok=True)
@@ -697,10 +718,11 @@ class TestLoopContextE2EComparison:
             "prompts": prompts,
             "reloop_count": reloop_count,
             "has_loop_context": "LOOP CONTEXT" in prompts[-1],
+            "has_feedback": "Feedback history" in prompts[-1],
         }
 
     def test_ab_comparison_cli_app(self, tmp_path: Path) -> None:
-        """CLI app: with loop context, builder prompt mentions gate criteria."""
+        """CLI app: both arms have topology; only with_ctx has feedback."""
         wf = self._make_cli_app_workflow("cli-app")
 
         without = self._simulate_reloop_cycle(
@@ -714,12 +736,14 @@ class TestLoopContextE2EComparison:
             wf2, tmp_path / "cli-with-ctx", with_loop_context=True,
         )
 
-        assert not without["has_loop_context"]
+        assert without["has_loop_context"]
+        assert not without["has_feedback"]
         assert with_ctx["has_loop_context"]
+        assert with_ctx["has_feedback"]
         assert "lint" in with_ctx["prompts"][-1].lower()
 
     def test_ab_comparison_web_app(self, tmp_path: Path) -> None:
-        """Web app: loop context includes intermediate nodes and gate criteria."""
+        """Web app: both arms have topology; only with_ctx has feedback."""
         wf = self._make_web_app_workflow("web-app")
 
         without = self._simulate_reloop_cycle(
@@ -733,13 +757,15 @@ class TestLoopContextE2EComparison:
             wf2, tmp_path / "web-with-ctx", with_loop_context=True,
         )
 
-        assert not without["has_loop_context"]
+        assert without["has_loop_context"]
+        assert not without["has_feedback"]
         assert with_ctx["has_loop_context"]
+        assert with_ctx["has_feedback"]
         assert "api" in with_ctx["prompts"][-1].lower()
         assert "health_checker" in with_ctx["prompts"][-1]
 
     def test_ab_comparison_library(self, tmp_path: Path) -> None:
-        """Library: loop context includes coverage threshold from gate criteria."""
+        """Library: both arms have topology; only with_ctx has feedback."""
         wf = self._make_lib_workflow("lib")
 
         without = self._simulate_reloop_cycle(
@@ -753,8 +779,10 @@ class TestLoopContextE2EComparison:
             wf2, tmp_path / "lib-with-ctx", with_loop_context=True,
         )
 
-        assert not without["has_loop_context"]
+        assert without["has_loop_context"]
+        assert not without["has_feedback"]
         assert with_ctx["has_loop_context"]
+        assert with_ctx["has_feedback"]
         assert "coverage" in with_ctx["prompts"][-1].lower()
         assert "code_reviewer" in with_ctx["prompts"][-1]
 
@@ -794,15 +822,16 @@ class TestLoopContextE2EComparison:
             )
 
             report[name] = {
-                "without_context": {
+                "without_feedback": {
                     "prompt_length": len(prompt_no_ctx),
                     "has_loop_context": result_no_ctx["has_loop_context"],
+                    "has_feedback": result_no_ctx["has_feedback"],
                     "reloop_count": result_no_ctx["reloop_count"],
-                    "mentions_downstream_criteria": False,
                 },
-                "with_context": {
+                "with_feedback": {
                     "prompt_length": len(prompt_with_ctx),
                     "has_loop_context": result_with_ctx["has_loop_context"],
+                    "has_feedback": result_with_ctx["has_feedback"],
                     "reloop_count": result_with_ctx["reloop_count"],
                     "mentions_downstream_criteria": mentions_gate,
                 },
@@ -812,17 +841,23 @@ class TestLoopContextE2EComparison:
         report_path.write_text(json.dumps(report, indent=2))
 
         for name, data in report.items():
-            assert not data["without_context"]["has_loop_context"], (
-                f"{name}: prompt WITHOUT context should lack LOOP CONTEXT"
+            assert data["without_feedback"]["has_loop_context"], (
+                f"{name}: prompt without feedback should still have LOOP CONTEXT topology"
             )
-            assert data["with_context"]["has_loop_context"], (
-                f"{name}: prompt WITH context should include LOOP CONTEXT"
+            assert not data["without_feedback"]["has_feedback"], (
+                f"{name}: prompt without feedback should lack Feedback history"
             )
-            assert data["with_context"]["mentions_downstream_criteria"], (
-                f"{name}: prompt WITH context should mention downstream gate criteria"
+            assert data["with_feedback"]["has_loop_context"], (
+                f"{name}: prompt WITH feedback should include LOOP CONTEXT"
             )
-            assert data["with_context"]["prompt_length"] > data["without_context"]["prompt_length"], (
-                f"{name}: prompt with context should be longer than without"
+            assert data["with_feedback"]["has_feedback"], (
+                f"{name}: prompt WITH feedback should include Feedback history"
+            )
+            assert data["with_feedback"]["mentions_downstream_criteria"], (
+                f"{name}: prompt WITH feedback should mention downstream gate criteria"
+            )
+            assert data["with_feedback"]["prompt_length"] > data["without_feedback"]["prompt_length"], (
+                f"{name}: prompt with feedback should be longer than without"
             )
 
         assert report_path.exists()

@@ -257,9 +257,10 @@ def _run_ab(
     state to the builder node, then captures the builder prompt under two
     conditions:
 
-    - Arm A: iteration_counts and feedback_log are empty (first attempt)
+    - Arm A: iteration_counts and feedback_log are empty (first attempt,
+      iteration 0) — topology is present but feedback history is not
     - Arm B: iteration_counts and feedback_log reflect one RELOOP from
-      the specified gate, with the given feedback text
+      the specified gate — topology AND feedback history are present
 
     Returns a dict with arm_a, arm_b, and the raw workflow topo_order.
     """
@@ -278,14 +279,14 @@ def _run_ab(
         state["completed"][order[i]] = "completed"
     state["pointer_idx"] = builder_idx
 
-    # ── Arm A: no loop context ──────────────────────────────────
+    # ── Arm A: first invocation (iteration 0, no feedback) ─────
     state_a = copy.deepcopy(state)
     state_a["iteration_counts"] = {}
     state_a["feedback_log"] = {}
     _save_state(project, state_a)
     prompt_a = tool_curr(project)
 
-    # ── Arm B: with loop context from specified gate ────────────
+    # ── Arm B: after one RELOOP (iteration 1, with feedback) ───
     state_b = copy.deepcopy(state)
     state_b["iteration_counts"] = {f"{reloop_gate}->builder": 1}
     state_b["feedback_log"] = {
@@ -303,11 +304,13 @@ def _run_ab(
         "arm_a": {
             "prompt": prompt_a,
             "has_loop_context": "LOOP CONTEXT" in prompt_a,
+            "has_feedback": "Feedback history" in prompt_a,
             "prompt_length": len(prompt_a),
         },
         "arm_b": {
             "prompt": prompt_b,
             "has_loop_context": "LOOP CONTEXT" in prompt_b,
+            "has_feedback": "Feedback history" in prompt_b,
             "prompt_length": len(prompt_b),
         },
         "topo_order": order,
@@ -328,7 +331,7 @@ class TestLoopContextE2EAB:
     # ── per-project A/B tests ────────────────────────────────────
 
     def test_cli_tool_gate_qa_reloop(self, tmp_path: Path) -> None:
-        """CLI tool: gate_qa triggers RELOOP — builder prompt gains QA context."""
+        """CLI tool: gate_qa triggers RELOOP — builder prompt gains QA feedback."""
         project = _create_cli_project(tmp_path)
         result = _run_ab(
             project,
@@ -336,8 +339,10 @@ class TestLoopContextE2EAB:
             feedback="QA found 3 test failures in test_csv2json.py — input validation missing",
         )
 
-        assert not result["arm_a"]["has_loop_context"]
+        assert result["arm_a"]["has_loop_context"]
+        assert not result["arm_a"]["has_feedback"]
         assert result["arm_b"]["has_loop_context"]
+        assert result["arm_b"]["has_feedback"]
 
         prompt_b = result["arm_b"]["prompt"]
         assert "gate_qa" in prompt_b
@@ -345,7 +350,7 @@ class TestLoopContextE2EAB:
         assert "LOOP CONTEXT" in prompt_b
 
     def test_web_api_gate_build_reloop(self, tmp_path: Path) -> None:
-        """Web API: gate_build triggers RELOOP — builder prompt gains build review context."""
+        """Web API: gate_build triggers RELOOP — builder prompt gains build review feedback."""
         project = _create_web_api_project(tmp_path)
         result = _run_ab(
             project,
@@ -353,15 +358,17 @@ class TestLoopContextE2EAB:
             feedback="PR scope creep detected — endpoints added beyond hypothesis scope",
         )
 
-        assert not result["arm_a"]["has_loop_context"]
+        assert result["arm_a"]["has_loop_context"]
+        assert not result["arm_a"]["has_feedback"]
         assert result["arm_b"]["has_loop_context"]
+        assert result["arm_b"]["has_feedback"]
 
         prompt_b = result["arm_b"]["prompt"]
         assert "gate_build" in prompt_b
         assert "scope creep" in prompt_b
 
     def test_mathlib_gate_doc_freshness_reloop(self, tmp_path: Path) -> None:
-        """Library: gate_doc_freshness triggers RELOOP — builder prompt gains doc context."""
+        """Library: gate_doc_freshness triggers RELOOP — builder prompt gains doc feedback."""
         project = _create_mathlib_project(tmp_path)
         result = _run_ab(
             project,
@@ -369,8 +376,10 @@ class TestLoopContextE2EAB:
             feedback="README.md not updated after adding is_prime() public API",
         )
 
-        assert not result["arm_a"]["has_loop_context"]
+        assert result["arm_a"]["has_loop_context"]
+        assert not result["arm_a"]["has_feedback"]
         assert result["arm_b"]["has_loop_context"]
+        assert result["arm_b"]["has_feedback"]
 
         prompt_b = result["arm_b"]["prompt"]
         assert "gate_doc_freshness" in prompt_b
@@ -451,11 +460,11 @@ class TestLoopContextE2EAB:
             )
 
     def test_iteration_count_shown(self, tmp_path: Path) -> None:
-        """Iteration counter (e.g. 1/3) appears in Arm B prompt."""
+        """Iteration counter appears in both arms: 0/3 for Arm A, 1/3 for Arm B."""
         project = _create_cli_project(tmp_path)
         result = _run_ab(project, reloop_gate="gate_qa", feedback="failing")
         assert "1/3" in result["arm_b"]["prompt"]
-        assert "1/3" not in result["arm_a"]["prompt"]
+        assert "0/3" in result["arm_a"]["prompt"]
 
     def test_final_attempt_warning_at_max_iteration(self, tmp_path: Path) -> None:
         """At iteration 3/3, the FINAL ATTEMPT warning appears."""
@@ -488,18 +497,18 @@ class TestLoopContextE2EAB:
         assert "FINAL ATTEMPT" in prompt
         assert "3/3" in prompt
 
-    def test_arm_a_prompt_is_vanilla(self, tmp_path: Path) -> None:
-        """Arm A prompt has normal builder task but zero loop-related content."""
+    def test_arm_a_prompt_has_topology_without_feedback(self, tmp_path: Path) -> None:
+        """Arm A prompt has builder task with loop topology but no feedback history."""
         project = _create_cli_project(tmp_path)
         result = _run_ab(project, reloop_gate="gate_qa", feedback="whatever")
 
         prompt_a = result["arm_a"]["prompt"]
         assert "Node: builder" in prompt_a
         assert "Type: Agent (builder)" in prompt_a
-        assert "LOOP CONTEXT" not in prompt_a
+        assert "LOOP CONTEXT" in prompt_a
+        assert "Loop topology" in prompt_a
+        assert "0/3" in prompt_a
         assert "Feedback history" not in prompt_a
-        assert "Loop topology" not in prompt_a
-        assert "Triggered by" not in prompt_a
 
     # ── tool_submit integration ──────────────────────────────────
 
@@ -586,18 +595,20 @@ class TestLoopContextE2EAB:
 
             report[name] = {
                 "arm_a": {
-                    "builder_prompt_mentions_gates": result["arm_a"]["has_loop_context"],
+                    "has_topology": result["arm_a"]["has_loop_context"],
+                    "has_feedback": result["arm_a"]["has_feedback"],
                     "prompt_length": result["arm_a"]["prompt_length"],
                 },
                 "arm_b": {
-                    "builder_prompt_mentions_gates": result["arm_b"]["has_loop_context"],
+                    "has_topology": result["arm_b"]["has_loop_context"],
+                    "has_feedback": result["arm_b"]["has_feedback"],
                     "prompt_length": result["arm_b"]["prompt_length"],
                     "mentions_downstream_criteria": mentions_criteria,
                 },
                 "delta": {
-                    "prompt_has_gate_context": (
-                        result["arm_b"]["has_loop_context"]
-                        and not result["arm_a"]["has_loop_context"]
+                    "arm_b_adds_feedback": (
+                        result["arm_b"]["has_feedback"]
+                        and not result["arm_a"]["has_feedback"]
                     ),
                     "length_increase": (
                         result["arm_b"]["prompt_length"] - result["arm_a"]["prompt_length"]
@@ -606,12 +617,16 @@ class TestLoopContextE2EAB:
             }
 
         report["summary"] = {
-            "all_arm_b_have_context": all(
-                report[n]["arm_b"]["builder_prompt_mentions_gates"]
+            "all_arms_have_topology": all(
+                report[n]["arm_a"]["has_topology"] and report[n]["arm_b"]["has_topology"]
                 for n in ("cli-tool", "web-api", "mathlib")
             ),
-            "no_arm_a_has_context": all(
-                not report[n]["arm_a"]["builder_prompt_mentions_gates"]
+            "no_arm_a_has_feedback": all(
+                not report[n]["arm_a"]["has_feedback"]
+                for n in ("cli-tool", "web-api", "mathlib")
+            ),
+            "all_arm_b_have_feedback": all(
+                report[n]["arm_b"]["has_feedback"]
                 for n in ("cli-tool", "web-api", "mathlib")
             ),
             "all_arm_b_mention_criteria": all(
@@ -626,25 +641,32 @@ class TestLoopContextE2EAB:
         # ── validate every project ──
         for name in ("cli-tool", "web-api", "mathlib"):
             data = report[name]
-            assert not data["arm_a"]["builder_prompt_mentions_gates"], (
-                f"{name}: Arm A should NOT have loop context"
+            assert data["arm_a"]["has_topology"], (
+                f"{name}: Arm A SHOULD have loop topology"
             )
-            assert data["arm_b"]["builder_prompt_mentions_gates"], (
-                f"{name}: Arm B SHOULD have loop context"
+            assert not data["arm_a"]["has_feedback"], (
+                f"{name}: Arm A should NOT have feedback history"
+            )
+            assert data["arm_b"]["has_topology"], (
+                f"{name}: Arm B SHOULD have loop topology"
+            )
+            assert data["arm_b"]["has_feedback"], (
+                f"{name}: Arm B SHOULD have feedback history"
             )
             assert data["arm_b"]["mentions_downstream_criteria"], (
                 f"{name}: Arm B should mention downstream gate criteria"
             )
-            assert data["delta"]["prompt_has_gate_context"], (
-                f"{name}: delta should confirm context was added"
+            assert data["delta"]["arm_b_adds_feedback"], (
+                f"{name}: delta should confirm feedback was added in Arm B"
             )
             assert data["delta"]["length_increase"] > 0, (
-                f"{name}: prompt should be longer with context"
+                f"{name}: prompt should be longer with feedback"
             )
 
         # ── validate summary ──
-        assert report["summary"]["all_arm_b_have_context"]
-        assert report["summary"]["no_arm_a_has_context"]
+        assert report["summary"]["all_arms_have_topology"]
+        assert report["summary"]["no_arm_a_has_feedback"]
+        assert report["summary"]["all_arm_b_have_feedback"]
         assert report["summary"]["all_arm_b_mention_criteria"]
 
         # ── validate report file ──
