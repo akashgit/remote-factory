@@ -1,6 +1,7 @@
 """Evaluate solutions using the Harbor verifier."""
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -55,9 +56,12 @@ def evaluate_one_solution(solution: dict[str, Any], task_dir: Path) -> float:
 
         # Run test.sh
         try:
+            env = os.environ.copy()
+            env["WORKSPACE"] = str(workspace)
             subprocess.run(
                 ["bash", str(test_sh)],
                 cwd=tmpdir_path,
+                env=env,
                 capture_output=True,
                 text=True,
                 timeout=60,

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Einstein Arena verifier wrapper
-SOLUTION_FILE="/workspace/solution.json"
-SCORE_FILE="/workspace/score.txt"
+SOLUTION_FILE="${WORKSPACE:-/workspace}/solution.json"
+SCORE_FILE="${WORKSPACE:-/workspace}/score.txt"
 
 if [ ! -f "$SOLUTION_FILE" ]; then
     echo "ERROR: solution.json not found at $SOLUTION_FILE" >&2
@@ -80,16 +80,19 @@ def evaluate(data: dict) -> float:
 # Wrapper to read from file and handle errors
 if __name__ == "__main__":
     import json
+    import os
     import sys
 
+    _ws = os.environ.get("WORKSPACE", "/workspace")
+
     try:
-        with open("/workspace/solution.json", "r") as f:
+        with open(f"{_ws}/solution.json", "r") as f:
             data = json.load(f)
 
         score = evaluate(data)
 
         # Write score to file
-        with open("/workspace/score.txt", "w") as f:
+        with open(f"{_ws}/score.txt", "w") as f:
             f.write(str(score))
 
         print(f"Score: {score}")
