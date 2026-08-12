@@ -403,7 +403,7 @@ def _from_file(field_spec: Field, readers: _Readers) -> str | None:
     if typed is None:
         return None
     path = Path((typed.strip() or default or "")).expanduser()
-    if not str(path):
+    if not str(path):  # pragma: no cover - Path("").expanduser() is ".", so this never fires
         return None
     try:
         content = path.read_text()

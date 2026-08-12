@@ -352,7 +352,7 @@ def _raw_session(target: TextIO) -> tuple[int, Any] | None:
         return None
     try:
         import termios
-    except ImportError:                       # non-POSIX
+    except ImportError:                       # pragma: no cover - non-POSIX only; termios always imports on the test platforms
         return None
     try:
         descriptor = sys.stdin.fileno()

@@ -1033,3 +1033,10 @@ def test_a_sweep_that_deleted_something_reports_a_count(
                return_value=_completed('pod "a" deleted\npod "b" deleted')):
         k8s.remove_cluster_runtime("rta-test", namespace="ns")
     assert "swept 2 pod(s)" in capsys.readouterr().out
+
+
+def test_a_plan_without_a_vertex_model_warning_adds_no_warning(tmp_path: Path) -> None:
+    """The common path: a non-Vertex backend produces no model warning, so none is appended."""
+    with patch("factory.cli.contained_k8s.vertex_model_warning", return_value=None):
+        plan = _plan(tmp_path)
+    assert not any("--model" in w for w in plan.warnings)

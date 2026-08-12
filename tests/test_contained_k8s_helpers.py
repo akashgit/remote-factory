@@ -338,3 +338,74 @@ def test_the_login_probe_is_an_authenticated_round_trip() -> None:
     with patch("factory.contained.k8s._run", side_effect=fake_run):
         k8s.login_status("kubectl")
     assert "auth" in seen["argv"] and "can-i" in seen["argv"]
+
+
+# --------------------------------------------------------------------------------------------
+# classify_pod / _unschedulable / login_status / poll_pod — the residual edge branches
+# --------------------------------------------------------------------------------------------
+
+
+def test_a_status_that_is_not_a_mapping_is_treated_as_still_waiting() -> None:
+    """A half-written pod document (`status` a string, not an object) must not raise in a poll."""
+    assert k8s.classify_pod({"status": "corrupt"}).verdict == k8s.WAITING
+
+
+def test_a_pod_level_succeeded_with_no_container_status_is_succeeded() -> None:
+    """The probe pod is gone by the time it Succeeds — only the pod phase remains to read."""
+    assert k8s.classify_pod({"status": {"phase": "Succeeded"}}).verdict == k8s.SUCCEEDED
+
+
+def test_a_pod_level_failed_with_no_container_status_is_doomed() -> None:
+    prog = k8s.classify_pod({"status": {"phase": "Failed", "reason": "Evicted", "message": "oom"}})
+    assert prog.verdict == k8s.DOOMED
+    assert "oom" in prog.describe()
+
+
+def test_a_container_state_matching_nothing_falls_through_to_the_pod_level() -> None:
+    """An empty container state is neither running, waiting nor terminated — keep waiting."""
+    pod = {"status": {"phase": "Pending", "containerStatuses": [{"name": "c", "state": {}}]}}
+    assert k8s.classify_pod(pod).verdict == k8s.WAITING
+
+
+def test_unschedulable_skips_a_non_dict_condition_and_reads_the_real_one() -> None:
+    pod = {"status": {"phase": "Pending", "conditions": [
+        "not-a-dict",
+        {"type": "PodScheduled", "status": "False", "reason": "Unschedulable", "message": "no room"},
+    ]}}
+    prog = k8s.classify_pod(pod)
+    assert prog.verdict == k8s.DOOMED and "no room" in prog.describe()
+
+
+def test_a_non_matching_condition_leaves_the_pod_merely_waiting() -> None:
+    """A `Ready=False` condition is not `Unschedulable`; the pod is still just starting."""
+    pod = {"status": {"phase": "Pending", "conditions": [{"type": "Ready", "status": "False"}]}}
+    assert k8s.classify_pod(pod).verdict == k8s.WAITING
+
+
+def test_login_status_reports_authenticated_even_when_whoami_prints_nothing() -> None:
+    """A 0 exit with empty stdout is still success — the detail is just blank."""
+    with patch("factory.contained.k8s._run",
+               return_value=subprocess.CompletedProcess([], 0, "", "")):
+        ok, detail = k8s.login_status("oc")
+    assert ok is True and detail == ""
+
+
+def test_polling_gives_up_on_a_retryable_error_that_never_clears() -> None:
+    """`ErrImagePull` might be a blip; if it is still there after `stuck_after`, stop waiting."""
+    stuck = _pod(waiting={"reason": "ErrImagePull", "message": "pull failed"})
+    # A monotonic clock that advances past stuck_after between the two readings. Base is non-zero so
+    # the first timestamp stored in `error_since` is truthy (0.0 would re-trigger the `or`).
+    clock = iter([1000, 1000, 1000, 1000, 1035, 1035, 1035, 1035])
+    with patch("factory.contained.k8s.read_pod", return_value=stuck), \
+         patch("factory.contained.k8s.time.sleep"), \
+         patch("factory.contained.k8s.time.monotonic", lambda: next(clock)):
+        prog = k8s.poll_pod("p", "ns", timeout=300, stuck_after=30)
+    assert prog.verdict == k8s.DOOMED
+    assert "unchanged for 30s" in prog.describe()
+
+
+def test_login_status_when_the_cli_cannot_be_run_at_all() -> None:
+    """`_run` returns None when the binary is missing or the OS refuses — reported, not raised."""
+    with patch("factory.contained.k8s._run", return_value=None):
+        ok, detail = k8s.login_status("oc")
+    assert ok is False and "could not be run" in detail
