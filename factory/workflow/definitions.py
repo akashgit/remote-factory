@@ -4003,8 +4003,8 @@ def _get_builtin_registry() -> dict[str, Any]:
         "swebenchifyhard": lambda: __import__(
             "factory.workflow.contributed.swebenchifyhard", fromlist=["workflow"]
         ).workflow(),
-        "einsteinarena": lambda: __import__(
-            "factory.workflow.contributed.einsteinarena", fromlist=["workflow"]
+        "lumen": lambda: __import__(
+            "factory.workflow.contributed.lumen", fromlist=["workflow"]
         ).workflow(),
     }
     return _BUILTIN_REGISTRY

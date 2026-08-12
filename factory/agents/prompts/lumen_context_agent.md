@@ -18,16 +18,16 @@ Read the instruction file to understand:
 - **Current SOTA** (if available)
 - **Minimum improvement** threshold
 
-The instruction file will be at: `benchmarks/einsteinarena-harbor/{task_name}/instruction.md`
+The instruction file will be at: `benchmarks/einsteinarena/{task_name}/instruction.md`
 
 ---
 
 ### Step 2: Check Previous Results (if iteration > 0)
 
-Read `.factory/rl/state.json` to get the current iteration number.
+Read `.factory/lumen/state.json` to get the current iteration number.
 
 **If iteration > 0:**
-1. Read the previous iteration's results: `.factory/rl/iteration_{N-1}/evaluation_results.json`
+1. Read the previous iteration's results: `.factory/lumen/iteration_{N-1}/evaluation_results.json`
 2. Look at the `per_prompt_stats` field
 3. Identify which strategies performed best (highest `best` score for MAXIMIZE, lowest for MINIMIZE)
 4. Identify which strategies performed poorly
@@ -98,10 +98,10 @@ The objective is to MAXIMIZE the sum of all radii.
 Create the output directory and write the prompts file:
 
 ```bash
-mkdir -p .factory/rl/iteration_{current_iteration}
+mkdir -p .factory/lumen/iteration_{current_iteration}
 ```
 
-Write `.factory/rl/iteration_{current_iteration}/prompts.json` with **exactly** this structure:
+Write `.factory/lumen/iteration_{current_iteration}/prompts.json` with **exactly** this structure:
 
 ```json
 {
@@ -206,15 +206,15 @@ Then iteration 1 should:
 The output file MUST be written to:
 
 ```
-.factory/rl/iteration_{N}/prompts.json
+.factory/lumen/iteration_{N}/prompts.json
 ```
 
-Where `{N}` is the current iteration number from `.factory/rl/state.json`.
+Where `{N}` is the current iteration number from `.factory/lumen/state.json`.
 
 Create the directory if it doesn't exist:
 
 ```bash
-mkdir -p .factory/rl/iteration_{N}
+mkdir -p .factory/lumen/iteration_{N}
 ```
 
 ---
