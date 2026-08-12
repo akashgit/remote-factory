@@ -568,3 +568,65 @@ class TestSpecFormatRoundTrip:
         assert restored.outer_loop.max_outer_cycles == 4
         assert restored.outer_loop.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
         assert restored.outer_loop.outer_surfaces == ["src/**/*.py"]
+
+
+# ── detect_research_plateau tests ────────────────────────────────
+
+
+class TestDetectResearchPlateau:
+    """Tests for detect_research_plateau in factory.strategy."""
+
+    def test_not_enough_data(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [{"metric_value": 0.5}, {"metric_value": 0.6}]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_plateau_detected(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.8},
+            {"metric_value": 0.7},
+            {"metric_value": 0.6},
+            {"metric_value": 0.75},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is True
+
+    def test_no_plateau_with_improvement(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.6},
+            {"metric_value": 0.7},
+            {"metric_value": 0.9},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_custom_threshold(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.8},
+            {"metric_value": 0.7},
+            {"metric_value": 0.75},
+        ]
+        assert detect_research_plateau(summaries, threshold=2) is True
+
+    def test_improvement_in_window_breaks_plateau(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.4},
+            {"metric_value": 0.3},
+            {"metric_value": 0.6},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_zero_threshold_returns_false(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [{"metric_value": 0.5}]
+        assert detect_research_plateau(summaries, threshold=0) is False
