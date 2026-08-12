@@ -26,6 +26,22 @@ def _validate_edges(workflow: Workflow, issues: list[str]) -> None:
 def _validate_reachability(
     g: nx.DiGraph, workflow: Workflow, issues: list[str],  # type: ignore[type-arg]
 ) -> None:
+    # Add implicit edges for fork/join semantics.
+    # ForkNode.targets are reached implicitly (not via explicit edges).
+    # JoinNode.sources flow into the join implicitly.
+    from factory.workflow.primitives import ForkNode, JoinNode
+
+    nodes = workflow.nodes
+    for nid, node in nodes.items():
+        if isinstance(node, ForkNode):
+            for t in node.targets:
+                if t in nodes:
+                    g.add_edge(nid, t)
+        if isinstance(node, JoinNode):
+            for s in node.sources:
+                if s in nodes:
+                    g.add_edge(s, nid)
+
     reachable = nx.descendants(g, workflow.start_node) | {workflow.start_node}
     unreachable = set(workflow.nodes.keys()) - reachable
     for nid in sorted(unreachable):

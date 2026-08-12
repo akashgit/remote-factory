@@ -385,9 +385,10 @@ class TestEquivalence:
         assert "researcher" in node_ids
         assert "strategist" in node_ids
         assert "builder" in node_ids
-        assert "health_checker" in node_ids
-        assert "code_reviewer" in node_ids
-        assert "adversarial_tester" in node_ids
+        assert "fork_qa" in node_ids
+        assert "qa_health" in node_ids
+        assert "qa_review" in node_ids
+        assert "qa_adversarial" in node_ids
         assert "archivist" in node_ids
 
         edges_from = {e.source: e.target for e in wf.edges if e.condition is None}

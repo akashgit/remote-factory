@@ -14,17 +14,9 @@ from factory.runners import get_runner
 logger = logging.getLogger(__name__)
 
 AgentRole = Literal[
-    "researcher",
-    "strategist",
-    "builder",
-    "health_checker",
-    "code_reviewer",
-    "adversarial_tester",
-    "archivist",
-    "ceo",
-    "failure_analyst",
-    "refiner",
-    "profiler",
+    "researcher", "strategist", "builder",
+    "qa_health", "qa_review", "qa_adversarial",
+    "archivist", "ceo", "failure_analyst", "refiner", "profiler",
     "refactory",
 ]
 
