@@ -26,15 +26,13 @@ asserts its absence, and it is the one check that fails when something succeeds.
 
 from __future__ import annotations
 
-import json
-import shlex
 
 from factory.contained.k8s import (
     LABEL_RUN,
     REQUEST_DIR,
     RESULT_DIR,
     build_api_resources_argv,
-    sidecar_command,
+    sidecar_command,  # noqa: F401 — re-exported
 )
 from factory.contained.k8s import sweep_argv as _sweep_argv
 
@@ -262,8 +260,10 @@ def mcp_config(namespace: str) -> dict[str, object]:
             MCP_CLUSTER_SERVER: {
                 "command": "npx",
                 "args": [
-                    "-y", "kubernetes-mcp-server@latest",
-                    "--namespace", namespace,
+                    "-y",
+                    "kubernetes-mcp-server@latest",
+                    "--namespace",
+                    namespace,
                     "--disable-destructive",
                 ],
                 "env": {"KUBECONFIG": ""},
@@ -294,13 +294,3 @@ def division_files(namespace: str, run_name: str) -> dict[str, str]:
 # lives in `k8s.py` because "delete what this run labelled" is a lifecycle concern that must keep
 # happening whether or not a division was ever enabled.
 sweep_argv = _sweep_argv
-
-
-def registration_json(namespace: str) -> str:
-    """The `.mcp.json` payload, for tests and for the dry-run rendering."""
-    return json.dumps(mcp_config(namespace), sort_keys=True)
-
-
-def quoted_sidecar_command() -> str:
-    """The sidecar command, shell-quoted — used where it is embedded in another command line."""
-    return shlex.quote(sidecar_command())

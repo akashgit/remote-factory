@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from factory.contained.prereq import Check
-from factory.contained.setup import _image_present, _start_machine, run_setup, summarize
+from factory.contained.setup import _image_present, _start_machine, run_setup
 
 
 def _completed(
@@ -40,10 +40,14 @@ def contained_root(tmp_path: Path):
 @pytest.fixture(autouse=True)
 def _no_engine_calls():
     """Default every seam to "already fine" so each test only patches what it is about."""
-    with patch("factory.contained.setup.subprocess.run", return_value=_completed()), \
-         patch("factory.contained.setup._image_present", return_value=True), \
-         patch("factory.contained.setup.local_checks",
-               return_value=[Check(name="container_engine", ok=True, detail="reachable")]):
+    with (
+        patch("factory.contained.setup.subprocess.run", return_value=_completed()),
+        patch("factory.contained.setup._image_present", return_value=True),
+        patch(
+            "factory.contained.setup.local_checks",
+            return_value=[Check(name="container_engine", ok=True, detail="reachable")],
+        ),
+    ):
         yield  # type: ignore[misc]
 
 
@@ -59,9 +63,7 @@ def test_no_target_and_no_terminal_sets_up_the_local_runtime() -> None:
     k8s.assert_not_called()
 
 
-def test_the_chooser_is_skipped_when_a_target_was_named(
-    capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_the_chooser_is_skipped_when_a_target_was_named(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("builtins.input") as ask:
         run_setup("local", interactive=True)
     ask.assert_not_called()
@@ -69,33 +71,39 @@ def test_the_chooser_is_skipped_when_a_target_was_named(
 
 @pytest.mark.parametrize(("answer", "expect_k8s"), [("1", False), ("2", True), ("3", True)])
 def test_the_chooser_maps_each_answer_to_a_target(answer: str, expect_k8s: bool) -> None:
-    with patch("builtins.input", return_value=answer), \
-         patch("factory.contained.k8s_setup.setup_k8s", return_value=0) as k8s:
+    with (
+        patch("builtins.input", return_value=answer),
+        patch("factory.contained.k8s_setup.setup_k8s", return_value=0) as k8s,
+    ):
         run_setup(None, interactive=True)
     assert k8s.called is expect_k8s
 
 
 def test_an_unrecognised_answer_falls_back_to_local_rather_than_asking_again() -> None:
     """A wizard that loops on a typo in a non-interactive-adjacent context is a hang."""
-    with patch("builtins.input", return_value="banana"), \
-         patch("factory.contained.k8s_setup.setup_k8s") as k8s:
+    with (
+        patch("builtins.input", return_value="banana"),
+        patch("factory.contained.k8s_setup.setup_k8s") as k8s,
+    ):
         run_setup(None, interactive=True)
     k8s.assert_not_called()
 
 
 def test_stdin_closed_at_the_prompt_takes_the_default_rather_than_erroring(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A pipe, a CI job, or `< /dev/null`. An unanswered prompt must not become a bare `Error:`."""
-    with patch("builtins.input", side_effect=EOFError), \
-         patch("factory.contained.k8s_setup.setup_k8s") as k8s:
+    with (
+        patch("builtins.input", side_effect=EOFError),
+        patch("factory.contained.k8s_setup.setup_k8s") as k8s,
+    ):
         assert run_setup(None, interactive=True) == 0
     k8s.assert_not_called()
     assert "the default" in capsys.readouterr().out
 
 
 def test_both_labels_each_half_so_the_output_can_be_read(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     with patch("factory.contained.k8s_setup.setup_k8s", return_value=0):
         run_setup("both", interactive=False)
@@ -110,14 +118,14 @@ def test_a_failing_cluster_setup_is_reported_even_when_local_succeeded() -> None
 
 
 def test_a_failing_local_setup_is_reported() -> None:
-    with patch("factory.contained.setup.local_checks",
-               return_value=[Check(name="container_engine", ok=False, detail="not reachable")]):
+    with patch(
+        "factory.contained.setup.local_checks",
+        return_value=[Check(name="container_engine", ok=False, detail="not reachable")],
+    ):
         assert run_setup("local", interactive=False) == 1
 
 
-def test_setup_records_the_target_so_ls_knows_which_ones_to_consult(
-    contained_root: Path
-) -> None:
+def test_setup_records_the_target_so_ls_knows_which_ones_to_consult(contained_root: Path) -> None:
     """`ls` only reaches for a cluster the machine has actually set up or used."""
     from factory.contained.usage import used_targets
 
@@ -132,7 +140,7 @@ def test_setup_records_the_target_so_ls_knows_which_ones_to_consult(
 
 
 def test_every_step_is_numbered_so_working_can_be_told_from_finished(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_setup("local", interactive=False)
     out = capsys.readouterr().out
@@ -149,16 +157,18 @@ def test_a_reachable_engine_is_left_alone(capsys: pytest.CaptureFixture[str]) ->
 
 def test_an_unreachable_engine_starts_the_machine() -> None:
     """On macOS the machine stops quietly and every later error blames podman instead."""
-    with patch("factory.contained.setup.local_checks",
-               return_value=[Check(name="container_engine", ok=False, detail="not reachable")]), \
-         patch("factory.contained.setup._start_machine") as start:
+    with (
+        patch(
+            "factory.contained.setup.local_checks",
+            return_value=[Check(name="container_engine", ok=False, detail="not reachable")],
+        ),
+        patch("factory.contained.setup._start_machine") as start,
+    ):
         run_setup("local", interactive=False)
     start.assert_called_once()
 
 
-def test_an_image_already_present_is_not_pulled_again(
-    capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_an_image_already_present_is_not_pulled_again(capsys: pytest.CaptureFixture[str]) -> None:
     with patch("factory.contained.setup.subprocess.run") as run:
         run_setup("local", interactive=False)
     assert "already present" in capsys.readouterr().out
@@ -166,20 +176,25 @@ def test_an_image_already_present_is_not_pulled_again(
 
 
 def test_a_missing_image_is_pulled(capsys: pytest.CaptureFixture[str]) -> None:
-    with patch("factory.contained.setup._image_present", return_value=False), \
-         patch("factory.contained.setup.subprocess.run", return_value=_completed()) as run:
+    with (
+        patch("factory.contained.setup._image_present", return_value=False),
+        patch("factory.contained.setup.subprocess.run", return_value=_completed()) as run,
+    ):
         run_setup("local", interactive=False)
     assert any(c.args[0][:2] == ["podman", "pull"] for c in run.call_args_list)
 
 
 def test_a_failed_pull_offers_both_ways_out_rather_than_just_failing(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The image may simply not be published yet, and the Containerfile ships in the git repository
     rather than in the installed package — so "build it yourself" needs the clone step too."""
-    with patch("factory.contained.setup._image_present", return_value=False), \
-         patch("factory.contained.setup.subprocess.run",
-               return_value=_completed("", returncode=125)):
+    with (
+        patch("factory.contained.setup._image_present", return_value=False),
+        patch(
+            "factory.contained.setup.subprocess.run", return_value=_completed("", returncode=125)
+        ),
+    ):
         run_setup("local", interactive=False)
     err = capsys.readouterr().err
     assert "FACTORY_CONTAINED_IMAGE" in err
@@ -204,7 +219,7 @@ def test_an_image_check_asks_podman_whether_the_reference_exists() -> None:
 
 
 def test_with_no_machine_at_all_the_init_command_is_printed_not_run(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`podman machine init` downloads a VM image and picks resource limits — not something to do
     to someone's machine without asking."""
@@ -215,18 +230,21 @@ def test_with_no_machine_at_all_the_init_command_is_printed_not_run(
 
 
 def test_a_stopped_machine_is_started_because_it_mutates_nothing_durable(
-    capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with patch("factory.contained.setup.subprocess.run",
-               side_effect=[_completed("podman-machine-default\n"), _completed()]) as run:
+    with patch(
+        "factory.contained.setup.subprocess.run",
+        side_effect=[_completed("podman-machine-default\n"), _completed()],
+    ) as run:
         _start_machine()
     assert run.call_args.args[0] == ["podman", "machine", "start"]
     assert "Starting the podman machine" in capsys.readouterr().out
 
 
 def test_a_machine_listing_that_fails_prints_the_init_command() -> None:
-    with patch("factory.contained.setup.subprocess.run",
-               return_value=_completed("", returncode=125)) as run:
+    with patch(
+        "factory.contained.setup.subprocess.run", return_value=_completed("", returncode=125)
+    ) as run:
         _start_machine()
     assert run.call_count == 1
 
@@ -236,9 +254,3 @@ def test_no_podman_binary_at_all_leaves_the_machine_step_silent() -> None:
     noise ahead of the real one."""
     with patch("factory.contained.setup.subprocess.run", side_effect=FileNotFoundError):
         _start_machine()
-
-
-def test_summarize_renders_the_same_checks_verify_shows() -> None:
-    rendered = summarize([Check(name="container_engine", ok=False, detail="not reachable",
-                                fix="podman machine start")])
-    assert "podman machine start" in rendered

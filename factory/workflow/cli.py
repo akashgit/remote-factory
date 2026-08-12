@@ -168,12 +168,32 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Validate a workflow using NetworkX."""
-    name = args.name
-    project_path = Path(getattr(args, "project_path", None) or ".").resolve()
-    wf = WorkflowRegistry.get_workflow(name, project_path)
-    if not wf:
-        print(f"Unknown workflow: {name}")
-        return 1
+    file_path = getattr(args, "file", None)
+
+    if file_path:
+        from factory.workflow.registry import _load_workflow_file
+
+        path = Path(file_path).resolve()
+        if not path.exists():
+            print(f"File not found: {path}")
+            return 1
+        try:
+            meta, workflow_fn = _load_workflow_file(path)
+        except ValueError as exc:
+            print(f"Failed to load workflow file: {exc}")
+            return 1
+        wf = workflow_fn()
+        name = meta["name"]
+    else:
+        name = args.name
+        if not name:
+            print("Error: provide a workflow name or --file <path>")
+            return 1
+        project_path = Path(getattr(args, "project_path", None) or ".").resolve()
+        wf = WorkflowRegistry.get_workflow(name, project_path)
+        if not wf:
+            print(f"Unknown workflow: {name}")
+            return 1
 
     issues = wf.validate_graph()
 
@@ -319,7 +339,8 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
 
     # validate
     p = wf_sub.add_parser("validate", help="Validate workflow graph structure")
-    p.add_argument("name", help="Workflow name")
+    p.add_argument("name", nargs="?", default=None, help="Workflow name")
+    p.add_argument("--file", default=None, help="Path to a standalone workflow .py file to validate")
     p.add_argument("--project-path", default=None, help="Project path for local workflow discovery")
 
     # export-skills

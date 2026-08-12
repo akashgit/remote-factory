@@ -13,6 +13,7 @@ from pathlib import Path
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
+    CEO_MODES,
     _emit_cli_event,
     _ensure_dashboard,
     _print_banner,
@@ -109,6 +110,30 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "- All Sacred Rules still apply — delegate to agents, review output, "
         "do not write code\n"
         '- Start by running "next" to get your first task\n'
+        "\n"
+        "## Loop Context\n"
+        "\n"
+        "For any node that is a RELOOP target in the workflow graph, the tool "
+        "engine automatically injects a **## LOOP CONTEXT** section into the "
+        "node's task description — starting from the very first invocation "
+        "(iteration 0). This section shows:\n"
+        "- The full loop topology (all nodes from this node through the gate) "
+        "with reads/writes\n"
+        "- The gate's criteria and evaluator command\n"
+        "- The current iteration count (e.g. 0/3 on first pass, 1/3 after first reloop)\n"
+        "\n"
+        "After a RELOOP occurs, the section also includes:\n"
+        "- Which gate triggered the reloop\n"
+        "- Feedback history from prior iterations (last 2, truncated to 500 chars)\n"
+        "\n"
+        "Incorporate gate criteria from the LOOP CONTEXT section into your agent "
+        "task prompts. When spawning a builder agent, include what downstream "
+        "gates will check (e.g. health check criteria, code review expectations, "
+        "QA scope) so the builder can proactively address them. This reduces "
+        "reloops by making the builder aware of review criteria upfront.\n"
+        "\n"
+        "No separate command is needed — context is injected automatically by "
+        "the tool engine.\n"
     )
 
     return protocol
@@ -124,6 +149,22 @@ def _validate_ceo_flags(
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
+    if mode.startswith("project:"):
+        mode = mode[len("project:"):]
+    if mode not in CEO_MODES and mode != "auto":
+        from factory.workflow.registry import WorkflowRegistry
+        raw_path = getattr(args, "path", None)
+        project_path = Path(raw_path).resolve() if raw_path else Path.cwd()
+        entries = WorkflowRegistry.discover(project_path)
+        project_entries = {n for n, e in entries.items() if e.source == "project"}
+        if mode not in project_entries:
+            print(
+                f"Error: unknown mode '{mode}'. "
+                f"Not a built-in mode and not found in project workflows at "
+                f"{project_path / '.factory' / 'workflows'}.",
+                file=sys.stderr,
+            )
+            return 1
     warn_deprecated_mode(getattr(args, "mode", "auto"))
     bg: bool = getattr(args, "bg", False)
     bg_agents = _resolve_bg_agents(args)

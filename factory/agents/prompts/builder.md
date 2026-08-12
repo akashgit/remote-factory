@@ -23,7 +23,7 @@ You will be given:
 4. **Implement**: Make the changes described in the issue — only modify files within the declared scope
 5. **Test**: Run tests, lint, and type checks to verify your changes work
 6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
-7. **Open a PR**: `gh pr create --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
+7. **Open a PR**: `gh pr create --draft --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
 
 ## Constraints
 

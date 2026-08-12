@@ -315,6 +315,7 @@ class TestRegisterAll:
             "design",
             "improve",
             "deep-qa",
+            "deep-research",
             "research",
             "meta",
             "discover",

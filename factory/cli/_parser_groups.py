@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 
-from factory.cli._helpers import CEO_MODES, RUN_MODES
 
 
 def add_project_setup_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -372,11 +371,11 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     )
     p.add_argument(
         "--mode",
-        choices=CEO_MODES,
+        metavar="MODE",
         default="auto",
-        help="Operating mode. Only 'create' and 'design' are actively supported; "
-             "other modes (build, improve, research, meta, discover, review, refine, "
-             "parallel-improve, interactive) are deprecated — use --mode design instead",
+        help="Operating mode. Built-in: auto, design, create, improve, research, "
+             "build, discover, founder, meta, plan, evolve. "
+             "Project-local: project:<name> (loads from .factory/workflows/<name>.py)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -467,11 +466,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     )
     p.add_argument(
         "--mode",
-        choices=RUN_MODES,
+        metavar="MODE",
         default="auto",
-        help="Operating mode. Only 'create' and 'design' are actively supported; "
-             "other modes (build, improve, research, meta, discover, parallel-improve) "
-             "are deprecated — use --mode design instead",
+        help="Operating mode. Built-in: auto, improve, research, build, discover, "
+             "founder, meta. Project-local: project:<name>",
     )
     p.add_argument(
         "--focus", default=None,
@@ -544,7 +542,7 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=CEO_MODES,
+        metavar="MODE",
         default="auto",
         help="Run mode (default: auto, respects in-flight cycle)",
     )

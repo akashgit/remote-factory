@@ -24,7 +24,7 @@ import sys
 import structlog
 
 from factory.contained import style
-from factory.contained.prereq import Check, local_checks, render_checks
+from factory.contained.prereq import local_checks, render_checks
 from factory.podman import build_pull_argv, resolve_image
 
 log = structlog.get_logger()
@@ -81,7 +81,9 @@ def _ask_target() -> str:
     print(style.section("What are you setting up?"))
     print(style.note("Pass --target local or --target k8s to skip this question."))
     print()
-    print(f"  {style.bold('1')}) {style.paint('local', 'cyan')}  a podman container on this machine")
+    print(
+        f"  {style.bold('1')}) {style.paint('local', 'cyan')}  a podman container on this machine"
+    )
     print(f"  {style.bold('2')}) {style.paint('k8s', 'cyan')}    a pod on a cluster")
     print(f"  {style.bold('3')}) {style.paint('both', 'cyan')}")
     print()
@@ -140,7 +142,9 @@ def _image_present(reference: str) -> bool:
     from factory.podman import build_image_exists_argv
 
     try:
-        return subprocess.run(build_image_exists_argv(reference), capture_output=True).returncode == 0
+        return (
+            subprocess.run(build_image_exists_argv(reference), capture_output=True).returncode == 0
+        )
     except (FileNotFoundError, PermissionError, OSError):
         return False
 
@@ -154,7 +158,8 @@ def _start_machine() -> None:
     try:
         listed = subprocess.run(
             ["podman", "machine", "list", "--format", "{{.Name}}"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
     except (FileNotFoundError, PermissionError, OSError):
         return
@@ -164,8 +169,3 @@ def _start_machine() -> None:
         return
     print(style.note("The podman engine is not reachable. Starting the podman machine..."))
     subprocess.run(["podman", "machine", "start"])
-
-
-def summarize(checks: list[Check]) -> str:
-    """Shorthand used by `verify`'s callers that want the same rendering as setup."""
-    return render_checks(checks)

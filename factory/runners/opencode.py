@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -48,7 +47,7 @@ class OpenCodeAuthError(Exception):
             "Run 'opencode auth login' to authenticate, "
             "or set a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.). "
             "Alternatively, add keys to a config.toml credential profile: "
-            "[credentials.opencode] ANTHROPIC_API_KEY = \"...\""
+            '[credentials.opencode] ANTHROPIC_API_KEY = "..."'
         )
 
 
@@ -96,7 +95,9 @@ def _check_binary_compat() -> None:
             text=True,
             timeout=10,
         )
-        output = (getattr(result, "stdout", None) or "").strip() + (getattr(result, "stderr", None) or "").strip()
+        output = (getattr(result, "stdout", None) or "").strip() + (
+            getattr(result, "stderr", None) or ""
+        ).strip()
         if re.search(r"\bv?0\.\d+\.\d+", output):
             log.warning(
                 "opencode_binary_v0x_detected",
@@ -114,26 +115,6 @@ def _check_binary_compat() -> None:
         pass
     except subprocess.TimeoutExpired:
         log.debug("opencode_version_check_timeout")
-
-
-def _parse_opencode_output(raw: str) -> tuple[str, str | None]:
-    """Try to parse --format json output from OpenCode v1.x.
-
-    Returns (text, session_id). Falls back to (raw, None) if not parseable.
-    """
-    for line in reversed(raw.strip().splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            data = json.loads(line)
-            text = data.get("content", data.get("text", data.get("message", "")))
-            session_id = data.get("sessionId", data.get("session_id"))
-            if text:
-                return str(text), session_id
-        except (json.JSONDecodeError, AttributeError):
-            continue
-    return raw, None
 
 
 def is_opencode_dry_run() -> bool:
@@ -168,6 +149,7 @@ class OpenCodeRunner:
     @classmethod
     def metadata(cls) -> RunnerMeta:
         from factory.runners.protocol import RunnerMeta
+
         return RunnerMeta(
             name="opencode",
             display_name="OpenCode",
@@ -184,7 +166,9 @@ class OpenCodeRunner:
             custom_auth_check=_has_opencode_auth,
         )
 
-    def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+    def build_command(
+        self, request: AgentRunRequest
+    ) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode v1.x CLI command for headless execution."""
         cwd = Path(request.cwd)
         agents_md_path = cwd / "AGENTS.md"
@@ -211,7 +195,9 @@ class OpenCodeRunner:
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         return cmd, env, temp_files
 
-    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+    def build_interactive_command(
+        self, request: AgentRunRequest
+    ) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command for interactive (TUI) mode."""
         cwd = Path(request.cwd)
         agents_md_path = cwd / "AGENTS.md"
@@ -257,8 +243,17 @@ class OpenCodeRunner:
 
         if is_opencode_dry_run():
             from factory.runners._subprocess import make_dry_run_result
+
             result = make_dry_run_result("opencode", request.role, request.cwd, request.task)
-            log_usage(project_path, request.role, request.cwd, 0.0, 0, dry_run=True, runner_name=_RUNNER_NAME)
+            log_usage(
+                project_path,
+                request.role,
+                request.cwd,
+                0.0,
+                0,
+                dry_run=True,
+                runner_name=_RUNNER_NAME,
+            )
             return result
 
         _check_auth()
@@ -277,13 +272,25 @@ class OpenCodeRunner:
 
         try:
             result = await run_subprocess(
-                cmd, cwd=str(request.cwd), env=env,
-                timeout=request.timeout, runner_name="opencode", role=request.role,
+                cmd,
+                cwd=str(request.cwd),
+                env=env,
+                timeout=request.timeout,
+                runner_name="opencode",
+                role=request.role,
                 sanitize=True,
             )
 
             duration = time.monotonic() - start_time
-            log_usage(project_path, request.role, request.cwd, duration, result.return_code, dry_run=False, runner_name=_RUNNER_NAME)
+            log_usage(
+                project_path,
+                request.role,
+                request.cwd,
+                duration,
+                result.return_code,
+                dry_run=False,
+                runner_name=_RUNNER_NAME,
+            )
 
             return result
         finally:

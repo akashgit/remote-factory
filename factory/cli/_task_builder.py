@@ -1,4 +1,5 @@
 """Build the CEO agent task string from mode and optional context."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,6 +46,19 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "run --mode improve afterward to harden what works. "
             "The full step-by-step playbook is in your system prompt above."
         ),
+        "deep-research": (
+            "\n\nRun Deep Research mode: single-agent iterative research with coverage checking. "
+            "The workflow runs Study → deep_researcher (single agent with internal iteration) → "
+            "CEO coverage gate. "
+            "The researcher performs multiple rounds of WebSearch/WebFetch internally, "
+            "following an inside-out protocol: internal project state first, then external "
+            "search shaped by internal findings. Includes faithfulness checks every iteration. "
+            "The coverage gate is a safety net — it should almost always PROCEED. "
+            "The mode outputs only research-combined.md. "
+            "If --focus is provided, it defines the research topic. Otherwise, research the "
+            "project's domain broadly. Terminal mode — does not chain to build or improve. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
     }
     if mode == "discover":
         if discover_only:
@@ -65,6 +79,76 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
         f"\n\nRun {mode} mode. Follow the step-by-step playbook in your system prompt "
         f"exactly as written — do not add additional steps, research, or ceremony "
         f"beyond what the playbook describes."
+    )
+
+
+def _append_focus_directive(
+    focus: str | None,
+    mode: str,
+    create_description: str | None,
+    issue_numbers: list[int] | None,
+    issue_urls: list[str] | None,
+    issue_number: int | None,
+    issue_url: str | None,
+) -> str:
+    if not focus or create_description or mode == "deep-research":
+        return ""
+    _issue_numbers = issue_numbers or []
+    _issue_urls = issue_urls or []
+    result = f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
+    if _issue_numbers:
+        issue_labels = []
+        for i, num in enumerate(_issue_numbers):
+            label = f"#{num}"
+            if i < len(_issue_urls) and _issue_urls[i]:
+                label += f" ({_issue_urls[i]})"
+            issue_labels.append(label)
+        result += (
+            f"These targets are from issues {', '.join(issue_labels)}. "
+            f"All issue specs have been written to `.factory/strategy/current.md`. "
+            f"Read it for the complete requirements.\n\n"
+        )
+    elif issue_number:
+        issue_label = f"#{issue_number}"
+        if issue_url:
+            issue_label += f" ({issue_url})"
+        result += (
+            f"This target is from issue {issue_label}. "
+            f"The full issue spec has been written to `.factory/strategy/current.md`. "
+            f"Read it for the complete requirements.\n\n"
+        )
+    result += (
+        "Single-item mode. This target has been added to the backlog. "
+        "The Strategist must generate exactly ONE hypothesis for this item. "
+        "No other hypotheses this cycle — no additional backlog clearing, no new items.\n"
+        "After this single experiment completes (keep or revert), skip to final archival. "
+        "Do not loop back for more hypotheses.\n"
+    )
+    if _issue_numbers:
+        nums_str = ", ".join(f"#{n}" for n in _issue_numbers)
+        finalize_flags = " ".join(f"--issue {n}" for n in _issue_numbers)
+        result += (
+            f"\n## Issue Tracking\n\n"
+            f"This cycle is working on issues {nums_str}. "
+            f"When finalizing, pass `{finalize_flags}` to `factory finalize`."
+        )
+    elif issue_number:
+        result += (
+            f"\n## Issue Tracking\n\n"
+            f"This cycle is working on issue #{issue_number}. "
+            f"When finalizing, pass `--issue {issue_number}` to `factory finalize`."
+        )
+    return result
+
+
+def _append_deep_research_topic(task: str, focus: str) -> str:
+    return task + (
+        f"\n\n## Research Topic\n\n"
+        f"**Topic:** {focus}\n\n"
+        f"Focus all research on this specific topic. The deep researcher investigates "
+        f"this topic using the inside-out protocol: internal project context first, "
+        f"then targeted external search. The coverage gate evaluates completeness "
+        f"against this topic.\n"
     )
 
 
@@ -139,28 +223,28 @@ def _build_ceo_task(
         )
     elif just_plan:
         task += (
-            '\n\n## Plan Loop (Just Plan)\n\n'
-            '**just_plan: true**\n\n'
-            'Run the full Plan mode workflow: research + strategy + approval + GitHub publish.\n\n'
-            '1. Check for prior plans (GitHub issues with plan label, .factory/archive/)\n'
-            '2. Run 3 parallel researchers (domain, practices, constraints)\n'
-            '3. CEO review gate\n'
-            '4. Strategist synthesizes phased plan\n'
-            '5. Single user approval gate: Keep this plan?\n'
-            '6. On approval: publish to GitHub + seed backlog\n\n'
-            'Terminal mode — do NOT transition to build or improve.\n'
-            '\n### Post-Approval: GitHub Publish (MANDATORY)\n\n'
-            'After the user approves the plan, you MUST:\n\n'
-            '1. Create the plan label if it does not exist: '
+            "\n\n## Plan Loop (Just Plan)\n\n"
+            "**just_plan: true**\n\n"
+            "Run the full Plan mode workflow: research + strategy + approval + GitHub publish.\n\n"
+            "1. Check for prior plans (GitHub issues with plan label, .factory/archive/)\n"
+            "2. Run 3 parallel researchers (domain, practices, constraints)\n"
+            "3. CEO review gate\n"
+            "4. Strategist synthesizes phased plan\n"
+            "5. Single user approval gate: Keep this plan?\n"
+            "6. On approval: publish to GitHub + seed backlog\n\n"
+            "Terminal mode — do NOT transition to build or improve.\n"
+            "\n### Post-Approval: GitHub Publish (MANDATORY)\n\n"
+            "After the user approves the plan, you MUST:\n\n"
+            "1. Create the plan label if it does not exist: "
             '`gh label create plan --description "Approved plan" --color 0366d6 --force`\n'
-            '2. If --focus targets a GitHub issue number, post the plan as a comment on that issue '
-            'and add the plan label:\n'
-            '   - `gh issue comment <NUMBER> --body-file .factory/strategy/current.md`\n'
-            '   - `gh issue edit <NUMBER> --add-label plan`\n'
-            '3. Otherwise, create a new issue with the plan label:\n'
+            "2. If --focus targets a GitHub issue number, post the plan as a comment on that issue "
+            "and add the plan label:\n"
+            "   - `gh issue comment <NUMBER> --body-file .factory/strategy/current.md`\n"
+            "   - `gh issue edit <NUMBER> --add-label plan`\n"
+            "3. Otherwise, create a new issue with the plan label:\n"
             '   - `gh issue create --title "Plan: <focus>" --body-file .factory/strategy/current.md --label plan`\n'
-            '4. Seed the backlog: extract phase headers from current.md and append to backlog.md\n\n'
-            'Do NOT skip this step. Do NOT exit without publishing.\n'
+            "4. Seed the backlog: extract phase headers from current.md and append to backlog.md\n\n"
+            "Do NOT skip this step. Do NOT exit without publishing.\n"
         )
     elif design_existing:
         task += (
@@ -239,11 +323,10 @@ def _build_ceo_task(
             f"13. __all__ in definitions.py still exports the workflow function\n"
             f"14. factory/workflow/registry.py resolves the mode\n"
             f"15. factory/skill_cache.py will auto-invalidate (no action needed, but verify)\n"
-            f"16. _wizard.py examples are consistent\n"
-            f"17. CLAUDE.md mentions the mode correctly\n"
-            f"18. workflow/README.md references are accurate\n"
-            f"19. Trigger function still returns True for the correct context\n"
-            f"20. Start node is still valid and reachable from all edges\n\n"
+            f"16. CLAUDE.md mentions the mode correctly\n"
+            f"17. workflow/README.md references are accurate\n"
+            f"18. Trigger function still returns True for the correct context\n"
+            f"19. Start node is still valid and reachable from all edges\n\n"
             f"Follow the Create workflow playbook in skills/workflow-create/SKILL.md.\n"
         )
     elif create_description:
@@ -271,52 +354,13 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
-    _issue_numbers = issue_numbers or []
-    _issue_urls = issue_urls or []
-    if focus and not create_description:
-        task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
-        if _issue_numbers:
-            issue_labels = []
-            for i, num in enumerate(_issue_numbers):
-                label = f"#{num}"
-                if i < len(_issue_urls) and _issue_urls[i]:
-                    label += f" ({_issue_urls[i]})"
-                issue_labels.append(label)
-            task += (
-                f"These targets are from issues {', '.join(issue_labels)}. "
-                f"All issue specs have been written to `.factory/strategy/current.md`. "
-                f"Read it for the complete requirements.\n\n"
-            )
-        elif issue_number:
-            issue_label = f"#{issue_number}"
-            if issue_url:
-                issue_label += f" ({issue_url})"
-            task += (
-                f"This target is from issue {issue_label}. "
-                f"The full issue spec has been written to `.factory/strategy/current.md`. "
-                f"Read it for the complete requirements.\n\n"
-            )
-        task += (
-            "Single-item mode. This target has been added to the backlog. "
-            "The Strategist must generate exactly ONE hypothesis for this item. "
-            "No other hypotheses this cycle — no additional backlog clearing, no new items.\n"
-            "After this single experiment completes (keep or revert), skip to final archival. "
-            "Do not loop back for more hypotheses.\n"
-        )
-        if _issue_numbers:
-            nums_str = ", ".join(f"#{n}" for n in _issue_numbers)
-            finalize_flags = " ".join(f"--issue {n}" for n in _issue_numbers)
-            task += (
-                f"\n## Issue Tracking\n\n"
-                f"This cycle is working on issues {nums_str}. "
-                f"When finalizing, pass `{finalize_flags}` to `factory finalize`."
-            )
-        elif issue_number:
-            task += (
-                f"\n## Issue Tracking\n\n"
-                f"This cycle is working on issue #{issue_number}. "
-                f"When finalizing, pass `--issue {issue_number}` to `factory finalize`."
-            )
+    if mode == "deep-research" and focus:
+        task = _append_deep_research_topic(task, focus)
+
+    task += _append_focus_directive(
+        focus, mode, create_description,
+        issue_numbers, issue_urls, issue_number, issue_url,
+    )
 
     if branch:
         task += (

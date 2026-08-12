@@ -14,7 +14,6 @@ import structlog
 
 from factory.models import (
     AggregateMethod,
-    InnerLoopConfig,
     ResearchTarget,
     ResultParseError,
     RunResult,
@@ -63,19 +62,13 @@ def _navigate(data: object, key_path: str) -> float:
         current = current[part]
 
     if isinstance(current, bool):
-        raise ResultParseError(
-            f"value at '{key_path}' is boolean, not numeric: {current!r}"
-        )
+        raise ResultParseError(f"value at '{key_path}' is boolean, not numeric: {current!r}")
     try:
         value = float(current)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise ResultParseError(
-            f"value at '{key_path}' is not numeric: {current!r}"
-        ) from exc
+        raise ResultParseError(f"value at '{key_path}' is not numeric: {current!r}") from exc
     if math.isnan(value) or math.isinf(value):
-        raise ResultParseError(
-            f"value at '{key_path}' is not finite: {current!r}"
-        )
+        raise ResultParseError(f"value at '{key_path}' is not finite: {current!r}")
     return value
 
 
@@ -124,47 +117,10 @@ def save_run_summary(run_dir: Path, summary: dict) -> None:
     log.debug("run_summary_saved", path=str(path))
 
 
-def load_run_summary(run_dir: Path) -> dict | None:
-    """Load ``summary.json`` from the given run directory, or return None."""
-    path = run_dir / "summary.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        log.warning("corrupt_summary_json", path=str(path))
-        return None
-
-
-def list_runs(project_path: Path) -> list[Path]:
-    """List all run directories sorted by name."""
-    runs_dir = project_path / ".factory" / "research" / "runs"
-    if not runs_dir.exists():
-        return []
-    return sorted(p for p in runs_dir.iterdir() if p.is_dir())
-
-
-def write_comparison(
-    project_path: Path, current_id: str, previous_id: str, comparison: str
-) -> None:
-    """Write a comparison report between two runs."""
-    research_dir = ensure_research_dir(project_path)
-    path = research_dir / f"comparison_{previous_id}_vs_{current_id}.md"
-    path.write_text(comparison)
-    log.debug(
-        "comparison_written",
-        path=str(path),
-        current=current_id,
-        previous=previous_id,
-    )
-
-
 # ── run execution ────────────────────────────────────────────────
 
 
-async def execute_run(
-    project_path: Path, config: ResearchTarget, cycle_id: str
-) -> RunResult:
+async def execute_run(project_path: Path, config: ResearchTarget, cycle_id: str) -> RunResult:
     """Execute the run_command from config and return a RunResult."""
     run_dir = create_run_dir(project_path, cycle_id)
     log.info(
@@ -294,13 +250,16 @@ def _save_artifacts(run_dir: Path, result: RunResult, config: ResearchTarget) ->
     """Persist stdout, stderr, and summary to the run directory."""
     (run_dir / "stdout.log").write_text(result.stdout)
     (run_dir / "stderr.log").write_text(result.stderr)
-    save_run_summary(run_dir, {
-        "status": result.status.value,
-        "metric": config.metric,
-        "metric_value": result.metric_value,
-        "duration_seconds": result.duration_seconds,
-        "command": config.run_command,
-    })
+    save_run_summary(
+        run_dir,
+        {
+            "status": result.status.value,
+            "metric": config.metric,
+            "metric_value": result.metric_value,
+            "duration_seconds": result.duration_seconds,
+            "command": config.run_command,
+        },
+    )
 
 
 # ── multi-run aggregation ──────────────────────────────────────
@@ -322,69 +281,3 @@ def aggregate_metric(values: list[float], method: AggregateMethod) -> float:
         return max(values)
     # ALL_PASS: worst run determines the aggregate
     return min(values)
-
-
-async def execute_multi_run(
-    project_path: Path,
-    config: ResearchTarget,
-    cycle_id: str,
-    inner_loop: InnerLoopConfig,
-) -> dict:
-    """Execute the run_command N times, aggregate metrics, return extended summary.
-
-    Returns a dict with top-level ``metric_value`` (aggregate), ``aggregate``
-    method name, and a ``runs`` array with per-run details.
-    """
-    n = inner_loop.runs_per_cycle
-    if inner_loop.max_inner_runs_per_cycle is not None:
-        n = min(n, inner_loop.max_inner_runs_per_cycle)
-
-    runs: list[dict] = []
-    values: list[float] = []
-    total_duration = 0.0
-
-    for i in range(1, n + 1):
-        sub_cycle = f"{cycle_id}-run{i}"
-        log.info("multi_run_start", run=i, total=n, sub_cycle=sub_cycle)
-        result = await execute_run(project_path, config, sub_cycle)
-        run_entry = {
-            "run_id": i,
-            "metric_value": result.metric_value,
-            "duration_seconds": result.duration_seconds,
-            "status": result.status.value,
-        }
-        runs.append(run_entry)
-        total_duration += result.duration_seconds
-        if result.status == RunStatus.PASS:
-            values.append(result.metric_value)
-
-    agg_value = aggregate_metric(values, inner_loop.aggregate) if values else 0.0
-
-    if inner_loop.aggregate == AggregateMethod.all_pass:
-        status = "PASS" if len(values) == n else "FAIL"
-    else:
-        status = "PASS" if values else "FAIL"
-
-    summary = {
-        "status": status,
-        "metric": config.metric,
-        "metric_value": agg_value,
-        "aggregate": inner_loop.aggregate.value,
-        "runs": runs,
-        "duration_seconds": total_duration,
-        "command": config.run_command,
-    }
-
-    run_dir = create_run_dir(project_path, cycle_id)
-    save_run_summary(run_dir, summary)
-
-    log.info(
-        "multi_run_complete",
-        cycle_id=cycle_id,
-        runs_total=n,
-        runs_passed=len(values),
-        aggregate=inner_loop.aggregate.value,
-        metric_value=agg_value,
-    )
-    return summary
-

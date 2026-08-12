@@ -336,7 +336,7 @@ class TestCmdShow:
 class TestCmdValidate:
     def test_unknown_workflow_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch.object(WorkflowRegistry, "get_workflow", return_value=None):
-            args = argparse.Namespace(name="nope", project_path=None)
+            args = argparse.Namespace(name="nope", project_path=None, file=None)
             assert _cmd_validate(args) == 1
         assert "Unknown workflow: nope" in capsys.readouterr().out
 
@@ -347,7 +347,7 @@ class TestCmdValidate:
         wf.edges = [MagicMock()]
 
         with patch.object(WorkflowRegistry, "get_workflow", return_value=wf):
-            args = argparse.Namespace(name="ok_wf", project_path=None)
+            args = argparse.Namespace(name="ok_wf", project_path=None, file=None)
             assert _cmd_validate(args) == 0
 
         out = capsys.readouterr().out
@@ -359,13 +359,63 @@ class TestCmdValidate:
         wf.validate_graph.return_value = ["orphan node X", "missing edge Y"]
 
         with patch.object(WorkflowRegistry, "get_workflow", return_value=wf):
-            args = argparse.Namespace(name="bad_wf", project_path=None)
+            args = argparse.Namespace(name="bad_wf", project_path=None, file=None)
             assert _cmd_validate(args) == 1
 
         out = capsys.readouterr().out
         assert "2 issue(s)" in out
         assert "orphan node X" in out
         assert "missing edge Y" in out
+
+    def test_file_flag_loads_and_validates(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--file flag loads a standalone workflow .py file and validates it."""
+        wf_file = tmp_path / "my_workflow.py"
+        wf_file.write_text(
+            "from factory.workflow.primitives import FnNode, Workflow\n"
+            "\n"
+            'meta = {"name": "my_wf", "description": "Test workflow"}\n'
+            "\n"
+            "def workflow():\n"
+            "    return Workflow(\n"
+            '        name="my_wf",\n'
+            '        nodes={"start": FnNode(id="start", command="echo hi")},\n'
+            "        edges=[],\n"
+            '        start_node="start",\n'
+            "    )\n"
+        )
+        args = argparse.Namespace(name=None, project_path=None, file=str(wf_file))
+        assert _cmd_validate(args) == 0
+
+        out = capsys.readouterr().out
+        assert "VALID" in out
+        assert "my_wf" in out
+
+    def test_file_flag_missing_file_returns_1(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        args = argparse.Namespace(
+            name=None, project_path=None, file=str(tmp_path / "missing.py")
+        )
+        assert _cmd_validate(args) == 1
+        assert "File not found" in capsys.readouterr().out
+
+    def test_file_flag_invalid_file_returns_1(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--file with a file missing meta dict returns 1."""
+        wf_file = tmp_path / "bad.py"
+        wf_file.write_text("def workflow(): pass\n")
+        args = argparse.Namespace(name=None, project_path=None, file=str(wf_file))
+        assert _cmd_validate(args) == 1
+        assert "Failed to load" in capsys.readouterr().out
+
+    def test_no_name_no_file_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Neither name nor --file provided returns an error."""
+        args = argparse.Namespace(name=None, project_path=None, file=None)
+        assert _cmd_validate(args) == 1
+        assert "provide a workflow name or --file" in capsys.readouterr().out
 
 
 # ── _cmd_export_skills ─────────────────────────────────────────

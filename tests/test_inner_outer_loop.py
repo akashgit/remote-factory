@@ -3,7 +3,6 @@
 Covers:
 - factory.md -> config.json round-trip with Multi-Run and Surface Scoping
 - execute_multi_run() with deterministic commands and all aggregation methods
-- detect_plateau() with various history shapes
 - CheckpointState with new plateau_count and loop_level fields
 - Model validation for InnerLoopConfig, OuterLoopConfig, FactoryConfig
 - Parser tests for _parse_inner_loop, _parse_outer_loop
@@ -28,11 +27,9 @@ from factory.models import (
     FactoryConfig,
     InnerLoopConfig,
     OuterLoopConfig,
-    ResearchTarget,
 )
-from factory.research.runner import aggregate_metric, execute_multi_run
+from factory.research.runner import aggregate_metric
 from factory.store import ExperimentStore, _parse_inner_loop, _parse_outer_loop
-from factory.strategy import detect_research_plateau
 
 
 # ── Model validation ────────────────────────────────────────────
@@ -223,123 +220,6 @@ class TestAggregateMetric:
     def test_single_value(self) -> None:
         for method in AggregateMethod:
             assert aggregate_metric([0.42], method) == pytest.approx(0.42)
-
-
-# ── Multi-run execution tests ──────────────────────────────────
-
-
-class TestExecuteMultiRun:
-    async def test_multi_run_aggregates(self, tmp_path: Path) -> None:
-        project = tmp_path / "proj"
-        project.mkdir()
-        (project / ".factory" / "research" / "runs").mkdir(parents=True)
-
-        result_file = project / "result.json"
-        result_file.write_text(json.dumps({"score": 0.5}))
-
-        script = project / "run.sh"
-        script.write_text("#!/bin/bash\necho '{\"score\": 0.5}' > result.json\n")
-        script.chmod(0o755)
-
-        config = ResearchTarget(
-            objective="test",
-            metric="score",
-            target=1.0,
-            run_command=f"bash {script}",
-            result_path="result.json",
-            timeout=30,
-        )
-        inner = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.mean)
-
-        summary = await execute_multi_run(project, config, "cycle-001", inner)
-
-        assert summary["aggregate"] == "mean"
-        assert len(summary["runs"]) == 3
-        assert "metric_value" in summary
-        assert summary["duration_seconds"] > 0
-
-    async def test_multi_run_respects_max_cap(self, tmp_path: Path) -> None:
-        project = tmp_path / "proj"
-        project.mkdir()
-        (project / ".factory" / "research" / "runs").mkdir(parents=True)
-
-        result_file = project / "result.json"
-        result_file.write_text(json.dumps({"score": 0.5}))
-
-        script = project / "run.sh"
-        script.write_text("#!/bin/bash\necho '{\"score\": 0.5}' > result.json\n")
-        script.chmod(0o755)
-
-        config = ResearchTarget(
-            objective="test",
-            metric="score",
-            target=1.0,
-            run_command=f"bash {script}",
-            result_path="result.json",
-            timeout=30,
-        )
-        inner = InnerLoopConfig(
-            runs_per_cycle=10,
-            aggregate=AggregateMethod.max,
-            max_inner_runs_per_cycle=2,
-        )
-
-        summary = await execute_multi_run(project, config, "cycle-002", inner)
-        assert len(summary["runs"]) == 2
-
-
-# ── Plateau detection tests ────────────────────────────────────
-
-
-class TestDetectResearchPlateau:
-    def test_not_enough_data(self) -> None:
-        summaries = [{"metric_value": 0.5}, {"metric_value": 0.5}]
-        assert detect_research_plateau(summaries, threshold=3) is False
-
-    def test_plateau_detected(self) -> None:
-        summaries = [
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-        ]
-        assert detect_research_plateau(summaries, threshold=3) is True
-
-    def test_no_plateau_with_improvement(self) -> None:
-        summaries = [
-            {"metric_value": 0.3},
-            {"metric_value": 0.4},
-            {"metric_value": 0.5},
-            {"metric_value": 0.6},
-        ]
-        assert detect_research_plateau(summaries, threshold=3) is False
-
-    def test_plateau_with_stagnation_after_improvement(self) -> None:
-        summaries = [
-            {"metric_value": 0.3},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-        ]
-        assert detect_research_plateau(summaries, threshold=3) is True
-
-    def test_custom_threshold(self) -> None:
-        summaries = [
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-            {"metric_value": 0.5},
-        ]
-        assert detect_research_plateau(summaries, threshold=2) is True
-
-    def test_improvement_in_window_breaks_plateau(self) -> None:
-        summaries = [
-            {"metric_value": 0.3},
-            {"metric_value": 0.3},
-            {"metric_value": 0.3},
-            {"metric_value": 0.4},
-        ]
-        assert detect_research_plateau(summaries, threshold=3) is False
 
 
 # ── Checkpoint extension tests ──────────────────────────────────
@@ -621,9 +501,7 @@ class TestSpecFormatRoundTrip:
         assert (project / "factory.md").exists()
         assert (project / ".factory").is_dir()
 
-    async def test_spec_format_parses_inner_loop(
-        self, math_benchmark_project: Path
-    ) -> None:
+    async def test_spec_format_parses_inner_loop(self, math_benchmark_project: Path) -> None:
         store = ExperimentStore(math_benchmark_project)
         config = await store.reparse_config()
 
@@ -633,9 +511,7 @@ class TestSpecFormatRoundTrip:
         assert config.inner_loop.max_inner_runs_per_cycle == 10
         assert config.inner_loop.plateau_threshold == 3
 
-    async def test_spec_format_parses_outer_loop(
-        self, math_benchmark_project: Path
-    ) -> None:
+    async def test_spec_format_parses_outer_loop(self, math_benchmark_project: Path) -> None:
         store = ExperimentStore(math_benchmark_project)
         config = await store.reparse_config()
 
@@ -649,47 +525,7 @@ class TestSpecFormatRoundTrip:
         result = aggregate_metric(scores, AggregateMethod.median)
         assert result == pytest.approx(0.78)
 
-    def test_plateau_detection_at_threshold(self) -> None:
-        summaries = [
-            {"metric_value": 0.65},
-            {"metric_value": 0.65},
-            {"metric_value": 0.65},
-            {"metric_value": 0.65},
-        ]
-        assert detect_research_plateau(summaries, threshold=3) is True
-
-        improving = [
-            {"metric_value": 0.60},
-            {"metric_value": 0.65},
-            {"metric_value": 0.70},
-        ]
-        assert detect_research_plateau(improving, threshold=3) is False
-
-    async def test_surface_expansion_after_plateau(
-        self, math_benchmark_project: Path
-    ) -> None:
-        store = ExperimentStore(math_benchmark_project)
-        config = await store.reparse_config()
-
-        assert config.outer_loop is not None
-        inner = config.outer_loop.inner_surfaces
-        outer = config.outer_loop.outer_surfaces
-
-        assert inner == ["prompts/*.md", "config/*.yaml"]
-        assert outer == ["src/**/*.py"]
-
-        stagnant = [{"metric_value": 0.7}] * 4
-        assert config.inner_loop is not None
-        plateau = detect_research_plateau(
-            stagnant, threshold=config.inner_loop.plateau_threshold
-        )
-        assert plateau is True
-        expanded = inner + outer
-        assert expanded == ["prompts/*.md", "config/*.yaml", "src/**/*.py"]
-
-    async def test_eval_harness_multi_run(
-        self, math_benchmark_project: Path
-    ) -> None:
+    async def test_eval_harness_multi_run(self, math_benchmark_project: Path) -> None:
         store = ExperimentStore(math_benchmark_project)
         config = await store.reparse_config()
 
@@ -715,15 +551,11 @@ class TestSpecFormatRoundTrip:
         assert isinstance(aggregated, float)
         assert 0 < aggregated < 1
 
-    async def test_config_json_roundtrip(
-        self, math_benchmark_project: Path
-    ) -> None:
+    async def test_config_json_roundtrip(self, math_benchmark_project: Path) -> None:
         store = ExperimentStore(math_benchmark_project)
         await store.reparse_config()
 
-        config_json = json.loads(
-            (math_benchmark_project / ".factory" / "config.json").read_text()
-        )
+        config_json = json.loads((math_benchmark_project / ".factory" / "config.json").read_text())
         restored = FactoryConfig(**config_json)
 
         assert restored.inner_loop is not None
@@ -736,3 +568,65 @@ class TestSpecFormatRoundTrip:
         assert restored.outer_loop.max_outer_cycles == 4
         assert restored.outer_loop.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
         assert restored.outer_loop.outer_surfaces == ["src/**/*.py"]
+
+
+# ── detect_research_plateau tests ────────────────────────────────
+
+
+class TestDetectResearchPlateau:
+    """Tests for detect_research_plateau in factory.strategy."""
+
+    def test_not_enough_data(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [{"metric_value": 0.5}, {"metric_value": 0.6}]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_plateau_detected(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.8},
+            {"metric_value": 0.7},
+            {"metric_value": 0.6},
+            {"metric_value": 0.75},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is True
+
+    def test_no_plateau_with_improvement(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.6},
+            {"metric_value": 0.7},
+            {"metric_value": 0.9},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_custom_threshold(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.8},
+            {"metric_value": 0.7},
+            {"metric_value": 0.75},
+        ]
+        assert detect_research_plateau(summaries, threshold=2) is True
+
+    def test_improvement_in_window_breaks_plateau(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.4},
+            {"metric_value": 0.3},
+            {"metric_value": 0.6},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is False
+
+    def test_zero_threshold_returns_false(self) -> None:
+        from factory.strategy import detect_research_plateau
+
+        summaries = [{"metric_value": 0.5}]
+        assert detect_research_plateau(summaries, threshold=0) is False

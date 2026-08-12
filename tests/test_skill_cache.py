@@ -5,9 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from factory.skill_cache import _compute_checksum, _sort_recursive, ensure_skills
 from factory.workflow.definitions import register_all
 from factory.workflow.primitives import AgentNode, AgentRole, FnNode, Workflow
+from factory.workflow.registry import WorkflowRegistry
+
+
+@pytest.fixture(autouse=True)
+def _reset_workflow_registry():
+    """Reset WorkflowRegistry state between tests."""
+    WorkflowRegistry.reset()
+    yield
+    WorkflowRegistry.reset()
 
 
 def _make_workflow(name: str = "test", cmd: str = "echo hi") -> Workflow:
@@ -17,6 +28,21 @@ def _make_workflow(name: str = "test", cmd: str = "echo hi") -> Workflow:
         edges=[],
         start_node="a",
     )
+
+
+SAMPLE_WORKFLOW_PY = """\
+from factory.workflow.primitives import FnNode, Workflow
+
+meta = {"name": "test_mode", "description": "A test project-local workflow"}
+
+def workflow():
+    return Workflow(
+        name="test_mode",
+        nodes={"start": FnNode(id="start", command="echo hello")},
+        edges=[],
+        start_node="start",
+    )
+"""
 
 
 class TestComputeChecksum:
@@ -102,12 +128,10 @@ class TestEnsureSkills:
         assert len(first_dirs) == 1
         old_checksum_dir = first_dirs[0]
 
-        different_workflow = {
-            "alt": _make_workflow("alt", "echo changed"),
-        }
+        different_registry = {"alt": lambda: _make_workflow("alt", "echo changed")}
         monkeypatch.setattr(
-            "factory.workflow.definitions.register_all",
-            lambda: different_workflow,
+            "factory.workflow.definitions._get_builtin_registry",
+            lambda: different_registry,
         )
 
         ensure_skills(project)
@@ -130,3 +154,75 @@ class TestEnsureSkills:
         ensure_skills(project)
 
         assert marker.read_text() == "hand-written"
+
+
+class TestProjectLocalWorkflows:
+    def test_discovers_project_local_workflow(self, tmp_path: Path, monkeypatch: object) -> None:
+        """ensure_skills() discovers and generates skills for a project-local workflow."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        wf_dir = project / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "test_mode.py").write_text(SAMPLE_WORKFLOW_PY)
+
+        paths = ensure_skills(project)
+        skill_names = [p.parent.name for p in paths]
+        assert "workflow-test_mode" in skill_names
+
+        skill_md = project / "skills" / "workflow-test_mode" / "SKILL.md"
+        assert skill_md.exists()
+
+    def test_project_local_always_regenerated(self, tmp_path: Path, monkeypatch: object) -> None:
+        """Project-local workflows are always regenerated, not cached."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        wf_dir = project / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "test_mode.py").write_text(SAMPLE_WORKFLOW_PY)
+
+        ensure_skills(project)
+        skill_md = project / "skills" / "workflow-test_mode" / "SKILL.md"
+        first_content = skill_md.read_text()
+
+        updated_py = SAMPLE_WORKFLOW_PY.replace("echo hello", "echo updated")
+        (wf_dir / "test_mode.py").write_text(updated_py)
+
+        ensure_skills(project)
+        second_content = skill_md.read_text()
+        assert second_content != first_content
+
+    def test_builtins_still_use_cache(self, tmp_path: Path, monkeypatch: object) -> None:
+        """Builtin workflows use the cache path, not direct regeneration."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        ensure_skills(project)
+
+        cache_root = tmp_path / ".factory" / "cache" / "skills"
+        cache_dirs = list(cache_root.iterdir())
+        assert len(cache_dirs) == 1
+        cached_skills = list(cache_dirs[0].glob("workflow-*"))
+        assert len(cached_skills) > 0
+
+    def test_project_local_not_in_cache_dir(self, tmp_path: Path, monkeypatch: object) -> None:
+        """Project-local workflow skills go directly to project/skills/, not cache."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        wf_dir = project / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "test_mode.py").write_text(SAMPLE_WORKFLOW_PY)
+
+        ensure_skills(project)
+
+        cache_root = tmp_path / ".factory" / "cache" / "skills"
+        for cache_dir in cache_root.iterdir():
+            cached_names = [d.name for d in cache_dir.iterdir() if d.is_dir()]
+            assert "workflow-test_mode" not in cached_names

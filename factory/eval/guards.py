@@ -47,7 +47,8 @@ def check_git_clean(project_path: Path) -> str | None:
     if not status:
         return None
     significant = [
-        line for line in status.splitlines()
+        line
+        for line in status.splitlines()
         if not line.startswith("??")
         and line.lstrip(" MADRCU?!").split("/")[-1] not in _AUTO_GENERATED_FILES
     ]
@@ -93,14 +94,12 @@ def _glob_match(filepath: str, pattern: str) -> bool:
         if prefix and not filepath.startswith(prefix + "/"):
             return False
 
-        remaining = filepath[len(prefix):].lstrip("/") if prefix else filepath
+        remaining = filepath[len(prefix) :].lstrip("/") if prefix else filepath
 
         if suffix:
             # suffix is a pattern like "*.py" — match it against the filename
             # or any sub-path within the remaining path
-            return fnmatch.fnmatch(remaining, suffix) or fnmatch.fnmatch(
-                remaining, "*/" + suffix
-            )
+            return fnmatch.fnmatch(remaining, suffix) or fnmatch.fnmatch(remaining, "*/" + suffix)
         # No suffix: ** at end matches everything under the prefix
         return True
 
@@ -169,14 +168,6 @@ def check_fixed_surfaces(
     if violated:
         return f"Fixed surface modified: {', '.join(violated)}"
     return None
-
-
-def snapshot_eval_tree(project_path: Path) -> str:
-    """Take a snapshot of eval/ tree for later comparison."""
-    try:
-        return _run_git(["ls-tree", "HEAD", "eval/"], project_path)
-    except subprocess.CalledProcessError:
-        return ""
 
 
 def check_all(

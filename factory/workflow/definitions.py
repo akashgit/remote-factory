@@ -1819,15 +1819,18 @@ def create_workflow() -> Workflow:
             "20 registration points from the CEO task, run factory workflow validate <name>, "
             "regenerate SKILL.md via factory workflow export-skills, update tests, run pytest "
             "and ruff check. "
-            "Otherwise, follow the new-mode checklist: "
-            "1) Add the workflow function to factory/workflow/definitions.py "
-            "2) Register it in register_all() "
-            "3) Add WORKFLOW_META entry in factory/workflow/skill_export.py "
-            "4) Wire --mode in factory/cli.py (build_parser, cmd_ceo, _build_ceo_task) "
-            "5) Run factory workflow validate <name> to verify the graph "
-            "6) Run factory workflow export-skills to generate the SKILL.md "
-            "7) Write tests in tests/ "
-            "8) Run pytest and ruff check to verify "
+            "Otherwise, follow the new-mode checklist for portable workflows: "
+            "1) Create $PROJECT_PATH/.factory/workflows/ directory if it doesn't exist "
+            "2) Write the workflow file to $PROJECT_PATH/.factory/workflows/<name>.py "
+            "3) The file must contain a `meta` dict with `name` and `description` keys, "
+            "and a `workflow()` function returning a Workflow object "
+            "4) Only import from factory.workflow.primitives and stdlib — no other factory internals "
+            "5) Do NOT modify factory/workflow/definitions.py, register_all(), WORKFLOW_META, "
+            "or CLI wiring — the workflow registry discovers .factory/workflows/ automatically "
+            "6) Run factory workflow validate <name> --project-path $PROJECT_PATH to verify the graph "
+            "7) Run factory workflow export-skills --project-path $PROJECT_PATH to generate the SKILL.md "
+            "8) Write tests in tests/ "
+            "9) Run pytest and ruff check to verify "
             "Commit changes and open a draft PR."
         ),
         reads={".factory/strategy/current.md"},
@@ -1841,9 +1844,10 @@ def create_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Read builder output and PR diff. Does work match the approved spec? "
-            "Verify: workflow function exists, registered in register_all(), "
-            "WORKFLOW_META entry added, CLI wiring complete, tests written. "
-            "REDIRECT if any component is missing."
+            "For new modes: verify workflow file exists at .factory/workflows/<name>.py "
+            "with meta dict and workflow() function, NOT patched into definitions.py. "
+            "For existing mode updates: verify definitions.py changes are correct. "
+            "Tests written. REDIRECT if any component is missing."
         ),
         reads={".factory/reviews/builder-latest.md"},
     )
@@ -1851,9 +1855,11 @@ def create_workflow() -> Workflow:
     # Deep-QA verification (replaces monolithic QA)
     dq_nodes, dq_edges = _deep_qa_subgraph(
         adversarial_extra=(
-            "Run: factory workflow validate <name>, factory workflow show <name>, "
-            "factory workflow export-skills --verify. Verify SKILL.md generated under "
-            "skills/workflow-<name>/. Check CLI recognizes --mode <name>. "
+            "For new modes: verify the workflow was written to "
+            ".factory/workflows/<name>.py (NOT to definitions.py). "
+            "Run: factory workflow validate <name> --project-path $PROJECT_PATH, "
+            "factory workflow show <name> --project-path $PROJECT_PATH. "
+            "Verify SKILL.md generated under skills/workflow-<name>/. "
             "Check workflow handles both interactive and headless paths."
         ),
     )
@@ -3973,6 +3979,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "parallel-improve": parallel_improve_workflow,
         "plan": lambda: design_workflow(just_plan=True),
         "evolve": evolve_workflow,
+        "deep-research": lambda: __import__(
+            "factory.workflow.deep_research", fromlist=["workflow"]
+        ).workflow(),
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
         ).workflow(),

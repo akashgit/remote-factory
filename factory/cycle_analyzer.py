@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from factory.workflow.primitives import AgentNode, Workflow
 
@@ -144,9 +144,7 @@ class CycleAnalyzer:
         total = record.kept + record.reverted + record.errored
         record.keep_rate = record.kept / total if total > 0 else 0.0
         record.consecutive_reverts = self._count_trailing_reverts(experiments)
-        record.eval_artifacts = [
-            a for e in experiments for a in e.eval_artifacts
-        ]
+        record.eval_artifacts = [a for e in experiments for a in e.eval_artifacts]
 
         if self.workflow:
             record.node_trace = self._build_node_trace(steps)
@@ -160,15 +158,6 @@ class CycleAnalyzer:
     def trajectory(self) -> list[float]:
         records = self.analyze()
         return records[0].score_trajectory if records else []
-
-    def to_jsonl(self, path: Path) -> None:
-        records = self.analyze()
-        with open(path, "a") as f:
-            for r in records:
-                d = asdict(r)
-                d.pop("node_trace", None)
-                d.pop("steps", None)
-                f.write(json.dumps(d, default=str) + "\n")
 
     # ── Tier 1: events.jsonl ──
 
@@ -205,7 +194,9 @@ class CycleAnalyzer:
                 hypothesis = e["data"].get("hypothesis")
                 begin_idx = begins.get(exp_id)
 
-                begin_ts = events[begin_idx]["timestamp"] if begin_idx is not None else e["timestamp"]
+                begin_ts = (
+                    events[begin_idx]["timestamp"] if begin_idx is not None else e["timestamp"]
+                )
                 end_ts = e["timestamp"]
                 duration = self._ts_diff(begin_ts, end_ts)
 
@@ -218,17 +209,19 @@ class CycleAnalyzer:
                             c = ev["data"].get("total_cost_usd", 0) or 0
                             cost += c
 
-                experiments.append(ExperimentRecord(
-                    exp_id=exp_id,
-                    hypothesis=hypothesis,
-                    verdict=verdict,
-                    score_before=None,
-                    score_after=None,
-                    score_delta=None,
-                    cost_usd=cost,
-                    duration_s=duration,
-                    agents=agents_in_exp,
-                ))
+                experiments.append(
+                    ExperimentRecord(
+                        exp_id=exp_id,
+                        hypothesis=hypothesis,
+                        verdict=verdict,
+                        score_before=None,
+                        score_after=None,
+                        score_delta=None,
+                        cost_usd=cost,
+                        duration_s=duration,
+                        agents=agents_in_exp,
+                    )
+                )
 
         return experiments
 
@@ -273,16 +266,18 @@ class CycleAnalyzer:
                 data = e.get("data", {})
                 started_at = start_event["timestamp"] if start_event else e["timestamp"]
 
-                steps.append(AgentStep(
-                    order=order,
-                    role=role,
-                    started_at=started_at,
-                    duration_s=self._ts_diff(started_at, e["timestamp"]),
-                    cost_usd=None,
-                    output_tokens=None,
-                    succeeded=False,
-                    error=data.get("stderr", data.get("error", "unknown")),
-                ))
+                steps.append(
+                    AgentStep(
+                        order=order,
+                        role=role,
+                        started_at=started_at,
+                        duration_s=self._ts_diff(started_at, e["timestamp"]),
+                        cost_usd=None,
+                        output_tokens=None,
+                        succeeded=False,
+                        error=data.get("stderr", data.get("error", "unknown")),
+                    )
+                )
                 order += 1
 
         return steps
@@ -373,16 +368,18 @@ class CycleAnalyzer:
                         cost = float(row["cost_usd"])
                 except ValueError:
                     pass
-                experiments.append(ExperimentRecord(
-                    exp_id=exp_id,
-                    hypothesis=row.get("hypothesis"),
-                    verdict=row.get("verdict", "error"),
-                    score_before=score_before,
-                    score_after=score_after,
-                    score_delta=score_delta,
-                    cost_usd=cost,
-                    duration_s=0,
-                ))
+                experiments.append(
+                    ExperimentRecord(
+                        exp_id=exp_id,
+                        hypothesis=row.get("hypothesis"),
+                        verdict=row.get("verdict", "error"),
+                        score_before=score_before,
+                        score_after=score_after,
+                        score_delta=score_delta,
+                        cost_usd=cost,
+                        duration_s=0,
+                    )
+                )
         experiments.sort(key=lambda e: e.exp_id)
 
     def _extract_scores_from_tsv(self) -> list[float]:
@@ -484,6 +481,7 @@ class CycleAnalyzer:
     @staticmethod
     def _ts_diff(start: str, end: str) -> float:
         from datetime import datetime
+
         fmt_options = [
             "%Y-%m-%dT%H:%M:%S.%f%z",
             "%Y-%m-%dT%H:%M:%S%z",

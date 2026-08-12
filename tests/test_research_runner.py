@@ -9,7 +9,6 @@ from factory.models import ResearchTarget, ResultParseError, RunStatus
 from factory.research.runner import (
     create_run_dir,
     execute_run,
-    load_run_summary,
     parse_result,
 )
 
@@ -34,7 +33,7 @@ def _config(
 class TestExecuteRunSuccess:
     async def test_pass_with_metric(self, tmp_path: Path) -> None:
         result_path = tmp_path / "results.json"
-        cmd = f'echo ok && echo \'{{"accuracy": 0.95}}\' > {result_path}'
+        cmd = f"echo ok && echo '{{\"accuracy\": 0.95}}' > {result_path}"
         config = _config(tmp_path, command=cmd)
 
         result = await execute_run(tmp_path, config, "cycle-001")
@@ -47,7 +46,7 @@ class TestExecuteRunSuccess:
 
     async def test_artifacts_written(self, tmp_path: Path) -> None:
         result_path = tmp_path / "results.json"
-        cmd = f'echo hello && echo \'{{"accuracy": 0.5}}\' > {result_path}'
+        cmd = f"echo hello && echo '{{\"accuracy\": 0.5}}' > {result_path}"
         config = _config(tmp_path, command=cmd)
 
         result = await execute_run(tmp_path, config, "cycle-002")
@@ -72,7 +71,7 @@ class TestExecuteRunFailure:
 
     async def test_parse_error(self, tmp_path: Path) -> None:
         result_path = tmp_path / "results.json"
-        cmd = f'echo \'{{"wrong_key": 1}}\' > {result_path}'
+        cmd = f"echo '{{\"wrong_key\": 1}}' > {result_path}"
         config = _config(tmp_path, command=cmd)
 
         result = await execute_run(tmp_path, config, "cycle-parse-err")
@@ -170,24 +169,3 @@ class TestCreateRunDir:
         run_dir = create_run_dir(tmp_path, "cycle-001")
         assert run_dir.exists()
         assert run_dir.name == "cycle-001"
-
-
-class TestLoadRunSummary:
-    def test_corrupt_json_returns_none(self, tmp_path: Path) -> None:
-        runs_dir = tmp_path / ".factory" / "research" / "runs" / "c1"
-        runs_dir.mkdir(parents=True)
-        (runs_dir / "summary.json").write_text("{broken")
-        assert load_run_summary(runs_dir) is None
-
-    def test_missing_returns_none(self, tmp_path: Path) -> None:
-        runs_dir = tmp_path / ".factory" / "research" / "runs" / "c1"
-        runs_dir.mkdir(parents=True)
-        assert load_run_summary(runs_dir) is None
-
-    def test_valid_json(self, tmp_path: Path) -> None:
-        runs_dir = tmp_path / ".factory" / "research" / "runs" / "c1"
-        runs_dir.mkdir(parents=True)
-        data = {"status": "PASS", "metric_value": 0.9}
-        (runs_dir / "summary.json").write_text(json.dumps(data))
-        result = load_run_summary(runs_dir)
-        assert result == data

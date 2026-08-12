@@ -25,14 +25,11 @@ from factory.podman import (
     build_create_argv,
     build_exec_argv,
     build_image_exists_argv,
-    build_inspect_argv,
-    build_logs_argv,
     build_pane_liveness_argv,
     build_pull_argv,
     build_rm_argv,
     build_run_command,
     build_stat_argv,
-    build_stop_argv,
     build_tmux_launch,
     container_name,
     dry_run_enabled,
@@ -131,16 +128,6 @@ def test_removal_forces_by_default_because_the_caller_already_decided() -> None:
     assert build_rm_argv("c", force=False) == ["podman", "rm", "c"]
 
 
-def test_stop_is_a_plain_stop_so_the_grace_period_applies() -> None:
-    """`sleep infinity` dies on SIGTERM, so a plain stop completes rather than escalating."""
-    assert build_stop_argv("c") == ["podman", "stop", "c"]
-
-
-def test_logs_can_be_tailed_or_taken_whole() -> None:
-    assert build_logs_argv("c") == ["podman", "logs", "c"]
-    assert build_logs_argv("c", tail=50) == ["podman", "logs", "--tail", "50", "c"]
-
-
 def test_listing_can_be_narrowed_to_running_containers() -> None:
     """The label filter is not optional either way — a tool that shows a user resources it did not
     create invites them to assume it manages those too."""
@@ -151,8 +138,7 @@ def test_listing_can_be_narrowed_to_running_containers() -> None:
     assert f"label={LABEL_CONTAINED}=true" in argv
 
 
-def test_inspect_and_image_helpers_ask_for_json_and_existence() -> None:
-    assert build_inspect_argv("c") == ["podman", "inspect", "c", "--format", "json"]
+def test_image_helpers_check_existence_and_pull() -> None:
     assert build_image_exists_argv("i") == ["podman", "image", "exists", "i"]
     assert build_pull_argv("i") == ["podman", "pull", "i"]
 

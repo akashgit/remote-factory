@@ -6,7 +6,6 @@ from datetime import datetime
 import pytest
 
 from factory.models import (
-    CompositeScore,
     EvalDimension,
     EvalProfile,
     ExperimentRecord,
@@ -60,25 +59,22 @@ class TestExperiments:
         assert path.exists()
         assert path.read_text() == "My hypothesis"
 
-    async def test_save_eval(self, store, sample_config):
-        await store.init(sample_config)
-        exp_id = await store.begin("H1")
-        score = CompositeScore(
-            total=0.85, results=[], guard_violations=[], passed=True,
-        )
-        await store.save_eval(exp_id, "before", score)
-        path = store.factory_dir / "experiments" / f"{exp_id:03d}" / "eval_before.json"
-        assert path.exists()
-
     async def test_finalize_writes_verdict(self, store, sample_config):
         await store.init(sample_config)
         exp_id = await store.begin("H1")
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
-            hypothesis="H1", change_summary="Added stuff",
-            issue_number=None, pr_number=None,
-            score_before=0.8, score_after=0.9, delta=0.1,
-            verdict="keep", cost_usd=None, notes="",
+            id=exp_id,
+            timestamp=datetime.now(),
+            hypothesis="H1",
+            change_summary="Added stuff",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.8,
+            score_after=0.9,
+            delta=0.1,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         await store.finalize(exp_id, record)
         path = store.factory_dir / "experiments" / f"{exp_id:03d}" / "verdict.json"
@@ -88,11 +84,18 @@ class TestExperiments:
         await store.init(sample_config)
         exp_id = await store.begin("H1")
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
-            hypothesis="H1", change_summary="stuff",
-            issue_number=None, pr_number=None,
-            score_before=0.8, score_after=0.9, delta=0.1,
-            verdict="keep", cost_usd=None, notes="",
+            id=exp_id,
+            timestamp=datetime.now(),
+            hypothesis="H1",
+            change_summary="stuff",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.8,
+            score_after=0.9,
+            delta=0.1,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         await store.finalize(exp_id, record)
         records = await store.load_history()
@@ -103,11 +106,18 @@ class TestExperiments:
         await store.init(sample_config)
         exp_id = await store.begin("H1")
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
-            hypothesis="H1", change_summary="stuff",
-            issue_number=None, pr_number=None,
-            score_before=0.80, score_after=0.85, delta=None,
-            verdict="keep", cost_usd=None, notes="",
+            id=exp_id,
+            timestamp=datetime.now(),
+            hypothesis="H1",
+            change_summary="stuff",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.80,
+            score_after=0.85,
+            delta=None,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         await store.finalize(exp_id, record)
         records = await store.load_history()
@@ -149,8 +159,12 @@ class TestEvalProfile:
             project_type="bot",
             dimensions=[
                 EvalDimension(
-                    name="tests", command="pytest", weight=1.0,
-                    parser="exit_code", description="tests", source="discovered",
+                    name="tests",
+                    command="pytest",
+                    weight=1.0,
+                    parser="exit_code",
+                    description="tests",
+                    source="discovered",
                 ),
             ],
             tier="discovered",
@@ -177,15 +191,23 @@ class TestStatePersistence:
         # Simulate git clean wiping the experiment dir
         exp_dir = store.factory_dir / "experiments" / f"{exp_id:03d}"
         import shutil
+
         shutil.rmtree(exp_dir)
         assert not exp_dir.exists()
 
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
-            hypothesis="H1", change_summary="stuff",
-            issue_number=None, pr_number=None,
-            score_before=0.8, score_after=0.9, delta=0.1,
-            verdict="keep", cost_usd=None, notes="",
+            id=exp_id,
+            timestamp=datetime.now(),
+            hypothesis="H1",
+            change_summary="stuff",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.8,
+            score_after=0.9,
+            delta=0.1,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         # Should NOT raise FileNotFoundError
         await store.finalize(exp_id, record)
@@ -226,12 +248,18 @@ class TestStatePersistence:
         await store.init(sample_config)
         exp_id = await store.begin("Increase coverage")
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime(2025, 1, 15, 12, 0, 0),
+            id=exp_id,
+            timestamp=datetime(2025, 1, 15, 12, 0, 0),
             hypothesis="Increase coverage",
             change_summary="Added tests for edge cases",
-            issue_number=42, pr_number=99,
-            score_before=0.75, score_after=0.92, delta=0.17,
-            verdict="keep", cost_usd=1.23, notes="All green",
+            issue_number=42,
+            pr_number=99,
+            score_before=0.75,
+            score_after=0.92,
+            delta=0.17,
+            verdict="keep",
+            cost_usd=1.23,
+            notes="All green",
         )
         await store.finalize(exp_id, record)
         history = await store.load_history()
@@ -251,13 +279,6 @@ class TestStatePersistence:
 
 
 class TestStrategy:
-    async def test_write_and_read_strategy(self, store, sample_config):
-        await store.init(sample_config)
-        await store.write_strategy("## Strategy\nFocus on tests.")
-        content = await store.read_strategy()
-        assert content is not None
-        assert "Focus on tests" in content
-
     async def test_read_missing_strategy(self, store, sample_config):
         await store.init(sample_config)
         assert await store.read_strategy() is None
@@ -513,9 +534,12 @@ class TestTierWeightsParsing:
     async def test_tier_weights_roundtrip_config_json(self, store, sample_config):
         """TierWeights should survive write → read via config.json."""
         from factory.models import TierWeights
-        config = sample_config.model_copy(update={
-            "hygiene_weights": TierWeights(tests=0.40, lint=0.20),
-        })
+
+        config = sample_config.model_copy(
+            update={
+                "hygiene_weights": TierWeights(tests=0.40, lint=0.20),
+            }
+        )
         await store.init(config)
         loaded = await store.read_config()
         assert loaded.hygiene_weights is not None

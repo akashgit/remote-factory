@@ -12,7 +12,6 @@ each visible at the call site rather than accumulated by prefix matching.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 # Set in the environment the factory runs with inside the container. Everything that has to behave
@@ -20,12 +19,6 @@ from dataclasses import dataclass, field
 # there is one answer to "am I contained?" and one place to change it. The `FACTORY_` prefix is
 # deliberate: the forwarding policy below carries it inward without a special case.
 CONTAINED_ENV_VAR = "FACTORY_CONTAINED"
-
-
-def in_contained(env: dict[str, str] | None = None) -> bool:
-    """True when this process is the factory running inside a `factory contained` runtime."""
-    source = os.environ if env is None else env
-    return source.get(CONTAINED_ENV_VAR, "").strip().lower() in ("1", "true", "yes")
 
 
 @dataclass(frozen=True)
@@ -61,9 +54,9 @@ class EnvPolicy:
 # forwarding it either puts the contained factory into a mode it was never asked for or points it
 # at a directory that does not exist inside.
 _HOST_ONLY_FACTORY_KEYS = (
-    "FACTORY_CONTAINED_DRY_RUN",   # a decision about this invocation, not the contained one
-    "FACTORY_CONTAINED_HOME",      # a host path; inside, the workspace is already the workspace
-    "FACTORY_CONTAINED_IMAGE",     # already resolved into the plan by the time this is composed
+    "FACTORY_CONTAINED_DRY_RUN",  # a decision about this invocation, not the contained one
+    "FACTORY_CONTAINED_HOME",  # a host path; inside, the workspace is already the workspace
+    "FACTORY_CONTAINED_IMAGE",  # already resolved into the plan by the time this is composed
 )
 
 CONTAINED_ENV_POLICY = EnvPolicy(
@@ -82,15 +75,6 @@ _REDACTED = "<redacted>"
 
 def is_secret_key(key: str) -> bool:
     return any(fragment in key.upper() for fragment in _SECRET_KEY_FRAGMENTS)
-
-
-def redact_env(env: dict[str, str], policy: EnvPolicy) -> dict[str, str]:
-    """Mask secret-looking forwarded values so they cannot reach logs or evidence files."""
-    pinned = dict(policy.substitutions)
-    return {
-        key: (value if key in pinned or not is_secret_key(key) else _REDACTED)
-        for key, value in env.items()
-    }
 
 
 def redact_argv(argv: list[str], policy: EnvPolicy) -> list[str]:

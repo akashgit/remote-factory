@@ -210,6 +210,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
         "completed": {},
         "gate_results": {},
         "iteration_counts": {},
+        "feedback_log": {},
         "status": "active",
     }
 
@@ -378,6 +379,22 @@ def tool_submit(project_path: Path, node_id: str, output: str) -> str:
 
     state["completed"][node_id] = output
     _emit_event(project_path, "workflow.tool.submit", node=node_id)
+
+    if isinstance(wf.nodes.get(node_id), GateNode) and output.strip().startswith("RETRY"):
+        import re as _re
+        target_m = _re.search(r'target=(\S+)', output)
+        feedback_m = _re.search(r'feedback="([^"]*)"', output)
+        if target_m:
+            reloop_target = target_m.group(1)
+            feedback_text = feedback_m.group(1) if feedback_m else output[:500]
+            feedback_log = state.setdefault("feedback_log", {})
+            entries = feedback_log.setdefault(reloop_target, [])
+            entries.append({
+                "gate": node_id,
+                "iteration": len([e for e in entries if e["gate"] == node_id]) + 1,
+                "feedback": feedback_text[:500],
+                "timestamp": time.time(),
+            })
 
     node = wf.nodes.get(node_id)
     if isinstance(node, AgentNode) and node.writes:
@@ -584,6 +601,101 @@ def _format_progress(
     return "\n".join(lines)
 
 
+def _find_loop_context(
+    nid: str, wf: Workflow, state: dict, project_path: Path,
+) -> str:
+    """Build a LOOP CONTEXT section for a node that is a RELOOP target.
+
+    Returns an empty string when nid is not a reloop target. Otherwise,
+    always returns a markdown section showing the loop topology, gate
+    criteria, and iteration count — even on the first invocation (iteration
+    0). The feedback history subsection is only included when feedback
+    entries exist (i.e. after at least one RELOOP).
+    """
+    reloop_edges = [
+        e for e in wf.edges
+        if e.target == nid and e.condition == VerdictType.RELOOP
+    ]
+    if not reloop_edges:
+        return ""
+
+    topo = state.get("topo_order", [])
+    iteration_counts = state.get("iteration_counts", {})
+    feedback_log = state.get("feedback_log", {})
+
+    from factory.workflow.primitives import Edge as _Edge
+    latest_entry: dict | None = None
+    latest_gate_edge: _Edge | None = None
+    entries_for_node = feedback_log.get(nid, [])
+    if entries_for_node:
+        latest_entry = max(entries_for_node, key=lambda e: e.get("timestamp", 0))
+        for e in reloop_edges:
+            if e.source == latest_entry.get("gate"):
+                latest_gate_edge = e
+                break
+
+    active_edge = latest_gate_edge or reloop_edges[0]
+    gate_id = active_edge.source
+    iter_key = f"{gate_id}->{nid}"
+    count = iteration_counts.get(iter_key, 0)
+    max_iter = 3
+
+    lines: list[str] = [
+        "",
+        "## LOOP CONTEXT",
+        f"Iteration: {count}/{max_iter}",
+    ]
+    if count >= max_iter:
+        lines.append("⚠ FINAL ATTEMPT — this is the last iteration before HALT")
+
+    gate_node = wf.nodes.get(gate_id)
+    lines.append(f"Triggered by: {gate_id}")
+    if isinstance(gate_node, GateNode):
+        if gate_node.gate_prompt:
+            prompt_text = gate_node.gate_prompt.replace("{project_path}", str(project_path))
+            lines.append(f"Gate criteria: {prompt_text}")
+        if gate_node.evaluator_command:
+            cmd_text = gate_node.evaluator_command.replace("{project_path}", str(project_path))
+            lines.append(f"Gate command: {cmd_text}")
+
+    try:
+        nid_idx = topo.index(nid)
+        gate_idx = topo.index(gate_id)
+    except ValueError:
+        nid_idx = gate_idx = -1
+
+    if 0 <= nid_idx < gate_idx:
+        loop_path = topo[nid_idx:gate_idx + 1]
+        lines.append("")
+        lines.append("### Loop topology")
+        for loop_nid in loop_path:
+            loop_node = wf.nodes.get(loop_nid)
+            if loop_node is None:
+                continue
+            parts = [f"- **{loop_nid}**"]
+            if isinstance(loop_node, AgentNode):
+                parts.append(f"(agent: {loop_node.role.value})")
+                if loop_node.reads:
+                    parts.append(f"reads: {', '.join(sorted(loop_node.reads))}")
+                if loop_node.writes:
+                    parts.append(f"writes: {', '.join(sorted(loop_node.writes))}")
+            elif isinstance(loop_node, GateNode):
+                parts.append(f"(gate: {loop_node.evaluator_type})")
+            elif isinstance(loop_node, FnNode):
+                parts.append("(fn)")
+            lines.append(" ".join(parts))
+
+    if entries_for_node:
+        lines.append("")
+        lines.append("### Feedback history")
+        recent = sorted(entries_for_node, key=lambda e: e.get("timestamp", 0))[-2:]
+        for entry in recent:
+            fb_text = entry.get("feedback", "")[:500]
+            lines.append(f"- [{entry.get('gate', '?')} iter {entry.get('iteration', '?')}] {fb_text}")
+
+    return "\n".join(lines)
+
+
 def _format_node_task(
     nid: str, node: object, wf: Workflow, state: dict, project_path: Path,
 ) -> str:
@@ -635,6 +747,10 @@ def _format_node_task(
         lines.append("Type: Fork")
         lines.append(f"Targets: {', '.join(node.targets)}")
         lines.append("Execute all targets (listed as subsequent nodes).")
+
+    loop_ctx = _find_loop_context(nid, wf, state, project_path)
+    if loop_ctx:
+        lines.append(loop_ctx)
 
     return "\n".join(lines)
 
@@ -769,6 +885,15 @@ def _auto_evaluate_fn_gate(
             iter_key = f"{nid}->{reloop_target}"
             count = state["iteration_counts"].get(iter_key, 0) + 1
             state["iteration_counts"][iter_key] = count
+
+            feedback_log = state.setdefault("feedback_log", {})
+            entries = feedback_log.setdefault(reloop_target, [])
+            entries.append({
+                "gate": nid,
+                "iteration": count,
+                "feedback": gate_output[:500],
+                "timestamp": time.time(),
+            })
 
             if count <= 3:
                 if reloop_target in order:

@@ -189,10 +189,10 @@ def _chain_modes(
     from factory.state import detect_state
 
     if completed_mode:
-        from factory.workflow.definitions import register_all
+        from factory.workflow.registry import WorkflowRegistry
 
-        workflows = register_all()
-        if completed_mode in workflows and workflows[completed_mode].terminal:
+        wf = WorkflowRegistry.get_workflow(completed_mode, project_path)
+        if wf and wf.terminal:
             print(
                 f"[factory] Terminal mode completed: {completed_mode} "
                 "— skipping post-completion chaining",
