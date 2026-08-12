@@ -19,6 +19,7 @@ from factory.workflow.primitives import (
     GateNode,
     JoinNode,
     Study,
+    _role_str,
 )
 
 log = structlog.get_logger()
@@ -132,7 +133,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
         writes = ", ".join(sorted(node.writes)) if node.writes else "-"
 
         if isinstance(node, AgentNode):
-            ntype = f"Agent({node.role.value})"
+            ntype = f"Agent({_role_str(node.role)})"
         elif isinstance(node, GateNode):
             ntype = f"Gate({node.evaluator_type})"
         elif isinstance(node, ForkNode):

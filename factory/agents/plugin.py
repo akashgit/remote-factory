@@ -6,11 +6,14 @@ import functools
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
 import yaml
 
 from factory.ace.injector import inject_playbook
 from factory.ace.paths import DEFAULTS_DIR as _PLAYBOOKS_DIR
 from factory.agents.runner import _PROMPTS_DIR
+
+_log = structlog.get_logger()
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
 _PLUGIN_AGENTS_DIR_CANDIDATE = Path(__file__).resolve().parent.parent.parent / "agents"
@@ -105,9 +108,8 @@ def _sandbox_mode(role: str) -> str:
         return "read-only"
     if role in _WORKSPACE_WRITE_ROLES:
         return "workspace-write"
-    raise ValueError(
-        f"Unknown role {role!r}: not in _READ_ONLY_ROLES or _WORKSPACE_WRITE_ROLES"
-    )
+    _log.warning("custom_role_sandbox_default", role=role, sandbox_mode="workspace-write")
+    return "workspace-write"
 
 
 def _escape_toml_multiline_literal(text: str) -> str:

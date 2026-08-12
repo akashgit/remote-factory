@@ -1828,6 +1828,9 @@ def create_workflow() -> Workflow:
             "6) Run factory workflow export-skills to generate the SKILL.md "
             "7) Write tests in tests/ "
             "8) Run pytest and ruff check to verify "
+            "9) If the workflow defines custom agent roles not in the built-in AgentRole enum, "
+            "create corresponding prompt files at .factory/agents/<role>.md with clear "
+            "instructions for the role's purpose, output format, and factory conventions "
             "Commit changes and open a draft PR."
         ),
         reads={".factory/strategy/current.md"},

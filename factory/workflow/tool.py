@@ -21,6 +21,7 @@ from factory.workflow.primitives import (
     Study,
     VerdictType,
     Workflow,
+    _role_str,
 )
 from factory.workflow.registry import WorkflowRegistry
 from factory.workflow.skill_export import _topological_sort
@@ -91,6 +92,13 @@ def _rebuild_workflow(cache_data: dict) -> Workflow:
     from factory.workflow.primitives import AgentRole, Edge, VerdictType
 
     from factory.workflow.primitives import NodeType
+
+    def _parse_role(raw: str) -> AgentRole | str:
+        try:
+            return AgentRole(raw)
+        except ValueError:
+            return raw
+
     nodes: dict[str, NodeType] = {}
     for nid, info in cache_data["nodes"].items():
         ntype = info["type"]
@@ -104,7 +112,7 @@ def _rebuild_workflow(cache_data: dict) -> Workflow:
         if ntype == "AgentNode":
             nodes[nid] = AgentNode(
                 **common,  # type: ignore[arg-type]
-                role=AgentRole(info["role"]),
+                role=_parse_role(info["role"]),
                 model=info.get("model", ""),
                 prompt_template=info.get("prompt_template", ""),
                 timeout=info.get("timeout"),
@@ -116,7 +124,7 @@ def _rebuild_workflow(cache_data: dict) -> Workflow:
                 evaluator_type=info.get("evaluator_type", "agent"),
                 evaluator_command=info.get("evaluator_command"),
                 gate_prompt=info.get("gate_prompt", ""),
-                evaluator_role=AgentRole(info["evaluator_role"]) if info.get("evaluator_role") else None,
+                evaluator_role=_parse_role(info["evaluator_role"]) if info.get("evaluator_role") else None,
             )
         elif ntype == "Study":
             nodes[nid] = Study(
@@ -239,7 +247,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
             "writes": sorted(node.writes),
         }
         if isinstance(node, AgentNode):
-            node_info["role"] = node.role.value
+            node_info["role"] = _role_str(node.role)
             node_info["model"] = node.model
             node_info["prompt_template"] = node.prompt_template
             node_info["timeout"] = node.timeout
@@ -249,7 +257,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
             node_info["evaluator_command"] = node.evaluator_command
             node_info["gate_prompt"] = node.gate_prompt
             if node.evaluator_role:
-                node_info["evaluator_role"] = node.evaluator_role.value
+                node_info["evaluator_role"] = _role_str(node.evaluator_role)
         elif isinstance(node, Study):
             node_info["command"] = node.command
             node_info["focus"] = node.focus
@@ -542,7 +550,7 @@ def _phase_label(nid: str, node: object) -> str:
     name = nid.replace("_", " ").title()
 
     if isinstance(node, AgentNode):
-        role = node.role.value.replace("_", " ").title()
+        role = _role_str(node.role).replace("_", " ").title()
         return role if role.lower() in name.lower() else f"{role} — {name}"
     elif isinstance(node, GateNode):
         gate_name = nid.replace("gate_", "").replace("_", " ").title()
@@ -674,7 +682,7 @@ def _find_loop_context(
                 continue
             parts = [f"- **{loop_nid}**"]
             if isinstance(loop_node, AgentNode):
-                parts.append(f"(agent: {loop_node.role.value})")
+                parts.append(f"(agent: {_role_str(loop_node.role)})")
                 if loop_node.reads:
                     parts.append(f"reads: {', '.join(sorted(loop_node.reads))}")
                 if loop_node.writes:
@@ -703,7 +711,7 @@ def _format_node_task(
     lines = [f"Node: {nid}"]
 
     if isinstance(node, AgentNode):
-        role = node.role.value
+        role = _role_str(node.role)
         pool_cfg: AgentConfig | None = DEFAULT_AGENT_POOL.get(role)
         model = node.model or (pool_cfg.model if pool_cfg else "opus")
         timeout = node.timeout or (pool_cfg.timeout if pool_cfg else 600)
@@ -798,7 +806,7 @@ def _detect_artifact(
         return session_start <= 0 or f.stat().st_mtime >= session_start
 
     if isinstance(node, AgentNode):
-        role = node.role.value
+        role = _role_str(node.role)
         tag = nid.replace(f"{role}_", "").replace(role, "")
         if tag and tag != nid:
             tagged_file = reviews_dir / f"{role}-{tag}-latest.md"

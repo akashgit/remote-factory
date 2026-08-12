@@ -5,9 +5,12 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from factory.models import FactoryConfig, ProjectState
+
+log = structlog.get_logger()
 
 
 # ── agent pool ───────────────────────────────────────────────────
@@ -27,12 +30,17 @@ class AgentRole(str, Enum):
     SKILL_REVIEWER = "skill_reviewer"
 
 
+def _role_str(role: AgentRole | str) -> str:
+    """Extract the string value from an AgentRole enum or pass through a plain string."""
+    return role.value if isinstance(role, AgentRole) else role
+
+
 class AgentConfig(BaseModel):
     """Configuration for an agent in the pool."""
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    role: AgentRole
+    role: AgentRole | str
     model: str
     timeout: int = 600
 
@@ -130,7 +138,7 @@ class AgentNode(Node):
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    role: AgentRole
+    role: AgentRole | str
     model: str = ""
     prompt_template: str = ""
     tools: list[str] = Field(default_factory=list)
@@ -155,7 +163,7 @@ class GateNode(Node):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     evaluator_type: Literal["agent", "fn", "user"] = "agent"
-    evaluator_role: AgentRole | None = None
+    evaluator_role: AgentRole | str | None = None
     evaluator_command: str | None = None
     gate_prompt: str = ""
 

@@ -11,7 +11,7 @@ import csv
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from factory.workflow.primitives import AgentNode, Workflow
+from factory.workflow.primitives import AgentNode, Workflow, _role_str
 
 
 @dataclass
@@ -457,7 +457,7 @@ class CycleAnalyzer:
         if not self.workflow:
             return None
         for nid, node in self.workflow.nodes.items():
-            if isinstance(node, AgentNode) and node.role.value == role:
+            if isinstance(node, AgentNode) and _role_str(node.role) == role:
                 return nid
         return None
 

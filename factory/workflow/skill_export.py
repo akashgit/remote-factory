@@ -30,6 +30,7 @@ from factory.workflow.primitives import (
     SubgraphForkNode,
     VerdictType,
     Workflow,
+    _role_str,
 )
 from factory.workflow.templates import emit
 
@@ -328,7 +329,7 @@ def _agent_to_instruction(
     is_parallel: bool = False,
 ) -> str:
     """Convert an AgentNode to a CLI invocation instruction with template slots."""
-    role = node.role.value
+    role = _role_str(node.role)
     pool_entry = DEFAULT_AGENT_POOL.get(role)
     default_timeout = node.timeout or (pool_entry.timeout if pool_entry else 600)
     model_flag = " --model haiku" if role == "archivist" else ""
@@ -531,7 +532,7 @@ def _gate_to_checkpoint(
     else:
         gate_prompt_slot = emit(f"gate_prompt_{node.id}", node.gate_prompt)
         ann = [
-            f"<!-- gate: GateNode id={node.id} evaluator_type=agent evaluator_role={node.evaluator_role.value if node.evaluator_role else 'CEO'} -->",
+            f"<!-- gate: GateNode id={node.id} evaluator_type=agent evaluator_role={_role_str(node.evaluator_role) if node.evaluator_role else 'CEO'} -->",
             f"<!-- reads: {reads_ann} -->",
             f"<!-- edges: {edges_str} -->",
         ]
@@ -790,7 +791,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             phase_num += 1
 
         elif isinstance(node, AgentNode):
-            role_title = node.role.value.replace("_", " ").title()
+            role_title = _role_str(node.role).replace("_", " ").title()
             node_title = nid.replace("_", " ").title()
             if role_title.lower() in node_title.lower():
                 section_title = node_title

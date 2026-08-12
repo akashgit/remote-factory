@@ -17,6 +17,7 @@ from factory.workflow.primitives import (
     FnNode,
     GateNode,
     Workflow,
+    _role_str,
 )
 
 PROMPTS_DIR = Path(__file__).parent.parent / "agents" / "prompts"
@@ -45,9 +46,9 @@ def _extract_agent_prompts(workflow: Workflow) -> dict[str, str]:
 
     for node in workflow.nodes.values():
         if isinstance(node, AgentNode):
-            roles.add(node.role.value)
+            roles.add(_role_str(node.role))
         elif isinstance(node, GateNode) and node.evaluator_role:
-            roles.add(node.evaluator_role.value)
+            roles.add(_role_str(node.evaluator_role))
 
     prompts: dict[str, str] = {}
     for role in sorted(roles):
@@ -87,14 +88,14 @@ def _extract_node_summary(workflow: Workflow) -> dict[str, dict[str, Any]]:
     for node_id, node in workflow.nodes.items():
         info: dict[str, Any] = {"type": type(node).__name__}
         if isinstance(node, AgentNode):
-            info["role"] = node.role.value
+            info["role"] = _role_str(node.role)
             info["blocking"] = node.blocking
             if node.timeout:
                 info["timeout"] = node.timeout
         elif isinstance(node, GateNode):
             info["evaluator_type"] = node.evaluator_type
             if node.evaluator_role:
-                info["evaluator_role"] = node.evaluator_role.value
+                info["evaluator_role"] = _role_str(node.evaluator_role)
         elif isinstance(node, FnNode):
             info["command"] = node.command[:80]
         if node.reads:

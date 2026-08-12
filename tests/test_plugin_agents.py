@@ -204,9 +204,8 @@ class TestSandboxMode:
                 f"{role} is in both _READ_ONLY_ROLES and _WORKSPACE_WRITE_ROLES"
             )
 
-    def test_unknown_role_raises(self):
-        with pytest.raises(ValueError, match="Unknown role"):
-            _sandbox_mode("nonexistent_role")
+    def test_unknown_role_defaults_to_workspace_write(self):
+        assert _sandbox_mode("nonexistent_role") == "workspace-write"
 
     def test_researcher_is_read_only(self):
         assert _sandbox_mode("researcher") == "read-only"

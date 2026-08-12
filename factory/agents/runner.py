@@ -28,6 +28,9 @@ AgentRole = Literal[
     "refactory",
 ]
 
+# User-level agent prompts directory
+_USER_AGENTS_DIR = Path.home() / ".factory" / "agents"
+
 # Consecutive failure tracking
 _consecutive_failures: int = 0
 _FAILURE_ABORT_THRESHOLD: int = 2
@@ -72,7 +75,7 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 def resolve_prompt(
-    role: AgentRole,
+    role: str,
     project_path: Path | None = None,
     *,
     use_profile: bool = False,
@@ -82,7 +85,8 @@ def resolve_prompt(
 
     Resolution order:
     1. Project-specific override: <project>/.factory/agents/<role>.md
-    2. Factory default: factory/agents/prompts/<role>.md
+    2. User-level: ~/.factory/agents/<role>.md
+    3. Factory default: factory/agents/prompts/<role>.md
 
     When *use_profile* is True, loads ~/.factory/profile.md and appends it
     after the ACE playbook injection.
@@ -110,14 +114,30 @@ def resolve_prompt(
                 prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
             return prompt
 
+    # Check for user-level override
+    user_path = _USER_AGENTS_DIR / f"{role}.md"
+    if user_path.exists():
+        logger.info("Using user-level prompt for %s: %s", role, user_path)
+        prompt = user_path.read_text()
+        playbook = load_playbook(role)
+        if playbook:
+            prompt = inject_playbook(prompt, playbook)
+            logger.info("Injected playbook for %s (user override)", role)
+        if use_profile:
+            prompt = _maybe_inject_profile(prompt, role)
+        if role == "ceo" and workflow_mode and project_path is not None:
+            prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
+        return prompt
+
     # Fall back to factory default
     default_path = _PROMPTS_DIR / f"{role}.md"
     if not default_path.exists():
-        override_hint = (
-            f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
-        )
+        searched = [str(default_path)]
+        searched.append(str(user_path))
+        if project_path is not None:
+            searched.append(str(project_path / ".factory" / "agents" / f"{role}.md"))
         raise FileNotFoundError(
-            f"No prompt found for agent role '{role}'. Expected at {default_path}{override_hint}"
+            f"No prompt found for agent role '{role}'. Searched: {', '.join(searched)}"
         )
 
     prompt = default_path.read_text()
@@ -162,7 +182,7 @@ def _maybe_inject_skill(prompt: str, project_path: Path, workflow_mode: str) -> 
 
 
 async def invoke_agent(
-    role: AgentRole,
+    role: str,
     task: str,
     project_path: Path,
     *,
@@ -537,7 +557,7 @@ def complete_cycle_session(
 
 
 async def invoke_agents_parallel(
-    tasks: list[tuple[AgentRole, str]],
+    tasks: list[tuple[str, str]],
     project_path: Path,
     *,
     timeout: float = 600.0,

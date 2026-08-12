@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from factory.workflow.primitives import AgentNode, ArtifactCheck, Workflow
+from factory.workflow.primitives import AgentNode, ArtifactCheck, Workflow, _role_str
 
 
 def checks_to_bash(checks: list[ArtifactCheck], node_id: str) -> str:
@@ -128,7 +128,7 @@ def generate_hook_script(workflow: Workflow) -> str:
         verify = compile_agent_verification(node)
         if not verify:
             continue
-        role = node.role.value
+        role = _role_str(node.role)
         agent_checks.append((role, verify))
 
     if not agent_checks:

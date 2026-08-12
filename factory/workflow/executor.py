@@ -37,6 +37,7 @@ from factory.workflow.primitives import (
     Verdict,
     VerdictType,
     Workflow,
+    _role_str,
 )
 
 log = structlog.get_logger()
@@ -811,6 +812,8 @@ class WorkflowExecutor:
         """Invoke an agent via factory/agents/runner.py."""
         from factory.agents.runner import invoke_agent
 
+        role = _role_str(node.role)
+
         task = node.prompt_template
         context = self.node_context.get(node.id, "")
         if context:
@@ -818,18 +821,24 @@ class WorkflowExecutor:
 
         model = node.model
         if not model:
-            pool_entry = self.agent_pool.get(node.role.value)
+            pool_entry = self.agent_pool.get(role)
             if pool_entry:
                 model = pool_entry.model
+            else:
+                model = "sonnet"
+                log.info("custom_role_pool_default", role=role, model="sonnet", timeout=600)
 
         timeout = node.timeout
         if timeout is None:
-            pool_entry = self.agent_pool.get(node.role.value)
+            pool_entry = self.agent_pool.get(role)
             if pool_entry:
                 timeout = pool_entry.timeout
+            else:
+                timeout = 600
+                log.info("custom_role_pool_default", role=role, model=model, timeout=600)
 
         stdout, code = await invoke_agent(
-            node.role.value,  # type: ignore[arg-type]
+            role,
             task,
             self.project_path,
             model=model or None,
@@ -837,7 +846,7 @@ class WorkflowExecutor:
         )
 
         if code != 0:
-            raise RuntimeError(f"agent {node.role.value} exited with code {code}")
+            raise RuntimeError(f"agent {role} exited with code {code}")
 
         return stdout
 
