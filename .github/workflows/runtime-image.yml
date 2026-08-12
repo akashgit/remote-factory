@@ -46,6 +46,8 @@ env:
 
 jobs:
   build:
+    # Only run on upstream repository, not on forks
+    if: github.repository == 'akashgit/remote-factory'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -104,6 +106,8 @@ jobs:
           retention-days: 1
 
   manifest:
+    # Only run on upstream repository, not on forks
+    if: github.repository == 'akashgit/remote-factory'
     needs: build
     runs-on: ubuntu-latest
     permissions:
