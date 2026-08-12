@@ -253,6 +253,19 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
     p.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
     p.add_argument("--steps-per-epoch", type=int, default=1, help="Steps per epoch")
 
+    opt_step_parser = sub.add_parser("optimize-step", help="Workflow node helpers for optimize graph")
+    opt_step_sub = opt_step_parser.add_subparsers(dest="optimize_step_command")
+    p_rd = opt_step_sub.add_parser("run-dev", help="Run benchmark dev split")
+    p_rd.add_argument("--project", required=True, help="Path to the project")
+    p_rt = opt_step_sub.add_parser("run-test", help="Run benchmark test split")
+    p_rt.add_argument("--project", required=True, help="Path to the project")
+    p_ap = opt_step_sub.add_parser("apply-patch", help="Apply mutation rules to current skill")
+    p_ap.add_argument("--project", required=True, help="Path to the project")
+    p_cg = opt_step_sub.add_parser("check-gate", help="Check optimization gate verdict")
+    p_cg.add_argument("--project", required=True, help="Path to the project")
+    p_cg.add_argument("--baseline", action="store_true", default=False,
+                       help="Check baseline score instead of improvement gate")
+
     p = sub.add_parser("optimize", help="Run inner-outer optimization loop with HarborBenchmark")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--benchmark", default="searchqa", choices=["searchqa", "featurebench", "auto"],
@@ -268,6 +281,8 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
     p.add_argument("--model", default="sonnet", help="Model for AgenticMutator (default: sonnet)")
     p.add_argument("--split-seed", type=int, default=42, help="Seed for reproducible split generation (default: 42)")
     p.add_argument("--splits-dir", default=None, help="Path to pre-generated JSONL split files")
+    p.add_argument("--legacy", action="store_true", default=False,
+                    help="Use legacy OptimizationLoop instead of workflow graph")
 
 
 def add_configuration_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]

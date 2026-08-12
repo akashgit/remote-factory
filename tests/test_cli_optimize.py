@@ -95,9 +95,26 @@ class TestOptimizeDynamicArgs:
             git_ref=None,
             docker_host=None,
             model="sonnet",
+            split_seed=42,
+            splits_dir=None,
+            legacy=True,
         )
         result = cmd_optimize(args)
         assert result == 1
+
+
+class TestLegacyFlag:
+    """Verify --legacy flag routing."""
+
+    def test_legacy_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["optimize", "/tmp/proj", "--legacy"])
+        assert args.legacy is True
+
+    def test_legacy_flag_default_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["optimize", "/tmp/proj"])
+        assert args.legacy is False
 
 
 class TestCmdOptimize:
@@ -114,14 +131,16 @@ class TestCmdOptimize:
             git_ref=None,
             docker_host=None,
             model="sonnet",
+            legacy=False,
         )
         result = cmd_optimize(args)
         assert result == 1
 
-    def test_invalid_benchmark_returns_1(self, tmp_path) -> None:
+    def test_legacy_invalid_benchmark_returns_1(self, tmp_path) -> None:
         args = argparse.Namespace(
             path=str(tmp_path),
             benchmark="invalid_benchmark",
+            benchmark_dir=None,
             skill_path=None,
             steps=1,
             epochs=1,
@@ -129,11 +148,14 @@ class TestCmdOptimize:
             git_ref=None,
             docker_host=None,
             model="sonnet",
+            split_seed=42,
+            splits_dir=None,
+            legacy=True,
         )
         result = cmd_optimize(args)
         assert result == 1
 
-    def test_successful_run_returns_0(self, tmp_path) -> None:
+    def test_legacy_successful_run_returns_0(self, tmp_path) -> None:
         from factory.optimization.loop import TrainResult
         from factory.optimization.types import StepRecord
 
@@ -150,6 +172,7 @@ class TestCmdOptimize:
         args = argparse.Namespace(
             path=str(tmp_path),
             benchmark="searchqa",
+            benchmark_dir=None,
             skill_path=None,
             steps=2,
             epochs=1,
@@ -157,9 +180,12 @@ class TestCmdOptimize:
             git_ref="main",
             docker_host=None,
             model="sonnet",
+            split_seed=42,
+            splits_dir=None,
+            legacy=True,
         )
 
-        with patch("factory.optimization.loop.OptimizationLoop") as mock_loop_cls, \
+        with patch("factory.optimization.OptimizationLoop") as mock_loop_cls, \
              patch("factory.optimization.benchmarks.harbor.HarborBenchmark"), \
              patch("factory.optimization.benchmarks.searchqa.SearchQAEvaluator"), \
              patch("factory.optimization.mutators.agentic.AgenticMutator"):
@@ -168,7 +194,33 @@ class TestCmdOptimize:
 
         assert result == 0
 
-    def test_skill_path_loaded(self, tmp_path) -> None:
+    def test_workflow_mode_writes_state(self, tmp_path) -> None:
+        """Non-legacy mode writes initial state files and calls workflow."""
+        args = argparse.Namespace(
+            path=str(tmp_path),
+            benchmark="searchqa",
+            skill_path=None,
+            steps=1,
+            concurrency=5,
+            git_ref="main",
+            docker_host=None,
+            model="sonnet",
+            legacy=False,
+        )
+
+        import json
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            # Pre-write state so summary reads succeed
+            opt_dir = tmp_path / ".factory" / "optimization"
+            result = cmd_optimize(args)
+            assert (opt_dir / "current_skill.md").exists()
+            state = json.loads((opt_dir / "state.json").read_text())
+            assert state["step"] == 0
+            assert state["history"] == []
+
+    def test_legacy_skill_path_loaded(self, tmp_path) -> None:
         from factory.optimization.loop import TrainResult
 
         skill_file = tmp_path / "skill.md"
@@ -179,6 +231,7 @@ class TestCmdOptimize:
         args = argparse.Namespace(
             path=str(tmp_path),
             benchmark="searchqa",
+            benchmark_dir=None,
             skill_path=str(skill_file),
             steps=1,
             epochs=1,
@@ -186,9 +239,12 @@ class TestCmdOptimize:
             git_ref="main",
             docker_host=None,
             model="sonnet",
+            split_seed=42,
+            splits_dir=None,
+            legacy=True,
         )
 
-        with patch("factory.optimization.loop.OptimizationLoop") as mock_loop_cls, \
+        with patch("factory.optimization.OptimizationLoop") as mock_loop_cls, \
              patch("factory.optimization.benchmarks.harbor.HarborBenchmark"), \
              patch("factory.optimization.benchmarks.searchqa.SearchQAEvaluator"), \
              patch("factory.optimization.mutators.agentic.AgenticMutator"):

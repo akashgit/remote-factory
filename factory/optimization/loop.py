@@ -49,6 +49,9 @@ class OptimizationLoop:
         mutator: Mutator,
         config: LoopConfig | None = None,
     ) -> None:
+        log.warning(
+            "OptimizationLoop is deprecated; use 'factory optimize' (workflow mode) instead",
+        )
         self.project_dir = Path(project_dir).resolve()
         self.surface = surface
         self.executor = executor
