@@ -8,7 +8,6 @@ from factory.workflow.definitions import register_all
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
-    FnNode,
     GateNode,
     VerdictType,
 )
@@ -22,14 +21,25 @@ class TestFeaturebenchWorkflow:
         assert wf.name == "featurebench"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 4 nodes: study, builder, gate_verify, auto_merge."""
+        """Workflow has exactly 10 nodes for the two-loop QA pipeline."""
         wf = workflow()
-        assert len(wf.nodes) == 4
-        assert set(wf.nodes.keys()) == {"study", "builder", "gate_verify", "auto_merge"}
+        assert len(wf.nodes) == 10
+        assert set(wf.nodes.keys()) == {
+            "researcher",
+            "strategist",
+            "builder",
+            "code_reviewer",
+            "gate_review",
+            "adversarial_tester",
+            "gate_qa",
+            "health_checker",
+            "gate_tests",
+            "archivist",
+        }
 
     def test_start_node(self) -> None:
         wf = workflow()
-        assert wf.start_node == "study"
+        assert wf.start_node == "researcher"
 
     def test_graph_validates(self) -> None:
         """Graph passes structural validation (DAG check, edge consistency)."""
@@ -38,17 +48,15 @@ class TestFeaturebenchWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """4 edges: study->builder, builder->gate, gate->merge, gate->builder RELOOP."""
+        """12 edges for the two-loop architecture."""
         wf = workflow()
-        assert len(wf.edges) == 4
+        assert len(wf.edges) == 12
 
-    def test_study_node_is_fn(self) -> None:
+    def test_researcher_node(self) -> None:
         wf = workflow()
-        node = wf.nodes["study"]
-        assert isinstance(node, FnNode)
-        assert "*.py" in node.command
-        assert "task-instruction" in node.command
-        assert "NotImplementedError" in node.command
+        node = wf.nodes["researcher"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
 
     def test_builder_node(self) -> None:
         wf = workflow()
@@ -56,68 +64,122 @@ class TestFeaturebenchWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
-        assert node.timeout == 7200
-        assert "interface" in node.prompt_template.lower()
-        assert "nameerror" in node.prompt_template.lower()
-        assert "cross-file" in node.prompt_template.lower()
+        assert node.timeout == 1200
 
-    def test_gate_verify_is_fn_evaluator(self) -> None:
-        """Gate uses fn evaluator (not agent) for speed and determinism."""
+    def test_code_reviewer_node(self) -> None:
         wf = workflow()
-        node = wf.nodes["gate_verify"]
+        node = wf.nodes["code_reviewer"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.CODE_REVIEWER
+        assert node.timeout == 900
+
+    def test_gate_review_is_fn_evaluator(self) -> None:
+        wf = workflow()
+        node = wf.nodes["gate_review"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "pass:" in node.evaluator_command
-        assert "reloop:" in node.evaluator_command
-        assert "fail:" in node.evaluator_command
+        assert "CRITICAL_FOUND" in node.evaluator_command
 
-    def test_auto_merge_node(self) -> None:
+    def test_adversarial_tester_node(self) -> None:
         wf = workflow()
-        node = wf.nodes["auto_merge"]
-        assert isinstance(node, FnNode)
-        assert "git update-ref" in node.command
+        node = wf.nodes["adversarial_tester"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.ADVERSARIAL_TESTER
+        assert node.timeout == 1800
 
-    def test_proceed_edge_to_merge(self) -> None:
-        """gate_verify has a PROCEED edge to auto_merge."""
+    def test_gate_qa_is_agent_evaluator(self) -> None:
+        wf = workflow()
+        node = wf.nodes["gate_qa"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_type == "agent"
+        assert node.evaluator_role == AgentRole.CEO
+
+    def test_gate_tests_is_fn_evaluator(self) -> None:
+        wf = workflow()
+        node = wf.nodes["gate_tests"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_type == "fn"
+        assert node.evaluator_command is not None
+        assert "RESOLVED" in node.evaluator_command
+
+    def test_archivist_non_blocking(self) -> None:
+        wf = workflow()
+        node = wf.nodes["archivist"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.ARCHIVIST
+        assert node.blocking is False
+        assert node.model == "haiku"
+
+    def test_proceed_edge_gate_review(self) -> None:
         wf = workflow()
         proceed_edges = [
             e for e in wf.edges
-            if e.source == "gate_verify"
-            and e.target == "auto_merge"
+            if e.source == "gate_review"
+            and e.target == "adversarial_tester"
             and e.condition == VerdictType.PROCEED
         ]
         assert len(proceed_edges) == 1
 
-    def test_reloop_edge_exists(self) -> None:
-        """gate_verify has a RELOOP edge back to builder."""
+    def test_halt_edge_gate_review(self) -> None:
+        wf = workflow()
+        halt_edges = [
+            e for e in wf.edges
+            if e.source == "gate_review"
+            and e.target == "health_checker"
+            and e.condition == VerdictType.HALT
+        ]
+        assert len(halt_edges) == 1
+
+    def test_qa_reloop_edge(self) -> None:
+        """gate_qa has a RELOOP edge back to builder."""
         wf = workflow()
         reloop_edges = [
             e for e in wf.edges
-            if e.source == "gate_verify"
+            if e.source == "gate_qa"
             and e.target == "builder"
             and e.condition == VerdictType.RELOOP
         ]
         assert len(reloop_edges) == 1
 
+    def test_test_reloop_edge(self) -> None:
+        """gate_tests has a RELOOP edge back to builder."""
+        wf = workflow()
+        reloop_edges = [
+            e for e in wf.edges
+            if e.source == "gate_tests"
+            and e.target == "builder"
+            and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop_edges) == 1
+
+    def test_proceed_edge_to_archivist(self) -> None:
+        wf = workflow()
+        proceed_edges = [
+            e for e in wf.edges
+            if e.source == "gate_tests"
+            and e.target == "archivist"
+            and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed_edges) == 1
+
     def test_no_eval_infrastructure(self) -> None:
-        """No factory eval nodes (begin, finalize, precheck, study)."""
+        """No factory experiment tracking nodes."""
         wf = workflow()
         node_ids = set(wf.nodes.keys())
         assert "begin" not in node_ids
         assert "finalize" not in node_ids
         assert "gate_precheck" not in node_ids
+
+    def test_no_user_gates(self) -> None:
+        """Workflow is fully autonomous — no user approval gates."""
+        wf = workflow()
         for node in wf.nodes.values():
-            if isinstance(node, FnNode):
-                assert "factory eval" not in node.command
-                assert "factory finalize" not in node.command
-                assert "factory precheck" not in node.command
-                assert "factory begin" not in node.command
+            if isinstance(node, GateNode):
+                assert node.evaluator_type != "user"
 
 
 class TestFeaturebenchTerminal:
-    """Tests for the terminal flag on featurebench workflow."""
-
     def test_workflow_is_terminal(self) -> None:
         wf = workflow()
         assert wf.terminal is True
@@ -128,15 +190,12 @@ class TestFeaturebenchTerminal:
 
 
 class TestFeaturebenchTrigger:
-    """Tests for the trigger function."""
-
     def test_trigger_matches_featurebench_mode(self) -> None:
         wf = workflow()
         assert wf.trigger is not None
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "featurebench"})
 
     def test_trigger_matches_without_factory(self) -> None:
-        """Trigger fires on mode alone, regardless of project state."""
         wf = workflow()
         assert wf.trigger is not None
         assert wf.trigger(ProjectState.NO_REPO, {"mode": "featurebench"})
@@ -151,8 +210,6 @@ class TestFeaturebenchTrigger:
 
 
 class TestFeaturebenchRegistration:
-    """Tests for registration in the global workflow registry."""
-
     def test_registered_in_register_all(self) -> None:
         workflows = register_all()
         assert "featurebench" in workflows
@@ -170,10 +227,11 @@ class TestFeaturebenchRegistration:
 
 
 class TestFeaturebenchMeta:
-    """Tests for the module-level meta dict."""
-
     def test_meta_has_name(self) -> None:
         assert meta["name"] == "featurebench"
 
     def test_meta_has_description(self) -> None:
-        assert "featurebench" in meta["description"].lower() or "FeatureBench" in meta["description"]
+        assert "FeatureBench" in meta["description"]
+
+    def test_meta_mentions_two_loop(self) -> None:
+        assert "two-loop" in meta["description"]
