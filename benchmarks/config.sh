@@ -4,7 +4,7 @@
 # benchmark_all_names, and benchmark_instance_id.
 
 benchmark_all_names() {
-    echo "swebench featurebench terminalbench programbench harborindex tomswe salitrap"
+    echo "swebench mini-swebench featurebench terminalbench programbench harborindex tomswe salitrap"
 }
 
 benchmark_config() {
@@ -63,6 +63,12 @@ benchmark_config() {
         tomswe)
             BENCH_DATASET='swe-bench/swe-bench-verified'
             BENCH_AGENT_CLASS="factory_harbor_agent:TomsweFactoryCeo"
+            BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
+            BENCH_FILTER_STYLE="glob"
+            ;;
+        mini-swebench)
+            BENCH_DATASET="swe-bench/swe-bench-verified"
+            BENCH_AGENT_CLASS="factory_harbor_agent:MiniSwebenchFactoryCeo"
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
             BENCH_FILTER_STYLE="glob"
             ;;

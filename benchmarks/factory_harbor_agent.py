@@ -535,6 +535,35 @@ class SwebenchFactoryCeo(FactoryCeo):
         )
 
 
+class MiniSwebenchFactoryCeo(FactoryCeo):
+    """Runs the mini-swebench workflow (LLMNode — direct API, bash-only tool)."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "mini-swebench-factory-ceo"
+
+    @override
+    async def install(self, environment: BaseEnvironment) -> None:
+        await super().install(environment)
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+                'pip install "anthropic[vertex]" 2>/dev/null || true'
+            ),
+        )
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run mini-swebench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
 class LegacybenchFactoryCeo(FactoryCeo):
     """Runs the deterministic legacybench workflow instead of generic factory ceo."""
 

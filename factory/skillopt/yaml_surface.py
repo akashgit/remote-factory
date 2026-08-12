@@ -164,15 +164,17 @@ def yaml_to_workflow(
 
     surface = load_yaml(yaml_path)
 
+    wf: Workflow
     if workflow is not None:
         wf = workflow.model_copy(deep=True)
     else:
         from factory.workflow.definitions import register_all
 
         workflows = register_all()
-        wf = workflows.get(workflow_name)
-        if not wf:
+        resolved = workflows.get(workflow_name)
+        if not resolved:
             raise ValueError(f"Unknown workflow: {workflow_name}")
+        wf = resolved
 
     for node_id, node_data in surface.items():
         if not isinstance(node_data, dict):

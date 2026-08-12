@@ -222,8 +222,9 @@ def _find_trial_dir(jobs_dir: str, instance_id: str) -> Path | None:
 def _parse_trial_trajectory(trial_dir: Path) -> str:
     parts: list[str] = []
 
-    llm_trace = trial_dir / "agent" / "llm-trace.log"
-    if not llm_trace.exists() or llm_trace.stat().st_size == 0:
+    llm_trace_path = trial_dir / "agent" / "llm-trace.log"
+    llm_trace: Path | None = llm_trace_path
+    if not llm_trace_path.exists() or llm_trace_path.stat().st_size == 0:
         llm_trace = None
         for candidate in trial_dir.rglob("llm-trace.log"):
             if candidate.stat().st_size > 0:
