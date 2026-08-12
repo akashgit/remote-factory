@@ -3,8 +3,6 @@ name: Benchmark CI
 on:
   push:
     branches: [main]
-    # Disable CI on fork - only run on upstream
-    if: github.repository == 'akashgit/remote-factory'
   workflow_dispatch:
     inputs:
       benchmark:
@@ -59,6 +57,8 @@ permissions:
 
 jobs:
   benchmark:
+    # Only run on upstream repository, not on forks
+    if: github.repository == 'akashgit/remote-factory'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
