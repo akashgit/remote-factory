@@ -26,6 +26,7 @@ AgentRole = Literal[
     "refiner",
     "profiler",
     "refactory",
+    "lumen_context_agent",
 ]
 
 # Consecutive failure tracking

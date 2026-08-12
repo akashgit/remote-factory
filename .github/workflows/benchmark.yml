@@ -3,6 +3,8 @@ name: Benchmark CI
 on:
   push:
     branches: [main]
+    # Disable CI on fork - only run on upstream
+    if: github.repository == 'akashgit/remote-factory'
   workflow_dispatch:
     inputs:
       benchmark:
