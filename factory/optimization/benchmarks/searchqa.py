@@ -58,7 +58,7 @@ class SearchQAEvaluator:
 
 def create_searchqa_splits(
     tasks_dir: Path,
-    dev_size: int = 80,
+    dev_size: int = 20,
     eval_ratio: float = 0.10,
     test_ratio: float = 0.10,
     seed: int = 42,
