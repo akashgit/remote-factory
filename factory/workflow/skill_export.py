@@ -597,6 +597,20 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
         if isinstance(workflow.nodes.get(tid), AgentNode)
     ]
     if agent_nodes:
+        # Calculate the maximum timeout among all parallel agents
+        max_timeout = max(
+            (node.timeout or 600 for node in agent_nodes),
+            default=600
+        )
+
+        # Add timeout guidance if max_timeout exceeds Bash tool's default (120s)
+        if max_timeout > 120:
+            lines.append("")
+            lines.append(
+                f"\n**Important:** Run ALL commands above in a **single** Bash tool call "
+                f"with timeout set to at least {max_timeout} seconds.\n"
+            )
+
         from factory.workflow.verification import compile_fork_verification
 
         verify_script = compile_fork_verification(agent_nodes)

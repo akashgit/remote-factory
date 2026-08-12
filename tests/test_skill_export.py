@@ -39,6 +39,7 @@ def _make_agent(
     prompt: str = "",
     reads: set[str] | None = None,
     writes: set[str] | None = None,
+    timeout: int | None = None,
 ) -> AgentNode:
     return AgentNode(
         id=id,
@@ -47,6 +48,7 @@ def _make_agent(
         prompt_template=prompt,
         reads=reads or set(),
         writes=writes or set(),
+        timeout=timeout,
     )
 
 
@@ -238,6 +240,34 @@ class TestForkToInstruction:
         result = _fork_to_instruction(fork, wf)
         assert "factory agent" not in result
         assert "wait" in result
+
+    def test_fork_includes_timeout_guidance_when_needed(self) -> None:
+        """When parallel agents have timeout > 120s, emit timeout guidance for Bash tool."""
+        r1 = _make_agent("researcher_a", AgentRole.RESEARCHER, timeout=600)
+        r2 = _make_agent("researcher_b", AgentRole.RESEARCHER, timeout=600)
+        fork = ForkNode(id="fork_research", targets=["researcher_a", "researcher_b"])
+        wf = _minimal_workflow(
+            nodes={"fork_research": fork, "researcher_a": r1, "researcher_b": r2},
+            start="fork_research",
+        )
+        result = _fork_to_instruction(fork, wf)
+        assert "Important:" in result
+        assert "single" in result.lower()
+        assert "Bash tool" in result
+        assert "600 seconds" in result
+
+    def test_fork_omits_timeout_guidance_when_not_needed(self) -> None:
+        """When all parallel agents have timeout <= 120s, no timeout guidance needed."""
+        r1 = _make_agent("researcher_a", AgentRole.RESEARCHER, timeout=100)
+        r2 = _make_agent("researcher_b", AgentRole.RESEARCHER, timeout=120)
+        fork = ForkNode(id="fork_research", targets=["researcher_a", "researcher_b"])
+        wf = _minimal_workflow(
+            nodes={"fork_research": fork, "researcher_a": r1, "researcher_b": r2},
+            start="fork_research",
+        )
+        result = _fork_to_instruction(fork, wf)
+        assert "Important:" not in result
+        assert "Bash tool" not in result
 
 
 # ── _gate_to_checkpoint ─────────────────────────────────────────
