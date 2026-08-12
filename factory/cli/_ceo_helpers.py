@@ -74,7 +74,9 @@ def _tool_exec_protocol(wt_path: Path) -> str:
             f"{overview}\n"
         )
 
-    protocol += (
+    no_lookahead = os.environ.get("FACTORY_TOOL_NO_LOOKAHEAD") == "1"
+
+    commands = (
         "\n## Commands\n"
         "\n"
         f"  factory workflow tool next {p}\n"
@@ -83,6 +85,15 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "  TOOL_OUTPUT\n"
         f"  factory workflow tool status {p}\n"
         f"  factory workflow tool curr {p}\n"
+    )
+    if not no_lookahead:
+        commands += (
+            f"  factory workflow tool peek {p} --node <NODE_ID>\n"
+            f"  factory workflow tool lookahead {p} --count 5\n"
+        )
+
+    protocol += commands
+    protocol += (
         "\n"
         "## Protocol\n"
         "\n"
@@ -99,6 +110,28 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         '   call "submit" with your verdict (PROCEED, RETRY, or HALT)\n'
         "6. If RETRY: the tool rewinds — run \"next\" to get the retry task\n"
         "7. If DONE: report completion\n"
+    )
+
+    if not no_lookahead:
+        protocol += (
+            "\n"
+            "## Loop Context — Automatic Downstream Visibility\n"
+            "\n"
+            "When you run \"next\" and land on a node that is part of a loop (e.g., "
+            "builder → QA gates → RELOOP back to builder), the tool automatically "
+            "appends LOOP CONTEXT showing every step in that loop: gate criteria, "
+            "agent roles, artifact contracts, and what triggers a RELOOP.\n"
+            "\n"
+            "Use this context to craft better agent tasks — include the success "
+            "criteria from downstream gates, specify which artifacts to produce, "
+            "and warn about checks the agent's output must pass. This is injected "
+            "automatically; no extra command needed.\n"
+            "\n"
+            'You can also use "peek --node <NODE_ID>" to inspect any specific node, '
+            'or "lookahead --count N" to see the next N nodes.\n'
+        )
+
+    protocol += (
         "\n"
         "## Important\n"
         "\n"

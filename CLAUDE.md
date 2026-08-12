@@ -75,7 +75,7 @@ Spawned via `factory ceo /path` or `factory run /path`. The CEO receives `ceo.md
 
 ### Layer 4: Specialist Agents (`factory/agents/`)
 
-Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Roles can be `AgentRole` enum values or custom strings. Agent prompts are resolved via `factory/agents/runner.py` with a three-tier lookup: project-specific override (`.factory/agents/<role>.md`) → user-level (`~/.factory/agents/<role>.md`) → factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
 **Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), QA (health check + code review + adversarial QA), Archivist (record), Refiner (scope refinements), Failure Analyst (research mode), CEO (orchestrate).
 
