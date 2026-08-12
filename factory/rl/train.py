@@ -23,7 +23,28 @@ def main() -> None:
         help="Rollouts per prompt (default: 8, production: 64)",
     )
     parser.add_argument(
-        "--mock", action="store_true", default=True, help="Use mock rollouts (default: True)"
+        "--mock", action=argparse.BooleanOptionalAction, default=True,
+        help="Use mock rollouts (default: True, use --no-mock for real vLLM)",
+    )
+    parser.add_argument(
+        "--vllm-url", default="http://localhost:8000/v1",
+        help="vLLM server base URL (default: http://localhost:8000/v1)",
+    )
+    parser.add_argument(
+        "--vllm-model", default="meta-llama/Llama-3.1-8B-Instruct",
+        help="Model name on the vLLM server",
+    )
+    parser.add_argument(
+        "--api-key", default="EMPTY",
+        help="API key for vLLM server (default: EMPTY)",
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=0.8,
+        help="Sampling temperature (default: 0.8)",
+    )
+    parser.add_argument(
+        "--max-tokens", type=int, default=4096,
+        help="Max tokens per completion (default: 4096)",
     )
 
     args = parser.parse_args()
@@ -51,14 +72,33 @@ def main() -> None:
     prompts = prompts_data["prompts"]
     print(f"Loaded {len(prompts)} prompts")
 
-    # 2. Generate rollouts (MOCK)
+    # 2. Generate rollouts
     if args.mock:
         from factory.rl.mock_rollout import generate_mock_rollouts
 
         all_rollouts = generate_mock_rollouts(prompts, args.num_rollouts_per_prompt)
     else:
-        print("ERROR: Real vLLM not implemented yet")
-        sys.exit(1)
+        from factory.rl.vllm_client import VLLMClient
+        from factory.rl.vllm_rollout import generate_vllm_rollouts
+
+        client = VLLMClient(base_url=args.vllm_url, model=args.vllm_model)
+        if not client.is_available():
+            print(f"ERROR: vLLM server not reachable at {args.vllm_url}")
+            print("Start a vLLM server or use --mock for testing")
+            client.close()
+            sys.exit(1)
+        client.close()
+
+        all_rollouts = generate_vllm_rollouts(
+            prompts,
+            args.num_rollouts_per_prompt,
+            vllm_url=args.vllm_url,
+            vllm_model=args.vllm_model,
+            api_key=args.api_key,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            task_type=args.task,
+        )
 
     print(f"Generated {len(all_rollouts)} rollouts")
 
