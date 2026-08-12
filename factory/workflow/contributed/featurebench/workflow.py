@@ -165,12 +165,7 @@ def workflow() -> Workflow:
             "   The FeatureBench harness extracts changes via git diff, so commits are required.\n\n"
             "Write a summary of what was implemented to .factory/reviews/builder-latest.md."
         ),
-        reads={
-            ".factory/strategy/current.md",
-            ".factory/reviews/health-check.md",
-            ".factory/reviews/code-review.md",
-            ".factory/reviews/adversarial-qa.md",
-        },
+        reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
         post_checks=[
             ArtifactCheck(path=".factory/reviews/builder-latest.md", must_exist=True),
@@ -372,13 +367,7 @@ def workflow() -> Workflow:
             "6. Transferable insights: patterns that would help on similar tasks\n\n"
             "Write to .factory/archive/featurebench-learnings.md."
         ),
-        reads={
-            ".factory/reviews/health-check.md",
-            ".factory/reviews/builder-latest.md",
-            ".factory/strategy/current.md",
-            ".factory/reviews/code-review.md",
-            ".factory/reviews/adversarial-qa.md",
-        },
+        reads=set(),
         writes={".factory/archive/featurebench-learnings.md"},
         blocking=False,
     )
