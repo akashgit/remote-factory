@@ -48,6 +48,12 @@ from factory.cli.run import (
 from factory.cli.optimize import (
     cmd_optimize as cmd_optimize,
 )
+from factory.cli.optimize_step import (
+    cmd_optimize_step_apply_patch as cmd_optimize_step_apply_patch,
+    cmd_optimize_step_check_gate as cmd_optimize_step_check_gate,
+    cmd_optimize_step_run_dev as cmd_optimize_step_run_dev,
+    cmd_optimize_step_run_test as cmd_optimize_step_run_test,
+)
 from factory.cli.skillopt import (
     cmd_skillopt as cmd_skillopt,
 )

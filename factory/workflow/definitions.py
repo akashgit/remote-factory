@@ -65,6 +65,7 @@ __all__ = [
     "evolve_workflow",
     "plan_workflow",
     "setup_eval_workflow",
+    "optimize_workflow",
     "register_all",
     "_get_builtin_registry",
 ]
@@ -3765,6 +3766,97 @@ def evolve_workflow() -> Workflow:
     )
 
 
+# ── W₁₇: Optimize Mode ────────────────────────────────────────────
+
+
+def optimize_workflow() -> Workflow:
+    """W₁₇: Optimize — inner-outer prompt optimization via workflow graph.
+
+    baseline(FnNode) → gate_baseline(GateNode) → mutate(AgentNode) →
+    apply(FnNode) → execute(FnNode) → gate_improve(GateNode, RELOOP max 5) →
+    test_eval(FnNode)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["baseline"] = FnNode(
+        id="baseline",
+        command="factory optimize-step run-dev --project {project_path}",
+        writes={".factory/optimization/baseline.json"},
+    )
+
+    nodes["gate_baseline"] = GateNode(
+        id="gate_baseline",
+        evaluator_type="fn",
+        evaluator_command="factory optimize-step check-gate --project {project_path} --baseline",
+        reads={".factory/optimization/baseline.json"},
+    )
+
+    nodes["mutate"] = AgentNode(
+        id="mutate",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "You are optimizing a skill prompt for a benchmark. "
+            "Read the current skill at .factory/optimization/current_skill.md. "
+            "Read the optimization state at .factory/optimization/state.json. "
+            "Read the latest step results from .factory/optimization/steps/ to identify failure patterns. "
+            "Analyze which tasks failed and why. Propose new rules to improve accuracy. "
+            "Output ONLY a JSON object: {\"rules\": [\"rule 1\", \"rule 2\", ...], \"reasoning\": \"...\"} "
+            "Write your output to .factory/optimization/mutation.json."
+        ),
+        reads={
+            ".factory/optimization/current_skill.md",
+            ".factory/optimization/state.json",
+        },
+        writes={".factory/optimization/mutation.json"},
+    )
+
+    nodes["apply"] = FnNode(
+        id="apply",
+        command="factory optimize-step apply-patch --project {project_path}",
+        reads={".factory/optimization/mutation.json"},
+        writes={".factory/optimization/current_skill.md"},
+    )
+
+    nodes["execute"] = FnNode(
+        id="execute",
+        command="factory optimize-step run-dev --project {project_path}",
+        writes={".factory/optimization/state.json"},
+    )
+
+    nodes["gate_improve"] = GateNode(
+        id="gate_improve",
+        evaluator_type="fn",
+        evaluator_command="factory optimize-step check-gate --project {project_path}",
+        reads={".factory/optimization/state.json"},
+    )
+
+    nodes["test_eval"] = FnNode(
+        id="test_eval",
+        command="factory optimize-step run-test --project {project_path}",
+        writes={".factory/optimization/test_result.json"},
+    )
+
+    edges = [
+        Edge(source="baseline", target="gate_baseline"),
+        Edge(source="gate_baseline", target="mutate", condition=VerdictType.PROCEED),
+        Edge(source="gate_baseline", target="test_eval", condition=VerdictType.HALT),
+        Edge(source="mutate", target="apply"),
+        Edge(source="apply", target="execute"),
+        Edge(source="execute", target="gate_improve"),
+        Edge(source="gate_improve", target="test_eval", condition=VerdictType.PROCEED),
+        Edge(source="gate_improve", target="mutate", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="optimize",
+        nodes=nodes,
+        edges=edges,
+        start_node="baseline",
+        terminal=True,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 _BUILTIN_REGISTRY: dict[str, Any] | None = None
@@ -3798,6 +3890,7 @@ def _get_builtin_registry() -> dict[str, Any]:
         "plan": plan_workflow,
         "evolve": evolve_workflow,
         "setup-eval": setup_eval_workflow,
+        "optimize": optimize_workflow,
         "deep-qa": lambda: __import__(
             "factory.workflow.deep_qa", fromlist=["workflow"]
         ).workflow(),

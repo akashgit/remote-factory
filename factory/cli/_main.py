@@ -105,7 +105,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "skillopt", "optimize"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "skillopt", "optimize", "optimize-step"]),
     (
         "Configuration",
         [
@@ -301,6 +301,17 @@ def main(argv: list[str] | None = None) -> int:
         "agent": _cli.cmd_agent,
         "skillopt": _cli.cmd_skillopt,
         "optimize": _cli.cmd_optimize,
+        "optimize-step": lambda a: {
+            "run-dev": _cli.cmd_optimize_step_run_dev,
+            "run-test": _cli.cmd_optimize_step_run_test,
+            "apply-patch": _cli.cmd_optimize_step_apply_patch,
+            "check-gate": _cli.cmd_optimize_step_check_gate,
+        }.get(
+            str(getattr(a, "optimize_step_command", "")),
+            lambda args: (
+                print("Usage: factory optimize-step {run-dev,run-test,apply-patch,check-gate}") or 1
+            ),
+        )(a),
         "ceo": _cli.cmd_ceo,
         "run": _cli.cmd_run,
         "tmux": _cli.cmd_tmux,
