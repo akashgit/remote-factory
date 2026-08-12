@@ -38,7 +38,7 @@ def evaluate_one_solution(solution: dict[str, Any], task_dir: Path) -> float:
         Score (float), or -inf if evaluation failed
     """
     # Extract verifier code from tests/test.sh
-    test_sh = task_dir / "tests" / "test.sh"
+    test_sh = (task_dir / "tests" / "test.sh").resolve()
 
     if not test_sh.exists():
         raise FileNotFoundError(f"Verifier not found: {test_sh}")
