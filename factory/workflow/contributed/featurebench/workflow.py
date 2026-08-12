@@ -82,7 +82,7 @@ def workflow() -> Workflow:
             "   - Potential challenges or ambiguities in the spec\n\n"
             "Write findings to .factory/reviews/researcher-latest.md."
         ),
-        reads={"problem_statement.md"},
+        reads=set(),
         writes={".factory/reviews/researcher-latest.md"},
         post_checks=[
             ArtifactCheck(path=".factory/reviews/researcher-latest.md", must_exist=True),
