@@ -81,7 +81,7 @@ def update_instruction_md(slug: str, sota: dict) -> bool:
                     new_lines.append("")
                     new_lines.append(f"**Score:** {sota['score']}")
                     new_lines.append(f"**Agent:** {sota['agent']}")
-                    new_lines.append(f"**Source:** https://einsteinarena.com/")
+                    new_lines.append("**Source:** https://einsteinarena.com/")
                     new_lines.append(f"**Updated:** {datetime.now().strftime('%Y-%m-%d')}")
                     new_lines.append("")
                     new_lines.append("Your goal is to match or exceed this score.")
@@ -149,7 +149,7 @@ def update_task_toml(slug: str, sota: dict) -> bool:
                 break
 
         if metadata_end_idx is None:
-            print(f"ERROR: Could not find [metadata] section end", file=sys.stderr)
+            print("ERROR: Could not find [metadata] section end", file=sys.stderr)
             return False
 
         # 插入 [metadata.sota]
@@ -158,7 +158,7 @@ def update_task_toml(slug: str, sota: dict) -> bool:
             "[metadata.sota]",
             f"score = {sota['score']}",
             f"agent = \"{sota['agent']}\"",
-            f"source = \"https://einsteinarena.com/\"",
+            "source = \"https://einsteinarena.com/\"",
             f"updated = \"{datetime.now().strftime('%Y-%m-%d')}\"",
         ]
 
@@ -197,7 +197,7 @@ def main():
         # 获取 SOTA 信息
         sota = get_sota_info(slug)
         if not sota:
-            print(f"  ✗ Failed to fetch SOTA")
+            print("  ✗ Failed to fetch SOTA")
             continue
 
         print(f"  SOTA: {sota['score']} (by {sota['agent']})")

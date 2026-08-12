@@ -55,12 +55,13 @@ def evaluate_one_solution(solution: dict[str, Any], task_dir: Path) -> float:
 
         # Run test.sh
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["bash", str(test_sh)],
                 cwd=tmpdir_path,
                 capture_output=True,
                 text=True,
                 timeout=60,
+                check=False,  # Don't raise on non-zero exit; we check score.txt instead
             )
 
             # Read score.txt
@@ -70,7 +71,7 @@ def evaluate_one_solution(solution: dict[str, Any], task_dir: Path) -> float:
                 return score
             else:
                 # Verifier failed, return penalty
-                print(f"WARNING: No score.txt produced for solution")
+                print("WARNING: No score.txt produced for solution")
                 return float("-inf")
 
         except Exception as e:

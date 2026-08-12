@@ -5,10 +5,8 @@ Usage:
     python3 extract_einstein_arena.py [--output DIR] [--dry-run]
 """
 
-import json
 import sys
 from pathlib import Path
-from typing import Any
 
 try:
     import requests
@@ -72,7 +70,6 @@ class HarborConverter:
         slug = problem["slug"]
         title = problem["title"]
         scoring = problem["scoring"]
-        min_improvement = problem.get("minImprovement", 1e-4)
 
         return f'''schema_version = "1.3"
 
@@ -132,7 +129,7 @@ timeout_sec = 600.0
         # 添加 minImprovement 说明
         improvement_section = ""
         if min_improvement > 0:
-            improvement_section = f"\n\n## Minimum Improvement\n\n"
+            improvement_section = "\n\n## Minimum Improvement\n\n"
             improvement_section += f"To claim a better score on the leaderboard, your solution must improve upon the current best by at least **{min_improvement}**.\n"
 
         return description + schema_section + scoring_section + improvement_section
@@ -265,8 +262,8 @@ def main():
 
     output_dir = Path(args.output)
 
-    print(f"Einstein Arena Task Extractor")
-    print(f"=" * 60)
+    print("Einstein Arena Task Extractor")
+    print("=" * 60)
     print(f"API Base: {API_BASE}")
     print(f"Output: {output_dir}")
     print(f"Dry run: {args.dry_run}")
@@ -329,8 +326,8 @@ def main():
             error_count += 1
 
     print()
-    print(f"=" * 60)
-    print(f"Extraction complete:")
+    print("=" * 60)
+    print("Extraction complete:")
     print(f"  Success: {success_count}/{len(tasks_to_extract)}")
     print(f"  Errors:  {error_count}")
 

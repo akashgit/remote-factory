@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -49,10 +50,7 @@ def workflow() -> Workflow:
             "Output: .factory/rl/iteration_{{current_iteration}}/prompts.json\n\n"
             "Follow the format specified in factory/agents/prompts/lumen_context_agent.md"
         ),
-        reads={
-            "benchmarks/einsteinarena-harbor/{task_name}/instruction.md",
-            ".factory/rl/state.json",
-        },
+        reads={".factory/rl/state.json"},
         writes={".factory/rl/iteration_{current_iteration}/prompts.json"},
     )
 
@@ -80,12 +78,13 @@ def workflow() -> Workflow:
     # ── Node 4: Check Gate ──────────────────────────────────────
     nodes["check_gate"] = GateNode(
         id="check_gate",
-        command=(
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
             "python3 -c \""
-            "import json, sys, re;"
+            "import json, re;"
             "results = json.load(open('.factory/rl/iteration_' + str(json.load(open('.factory/rl/state.json'))['iteration']) + '/evaluation_results.json'));"
             "state = json.load(open('.factory/rl/state.json'));"
-            "# Read SOTA from instruction.md;"
             "md = open('benchmarks/einsteinarena-harbor/{task_name}/instruction.md').read();"
             "sota_match = re.search(r'Current best score.*?([0-9.eE+-]+)', md);"
             "min_imp_match = re.search(r'Minimum improvement.*?([0-9.eE+-]+)', md);"
@@ -95,25 +94,21 @@ def workflow() -> Workflow:
             "direction = dir_match.group(1) if dir_match else 'MAXIMIZE';"
             "best = results['best_score'];"
             "iter_num = state['iteration'];"
-            "# Check success;"
             "if sota is None:"
-            "  sys.exit(0);"  # No SOTA yet, any valid score is success
-            "success = (best > sota + min_imp) if direction == 'MAXIMIZE' else (best < sota - min_imp);"
-            "if success:"
-            "  sys.exit(0);"  # PROCEED
-            "elif iter_num >= 2:"  # MVP: only 3 iterations (0, 1, 2)
-            "  sys.exit(2);"  # FAIL
+            "  print('pass: No SOTA yet, any valid score is success');"
             "else:"
-            "  state['iteration'] = iter_num + 1;"
-            "  json.dump(state, open('.factory/rl/state.json', 'w'));"
-            "  sys.exit(1)"  # RELOOP
+            "  success = (best > sota + min_imp) if direction == 'MAXIMIZE' else (best < sota - min_imp);"
+            "  if success:"
+            "    print('pass: Score improved beyond SOTA');"
+            "  elif iter_num >= 2:"  # MVP: only 3 iterations (0, 1, 2)
+            "    print('halt: Max iterations reached without improvement');"
+            "  else:"
+            "    state['iteration'] = iter_num + 1;"
+            "    json.dump(state, open('.factory/rl/state.json', 'w'));"
+            "    print('reloop: Need more iterations');"
             "\""
         ),
-        verdicts={
-            VerdictType.PROCEED: 0,
-            VerdictType.RELOOP: 1,
-            VerdictType.FAIL: 2,
-        },
+        reads={".factory/rl/state.json"},
     )
 
     # ── Edges ───────────────────────────────────────────────────
@@ -121,13 +116,17 @@ def workflow() -> Workflow:
         Edge(source="study", target="lumen_context_agent"),
         Edge(source="lumen_context_agent", target="rl_train"),
         Edge(source="rl_train", target="check_gate"),
-        Edge(source="check_gate", target="lumen_context_agent", verdict=VerdictType.RELOOP),
+        Edge(source="check_gate", target="lumen_context_agent", condition=VerdictType.RELOOP),
     ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "einsteinarena"
 
     return Workflow(
         name="einsteinarena",
         nodes=nodes,
         edges=edges,
         start_node="study",
-        terminal=False,
+        terminal=True,
+        trigger=trigger,
     )

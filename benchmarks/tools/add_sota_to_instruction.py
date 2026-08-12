@@ -140,7 +140,7 @@ def main():
         # 获取问题信息
         info = get_problem_info(slug)
         if not info:
-            print(f"  ✗ Failed to fetch info")
+            print("  ✗ Failed to fetch info")
             continue
 
         score_str = f"{info['sota_score']}" if info['sota_score'] else "No submissions"

@@ -116,7 +116,7 @@ def update_task_toml(slug: str, top1_score: float, top1_agent: str) -> bool:
             "[metadata.sota]",
             f"score = {top1_score}",
             f'agent = "{top1_agent}"',
-            f'source = "https://einsteinarena.com/"',
+            'source = "https://einsteinarena.com/"',
         ]
 
         new_lines = lines[:metadata_end_idx] + sota_lines + lines[metadata_end_idx:]
