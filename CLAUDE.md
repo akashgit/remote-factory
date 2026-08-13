@@ -184,6 +184,18 @@ CODEX_API_KEY = "..."
 ```
 Then run: `factory ceo /path/to/project --profile codex`
 
+**Glaude specifics:**
+- Installed at `~/.local/bin/glaude`, wraps the `claude` binary against a GLM-5.2 LiteLLM proxy
+- Auth is baked into the wrapper script (no env var needed)
+- Dry-run mode: `FACTORY_GLAUDE_DRY_RUN=1`
+
+**Glaude config profile example** (`~/.factory/config.toml`):
+```toml
+[credentials.glaude]
+FACTORY_RUNNER = "glaude"
+```
+Then run: `factory ceo /path/to/project --runner glaude` or `factory ceo /path --profile glaude`
+
 **OpenCode specifics:**
 - The factory targets `anomalyco/opencode` v1.x (TypeScript/Bun). Install via: `curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`
 - Auth: run `opencode auth login` (interactive), or set a provider env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AWS_ACCESS_KEY_ID`, etc.)
