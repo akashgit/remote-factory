@@ -141,6 +141,7 @@ class AgentNode(Node):
     timeout: int | None = None
     max_iterations: int = 1
     post_checks: list[ArtifactCheck] = Field(default_factory=list)
+    transcript_dir: str | None = None
 
 
 class FnNode(Node):

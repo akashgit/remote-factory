@@ -635,3 +635,4 @@ class AgentRunResult(BaseModel):
     return_code: int
     usage: AgentUsage | None = None
     metadata: dict[str, object] = {}
+    raw_stream: str = ""

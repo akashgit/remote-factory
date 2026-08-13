@@ -175,6 +175,7 @@ async def invoke_agent(
     workflow_mode: str | None = None,
     settings_file: str | None = None,
     prompt_override: str | None = None,
+    transcript_dir: Path | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -311,6 +312,9 @@ async def invoke_agent(
                 _consecutive_failures = 0
 
         _save_review(project_path, role, stdout, return_code, review_tag=review_tag)
+
+        if transcript_dir is not None:
+            _save_transcript(transcript_dir, role, result.raw_stream, task)
 
         return stdout, return_code
     finally:
@@ -471,6 +475,146 @@ def _save_review(
         logger.debug("Saved review output for %s to %s", role, review_path)
     except Exception:
         logger.debug("Failed to save review for %s", role, exc_info=True)
+
+
+def _save_transcript(
+    transcript_dir: Path,
+    role: str,
+    raw_stream: str,
+    task: str,
+) -> None:
+    """Save the full agent session transcript to a directory.
+
+    Structure (modeled on Meta Harness's log_session):
+        transcript_dir/
+            stream.jsonl   — raw stream-json events (complete conversation)
+            meta.json      — prompt, model, tokens, cost, duration
+            tools/
+                001_Read.txt   — per-tool-call, human-readable
+    """
+    import json
+
+    try:
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        run_dir = transcript_dir / f"{ts}_{role}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Write raw stream
+        (run_dir / "stream.jsonl").write_text(raw_stream)
+
+        # 2. Parse events to build meta + tools
+        events = []
+        tool_calls: list[dict] = []
+        tool_map: dict[str, dict] = {}
+        token_usage = {"input_tokens": 0, "output_tokens": 0}
+        session_id = ""
+        cost_usd = 0.0
+        model = ""
+
+        for line in raw_stream.strip().splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            events.append(event)
+            etype = event.get("type", "")
+
+            if etype == "assistant":
+                msg = event.get("message", {})
+                usage = msg.get("usage", {})
+                token_usage["input_tokens"] += usage.get("input_tokens", 0)
+                token_usage["output_tokens"] += usage.get("output_tokens", 0)
+                for cache_key in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+                    if cache_key in usage:
+                        token_usage[cache_key] = token_usage.get(cache_key, 0) + usage[cache_key]
+
+                for block in msg.get("content", []):
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_use":
+                        tc = {
+                            "name": block["name"],
+                            "tool_id": block.get("id", ""),
+                            "input": block.get("input", {}),
+                            "output": "",
+                            "is_error": False,
+                        }
+                        tool_calls.append(tc)
+                        tool_map[tc["tool_id"]] = tc
+
+            elif etype == "user":
+                msg = event.get("message", {})
+                for block in msg.get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        if tid in tool_map:
+                            tool_map[tid]["output"] = str(block.get("content", ""))
+                            tool_map[tid]["is_error"] = block.get("is_error", False)
+
+            elif etype == "result":
+                session_id = event.get("session_id", "")
+                cost_usd = event.get("total_cost_usd", 0.0)
+                model = event.get("model", "")
+                result_usage = event.get("usage", {})
+                if result_usage:
+                    token_usage["input_tokens"] = result_usage.get(
+                        "input_tokens", token_usage["input_tokens"]
+                    )
+                    token_usage["output_tokens"] = result_usage.get(
+                        "output_tokens", token_usage["output_tokens"]
+                    )
+
+        # 3. Write meta.json
+        meta = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "role": role,
+            "task": task[:500],
+            "model": model,
+            "session_id": session_id,
+            "cost_usd": cost_usd,
+            "token_usage": token_usage,
+            "tool_count": len(tool_calls),
+            "tool_summary": [
+                f"{tc['name']}({'ERR ' if tc['is_error'] else ''}"
+                f"{tc['input'].get('file_path') or tc['input'].get('command', '')[:120]})"
+                for tc in tool_calls
+            ],
+        }
+        (run_dir / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
+
+        # 4. Write tools/ directory
+        if tool_calls:
+            tools_dir = run_dir / "tools"
+            tools_dir.mkdir(exist_ok=True)
+            for i, tc in enumerate(tool_calls, 1):
+                parts = [tc["name"]]
+                if tc["is_error"]:
+                    parts[0] += " [ERROR]"
+                parts.append("")
+
+                for k, v in tc["input"].items():
+                    val = str(v)
+                    if "\n" in val or len(val) > 80:
+                        parts.append(f"{k}:")
+                        parts.append(val)
+                        parts.append("")
+                    else:
+                        parts.append(f"{k}: {v}")
+
+                if tc["output"]:
+                    parts.append("")
+                    parts.append("--- output ---")
+                    parts.append(tc["output"])
+
+                (tools_dir / f"{i:03d}_{tc['name']}.txt").write_text("\n".join(parts))
+
+        logger.debug("Saved transcript for %s to %s", role, run_dir)
+    except Exception:
+        logger.debug("Failed to save transcript for %s", role, exc_info=True)
 
 
 def begin_cycle_session(

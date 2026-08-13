@@ -237,6 +237,7 @@ class ClaudeRunner:
                 return_code=result.return_code,
                 usage=usage,
                 metadata=metadata,
+                raw_stream=result.stdout,
             )
         finally:
             for f in temp_files:
