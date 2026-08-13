@@ -69,8 +69,7 @@ class FactoryAgent(BaseAgent):
             "Read /testbed/problem_statement.md for the task. "
             "Implement the feature described in the problem statement. The codebase is at /testbed/. "
             "Do NOT create, modify, or recreate any test files (tests/*). Only modify source code. "
-            "Read the Interface Descriptions carefully and match them exactly. "
-            "After implementing, run: pytest tests/test_algorithms.py -x to verify your implementation passes."
+            "Read the Interface Descriptions carefully and match them exactly."
         )
         return f"""
         source ~/.bashrc
