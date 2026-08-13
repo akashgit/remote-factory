@@ -139,9 +139,19 @@ def cmd_optimize_step_run_dev(args: argparse.Namespace) -> int:
     (step_dir / "results.json").write_text(json.dumps(results_data, indent=2) + "\n")
 
     skill_path = _opt_dir(project) / "current_skill.md"
-    if skill_path.exists():
-        import shutil
-        shutil.copy2(skill_path, step_dir / "skill.md")
+    if not skill_path.exists():
+        skill_path.parent.mkdir(parents=True, exist_ok=True)
+        skill_path.write_text(
+            "# Question Answering Skill\n\n(No learned rules yet.)\n\n"
+            "## Instructions\n\n"
+            "Read the question and search results from /tmp/task-instruction.md.\n"
+            "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
+            "Also include your answer in <answer> tags in your response.\n"
+        )
+    # Touch to mark as fresh for workflow artifact detection
+    skill_path.touch()
+    import shutil
+    shutil.copy2(skill_path, step_dir / "skill.md")
 
     # On first call (step=1), also write baseline.json
     if step == 1:

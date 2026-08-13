@@ -3782,7 +3782,11 @@ def optimize_workflow() -> Workflow:
     nodes["baseline"] = FnNode(
         id="baseline",
         command="factory optimize-step run-dev --project {project_path}",
-        writes={".factory/optimization/baseline.json"},
+        writes={
+            ".factory/optimization/baseline.json",
+            ".factory/optimization/current_skill.md",
+            ".factory/optimization/state.json",
+        },
     )
 
     nodes["gate_baseline"] = GateNode(
@@ -3821,7 +3825,10 @@ def optimize_workflow() -> Workflow:
     nodes["execute"] = FnNode(
         id="execute",
         command="factory optimize-step run-dev --project {project_path}",
-        writes={".factory/optimization/state.json"},
+        writes={
+            ".factory/optimization/state.json",
+            ".factory/optimization/current_skill.md",
+        },
     )
 
     nodes["gate_improve"] = GateNode(
