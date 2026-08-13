@@ -60,7 +60,9 @@ class TestLumenWorkflow:
         node = wf.nodes["rl_train"]
         assert isinstance(node, FnNode)
         assert "factory.lumen.train" in node.command
-        assert "--mock" in node.command
+        assert "{mock_flag}" in node.command
+        assert "{model_path}" in node.command
+        assert "{rollouts_per_prompt}" in node.command
 
     def test_check_gate_node(self) -> None:
         wf = workflow()
