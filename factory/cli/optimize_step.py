@@ -240,7 +240,7 @@ def cmd_optimize_step_apply_patch(args: argparse.Namespace) -> int:
 
 
 def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
-    """Check gate: PROCEED (exit 0), RELOOP (exit 1), HALT (exit 2)."""
+    """Check gate: PROCEED/RELOOP (exit 0, parsed from stdout), HALT (exit 1)."""
     project = Path(args.project).resolve()
     is_baseline = getattr(args, "baseline", False)
 
@@ -257,7 +257,7 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
             return 0
         else:
             print("HALT: baseline score is 0")
-            return 2
+            return 1
 
     state = _read_state(project)
     history = state.get("history", [])
@@ -267,7 +267,7 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
 
     if not history:
         print("HALT: no history")
-        return 2
+        return 1
 
     latest = history[-1]
     gate = evaluate_gate(
@@ -288,4 +288,4 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
         return 0
     else:
         print(f"RELOOP: {gate.reason}")
-        return 1
+        return 0
