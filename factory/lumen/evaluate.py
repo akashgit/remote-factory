@@ -19,24 +19,35 @@ def load_verifier(task_dir: Path):
     return module.evaluate
 
 
-def evaluate_rollouts(rollouts: list[dict[str, Any]], task_dir: Path) -> list[float]:
-    """Evaluate all rollouts using the task's verifier.
+def evaluate_rollouts(
+    rollouts: list[dict[str, Any]],
+    task_dir: Path,
+    *,
+    direction: str = "maximize",
+    reward_cfg: dict | None = None,
+) -> list[dict[str, float]]:
+    """Evaluate all rollouts using the task's verifier and shape rewards.
 
     Args:
         rollouts: List of rollout dicts
         task_dir: Path to the Einstein Arena task directory
+        direction: "maximize" or "minimize"
+        reward_cfg: Per-task reward shaping config (optional)
 
     Returns:
-        List of scores (one per rollout)
+        List of dicts with "raw_score" and "score" (shaped reward)
     """
+    from factory.lumen.reward import shape_reward
+
     evaluate_fn = load_verifier(task_dir)
-    scores = []
+    results = []
 
     for rollout in rollouts:
-        score = evaluate_one_solution(rollout["solution"], evaluate_fn)
-        scores.append(score)
+        raw = evaluate_one_solution(rollout["solution"], evaluate_fn)
+        shaped = shape_reward(raw, direction, reward_cfg)
+        results.append({"raw_score": raw, "score": shaped})
 
-    return scores
+    return results
 
 
 def evaluate_one_solution(solution: dict[str, Any], evaluate_fn) -> float:

@@ -93,12 +93,19 @@ def compute_score(
     eval_timeout = extra_info.get("eval_timeout", 60)
 
     try:
-        score = evaluate_code_solution(code, task_dir, timeout=eval_timeout)
+        raw_score = evaluate_code_solution(code, task_dir, timeout=eval_timeout)
     except Exception as e:
-        return {"score": 0.0, "code": code, "eval_msg": f"eval error: {e}"}
+        return {"score": 0.0, "raw_score": 0.0, "code": code, "eval_msg": f"eval error: {e}"}
+
+    from factory.lumen.reward import shape_reward
+
+    direction = extra_info.get("scoring_direction", "maximize")
+    reward_cfg = extra_info.get("reward", None)
+    score = shape_reward(raw_score, direction, reward_cfg)
 
     return {
         "score": score,
+        "raw_score": raw_score,
         "code": code,
-        "eval_msg": "" if score > 0 else "score is zero",
+        "eval_msg": "" if raw_score > 0 else "score is zero",
     }
