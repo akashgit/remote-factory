@@ -134,63 +134,11 @@ timeout_sec = 600.0
 
         return description + schema_section + scoring_section + improvement_section
 
-    def generate_test_sh(self, problem: dict) -> str:
-        """生成 tests/test.sh（包装 verifier）"""
+    def generate_verifier_py(self, problem: dict) -> str:
+        """生成 verifier.py（纯 evaluate 函数）"""
         verifier_code = problem["verifier"]
-
-        return f'''#!/bin/bash
-set -euo pipefail
-
-# Einstein Arena verifier wrapper
-SOLUTION_FILE="/workspace/solution.json"
-SCORE_FILE="/workspace/score.txt"
-
-if [ ! -f "$SOLUTION_FILE" ]; then
-    echo "ERROR: solution.json not found at $SOLUTION_FILE" >&2
-    exit 1
-fi
-
-# Create verifier script
-cat > /tmp/verifier.py << 'VERIFIER_EOF'
-{verifier_code}
-
-# Wrapper to read from file and handle errors
-if __name__ == "__main__":
-    import json
-    import sys
-
-    try:
-        with open("/workspace/solution.json", "r") as f:
-            data = json.load(f)
-
-        score = evaluate(data)
-
-        # Write score to file
-        with open("/workspace/score.txt", "w") as f:
-            f.write(str(score))
-
-        print(f"Score: {{score}}")
-        sys.exit(0)
-
-    except Exception as e:
-        print(f"Verifier failed: {{e}}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-VERIFIER_EOF
-
-# Run verifier
-python3 /tmp/verifier.py
-EXIT_CODE=$?
-
-if [ -f "$SCORE_FILE" ]; then
-    echo "Verification complete. Score: $(cat $SCORE_FILE)"
-else
-    echo "ERROR: Verifier did not produce a score" >&2
-fi
-
-exit $EXIT_CODE
-'''
+        slug = problem["slug"]
+        return f'"""Einstein Arena verifier for {slug}."""\n\n{verifier_code}\n'
 
     def generate_dockerfile(self, problem: dict) -> str:
         """生成 environment/Dockerfile"""
@@ -231,12 +179,8 @@ class HarborWriter:
         env_dir.mkdir(exist_ok=True)
         (env_dir / "Dockerfile").write_text(files["dockerfile"])
 
-        # tests/test.sh
-        tests_dir = task_dir / "tests"
-        tests_dir.mkdir(exist_ok=True)
-        test_sh = tests_dir / "test.sh"
-        test_sh.write_text(files["test_sh"])
-        test_sh.chmod(0o755)  # Make executable
+        # verifier.py
+        (task_dir / "verifier.py").write_text(files["verifier_py"])
 
         print(f"  ✓ Written: {slug}")
 
@@ -310,7 +254,7 @@ def main():
             files = {
                 "task_toml": converter.generate_task_toml(problem),
                 "instruction_md": converter.generate_instruction_md(problem),
-                "test_sh": converter.generate_test_sh(problem),
+                "verifier_py": converter.generate_verifier_py(problem),
                 "dockerfile": converter.generate_dockerfile(problem),
             }
 
