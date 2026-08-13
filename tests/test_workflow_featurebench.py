@@ -304,10 +304,9 @@ class TestAdapterModule:
         assert "uv" in content
         assert "nvm" in content
         assert "claude-code" in content
-        assert "remote-factory" in content
 
     def test_run_command_writes_problem_statement(self) -> None:
         adapter_path = PROJECT_ROOT / "factory" / "featurebench" / "agent.py"
         content = adapter_path.read_text()
         assert "problem_statement.md" in content
-        assert "factory workflow run featurebench" in content
+        assert "claude -p" in content

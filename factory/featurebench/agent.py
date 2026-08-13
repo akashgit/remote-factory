@@ -1,4 +1,4 @@
-"""FeatureBench agent adapter — runs factory workflow inside FeatureBench containers."""
+"""FeatureBench agent adapter — runs Claude Code directly inside FeatureBench containers."""
 
 from featurebench.infer.agents.base import BaseAgent
 
@@ -18,7 +18,7 @@ class FactoryAgent(BaseAgent):
         echo 'export PATH="/opt/google-cloud-sdk/bin:$PATH"' >> ~/.bashrc
         export PATH="/opt/google-cloud-sdk/bin:$PATH"
 
-        # Install uv
+        # Install uv (may be needed by testbed projects)
         curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="$HOME/.cargo/bin:$PATH"
 
@@ -32,13 +32,8 @@ class FactoryAgent(BaseAgent):
         # Install Claude Code CLI
         npm install -g @anthropic-ai/claude-code
 
-        # Clone and install factory
-        git clone https://github.com/colehurwitz/remote-factory /opt/factory
-        cd /opt/factory
-        uv sync
-
         # Add to PATH
-        echo 'export PATH="/opt/factory/.venv/bin:/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+        echo 'export PATH="/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
         echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
         echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> ~/.bashrc
         """
@@ -64,29 +59,33 @@ class FactoryAgent(BaseAgent):
             script += 'mkdir -p ~/.config/gcloud\n'
             script += 'echo $GOOGLE_APPLICATION_CREDENTIALS_JSON > ~/.config/gcloud/application_default_credentials.json\n'
 
-        script += f'export FACTORY_RUNNER="{self.env_vars.get("FACTORY_RUNNER", "claude")}"\n'
-        script += 'export PATH="/opt/factory/.venv/bin:/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"\n'
+        script += 'export PATH="/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"\n'
         script += 'export NVM_DIR="$HOME/.nvm"\n'
         script += '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n'
         return script
 
     def get_run_command(self, instruction: str) -> str:
+        prompt = (
+            "Read /testbed/problem_statement.md for the task. "
+            "Implement the feature described in the problem statement. The codebase is at /testbed/. "
+            "Do NOT create, modify, or recreate any test files (tests/*). Only modify source code. "
+            "Read the Interface Descriptions carefully and match them exactly. "
+            "After implementing, run: pytest tests/test_algorithms.py -x to verify your implementation passes."
+        )
         return f"""
         source ~/.bashrc
         cd /testbed
 
-        # Write problem statement to file for the workflow to read
+        # Write problem statement to file
         cat > /testbed/problem_statement.md <<'FEATUREBENCH_PROBLEM_EOF'
 {instruction}
 FEATUREBENCH_PROBLEM_EOF
 
-        # Initialize .factory directory for workflow artifacts
-        mkdir -p /testbed/.factory/reviews
-        mkdir -p /testbed/.factory/strategy
-        mkdir -p /testbed/.factory/archive
-
-        # Run factory featurebench workflow
-        factory workflow run featurebench --project /testbed \
+        # Run Claude Code directly in headless mode
+        claude -p '{prompt}' \
+          --allowedTools 'Edit' 'Read' 'Write' 'Bash(command:*)' \
+          --max-turns 30 \
+          --output-format text \
           2>&1 | tee /agent-logs/factory_output.log
 
         # Ensure all changes are committed (harness extracts via git diff)
