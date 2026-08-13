@@ -1,6 +1,6 @@
-# Lumen - RL Training for Einstein Arena
+# LUMEN: Learning-based Universal Modeling and Evolution eNgine
 
-Reinforcement learning training system for mathematical optimization tasks from [Einstein Arena](https://github.com/einsteinarena/einsteinarena).
+Reinforcement learning training system for scientific discovery tasks, starting with mathematical optimization from [Einstein Arena](https://github.com/einsteinarena/einsteinarena).
 
 ---
 

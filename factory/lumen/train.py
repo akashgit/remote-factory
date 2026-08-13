@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Einstein Arena RL Training — reads all parameters from a run config file.
+"""LUMEN RL Training — reads all parameters from a run config file.
+
+LUMEN: Learning-based Universal Modeling and Evolution eNgine
+RL training system for scientific discovery tasks.
 
 Usage:
     python3 -m factory.lumen.train --config .factory/lumen/current_run/config.json

@@ -1,4 +1,7 @@
-"""Lumen VERL launch wrapper — orchestrate a single RL training iteration."""
+"""LUMEN VERL launch wrapper — orchestrate a single RL training iteration.
+
+LUMEN: Learning-based Universal Modeling and Evolution eNgine
+"""
 
 from __future__ import annotations
 

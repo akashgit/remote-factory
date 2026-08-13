@@ -1,6 +1,9 @@
-"""Lumen workflow preflight — environment check, GPU probe, run directory setup.
+"""LUMEN workflow preflight — environment check, GPU probe, run directory setup.
 
-Environment: Uses uv virtual environment (default: ~/.venvs/lumen)
+LUMEN: Learning-based Universal Modeling and Evolution eNgine
+RL training system for scientific discovery tasks.
+
+Environment: Uses uv virtual environment (default: factory/lumen/.venv)
 Override via: LUMEN_PYTHON environment variable
 
 Usage:

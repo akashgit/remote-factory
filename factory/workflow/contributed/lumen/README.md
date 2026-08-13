@@ -1,6 +1,8 @@
-# Lumen Workflow
+# LUMEN Workflow
 
-Lumen RL training workflow for Einstein Arena.
+**LUMEN: Learning-based Universal Modeling and Evolution eNgine**
+
+RL training workflow for scientific discovery tasks (starting with Einstein Arena).
 
 ## Quick Links
 
