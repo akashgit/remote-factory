@@ -1,0 +1,15 @@
+{
+  "num_gpus": 8,
+  "rollout_tp": 4,
+  "num_rollouts_per_prompt": 64,
+  "lora_rank": 32,
+  "learning_rate": 4e-5,
+  "kl_coef": 0.1,
+  "temperature": 0.8,
+  "phase1_max_tokens": 26000,
+  "eval_timeout": 60,
+  "model_path": "Qwen/Qwen3-8B",
+  "reward": {
+    "type": "identity"
+  }
+}
