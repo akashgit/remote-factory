@@ -12,13 +12,11 @@ Activate via VERL config:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid
 from typing import Any
 
-import numpy as np
 import ray
 import torch
 import transfer_queue as tq
