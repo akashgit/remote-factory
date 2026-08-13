@@ -65,8 +65,9 @@ def workflow() -> Workflow:
             "--task-dir benchmarks/einsteinarena/{task_name} "
             "--project-path {project_path} "
             "--iteration $ITER "
-            "--num-rollouts-per-prompt 8 "
-            "--mock"
+            "--num-rollouts-per-prompt {rollouts_per_prompt} "
+            "--model-path {model_path} "
+            "{mock_flag}"
         ),
         reads={".factory/lumen/state.json", ".factory/lumen/iteration_{current_iteration}/prompts.json"},
         writes={

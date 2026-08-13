@@ -4,7 +4,9 @@ import random
 from typing import Any
 
 
-def generate_mock_rollouts(prompts: list[dict[str, Any]], num_per_prompt: int) -> list[dict[str, Any]]:
+def generate_mock_rollouts(
+    prompts: list[dict[str, Any]], num_per_prompt: int,
+) -> list[dict[str, Any]]:
     """Generate mock rollouts (random solutions) for testing.
 
     Args:

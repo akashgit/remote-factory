@@ -23,8 +23,9 @@ def main() -> None:
         help="Rollouts per prompt (default: 8, production: 64)",
     )
     parser.add_argument(
-        "--mock", action="store_true", default=True, help="Use mock rollouts (default: True)"
+        "--mock", action="store_true", default=False, help="Use mock rollouts"
     )
+    parser.add_argument("--model-path", default="Qwen/Qwen3-8B", help="Base model path")
 
     args = parser.parse_args()
 
@@ -57,8 +58,22 @@ def main() -> None:
 
         all_rollouts = generate_mock_rollouts(prompts, args.num_rollouts_per_prompt)
     else:
-        print("ERROR: Real vLLM not implemented yet")
-        sys.exit(1)
+        import subprocess
+        cmd = [
+            sys.executable, "-m", "factory.lumen.run_verl",
+            "--prompts", str(prompts_file),
+            "--task-dir", args.task_dir,
+            "--checkpoint-dir", str(project_path / ".factory/lumen/checkpoints/verl"),
+            "--output-dir", str(iteration_dir),
+            "--model-path", getattr(args, "model_path", "Qwen/Qwen3-8B"),
+            "--iteration", str(args.iteration),
+            "--rollouts-per-prompt", str(args.num_rollouts_per_prompt),
+        ]
+        result = subprocess.run(cmd, check=False)
+        if result.returncode != 0:
+            print(f"VERL training failed with exit code {result.returncode}")
+            sys.exit(result.returncode)
+        return
 
     print(f"Generated {len(all_rollouts)} rollouts")
 
@@ -90,7 +105,9 @@ def main() -> None:
                 "strategy": prompts[i]["strategy"],
                 "mean": float(np.mean(prompt_scores)),
                 "std": float(np.std(prompt_scores)),
-                "best": float(max(prompt_scores) if scoring_direction == "maximize" else min(prompt_scores)),
+                "best": float(
+                    max(prompt_scores) if scoring_direction == "maximize" else min(prompt_scores)
+                ),
             }
         )
 

@@ -39,3 +39,19 @@ def save_state(project_path: Path, state: dict[str, Any]) -> None:
 
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def get_verl_checkpoint_path(project_path: Path) -> Path | None:
+    """Get the latest VERL checkpoint path, or None if no checkpoint exists."""
+    ckpt_dir = project_path / ".factory/lumen/checkpoints/verl/latest"
+    if ckpt_dir.exists():
+        return ckpt_dir
+    return None
+
+
+def get_verl_rollout_log(project_path: Path, step: int = 0) -> Path | None:
+    """Get the VERL rollout log for a given step."""
+    log_path = project_path / f".factory/lumen/checkpoints/verl/rollouts/{step}.jsonl"
+    if log_path.exists():
+        return log_path
+    return None

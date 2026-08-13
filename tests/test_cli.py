@@ -1647,21 +1647,22 @@ class TestCmdCeo:
         task = mock_agent.call_args[0][1]
         assert "Meta mode" in task
 
-    def test_ceo_headless_clones_github_url(self, capsys):
+    def test_ceo_headless_clones_github_url(self, capsys, tmp_path):
         """cmd_ceo --headless clones a GitHub URL then invokes CEO."""
         url = "https://github.com/user/repo"
+        clone_dir = str(tmp_path / "factory-ceo")
         with (
             patch("factory.cli._path_resolver.subprocess.run") as mock_clone,
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
-            patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-ceo"),
+            patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value=clone_dir),
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
             patch("factory.graph.is_graphify_installed", return_value=False),
         ):
             result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(
-            ["git", "clone", url, "/tmp/factory-ceo"],
+            ["git", "clone", url, clone_dir],
             check=True,
         )
 
