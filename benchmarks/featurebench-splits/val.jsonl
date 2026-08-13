@@ -1,0 +1,10 @@
+{"instance_id": "Lightning-AI__pytorch-lightning.126fa6f1.test_connector.825ef3b1.lv1", "repo": "Lightning-AI", "level": 1}
+{"instance_id": "astropy__astropy.b0db0daa.test_tilde_path.383d7c0c.lv1", "repo": "astropy", "level": 1}
+{"instance_id": "huggingface__transformers.e2e8dbed.test_modeling_pixtral.a620bb0b.lv1", "repo": "huggingface", "level": 1}
+{"instance_id": "huggingface__transformers.e2e8dbed.test_modeling_swin2sr.f5cba486.lv1", "repo": "huggingface", "level": 1}
+{"instance_id": "mlflow__mlflow.93dab383.test_judge_tool_search_traces.cad8fc4b.lv1", "repo": "mlflow", "level": 1}
+{"instance_id": "mlflow__mlflow.93dab383.test_utils.3c9647bf.lv1", "repo": "mlflow", "level": 1}
+{"instance_id": "mwaskom__seaborn.7001ebe7.test_algorithms.1f0181c2.lv2", "repo": "mwaskom", "level": 2}
+{"instance_id": "pandas-dev__pandas.82fa2715.test_spec_conformance.3aff206b.lv1", "repo": "pandas-dev", "level": 1}
+{"instance_id": "scikit-learn__scikit-learn.5741bac9.test_predict_error_display.11cc0c3a.lv1", "repo": "scikit-learn", "level": 1}
+{"instance_id": "sphinx-doc__sphinx.e347e59c.test_ext_intersphinx.04901873.lv1", "repo": "sphinx-doc", "level": 1}
