@@ -22,14 +22,16 @@ class TestLumenWorkflow:
         assert wf.name == "lumen"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 4 nodes: study, lumen_context_agent, rl_train, check_gate."""
+        """Workflow has exactly 5 nodes: setup, config_gate, lumen_context_agent, rl_train, check_gate."""
         wf = workflow()
-        assert len(wf.nodes) == 4
-        assert set(wf.nodes.keys()) == {"study", "lumen_context_agent", "rl_train", "check_gate"}
+        assert len(wf.nodes) == 5
+        assert set(wf.nodes.keys()) == {
+            "setup", "config_gate", "lumen_context_agent", "rl_train", "check_gate",
+        }
 
     def test_start_node(self) -> None:
         wf = workflow()
-        assert wf.start_node == "study"
+        assert wf.start_node == "setup"
 
     def test_graph_validates(self) -> None:
         """Graph passes structural validation (DAG check, edge consistency)."""
@@ -38,15 +40,21 @@ class TestLumenWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """4 edges: study->lumen, lumen->train, train->gate, gate->lumen RELOOP."""
+        """5 edges: setup->config_gate, config_gate->lumen, lumen->train, train->gate, gate->lumen RELOOP."""
         wf = workflow()
-        assert len(wf.edges) == 4
+        assert len(wf.edges) == 5
 
-    def test_study_node_is_fn(self) -> None:
+    def test_setup_node_is_fn(self) -> None:
         wf = workflow()
-        node = wf.nodes["study"]
+        node = wf.nodes["setup"]
         assert isinstance(node, FnNode)
-        assert ".factory/lumen" in node.command
+        assert "factory.lumen.preflight" in node.command
+
+    def test_config_gate_node(self) -> None:
+        wf = workflow()
+        node = wf.nodes["config_gate"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_type == "user"
 
     def test_lumen_context_agent_node(self) -> None:
         wf = workflow()
@@ -60,9 +68,6 @@ class TestLumenWorkflow:
         node = wf.nodes["rl_train"]
         assert isinstance(node, FnNode)
         assert "factory.lumen.train" in node.command
-        assert "{mock_flag}" in node.command
-        assert "{model_path}" in node.command
-        assert "{rollouts_per_prompt}" in node.command
 
     def test_check_gate_node(self) -> None:
         wf = workflow()

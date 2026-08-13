@@ -330,7 +330,9 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
         field["data_source"] = self._lumen_config.get("data_source", "lumen")
         field["num_turns"] = 1
         field.pop("multi_modal_data", None)
-        field["loss_mask"] = field["response_mask"]
+        field["fine_grained_mask"] = field["response_mask"]
+        field["response_mask"] = [1] * len(output.response_ids)
+        field["loss_mask"] = field["fine_grained_mask"]
         field["input_ids"] = input_ids
         field["position_ids"] = position_ids
         field["attention_mask"] = attention_mask
