@@ -22,7 +22,9 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
         resume_mode = "auto"
         resume_path = ""
 
-    ppo_mini_batch = args.rollouts_per_prompt * 8
+    # Lumen uses a fixed 8-prompt batch (one per strategy)
+    num_prompts = 8
+    ppo_mini_batch = args.rollouts_per_prompt * num_prompts
 
     overrides = [
         "algorithm.adv_estimator=entropic_adaptive_beta",
@@ -207,7 +209,8 @@ def main() -> None:
     print(f"=== Lumen VERL Training — Iteration {args.iteration} ===")
     print(f"Model: {args.model_path}")
     print(f"GPUs: {args.num_gpus}, TP: {args.rollout_tp}")
-    print(f"Rollouts: 8 × {args.rollouts_per_prompt} = {8 * args.rollouts_per_prompt}")
+    num_prompts = 8
+    print(f"Rollouts: {num_prompts} × {args.rollouts_per_prompt} = {num_prompts * args.rollouts_per_prompt}")
 
     import subprocess
     cmd = [

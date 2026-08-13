@@ -11,5 +11,4 @@ fi
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Forward all arguments to the Python launcher
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 -m factory.lumen.run_verl "$@"
