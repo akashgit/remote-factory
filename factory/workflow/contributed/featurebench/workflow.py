@@ -54,6 +54,9 @@ def workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Analyze the FeatureBench problem statement and repository structure.\n\n"
+            "Note: the test files have been removed by the benchmark harness. Focus on "
+            "understanding what source code needs to be written/modified to implement the "
+            "described interface. Do NOT plan to recreate test files.\n\n"
             "You are running inside a FeatureBench Docker container. The working directory\n"
             "is {project_path} — a git-tracked repository where you must implement a feature.\n"
             "The problem statement has been written to {project_path}/problem_statement.md\n"
@@ -96,6 +99,9 @@ def workflow() -> Workflow:
         role=AgentRole.STRATEGIST,
         prompt_template=(
             "Create an implementation plan for this FeatureBench task.\n\n"
+            "Note: the test files have been removed by the benchmark harness. Focus on "
+            "understanding what source code needs to be written/modified to implement the "
+            "described interface. Do NOT plan to recreate test files.\n\n"
             "You are running inside a FeatureBench Docker container. The working directory\n"
             "is {project_path}. All file paths in your plan must be relative to this directory.\n\n"
             "Read the researcher's analysis at .factory/reviews/researcher-latest.md.\n"
@@ -129,6 +135,11 @@ def workflow() -> Workflow:
         timeout=1200,
         max_iterations=3,
         prompt_template=(
+            "CRITICAL: Your job is to implement or modify SOURCE CODE only. Do NOT create, "
+            "modify, or recreate test files (tests/*). The FeatureBench evaluator provides "
+            "its own test files — anything you write in tests/ will be overwritten. Read the "
+            "interface descriptions in problem_statement.md and implement the code that "
+            "satisfies them in the appropriate source files.\n\n"
             "Implement the FeatureBench feature according to the plan at "
             ".factory/strategy/current.md.\n\n"
             "You are running inside a FeatureBench Docker container. The working directory\n"

@@ -3,19 +3,23 @@
 #
 # Prerequisites:
 #   - Docker installed and running
-#   - ANTHROPIC_API_KEY set in environment
+#   - Auth: ANTHROPIC_API_KEY (direct) OR CLAUDE_CODE_USE_VERTEX (Vertex AI)
 #   - Python 3.11+ with `datasets` package (for HuggingFace dataset access)
 #
 # This script:
 #   1. Installs FeatureBench
 #   2. Copies the factory adapter into FeatureBench's agent registry
-#   3. Creates a config.toml with the API key
+#   3. Creates a config.toml with auth credentials
 #   4. Selects 1-2 L1 tasks from the lite split via --task-id (avoids running all ~10)
 #   5. Validates output.jsonl format
 #   6. Runs fb eval on the output
 #
-# Usage:
+# Usage (direct API key):
 #   ANTHROPIC_API_KEY=sk-ant-... ./scripts/run_featurebench_e2e.sh
+#
+# Usage (Vertex AI):
+#   CLAUDE_CODE_USE_VERTEX=1 ANTHROPIC_VERTEX_PROJECT_ID=my-proj \
+#     CLOUD_ML_REGION=us-east5 ./scripts/run_featurebench_e2e.sh
 
 set -euo pipefail
 
@@ -27,9 +31,9 @@ echo ""
 
 # ── Step 0: Check prerequisites ───────────────────────────────────
 
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    echo "ERROR: ANTHROPIC_API_KEY is not set."
-    echo "Export your API key before running: export ANTHROPIC_API_KEY=sk-ant-..."
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+    echo "ERROR: No auth configured."
+    echo "Set ANTHROPIC_API_KEY for direct auth, or CLAUDE_CODE_USE_VERTEX=1 for Vertex AI."
     exit 1
 fi
 
@@ -89,17 +93,37 @@ echo ""
 echo "=== Step 3: Creating config.toml ==="
 
 WORKDIR=$(mktemp -d)
-cat > "$WORKDIR/config.toml" <<EOF
-[env_vars]
 
-[infer]
-timeout = 7200
-n_concurrent = 1
+# Build config.toml with available auth credentials
+{
+    echo '[env_vars]'
+    echo ''
+    echo '[infer]'
+    echo 'timeout = 7200'
+    echo 'n_concurrent = 1'
+    echo ''
+    echo '[infer_config.factory]'
 
-[infer_config.factory]
-ANTHROPIC_API_KEY = "$ANTHROPIC_API_KEY"
-FACTORY_RUNNER = "claude"
-EOF
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        echo "ANTHROPIC_API_KEY = \"$ANTHROPIC_API_KEY\""
+    fi
+
+    if [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+        echo "CLAUDE_CODE_USE_VERTEX = \"${CLAUDE_CODE_USE_VERTEX}\""
+        echo "ANTHROPIC_VERTEX_PROJECT_ID = \"${ANTHROPIC_VERTEX_PROJECT_ID:-}\""
+        echo "CLOUD_ML_REGION = \"${CLOUD_ML_REGION:-us-east5}\""
+
+        # Read ADC file and pass as env var so it's available inside the container
+        ADC_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+        if [ -f "$ADC_FILE" ]; then
+            ADC_CONTENT=$(cat "$ADC_FILE" | tr -d '\n')
+            echo "GOOGLE_APPLICATION_CREDENTIALS_JSON = '$ADC_CONTENT'"
+            echo "[OK] ADC credentials read from $ADC_FILE">&2
+        fi
+    fi
+
+    echo 'FACTORY_RUNNER = "claude"'
+} > "$WORKDIR/config.toml"
 
 echo "[OK] Config written to $WORKDIR/config.toml"
 

@@ -13,6 +13,11 @@ class FactoryAgent(BaseAgent):
         return """
         set -euo pipefail
 
+        # Install gcloud CLI (needed for Vertex AI auth)
+        curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=/opt
+        echo 'export PATH="/opt/google-cloud-sdk/bin:$PATH"' >> ~/.bashrc
+        export PATH="/opt/google-cloud-sdk/bin:$PATH"
+
         # Install uv
         curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="$HOME/.cargo/bin:$PATH"
@@ -33,20 +38,36 @@ class FactoryAgent(BaseAgent):
         uv sync
 
         # Add to PATH
-        echo 'export PATH="/opt/factory/.venv/bin:$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+        echo 'export PATH="/opt/factory/.venv/bin:/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
         echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
         echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> ~/.bashrc
         """
 
     def get_env_setup_script(self) -> str:
         script = super().get_env_setup_script()
-        script += f"""
-        export ANTHROPIC_API_KEY="{self.env_vars.get('ANTHROPIC_API_KEY', '')}"
-        export FACTORY_RUNNER="{self.env_vars.get('FACTORY_RUNNER', 'claude')}"
-        export PATH="/opt/factory/.venv/bin:$HOME/.cargo/bin:$PATH"
-        export NVM_DIR="$HOME/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-        """
+
+        # API key auth (direct)
+        api_key = self.env_vars.get('ANTHROPIC_API_KEY', '')
+        if api_key:
+            script += f'export ANTHROPIC_API_KEY="{api_key}"\n'
+
+        # Vertex AI auth
+        vertex = self.env_vars.get('CLAUDE_CODE_USE_VERTEX', '')
+        if vertex:
+            script += f'export CLAUDE_CODE_USE_VERTEX="{vertex}"\n'
+            script += f'export ANTHROPIC_VERTEX_PROJECT_ID="{self.env_vars.get("ANTHROPIC_VERTEX_PROJECT_ID", "")}"\n'
+            script += f'export CLOUD_ML_REGION="{self.env_vars.get("CLOUD_ML_REGION", "us-east5")}"\n'
+
+        # Write ADC credentials file if provided as env var
+        adc_json = self.env_vars.get('GOOGLE_APPLICATION_CREDENTIALS_JSON', '')
+        if adc_json:
+            script += 'mkdir -p ~/.config/gcloud\n'
+            script += 'echo $GOOGLE_APPLICATION_CREDENTIALS_JSON > ~/.config/gcloud/application_default_credentials.json\n'
+
+        script += f'export FACTORY_RUNNER="{self.env_vars.get("FACTORY_RUNNER", "claude")}"\n'
+        script += 'export PATH="/opt/factory/.venv/bin:/opt/google-cloud-sdk/bin:$HOME/.cargo/bin:$PATH"\n'
+        script += 'export NVM_DIR="$HOME/.nvm"\n'
+        script += '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n'
         return script
 
     def get_run_command(self, instruction: str) -> str:
