@@ -140,7 +140,6 @@ class TestCmdRun:
             tmp_path.resolve(),
             agent_pool=DEFAULT_AGENT_POOL,
             dry_run=True,
-            variables={},
         )
 
 

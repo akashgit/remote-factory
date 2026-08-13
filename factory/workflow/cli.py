@@ -55,14 +55,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
 
-    variables: dict[str, str] = {}
-    for item in getattr(args, "extra_vars", None) or []:
-        if "=" not in item:
-            print(f"Invalid variable format: {item!r} (expected KEY=VALUE)")
-            return 1
-        k, v = item.split("=", 1)
-        variables[k] = v
-
     wf = WorkflowRegistry.get_workflow(name, project_path)
     if not wf:
         print(f"Unknown workflow: {name}")
@@ -74,7 +66,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         project_path,
         agent_pool=DEFAULT_AGENT_POOL,
         dry_run=dry_run,
-        variables=variables,
     )
 
     from factory.agents.runner import begin_cycle_session, complete_cycle_session
@@ -336,10 +327,6 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
-    p.add_argument(
-        "extra_vars", nargs="*", metavar="KEY=VALUE",
-        help="Workflow variables (e.g. task_name=circle-packing model_path=Qwen/Qwen2.5-7B)",
-    )
 
     # list
     p = wf_sub.add_parser("list", help="List all registered workflows")

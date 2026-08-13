@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Einstein Arena RL Training - MVP version with mock rollouts."""
+"""Einstein Arena RL Training — reads all parameters from a run config file.
+
+Usage:
+    python3 -m factory.lumen.train --config .factory/lumen/current_run/config.json
+"""
 
 import argparse
 import json
@@ -12,32 +16,42 @@ import numpy as np
 def main() -> None:
     """Main entry point for RL training."""
     parser = argparse.ArgumentParser(description="Einstein Arena RL Training (MVP)")
-    parser.add_argument("--task", required=True, help="Task name (e.g., circle-packing)")
-    parser.add_argument("--task-dir", required=True, help="Harbor task directory")
-    parser.add_argument("--project-path", required=True, help="Project root path")
-    parser.add_argument("--iteration", type=int, required=True, help="Current iteration (0-based)")
-    parser.add_argument(
-        "--num-rollouts-per-prompt",
-        type=int,
-        default=8,
-        help="Rollouts per prompt (default: 8, production: 64)",
-    )
-    parser.add_argument(
-        "--mock", action="store_true", default=False, help="Use mock rollouts"
-    )
-    parser.add_argument("--model-path", default="Qwen/Qwen3-8B", help="Base model path")
-
+    parser.add_argument("--config", required=True, help="Path to resolved run config.json")
     args = parser.parse_args()
 
-    project_path = Path(args.project_path)
-    iteration_dir = project_path / ".factory/lumen" / f"iteration_{args.iteration}"
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+
+    if not config_path.exists():
+        print(f"ERROR: Config not found: {config_path}")
+        sys.exit(1)
+
+    with open(config_path) as f:
+        cfg = json.load(f)
+
+    task_name = cfg["task_name"]
+    task_dir = Path(cfg["task_dir"])
+    project_path = config_path.parents[2]  # .factory/lumen/run-NNN/config.json → project root
+    mock = cfg.get("mock", False)
+    model_path = cfg.get("model_path", "Qwen/Qwen3-8B")
+    num_rollouts_per_prompt = cfg.get("num_rollouts_per_prompt", 8)
+
+    # Read current iteration from state.json (in same run directory)
+    run_dir = config_path.parent
+    state_path = run_dir / "state.json"
+    with open(state_path) as f:
+        state = json.load(f)
+    iteration = state["iteration"]
+
+    iteration_dir = run_dir / f"iteration_{iteration}"
     iteration_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== Einstein Arena RL Training (MVP) ===")
-    print(f"Task: {args.task}")
-    print(f"Iteration: {args.iteration}")
-    print(f"Rollouts per prompt: {args.num_rollouts_per_prompt}")
-    print(f"Mode: {'MOCK' if args.mock else 'REAL'}")
+    print(f"Task: {task_name}")
+    print(f"Iteration: {iteration}")
+    print(f"Rollouts per prompt: {num_rollouts_per_prompt}")
+    print(f"Mode: {'MOCK' if mock else 'REAL'}")
     print()
 
     # 1. Load prompts
@@ -52,22 +66,30 @@ def main() -> None:
     prompts = prompts_data["prompts"]
     print(f"Loaded {len(prompts)} prompts")
 
-    # 2. Generate rollouts (MOCK)
-    if args.mock:
+    # 2. Generate rollouts
+    if mock:
         from factory.lumen.mock_rollout import generate_mock_rollouts
 
-        all_rollouts = generate_mock_rollouts(prompts, args.num_rollouts_per_prompt)
+        all_rollouts = generate_mock_rollouts(prompts, num_rollouts_per_prompt)
     else:
         import subprocess
         cmd = [
             sys.executable, "-m", "factory.lumen.run_verl",
             "--prompts", str(prompts_file),
-            "--task-dir", args.task_dir,
-            "--checkpoint-dir", str(project_path / ".factory/lumen/checkpoints/verl"),
+            "--task-dir", str(task_dir),
+            "--checkpoint-dir", str(run_dir / "checkpoint"),
             "--output-dir", str(iteration_dir),
-            "--model-path", getattr(args, "model_path", "Qwen/Qwen3-8B"),
-            "--iteration", str(args.iteration),
-            "--rollouts-per-prompt", str(args.num_rollouts_per_prompt),
+            "--model-path", model_path,
+            "--iteration", str(iteration),
+            "--rollouts-per-prompt", str(num_rollouts_per_prompt),
+            "--num-gpus", str(cfg.get("num_gpus", 8)),
+            "--rollout-tp", str(cfg.get("rollout_tp", 4)),
+            "--lora-rank", str(cfg.get("lora_rank", 32)),
+            "--learning-rate", str(cfg.get("learning_rate", 4e-5)),
+            "--kl-coef", str(cfg.get("kl_coef", 0.1)),
+            "--temperature", str(cfg.get("temperature", 0.8)),
+            "--phase1-max-tokens", str(cfg.get("phase1_max_tokens", 26000)),
+            "--eval-timeout", str(cfg.get("eval_timeout", 60)),
         ]
         result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
@@ -80,47 +102,63 @@ def main() -> None:
     # 3. Evaluate rollouts
     from factory.lumen.evaluate import evaluate_rollouts
 
-    scores = evaluate_rollouts(all_rollouts, Path(args.task_dir))
+    scoring_direction = prompts_data["scoring_direction"]
+    reward_cfg = cfg.get("reward", None)
+    eval_results = evaluate_rollouts(
+        all_rollouts, task_dir,
+        direction=scoring_direction, reward_cfg=reward_cfg,
+    )
+
+    raw_scores = [r["raw_score"] for r in eval_results]
+    scores = [r["score"] for r in eval_results]
+
+    for rollout, raw, shaped in zip(all_rollouts, raw_scores, scores):
+        rollout["raw_score"] = raw
+        rollout["score"] = shaped
 
     print(f"Evaluated {len(scores)} solutions")
 
-    # 4. Find best
-    scoring_direction = prompts_data["scoring_direction"]
+    # 4. Find best (by raw score — the verifier's actual metric)
     if scoring_direction == "maximize":
-        best_idx = int(np.argmax(scores))
+        best_idx = int(np.argmax(raw_scores))
     else:
-        best_idx = int(np.argmin(scores))
+        best_idx = int(np.argmin(raw_scores))
 
     # 5. Compute per-prompt stats
     per_prompt_stats = []
     num_prompts = len(prompts)
     for i in range(num_prompts):
-        start = i * args.num_rollouts_per_prompt
-        end = start + args.num_rollouts_per_prompt
-        prompt_scores = scores[start:end]
+        start = i * num_rollouts_per_prompt
+        end = start + num_rollouts_per_prompt
+        prompt_raw = raw_scores[start:end]
+        prompt_shaped = scores[start:end]
 
         per_prompt_stats.append(
             {
                 "prompt_idx": i,
                 "strategy": prompts[i]["strategy"],
-                "mean": float(np.mean(prompt_scores)),
-                "std": float(np.std(prompt_scores)),
+                "mean_raw": float(np.mean(prompt_raw)),
+                "mean_reward": float(np.mean(prompt_shaped)),
+                "std": float(np.std(prompt_raw)),
                 "best": float(
-                    max(prompt_scores) if scoring_direction == "maximize" else min(prompt_scores)
+                    max(prompt_raw) if scoring_direction == "maximize" else min(prompt_raw)
                 ),
             }
         )
 
     # 6. Save results
     results = {
-        "iteration": args.iteration,
+        "iteration": iteration,
         "num_rollouts": len(all_rollouts),
+        "raw_scores": raw_scores,
         "scores": scores,
+        "best_raw_score": raw_scores[best_idx],
         "best_score": scores[best_idx],
         "best_rollout_idx": best_idx,
         "best_solution": all_rollouts[best_idx]["solution"],
+        "mean_raw_score": float(np.mean(raw_scores)),
         "mean_score": float(np.mean(scores)),
-        "std_score": float(np.std(scores)),
+        "std_score": float(np.std(raw_scores)),
         "per_prompt_stats": per_prompt_stats,
     }
 
@@ -135,7 +173,7 @@ def main() -> None:
             f.write(json.dumps(rollout) + "\n")
 
     print()
-    print("✓ Results saved:")
+    print("Results saved:")
     print(f"  - {results_file}")
     print(f"  - {rollouts_file}")
     print(f"  - Best score: {results['best_score']:.6f}")
