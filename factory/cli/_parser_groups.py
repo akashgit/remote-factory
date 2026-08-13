@@ -148,6 +148,11 @@ def add_project_intelligence_parsers(sub: argparse._SubParsersAction) -> None:  
         help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
 
+    p = sub.add_parser("report", help="Generate self-contained HTML report for a project")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--output", default=None, help="Output HTML file path (default: <project>/.factory/report.html)")
+    p.add_argument("--assess", action="store_true", default=False, help="Invoke reporter agent to assess goal achievement")
+
     p = sub.add_parser("report-update", help="Generate performance report for a project")
     p.add_argument("path", help="Path to the project")
 
@@ -337,7 +342,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("role", choices=["researcher", "strategist", "builder",
                                      "health_checker", "code_reviewer", "adversarial_tester",
                                      "archivist", "ceo",
-                                     "failure_analyst", "refiner"],
+                                     "failure_analyst", "refiner", "profiler",
+                                     "reporter"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")

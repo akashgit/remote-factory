@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -879,7 +879,7 @@ wheels = [
 
 [[package]]
 name = "graphifyy"
-version = "0.9.29"
+version = "0.9.31"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "networkx" },
@@ -912,9 +912,9 @@ dependencies = [
     { name = "tree-sitter-verilog" },
     { name = "tree-sitter-zig" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/69/54/b4e0dd99565f4cef3cbd85e002ddb1333407c97a6aa3bfe885ccfc1da55d/graphifyy-0.9.29.tar.gz", hash = "sha256:8410d178a4ba083993ada2410279a2601d4939ad4a494c04fd7c3fd3f3aff14b", size = 1654893, upload-time = "2026-07-28T09:53:22.313Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/aa/d33c975311e1a4387593125741749e91ffb7273592699481a2090eebac15/graphifyy-0.9.31.tar.gz", hash = "sha256:432bef870132cd3f1b648e128cdec4d1fe1d62ab0246b9d34c679782aaaaad2e", size = 1680522, upload-time = "2026-07-30T18:16:19.855Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/b1/0cbe4738ca9784850d40aae0d71c34547230e0445e52067f98b8d0b6c070/graphifyy-0.9.29-py3-none-any.whl", hash = "sha256:143f4002f40d5c302ae43bd58487ad604191f2d0ac8216429894c6a913ecf27b", size = 1201738, upload-time = "2026-07-28T09:53:20.454Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/59/0701d592fde59db2ba9a4ab8b3fbdc5e77a9ac63159bc683fa2ef6452907/graphifyy-0.9.31-py3-none-any.whl", hash = "sha256:b0d47f823f924e7f89acfee390b9f18dc3410917617c5f6f2731bd2642abf16f", size = 1213927, upload-time = "2026-07-30T18:16:17.944Z" },
 ]
 
 [[package]]
@@ -2848,6 +2848,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "filelock" },
     { name = "graphifyy" },
+    { name = "jinja2" },
     { name = "langfuse" },
     { name = "mcp" },
     { name = "mempalace" },
@@ -2886,6 +2887,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=3.0" },
     { name = "graphifyy", specifier = ">=0.9" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "langfuse", specifier = ">=3.0" },
     { name = "langfuse", marker = "extra == 'telemetry'", specifier = ">=3.0" },
     { name = "mcp", specifier = ">=1.27.0" },

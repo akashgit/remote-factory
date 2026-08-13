@@ -74,6 +74,7 @@ from factory.cli.registry import (
     cmd_digest as cmd_digest,
     cmd_insights as cmd_insights,
     cmd_registry_list as cmd_registry_list,
+    cmd_report as cmd_report,
     cmd_report_update as cmd_report_update,
 )
 from factory.cli.research import (

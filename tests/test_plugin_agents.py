@@ -47,9 +47,9 @@ class TestLoadAgentConfig:
         assert load_agent_config()["ceo"].model == "opus"
 
     def test_agent_model_assignments(self):
-        """Researcher uses sonnet; archivist uses haiku; all other agents use opus."""
+        """Researcher uses sonnet; archivist and reporter use haiku; all other agents use opus."""
         sonnet_roles = {"researcher"}
-        haiku_roles = {"archivist"}
+        haiku_roles = {"archivist", "reporter"}
         for role, meta in load_agent_config().items():
             if role in sonnet_roles:
                 assert meta.model == "sonnet", f"{role} should use sonnet, got {meta.model}"
