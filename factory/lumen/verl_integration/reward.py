@@ -15,7 +15,7 @@ from pathlib import Path
 
 def extract_last_code_block(text: str) -> str | None:
     """Extract the last fenced code block from model output."""
-    pattern = r"```(?:python)?\s*\n(.*?)```"
+    pattern = r"```(?:[Pp]ython|[Pp]y)?\s*\n(.*?)```"
     matches = re.findall(pattern, text, re.DOTALL)
     if not matches:
         return None
@@ -65,7 +65,7 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> floa
                 timeout=timeout,
                 check=False,
             )
-        except (subprocess.TimeoutExpired, Exception):
+        except Exception:
             return 0.0
 
         score_file = workspace / "score.txt"

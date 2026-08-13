@@ -15,10 +15,6 @@ dependencies = [
     "langfuse>=3.0",
     "mempalace>=3.6.0",
     "graphifyy>=0.9",
-    "pandas>=2.0",
-    "numpy>=1.24",
-    "pyarrow>=10.0",
-    "torch>=2.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -39,6 +35,7 @@ Issues = "https://github.com/akashgit/remote-factory/issues"
 [project.optional-dependencies]
 migrate = ["tomli_w>=1.0"]
 telemetry = ["langfuse>=3.0"]  # kept for backward compat; langfuse is now a core dep
+lumen = ["pandas>=2.0", "numpy>=1.24", "pyarrow>=10.0", "torch>=2.0"]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
