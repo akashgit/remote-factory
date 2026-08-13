@@ -28,11 +28,6 @@ DEFAULT_MODEL = "claude-sonnet-4-20250514"
 DEFAULT_RESULTS_DIR = Path(__file__).parent / "results"
 
 
-# ---------------------------------------------------------------------------
-# 1. Task Setup
-# ---------------------------------------------------------------------------
-
-
 def load_task_metadata(task_id: str) -> dict:
     """Load task metadata from HuggingFace dataset."""
     try:
@@ -143,11 +138,6 @@ def _git_init(task_dir: Path) -> str:
     return result.stdout.strip()
 
 
-# ---------------------------------------------------------------------------
-# 2. Factory Workflow Execution
-# ---------------------------------------------------------------------------
-
-
 def run_factory(
     task_id: str,
     task_dir: Path,
@@ -201,11 +191,6 @@ def extract_patch(task_dir: Path, initial_sha: str) -> str:
     return result.stdout
 
 
-# ---------------------------------------------------------------------------
-# 3. Baseline Execution
-# ---------------------------------------------------------------------------
-
-
 def run_baseline(
     task_ids: list[str],
     model: str = DEFAULT_MODEL,
@@ -230,11 +215,6 @@ def run_baseline(
     log.info("Running baseline: %s", " ".join(cmd))
     subprocess.run(cmd, check=True)
     return baseline_dir
-
-
-# ---------------------------------------------------------------------------
-# 4. Evaluation
-# ---------------------------------------------------------------------------
 
 
 def evaluate(results_dir: Path) -> dict | None:
@@ -270,11 +250,6 @@ def evaluate(results_dir: Path) -> dict | None:
 
     log.warning("Could not parse fb eval output")
     return None
-
-
-# ---------------------------------------------------------------------------
-# 5. Comparison
-# ---------------------------------------------------------------------------
 
 
 def compare(factory_results: dict, baseline_results: dict) -> dict:
@@ -380,11 +355,6 @@ def _print_summary(report: dict) -> None:
     print("=" * 80)
 
 
-# ---------------------------------------------------------------------------
-# 6. CLI Interface
-# ---------------------------------------------------------------------------
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="FeatureBench direct-workflow benchmarking script",
@@ -458,6 +428,7 @@ def main(argv: list[str] | None = None) -> None:
 
         for tid in task_ids:
             log.info("=== Factory: %s ===", tid)
+            task_dir = None
             try:
                 task_dir, initial_sha = setup_task(tid)
                 entry = run_factory(tid, task_dir, initial_sha, timeout=args.timeout)
@@ -476,8 +447,7 @@ def main(argv: list[str] | None = None) -> None:
                     "success": False,
                 })
             finally:
-                # Clean up temp dirs
-                if "task_dir" in dir() and task_dir.exists():
+                if task_dir is not None and task_dir.exists():
                     shutil.rmtree(task_dir.parent, ignore_errors=True)
 
         output_jsonl = factory_dir / "output.jsonl"

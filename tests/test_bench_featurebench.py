@@ -226,41 +226,20 @@ class TestSetupTask:
 
 
 class TestRunFactory:
+    @patch("bench.extract_patch", return_value="diff --git a/f.py b/f.py\n-old\n+new")
     @patch("subprocess.run")
-    def test_returns_entry_on_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_returns_entry_on_success(self, mock_run: MagicMock, mock_patch: MagicMock, tmp_path: Path) -> None:
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         repo = tmp_path / "testbed"
         repo.mkdir()
-        (repo / "file.py").write_text("# code\n")
-        subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
-        subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True, check=True)
-        subprocess.run(
-            ["git", "-c", "user.email=t@t", "-c", "user.name=t",
-             "commit", "-m", "init"],
-            cwd=repo, capture_output=True, check=True,
-        )
-        initial = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo,
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
 
-        # Reset mock so it doesn't interfere with our real git setup
-        mock_run.reset_mock()
-
-        # Make factory workflow a no-op, but let git commands pass through
-        def side_effect(*args, **kwargs):
-            cmd = args[0] if args else kwargs.get("args", [])
-            if cmd and cmd[0] == "factory":
-                return subprocess.CompletedProcess(cmd, 0, "", "")
-            return subprocess.run.__wrapped__(*args, **kwargs)  # type: ignore[attr-defined]
-
-        # Use a simpler approach — just mock the factory call
-        with patch("subprocess.run") as m:
-            m.return_value = subprocess.CompletedProcess([], 0, "", "")
-            entry = bench.run_factory("task_x", repo, initial, timeout=60)
+        entry = bench.run_factory("task_x", repo, "a" * 40, timeout=60)
 
         assert entry["instance_id"] == "task_x"
         assert entry["agent"] == "factory_workflow"
-        assert isinstance(entry["model_patch"], str)
+        assert entry["model"] == "factory-featurebench"
+        assert entry["model_patch"] == "diff --git a/f.py b/f.py\n-old\n+new"
+        assert entry["success"] is True
 
     @patch("subprocess.run")
     def test_handles_timeout(self, mock_run: MagicMock) -> None:
@@ -277,6 +256,28 @@ class TestRunFactory:
 
         assert entry["success"] is False
         assert entry["instance_id"] == "task_timeout"
+
+
+class TestRunBaseline:
+    @patch("subprocess.run")
+    def test_constructs_correct_fb_command(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+
+        result = bench.run_baseline(
+            ["task_a", "task_b"],
+            model="claude-sonnet-4-20250514",
+            results_dir=tmp_path,
+        )
+
+        assert result == tmp_path / "baseline"
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[:2] == ["fb", "infer"]
+        assert cmd[cmd.index("--agent") + 1] == "claude_code"
+        assert cmd[cmd.index("--model") + 1] == "claude-sonnet-4-20250514"
+        assert "--output-dir" in cmd
+        assert "task_a" in cmd
+        assert "task_b" in cmd
 
 
 class TestBuildParser:
