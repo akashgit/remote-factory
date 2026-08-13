@@ -1,0 +1,30 @@
+# FeatureBench configuration for running factory as an agent.
+# Copy to config.toml and fill in your credentials.
+
+[env_vars]
+# Global env vars exported into every container
+# ANTHROPIC_API_KEY = ""
+
+[infer]
+# Inference runtime settings
+timeout = 7200
+n_concurrent = 1
+# download_cache_dir = "/path/to/download/cache"
+
+[infer_config.factory]
+# Factory-specific env vars (exported in container before agent runs)
+
+# Option A: Direct API key auth
+# ANTHROPIC_API_KEY = "sk-ant-..."
+
+# Option B: Vertex AI auth (Google Cloud)
+CLAUDE_CODE_USE_VERTEX = "1"
+ANTHROPIC_VERTEX_PROJECT_ID = "your-gcp-project-id"
+CLOUD_ML_REGION = "us-east5"
+# Pass ADC credentials as JSON string (read from ~/.config/gcloud/application_default_credentials.json)
+# GOOGLE_APPLICATION_CREDENTIALS_JSON = '{...}'
+
+FACTORY_RUNNER = "claude"
+
+# Optional: override the Claude model used by factory agents
+# FACTORY_MODEL = "claude-sonnet-4-20250514"
