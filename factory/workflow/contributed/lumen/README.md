@@ -1,22 +1,33 @@
 # Lumen Workflow
 
-Lumen RL training workflow (MVP) - trains agents on Einstein Arena mathematical optimization tasks.
+Lumen RL training workflow for Einstein Arena.
 
-## Graph
+## Quick Links
 
-```
-study (FnNode) → train (AgentNode)
-```
+- **📚 Full Documentation**: [`factory/lumen/README.md`](../../../lumen/README.md)
+- **✅ Verification Script**: [`factory/lumen/env_specs/verify_env.py`](../../../lumen/env_specs/verify_env.py)
 
-- **study**: Creates `.factory/lumen/` directory for training artifacts
-- **train**: Runs RL training loop with mock rollouts (real vLLM integration deferred to v2)
-
-## Usage
+## Quick Start
 
 ```bash
+# 1. Install lumen environment
+cd factory/lumen
+uv sync --no-install-project
+uv pip install vllm
+git clone https://github.com/ash-ding/verl.git ~/verl
+uv pip install -e ~/verl
+
+# 2. Verify installation
+.venv/bin/python env_specs/verify_env.py
+
+# 3. Run workflow
 factory ceo /path/to/project --mode lumen
 ```
 
-## Notes
+## Files in this Directory
 
-This is an MVP implementation that uses mock rollout generation. Real vLLM HTTP backend integration is tracked in the project backlog.
+- `workflow.py` - Workflow graph definition
+- `test_workflow.py` - Workflow tests
+- `__init__.py` - Package marker
+
+All other Lumen-related code and documentation is in `factory/lumen/`.

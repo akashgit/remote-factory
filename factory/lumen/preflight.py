@@ -1,5 +1,8 @@
 """Lumen workflow preflight — environment check, GPU probe, run directory setup.
 
+Environment: Uses uv virtual environment (default: ~/.venvs/lumen)
+Override via: LUMEN_PYTHON environment variable
+
 Usage:
     python3 -m factory.lumen.preflight --project-path /path
     python3 -m factory.lumen.preflight --project-path /path --task-dir benchmarks/einsteinarena/circle-packing
@@ -24,28 +27,57 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def check_conda_env(env_name: str = "lumen") -> tuple[bool, str]:
-    """Check if the conda environment exists and has torch + verl."""
-    current_env = os.environ.get("CONDA_DEFAULT_ENV", "")
-    if current_env == env_name:
-        try:
-            import torch  # noqa: F401
-            return True, f"conda env '{env_name}' active, torch available"
-        except ImportError:
-            return False, f"conda env '{env_name}' active but torch not installed"
+def check_uv_env(python_path: str | None = None) -> tuple[bool, str]:
+    """Check if the uv virtual environment exists and has critical packages.
 
-    result = subprocess.run(
-        ["conda", "env", "list", "--json"],
-        capture_output=True, text=True, check=False,
-    )
+    Args:
+        python_path: Path to Python executable. Defaults to LUMEN_PYTHON env var
+                     or factory/lumen/.venv/bin/python (relative to project root)
+    """
+    if python_path is None:
+        python_path = os.getenv("LUMEN_PYTHON", "factory/lumen/.venv/bin/python")
+
+    python_exe = Path(python_path)
+    if not python_exe.is_absolute():
+        # Resolve relative path from current directory
+        python_exe = Path.cwd() / python_exe
+    python_exe = python_exe.expanduser()
+
+    # Check if Python executable exists
+    if not python_exe.exists():
+        return False, f"uv venv Python not found at {python_exe}"
+
+    if not python_exe.is_file():
+        return False, f"{python_exe} is not a file"
+
+    # Check critical packages
+    check_cmd = [
+        str(python_exe), "-c",
+        "import sys; "
+        "missing = []; "
+        "try: import torch\n"
+        "except ImportError: missing.append('torch')\n"
+        "try: import vllm\n"
+        "except ImportError: missing.append('vllm')\n"
+        "try: import verl\n"
+        "except ImportError: missing.append('verl')\n"
+        "try: import numpy\n"
+        "except ImportError: missing.append('numpy')\n"
+        "try: import pandas\n"
+        "except ImportError: missing.append('pandas')\n"
+        "if missing: print(f'MISSING:{','.join(missing)}'); sys.exit(1)\n"
+        "else: print('OK')"
+    ]
+    result = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+
     if result.returncode != 0:
-        return False, "conda not available"
+        output = result.stdout.strip()
+        if output.startswith("MISSING:"):
+            missing = output.split(":")[1]
+            return False, f"uv venv at {python_exe} missing packages: {missing}"
+        return False, f"uv venv at {python_exe} package check failed: {result.stderr}"
 
-    envs = json.loads(result.stdout).get("envs", [])
-    if not any(e.endswith(f"/{env_name}") or e.endswith(f"\\{env_name}") for e in envs):
-        return False, f"conda env '{env_name}' not found"
-
-    return True, f"conda env '{env_name}' exists (not currently active)"
+    return True, f"uv venv verified at {python_exe}"
 
 
 def detect_gpus() -> dict:
@@ -120,17 +152,22 @@ def main() -> None:
 
     print("=== Lumen Preflight ===")
 
-    # 1. Check conda env (skip in mock mode)
+    # 1. Check uv venv (skip in mock mode)
     if args.mock:
-        print("[SKIP] conda check (mock mode)")
+        print("[SKIP] Python env check (mock mode)")
     else:
-        ok, msg = check_conda_env()
+        ok, msg = check_uv_env()
         print(f"[{'OK' if ok else 'FAIL'}] {msg}")
         if not ok:
-            print("\nTo set up the environment:")
-            print("  conda create -n lumen python=3.11 -y")
-            print("  conda activate lumen")
-            print("  See factory/lumen/docs/environment-setup.md")
+            print("\n" + "=" * 60)
+            print("ERROR: Lumen training environment not ready")
+            print("=" * 60)
+            print("\nThe Lumen workflow requires a pre-configured Python environment.")
+            print("Please follow the installation steps in:")
+            print("\n  factory/lumen/README.md")
+            print("\nAfter installation, verify with:")
+            print("  factory/lumen/.venv/bin/python factory/lumen/env_specs/verify_env.py")
+            print("=" * 60)
             sys.exit(1)
 
     # 2. Detect GPUs (skip in mock mode)

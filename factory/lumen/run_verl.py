@@ -212,8 +212,11 @@ def main() -> None:
     print(f"Rollouts: {args.groups_per_batch} × {args.rollouts_per_prompt} = {total}")
 
     import subprocess
+    # CRITICAL: Use current Python (should be from lumen conda env)
+    # This script should be invoked via: conda run -n lumen python -m factory.lumen.run_verl
+    python_exe = sys.executable
     cmd = [
-        sys.executable, "-m", "verl.trainer.main_ppo",
+        python_exe, "-m", "verl.trainer.main_ppo",
         *overrides,
     ]
     result = subprocess.run(cmd, check=False)

@@ -1,0 +1,41 @@
+[project]
+name = "lumen-runtime"
+version = "0.1.0"
+description = "Lumen RL training runtime environment for Einstein Arena"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    # Scientific Computing
+    "numpy>=2.0.0",
+    "pandas>=2.3",
+    "pyarrow>=19.0.0",
+
+    # RL & Training Framework
+    "accelerate>=1.14.0",
+    "peft",
+    "transformers!=5.6.0",  # 5.6.0 has flash-attention bug
+    "datasets",
+    "tensordict>=0.8.0,<=0.10.0,!=0.9.0",
+
+    # Distributed Computing
+    "ray[default]",
+
+    # Configuration & Utils
+    "hydra-core",
+    "packaging>=20.0",
+
+    # Math & Verification
+    "math_verify",
+    "latex2sympy2_extended",
+    "pylatexenc",
+
+    # Monitoring & Logging
+    "wandb",
+    "tensorboard",
+    "codetiming",
+
+    # Data Structures
+    "TransferQueue==0.1.8",
+
+    # Build Tools (for VERL compilation)
+    "pybind11",
+]

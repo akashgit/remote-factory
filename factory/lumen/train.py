@@ -73,8 +73,11 @@ def main() -> None:
         all_rollouts = generate_mock_rollouts(prompts, num_rollouts_per_prompt)
     else:
         import subprocess
+        # CRITICAL: Use current Python (should be from lumen conda env)
+        # This script should be invoked via: conda run -n lumen python -m factory.lumen.train
+        python_exe = sys.executable
         cmd = [
-            sys.executable, "-m", "factory.lumen.run_verl",
+            python_exe, "-m", "factory.lumen.run_verl",
             "--prompts", str(prompts_file),
             "--task-dir", str(task_dir),
             "--checkpoint-dir", str(run_dir / "checkpoint"),
