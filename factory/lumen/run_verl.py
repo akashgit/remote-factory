@@ -72,7 +72,8 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
         "actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=32768",
         "actor_rollout_ref.ref.fsdp_config.param_offload=True",
         "actor_rollout_ref.ref.fsdp_config.ulysses_sequence_parallel_size=1",
-        f"reward.custom_reward_function.path={Path(__file__).parent / 'verl_integration/reward.py'}",
+        "reward.custom_reward_function.path="
+        f"{Path(__file__).parent / 'verl_integration/reward.py'}",
         "reward.custom_reward_function.name=compute_score",
         "trainer.balance_batch=True",
         'trainer.logger=["console","file"]',
@@ -210,7 +211,8 @@ def main() -> None:
     print(f"Model: {args.model_path}")
     print(f"GPUs: {args.num_gpus}, TP: {args.rollout_tp}")
     num_prompts = 8
-    print(f"Rollouts: {num_prompts} × {args.rollouts_per_prompt} = {num_prompts * args.rollouts_per_prompt}")
+    total = num_prompts * args.rollouts_per_prompt
+    print(f"Rollouts: {num_prompts} × {args.rollouts_per_prompt} = {total}")
 
     import subprocess
     cmd = [

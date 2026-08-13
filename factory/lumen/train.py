@@ -105,7 +105,9 @@ def main() -> None:
                 "strategy": prompts[i]["strategy"],
                 "mean": float(np.mean(prompt_scores)),
                 "std": float(np.std(prompt_scores)),
-                "best": float(max(prompt_scores) if scoring_direction == "maximize" else min(prompt_scores)),
+                "best": float(
+                    max(prompt_scores) if scoring_direction == "maximize" else min(prompt_scores)
+                ),
             }
         )
 
