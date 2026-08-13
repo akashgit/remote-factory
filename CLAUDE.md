@@ -171,6 +171,18 @@ CODEX_API_KEY = "..."
 ```
 Then run: `factory ceo /path/to/project --profile codex`
 
+**Glaude specifics:**
+- Installed at `~/.local/bin/glaude`, wraps the `claude` binary against a GLM-5.2 LiteLLM proxy
+- Auth is baked into the wrapper script (no env var needed)
+- Dry-run mode: `FACTORY_GLAUDE_DRY_RUN=1`
+
+**Glaude config profile example** (`~/.factory/config.toml`):
+```toml
+[credentials.glaude]
+FACTORY_RUNNER = "glaude"
+```
+Then run: `factory ceo /path/to/project --runner glaude` or `factory ceo /path --profile glaude`
+
 **OpenCode specifics:**
 - Requires `OPENAI_API_KEY` environment variable
 - The factory targets `opencode-ai/opencode` v0.x (uses `-p`, `-q`, `-c` flags). Install from source: `go install github.com/opencode-ai/opencode@latest`, or via the [GitHub release tarball](https://github.com/opencode-ai/opencode/releases)

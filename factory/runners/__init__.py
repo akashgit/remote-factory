@@ -8,6 +8,7 @@ from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
+from factory.runners.glaude import GlaudeRunner, is_glaude_dry_run
 from factory.runners.opencode import OpenCodeRunner, is_opencode_dry_run
 from factory.runners.protocol import Runner, RunnerMeta
 
@@ -21,12 +22,14 @@ __all__ = [
     "ClaudeRunner",
     "BobRunner",
     "CodexRunner",
+    "GlaudeRunner",
     "OpenCodeRunner",
     "get_runner",
     "get_available_runners",
     "get_runner_choices",
     "is_dry_run",
     "is_codex_dry_run",
+    "is_glaude_dry_run",
     "is_opencode_dry_run",
     "should_stream",
     "stream_subprocess",
@@ -36,6 +39,7 @@ _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
+    "glaude": GlaudeRunner,  # type: ignore[dict-item]
     "opencode": OpenCodeRunner,  # type: ignore[dict-item]
 }
 
