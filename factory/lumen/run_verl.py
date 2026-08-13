@@ -22,9 +22,8 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
         resume_mode = "auto"
         resume_path = ""
 
-    # Lumen uses a fixed 8-prompt batch (one per strategy)
-    num_prompts = 8
-    ppo_mini_batch = args.rollouts_per_prompt * num_prompts
+    groups_per_batch = args.groups_per_batch
+    ppo_mini_batch = args.rollouts_per_prompt * groups_per_batch
 
     overrides = [
         "algorithm.adv_estimator=entropic_adaptive_beta",
@@ -32,7 +31,7 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
         f"algorithm.kl_ctrl.kl_coef={args.kl_coef}",
         f"data.train_files={args.parquet_path}",
         f"data.val_files={args.parquet_path}",
-        "data.train_batch_size=8",
+        f"data.train_batch_size={groups_per_batch}",
         "data.max_prompt_length=4096",
         "data.max_response_length=28672",
         "data.filter_overlong_prompts=True",
@@ -186,9 +185,10 @@ def main() -> None:
     parser.add_argument("--lora-rank", type=int, default=32)
     parser.add_argument("--learning-rate", type=float, default=4e-5)
     parser.add_argument("--kl-coef", type=float, default=0.1)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--phase1-max-tokens", type=int, default=26000)
-    parser.add_argument("--eval-timeout", type=int, default=60)
+    parser.add_argument("--eval-timeout", type=int, default=530)
+    parser.add_argument("--groups-per-batch", type=int, default=8)
 
     args = parser.parse_args()
 
@@ -210,9 +210,8 @@ def main() -> None:
     print(f"=== Lumen VERL Training — Iteration {args.iteration} ===")
     print(f"Model: {args.model_path}")
     print(f"GPUs: {args.num_gpus}, TP: {args.rollout_tp}")
-    num_prompts = 8
-    total = num_prompts * args.rollouts_per_prompt
-    print(f"Rollouts: {num_prompts} × {args.rollouts_per_prompt} = {total}")
+    total = args.groups_per_batch * args.rollouts_per_prompt
+    print(f"Rollouts: {args.groups_per_batch} × {args.rollouts_per_prompt} = {total}")
 
     import subprocess
     cmd = [

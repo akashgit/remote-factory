@@ -35,7 +35,7 @@ def main() -> None:
     project_path = config_path.parents[2]  # .factory/lumen/run-NNN/config.json → project root
     mock = cfg.get("mock", False)
     model_path = cfg.get("model_path", "Qwen/Qwen3-8B")
-    num_rollouts_per_prompt = cfg.get("num_rollouts_per_prompt", 8)
+    num_rollouts_per_prompt = cfg.get("num_rollouts_per_prompt", 64)
 
     # Read current iteration from state.json (in same run directory)
     run_dir = config_path.parent
@@ -87,9 +87,10 @@ def main() -> None:
             "--lora-rank", str(cfg.get("lora_rank", 32)),
             "--learning-rate", str(cfg.get("learning_rate", 4e-5)),
             "--kl-coef", str(cfg.get("kl_coef", 0.1)),
-            "--temperature", str(cfg.get("temperature", 0.8)),
+            "--temperature", str(cfg.get("temperature", 1.0)),
             "--phase1-max-tokens", str(cfg.get("phase1_max_tokens", 26000)),
-            "--eval-timeout", str(cfg.get("eval_timeout", 60)),
+            "--eval-timeout", str(cfg.get("eval_timeout", 530)),
+            "--groups-per-batch", str(cfg.get("groups_per_batch", 8)),
         ]
         result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
