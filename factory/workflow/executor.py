@@ -83,12 +83,14 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        variables: dict[str, str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        self.variables = variables or {}
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -98,6 +100,14 @@ class WorkflowExecutor:
         self._edge_index: dict[str, list[Edge]] = {}
         for edge in workflow.edges:
             self._edge_index.setdefault(edge.source, []).append(edge)
+
+    def _substitute(self, text: str, *, quote: bool = False) -> str:
+        """Replace {project_path} and workflow variables in a template string."""
+        val = shlex.quote(str(self.project_path)) if quote else str(self.project_path)
+        result = text.replace("{project_path}", val)
+        for key, v in self.variables.items():
+            result = result.replace(f"{{{key}}}", shlex.quote(v) if quote else v)
+        return result
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""
@@ -561,6 +571,7 @@ class WorkflowExecutor:
                 wt_path if not self.dry_run else self.project_path,
                 agent_pool=self.agent_pool,
                 dry_run=self.dry_run,
+                variables=self.variables,
             )
             branch_result = await branch_executor.execute()
 
@@ -804,14 +815,14 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
-        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
+        cmd = self._substitute(node.command, quote=True)
         return await self._run_shell(cmd)
 
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
         from factory.agents.runner import invoke_agent
 
-        task = node.prompt_template
+        task = self._substitute(node.prompt_template)
         context = self.node_context.get(node.id, "")
         if context:
             task = f"{task}\n\n{context}"
@@ -853,9 +864,7 @@ class WorkflowExecutor:
 
         if node.evaluator_type == "fn":
             if node.evaluator_command:
-                cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
-                )
+                cmd = self._substitute(node.evaluator_command, quote=True)
                 try:
                     output = await self._run_shell(cmd)
                     return self._parse_fn_verdict(output, node.id)
@@ -886,9 +895,7 @@ class WorkflowExecutor:
     def _build_gate_prompt(self, node: GateNode) -> str:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
-            return node.gate_prompt.replace(
-                "{project_path}", str(self.project_path),
-            )
+            return self._substitute(node.gate_prompt)
 
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
         context = self.node_context.get(node.id, "none")
