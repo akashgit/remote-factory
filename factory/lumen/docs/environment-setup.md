@@ -2,15 +2,15 @@
 
 ## 复用现有环境
 
-如果 `verl_discover` conda 环境已存在（例如之前用来跑 Discover）：
+如果 `lumen` conda 环境已存在：
 
-    conda activate verl_discover
+    conda activate lumen
     python -c "import verl; import vllm; import peft; print('OK')"
 
 ## 从零搭建
 
-    conda create -n verl_discover python=3.11 -y
-    conda activate verl_discover
+    conda create -n lumen python=3.11 -y
+    conda activate lumen
     pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
     pip install vllm==0.23.0
     cd /path/to/discover/verl && pip install -e .
@@ -22,7 +22,7 @@
 
 ## Workflow 中的环境激活
 
-`run_verl.sh` 脚本头部自动激活 `verl_discover`。如需使用其他环境名，设置：
+`run_verl.sh` 脚本头部自动激活 `lumen`。如需使用其他环境名，设置：
 
     CONDA_ENV=my_env bash factory/lumen/run_verl.sh ...
 
