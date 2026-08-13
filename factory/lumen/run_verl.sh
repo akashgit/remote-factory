@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Lumen VERL launcher — activates verl_discover conda env and delegates to run_verl.py
+# Lumen VERL launcher — activates lumen conda env and delegates to run_verl.py
 set -xeuo pipefail
 
-CONDA_ENV=${CONDA_ENV:-verl_discover}
+CONDA_ENV=${CONDA_ENV:-lumen}
 if [ "$CONDA_DEFAULT_ENV" != "$CONDA_ENV" ]; then
     eval "$(conda shell.bash hook 2>/dev/null)" && conda activate "$CONDA_ENV"
 fi

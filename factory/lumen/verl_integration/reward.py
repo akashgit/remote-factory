@@ -1,14 +1,16 @@
 """VERL reward function for Einstein Arena evaluation.
 
 Evaluates model output by extracting code, executing it in a sandbox,
-and running the task's test.sh verifier to produce a score.
+and running the task's verifier to produce a score.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -23,15 +25,14 @@ def extract_last_code_block(text: str) -> str | None:
 
 
 def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> float:
-    """Execute code in a sandbox and evaluate with test.sh.
+    """Execute code in a sandbox and evaluate with the task's verifier.
 
     1. Write code to a temp file
     2. Execute it (produces solution.json in workspace)
-    3. Run test.sh verifier
-    4. Read score.txt
+    3. Load verifier.py and score the solution
     """
-    test_sh = (task_dir / "tests" / "test.sh").resolve()
-    if not test_sh.exists():
+    verifier_path = (task_dir / "verifier.py").resolve()
+    if not verifier_path.exists():
         return 0.0
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -54,27 +55,23 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> floa
         except Exception:
             return 0.0
 
-        try:
-            env = os.environ.copy()
-            env["WORKSPACE"] = str(workspace)
-            subprocess.run(
-                ["bash", str(test_sh)],
-                cwd=str(tmpdir),
-                env=env,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
-        except Exception:
+        solution_file = workspace / "solution.json"
+        if not solution_file.exists():
             return 0.0
 
-        score_file = workspace / "score.txt"
-        if score_file.exists():
-            try:
-                return float(score_file.read_text().strip())
-            except ValueError:
-                return 0.0
-        return 0.0
+        try:
+            import json
+            with open(solution_file) as f:
+                data = json.load(f)
+
+            spec = importlib.util.spec_from_file_location("verifier", verifier_path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["verifier"] = module
+            spec.loader.exec_module(module)
+
+            return float(module.evaluate(data))
+        except Exception:
+            return 0.0
 
 
 def compute_score(

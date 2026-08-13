@@ -1,83 +1,56 @@
-"""Evaluate solutions using the Harbor verifier."""
+"""Evaluate solutions using Einstein Arena verifiers."""
 
-import json
-import os
-import subprocess
-import tempfile
+import importlib.util
+import sys
 from pathlib import Path
 from typing import Any
 
 
+def load_verifier(task_dir: Path):
+    """Dynamically import a task's verifier.py and return its evaluate function."""
+    verifier_path = (task_dir / "verifier.py").resolve()
+    if not verifier_path.exists():
+        raise FileNotFoundError(f"Verifier not found: {verifier_path}")
+
+    spec = importlib.util.spec_from_file_location("verifier", verifier_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["verifier"] = module
+    spec.loader.exec_module(module)
+    return module.evaluate
+
+
 def evaluate_rollouts(rollouts: list[dict[str, Any]], task_dir: Path) -> list[float]:
-    """Evaluate all rollouts using the verifier from tests/test.sh.
+    """Evaluate all rollouts using the task's verifier.
 
     Args:
         rollouts: List of rollout dicts
-        task_dir: Path to the Harbor task directory
+        task_dir: Path to the Einstein Arena task directory
 
     Returns:
         List of scores (one per rollout)
     """
+    evaluate_fn = load_verifier(task_dir)
     scores = []
 
     for rollout in rollouts:
-        score = evaluate_one_solution(rollout["solution"], task_dir)
+        score = evaluate_one_solution(rollout["solution"], evaluate_fn)
         scores.append(score)
 
     return scores
 
 
-def evaluate_one_solution(solution: dict[str, Any], task_dir: Path) -> float:
-    """Evaluate a single solution using the verifier.
+def evaluate_one_solution(solution: dict[str, Any], evaluate_fn) -> float:
+    """Evaluate a single solution using the verifier's evaluate function.
 
     Args:
         solution: Solution dict (e.g., {"circles": [[x, y, r], ...]})
-        task_dir: Path to the Harbor task directory
+        evaluate_fn: The task's evaluate(data) -> float function
 
     Returns:
         Score (float), or -inf if evaluation failed
     """
-    # Extract verifier code from tests/test.sh
-    test_sh = (task_dir / "tests" / "test.sh").resolve()
-
-    if not test_sh.exists():
-        raise FileNotFoundError(f"Verifier not found: {test_sh}")
-
-    # Run the verifier in a temporary directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        workspace = tmpdir_path / "workspace"
-        workspace.mkdir()
-
-        # Write solution.json
-        solution_file = workspace / "solution.json"
-        with open(solution_file, "w") as f:
-            json.dump(solution, f)
-
-        # Run test.sh
-        try:
-            env = os.environ.copy()
-            env["WORKSPACE"] = str(workspace)
-            subprocess.run(
-                ["bash", str(test_sh)],
-                cwd=tmpdir_path,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,  # Don't raise on non-zero exit; we check score.txt instead
-            )
-
-            # Read score.txt
-            score_file = workspace / "score.txt"
-            if score_file.exists():
-                score = float(score_file.read_text().strip())
-                return score
-            else:
-                # Verifier failed, return penalty
-                print("WARNING: No score.txt produced for solution")
-                return float("-inf")
-
-        except Exception as e:
-            print(f"ERROR evaluating solution: {e}")
-            return float("-inf")
+    try:
+        return float(evaluate_fn(solution))
+    except Exception as e:
+        print(f"ERROR evaluating solution: {e}")
+        return float("-inf")

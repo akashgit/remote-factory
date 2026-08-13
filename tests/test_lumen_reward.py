@@ -12,22 +12,15 @@ import pytest
 
 @pytest.fixture()
 def mock_task_dir(tmp_path: Path) -> Path:
-    """Create a minimal Einstein Arena task directory with a test.sh verifier."""
+    """Create a minimal Einstein Arena task directory with a verifier.py."""
     task_dir = tmp_path / "test-task"
-    tests_dir = task_dir / "tests"
-    tests_dir.mkdir(parents=True)
+    task_dir.mkdir(parents=True)
 
-    test_sh = tests_dir / "test.sh"
-    test_sh.write_text(
-        '#!/usr/bin/env bash\n'
-        'WORKSPACE="${WORKSPACE:-.}"\n'
-        'if [ -f "$WORKSPACE/solution.json" ]; then\n'
-        '  echo "1.5" > "$WORKSPACE/score.txt"\n'
-        'else\n'
-        '  echo "0.0" > "$WORKSPACE/score.txt"\n'
-        'fi\n'
+    verifier = task_dir / "verifier.py"
+    verifier.write_text(
+        'def evaluate(data):\n'
+        '    return 1.5\n'
     )
-    test_sh.chmod(test_sh.stat().st_mode | stat.S_IEXEC)
 
     instruction = task_dir / "instruction.md"
     instruction.write_text("# Test Task\nScoring Direction: MAXIMIZE\n")
