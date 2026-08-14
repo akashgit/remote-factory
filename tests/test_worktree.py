@@ -8,10 +8,13 @@ from unittest.mock import patch
 import pytest
 
 from factory.worktree import (
+    _SHARED_SYMLINK_ENTRIES,
     _bootstrap_unborn_repo,
     _has_active_sessions,
     _is_unborn_repo,
+    _preserve_telemetry,
     _seed_experiment_factory,
+    _sync_backlog_to_main,
     create_experiment_worktree,
     create_worktree,
     detect_default_branch,
@@ -66,12 +69,20 @@ class TestCreateWorktree:
         assert branch.startswith("factory/run-")
         assert wt_path.parent == git_project / ".factory-worktrees"
 
-    def test_worktree_has_factory_symlink(self, git_project: Path) -> None:
+    def test_worktree_has_selective_factory(self, git_project: Path) -> None:
         wt_path, _ = create_worktree(git_project)
 
-        symlink = wt_path / ".factory"
-        assert symlink.is_symlink()
-        assert symlink.resolve() == (git_project / ".factory").resolve()
+        wt_factory = wt_path / ".factory"
+        assert wt_factory.is_dir()
+        assert not wt_factory.is_symlink()
+
+        assert (wt_factory / "config.json").is_symlink()
+        assert (wt_factory / "results.tsv").is_symlink()
+
+        for subdir in ("strategy", "reviews", "state"):
+            d = wt_factory / subdir
+            assert d.is_dir()
+            assert not d.is_symlink()
 
     def test_worktree_contains_project_files(self, git_project: Path) -> None:
         wt_path, _ = create_worktree(git_project)
@@ -190,43 +201,18 @@ class TestRemoveWorktree:
 
 
 class TestTelemetryPreservation:
-    def test_trace_id_preserved_with_symlink(self, git_project: Path) -> None:
-        """trace_id.txt written via symlink is already in main .factory/."""
+    def test_trace_id_preserved_on_removal(self, git_project: Path) -> None:
+        """trace_id.txt in worktree's real .factory/ is copied to main at teardown."""
         wt_path, branch = create_worktree(git_project)
 
-        # Write trace_id.txt via the worktree's .factory symlink
         trace_id = "test-trace-12345"
         (wt_path / ".factory" / "trace_id.txt").write_text(trace_id)
 
-        # Verify it's already in main .factory (via symlink)
-        assert (git_project / ".factory" / "trace_id.txt").read_text() == trace_id
-
-        remove_worktree(git_project, wt_path, branch)
-
-        # File should still exist after cleanup
-        assert (git_project / ".factory" / "trace_id.txt").exists()
-        assert (git_project / ".factory" / "trace_id.txt").read_text() == trace_id
-
-    def test_trace_id_preserved_with_separate_directory(self, git_project: Path) -> None:
-        """trace_id.txt in a separate .factory/ dir is copied to main before cleanup."""
-        wt_path, branch = create_worktree(git_project)
-
-        # Remove the symlink and create a separate directory
-        wt_factory = wt_path / ".factory"
-        wt_factory.unlink()
-        wt_factory.mkdir()
-
-        # Write trace_id.txt to the separate directory
-        trace_id = "test-trace-separate-67890"
-        (wt_factory / "trace_id.txt").write_text(trace_id)
-
-        # Verify main .factory does NOT have this trace_id yet
         main_trace = git_project / ".factory" / "trace_id.txt"
         assert not main_trace.exists()
 
         remove_worktree(git_project, wt_path, branch)
 
-        # File should be copied to main .factory
         assert main_trace.exists()
         assert main_trace.read_text() == trace_id
 
@@ -234,12 +220,10 @@ class TestTelemetryPreservation:
         """Cleanup succeeds when trace_id.txt doesn't exist."""
         wt_path, branch = create_worktree(git_project)
 
-        # No trace_id.txt written
         assert not (wt_path / ".factory" / "trace_id.txt").exists()
 
         remove_worktree(git_project, wt_path, branch)
 
-        # Should complete without error
         assert not wt_path.exists()
 
 
@@ -446,21 +430,22 @@ class TestSHAResolution:
 
 
 class TestSymlinkResolution:
-    def test_store_resolves_through_symlink(self, git_project: Path) -> None:
-        """ExperimentStore via worktree symlink writes to main .factory/."""
-        from factory.store import ExperimentStore
-
+    def test_shared_entries_resolve_to_main(self, git_project: Path) -> None:
+        """Shared symlinked entries in worktree resolve to main .factory/."""
         wt_path, _ = create_worktree(git_project)
-        store = ExperimentStore(wt_path)
+        main_factory = git_project / ".factory"
 
-        assert store.factory_dir.resolve() == (git_project / ".factory").resolve()
+        for entry in ("config.json", "results.tsv"):
+            wt_entry = wt_path / ".factory" / entry
+            assert wt_entry.is_symlink()
+            assert wt_entry.resolve() == (main_factory / entry).resolve()
 
-    def test_config_readable_through_symlink(self, git_project: Path) -> None:
+    def test_config_readable_through_selective_symlink(self, git_project: Path) -> None:
         wt_path, _ = create_worktree(git_project)
 
-        config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
+        config_via_wt = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
-        assert config_via_symlink == config_direct
+        assert config_via_wt == config_direct
 
 
 class TestSessionGuard:
@@ -976,8 +961,8 @@ class TestCreateWorktreeEventFailure:
 
 
 class TestCreateWorktreeExistingFactory:
-    def test_replaces_existing_factory_dir_with_symlink(self, tmp_path: Path) -> None:
-        """When .factory/ is tracked in git, the worktree gets a real dir that must be replaced."""
+    def test_replaces_existing_factory_dir_with_selective_layout(self, tmp_path: Path) -> None:
+        """When .factory/ is tracked in git, the worktree replaces it with selective layout."""
         project = tmp_path / "project"
         project.mkdir()
 
@@ -1005,8 +990,10 @@ class TestCreateWorktreeExistingFactory:
 
         wt_path, _ = create_worktree(project)
 
-        assert (wt_path / ".factory").is_symlink()
-        assert (wt_path / ".factory").resolve() == factory_dir.resolve()
+        wt_factory = wt_path / ".factory"
+        assert wt_factory.is_dir()
+        assert not wt_factory.is_symlink()
+        assert (wt_factory / "config.json").is_symlink()
 
 
 class TestPreserveTelemetryNoFactory:
@@ -1181,3 +1168,171 @@ class TestWorktreeRetention:
 
         assert not orphan.exists()
         assert any("exp-99" in msg for msg in pruned)
+
+
+class TestSelectiveWorktreeIsolation:
+    """Tests for selective symlink layout in CEO run worktrees (issue #1234)."""
+
+    def test_shared_entries_are_symlinks_to_main(self, git_project: Path) -> None:
+        factory_dir = git_project / ".factory"
+        (factory_dir / "eval_profile.json").write_text("{}")
+        (factory_dir / "experiments").mkdir(exist_ok=True)
+        (factory_dir / "archive").mkdir(exist_ok=True)
+        (factory_dir / "events.jsonl").write_text("")
+
+        wt_path, _ = create_worktree(git_project)
+        wt_factory = wt_path / ".factory"
+
+        for entry in _SHARED_SYMLINK_ENTRIES:
+            src = factory_dir / entry
+            dst = wt_factory / entry
+            if src.exists():
+                assert dst.is_symlink(), f"{entry} should be a symlink"
+                assert dst.resolve() == src.resolve(), f"{entry} should point to main"
+
+    def test_copy_entries_are_independent(self, git_project: Path) -> None:
+        agents_dir = git_project / ".factory" / "agents"
+        agents_dir.mkdir(exist_ok=True)
+        (agents_dir / "builder.md").write_text("# Builder")
+
+        wt_path, _ = create_worktree(git_project)
+        wt_agents = wt_path / ".factory" / "agents"
+
+        assert wt_agents.is_dir()
+        assert not wt_agents.is_symlink()
+        assert (wt_agents / "builder.md").read_text() == "# Builder"
+
+        (wt_agents / "builder.md").write_text("# Modified")
+        assert (agents_dir / "builder.md").read_text() == "# Builder"
+
+    def test_per_cycle_dirs_are_fresh_and_empty(self, git_project: Path) -> None:
+        strategy_dir = git_project / ".factory" / "strategy"
+        strategy_dir.mkdir(exist_ok=True)
+        (strategy_dir / "current.md").write_text("# Old strategy")
+        (strategy_dir / "observations.md").write_text("# Old obs")
+
+        reviews_dir = git_project / ".factory" / "reviews"
+        reviews_dir.mkdir(exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("# Old review")
+
+        wt_path, _ = create_worktree(git_project)
+        wt_factory = wt_path / ".factory"
+
+        for subdir in ("strategy", "reviews", "state"):
+            d = wt_factory / subdir
+            assert d.is_dir()
+            assert not d.is_symlink()
+
+        assert not (wt_factory / "strategy" / "current.md").exists()
+        assert not (wt_factory / "strategy" / "observations.md").exists()
+        assert not (wt_factory / "reviews" / "researcher-latest.md").exists()
+        assert list((wt_factory / "state").iterdir()) == []
+
+    def test_backlog_copied_not_symlinked(self, git_project: Path) -> None:
+        strategy_dir = git_project / ".factory" / "strategy"
+        strategy_dir.mkdir(exist_ok=True)
+        (strategy_dir / "backlog.md").write_text("- item 1\n- item 2\n")
+
+        wt_path, _ = create_worktree(git_project)
+        wt_backlog = wt_path / ".factory" / "strategy" / "backlog.md"
+
+        assert wt_backlog.exists()
+        assert not wt_backlog.is_symlink()
+        assert wt_backlog.read_text() == "- item 1\n- item 2\n"
+
+    def test_backlog_synced_back_on_removal(self, git_project: Path) -> None:
+        strategy_dir = git_project / ".factory" / "strategy"
+        strategy_dir.mkdir(exist_ok=True)
+        (strategy_dir / "backlog.md").write_text("- item 1\n")
+
+        wt_path, branch = create_worktree(git_project)
+        wt_backlog = wt_path / ".factory" / "strategy" / "backlog.md"
+        wt_backlog.write_text("- item 1\n- item 2\n- item 3\n")
+
+        remove_worktree(git_project, wt_path, branch)
+
+        main_backlog = git_project / ".factory" / "strategy" / "backlog.md"
+        assert main_backlog.read_text() == "- item 1\n- item 2\n- item 3\n"
+
+    def test_sync_backlog_to_main_skips_symlink(self, tmp_path: Path) -> None:
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        main = tmp_path / "main"
+        main.mkdir()
+
+        strategy_dir = wt / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        backlog = strategy_dir / "backlog.md"
+
+        main_strategy = main / ".factory" / "strategy"
+        main_strategy.mkdir(parents=True)
+        main_backlog = main_strategy / "backlog.md"
+        main_backlog.write_text("original")
+
+        backlog.symlink_to(main_backlog)
+
+        _sync_backlog_to_main(wt, main)
+
+        assert main_backlog.read_text() == "original"
+
+    def test_two_worktrees_get_independent_dirs(self, git_project: Path) -> None:
+        strategy_dir = git_project / ".factory" / "strategy"
+        strategy_dir.mkdir(exist_ok=True)
+        (strategy_dir / "backlog.md").write_text("- shared item\n")
+
+        wt1, _ = create_worktree(git_project)
+        wt2, _ = create_worktree(git_project)
+
+        (wt1 / ".factory" / "strategy" / "current.md").write_text("# WT1 strategy")
+        (wt1 / ".factory" / "reviews" / "researcher-latest.md").write_text("# WT1 review")
+
+        assert not (wt2 / ".factory" / "strategy" / "current.md").exists()
+        assert not (wt2 / ".factory" / "reviews" / "researcher-latest.md").exists()
+
+        (wt2 / ".factory" / "strategy" / "current.md").write_text("# WT2 strategy")
+        assert (wt1 / ".factory" / "strategy" / "current.md").read_text() == "# WT1 strategy"
+
+    def test_shared_entries_write_to_main(self, git_project: Path) -> None:
+        """Appending to symlinked results.tsv writes through to main."""
+        wt_path, _ = create_worktree(git_project)
+
+        wt_results = wt_path / ".factory" / "results.tsv"
+        with open(wt_results, "a") as f:
+            f.write("1\tdata\n")
+
+        main_results = git_project / ".factory" / "results.tsv"
+        assert "1\tdata\n" in main_results.read_text()
+
+    def test_preserve_telemetry_works_with_selective_layout(self, git_project: Path) -> None:
+        wt_path, _ = create_worktree(git_project)
+
+        (wt_path / ".factory" / "trace_id.txt").write_text("trace-abc")
+
+        main_trace = git_project / ".factory" / "trace_id.txt"
+        assert not main_trace.exists()
+
+        _preserve_telemetry(wt_path, git_project)
+
+        assert main_trace.exists()
+        assert main_trace.read_text() == "trace-abc"
+
+    def test_missing_shared_entries_skipped(self, git_project: Path) -> None:
+        """Shared entries that don't exist in main are silently skipped."""
+        assert not (git_project / ".factory" / "archive").exists()
+        assert not (git_project / ".factory" / "events.jsonl").exists()
+
+        wt_path, _ = create_worktree(git_project)
+        wt_factory = wt_path / ".factory"
+
+        assert not (wt_factory / "archive").exists()
+        assert not (wt_factory / "events.jsonl").exists()
+        assert (wt_factory / "config.json").is_symlink()
+
+    def test_no_backlog_no_error(self, git_project: Path) -> None:
+        """Worktree creation succeeds when main has no backlog.md."""
+        assert not (git_project / ".factory" / "strategy" / "backlog.md").exists()
+
+        wt_path, _ = create_worktree(git_project)
+
+        assert (wt_path / ".factory" / "strategy").is_dir()
+        assert not (wt_path / ".factory" / "strategy" / "backlog.md").exists()
