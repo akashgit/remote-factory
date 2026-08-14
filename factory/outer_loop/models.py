@@ -138,3 +138,47 @@ class GenerationSummary(BaseModel):
     novel_count: int = 0
     rejected_duplicates: int = 0
     hyperparameters: HyperparameterRecord | None = None
+
+
+class EvalResult(BaseModel):
+    """Result of evaluating a single workflow candidate."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    score: float
+    benchmark_score: float = 0.0
+    hygiene_score: float = 0.0
+    cost_usd: float = 0.0
+    complexity: float = 0.0
+    details: dict[str, object] = Field(default_factory=dict)
+
+
+class AuditResult(BaseModel):
+    """Result of overfit detection on the best evolved workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    training_score: float
+    holdout_score: float
+    delta: float
+    overfit_flag: bool
+    details: str = ""
+
+
+class OuterLoopResult(BaseModel):
+    """Result of a complete outer loop evolutionary run."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    best_workflow_data: dict[str, object] = Field(default_factory=dict)
+    best_score: float = 0.0
+    holdout_score: float = 0.0
+    overfit_flag: bool = False
+    trajectory: list[GenerationSummary] = Field(default_factory=list)
+    total_cost_usd: float = 0.0
+    convergence_reason: str = ""
+    generations_completed: int = 0
+    total_evaluations: int = 0
+    archive_size: int = 0
+    pareto_front: list[Individual] = Field(default_factory=list)
+    hyperparameter_history: list[HyperparameterRecord] = Field(default_factory=list)

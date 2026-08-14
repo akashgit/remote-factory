@@ -71,6 +71,14 @@ class WeightedRandomStrategy:
     def get_operator_weights(self) -> dict[str, float]:
         return dict(self.weights)
 
+    def on_plateau(self) -> None:
+        """Increase mutation rate when evolution stalls."""
+        self._mutation_rate = min(self._mutation_rate + 0.2, 0.8)
+
+    def on_improvement(self) -> None:
+        """Reset mutation rate after improvement."""
+        self._mutation_rate = 0.3
+
 
 def validate_and_repair(workflow: Workflow) -> Workflow | None:
     """Validate a mutated workflow and attempt repair. Returns None if irreparable."""
