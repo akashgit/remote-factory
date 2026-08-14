@@ -1,5 +1,6 @@
 """Outer loop — evolutionary swarm search for workflow optimization."""
 
+from factory.outer_loop.designer import DesignerAgent, extract_telemetry
 from factory.outer_loop.models import (
     AuditResult,
     EvalResult,
@@ -15,6 +16,7 @@ from factory.outer_loop.models import (
 
 __all__ = [
     "AuditResult",
+    "DesignerAgent",
     "EvalResult",
     "GenerationSummary",
     "HyperparameterRecord",
@@ -24,4 +26,5 @@ __all__ = [
     "OuterLoopResult",
     "OuterLoopState",
     "SwarmConfig",
+    "extract_telemetry",
 ]

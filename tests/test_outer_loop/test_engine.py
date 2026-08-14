@@ -131,7 +131,7 @@ class TestSwarmEngineSeed:
         assert pop.size <= 4
 
     def test_seed_slot_zero_is_original(self) -> None:
-        config = _make_config(population_size=3)
+        config = _make_config(population_size=3, designer_count=0)
         evaluator = _make_deterministic_evaluator()
         engine = SwarmEngine(config, evaluator)
         wf = _make_workflow()

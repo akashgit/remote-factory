@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from factory.outer_loop.designer import DesignerAgent
 from factory.outer_loop.evaluator import SwarmEvaluator
 from factory.outer_loop.models import (
     GenerationSummary,
@@ -88,6 +89,7 @@ class SwarmEngine:
         subset_selector: SubsetSelector | None = None,
         overfit_detector: OverfitDetector | None = None,
         novelty_filter: NoveltyFilter | None = None,
+        designer: DesignerAgent | None = None,
     ) -> None:
         self._config = config
         self._evaluator = evaluator
@@ -99,6 +101,7 @@ class SwarmEngine:
         )
         self._overfit = overfit_detector or OverfitDetector()
         self._novelty = novelty_filter or NoveltyFilter(min_edit_distance=3)
+        self._designer = designer or DesignerAgent()
         self._budget = BudgetTracker(config.budget)
         self._archive = MAPElitesArchive()
         self._score_trajectory: list[float] = []
@@ -119,7 +122,8 @@ class SwarmEngine:
         """Create the initial population from a base workflow.
 
         Slot 0: unmodified seed.
-        Slots 1..N: random mutations of seed.
+        Slots 1..N-designer_count: random mutations of seed.
+        Last designer_count slots: from-scratch designs via DesignerAgent.
         """
         cfg = config or self._config
         pop = Population()
@@ -128,10 +132,12 @@ class SwarmEngine:
         pop.add(seed_ind)
         self._novelty.add(base_workflow)
 
-        target_size = cfg.population_size
+        designer_count = cfg.designer_count
+        mutation_slots = max(0, cfg.population_size - 1 - designer_count)
+
         attempts = 0
-        max_attempts = target_size * 10
-        while pop.size < target_size and attempts < max_attempts:
+        max_attempts = mutation_slots * 10
+        while pop.size < 1 + mutation_slots and attempts < max_attempts:
             attempts += 1
             result = apply_random_mutation(
                 base_workflow,
@@ -153,8 +159,58 @@ class SwarmEngine:
             )
             pop.add(ind)
 
-        log.info("population_seeded", size=pop.size, target=target_size)
+        if designer_count > 0:
+            self._add_designer_variants(pop, cfg, designer_count)
+
+        log.info(
+            "population_seeded",
+            size=pop.size,
+            target=cfg.population_size,
+            designer_variants=min(designer_count, pop.size),
+        )
         return pop
+
+    def _add_designer_variants(
+        self,
+        pop: Population,
+        cfg: SwarmConfig,
+        designer_count: int,
+    ) -> None:
+        """Add from-scratch designed workflows to the population."""
+        benchmark_spec = cfg.benchmark
+        designs: list[Workflow] = []
+
+        if designer_count >= 1:
+            try:
+                minimal = self._designer.design_minimal(benchmark_spec)
+                designs.append(minimal)
+            except Exception:
+                log.warning("designer_minimal_failed", exc_info=True)
+
+        if designer_count >= 2:
+            try:
+                thorough = self._designer.design_thorough(benchmark_spec)
+                designs.append(thorough)
+            except Exception:
+                log.warning("designer_thorough_failed", exc_info=True)
+
+        for i in range(2, designer_count):
+            try:
+                custom = self._designer.design_custom(
+                    benchmark_spec,
+                    {"max_nodes": 4 + i, "parallel": i % 2 == 0},
+                )
+                designs.append(custom)
+            except Exception:
+                log.warning("designer_custom_failed", index=i, exc_info=True)
+
+        for wf in designs:
+            if pop.size >= cfg.population_size:
+                break
+            if self._novelty.is_novel(wf):
+                self._novelty.add(wf)
+                ind = Population.make_individual(wf, generation=0)
+                pop.add(ind)
 
     def evolve_generation(
         self,
