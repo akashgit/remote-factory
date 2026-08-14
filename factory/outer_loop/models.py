@@ -1,0 +1,140 @@
+"""Pydantic v2 strict models for the outer loop evolutionary search."""
+
+from __future__ import annotations
+
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class MutationType(str, Enum):
+    """Types of graph mutation operators."""
+
+    NODE_INSERT = "node_insert"
+    NODE_REMOVE = "node_remove"
+    EDGE_REDIRECT = "edge_redirect"
+    PARALLELIZE = "parallelize"
+    SERIALIZE = "serialize"
+    PARAM_MUTATE = "param_mutate"
+
+
+class MutationRecord(BaseModel):
+    """Record of a single mutation applied to a workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    operator: MutationType
+    target_node: str | None = None
+    before: dict[str, object] = Field(default_factory=dict)
+    after: dict[str, object] = Field(default_factory=dict)
+    rationale: str = ""
+
+    @field_validator("operator", mode="before")
+    @classmethod
+    def _coerce_operator(cls, v: object) -> MutationType:
+        if isinstance(v, str):
+            return MutationType(v)
+        return v  # type: ignore[return-value]
+
+
+class Individual(BaseModel):
+    """A single candidate in the evolutionary population."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: str
+    workflow_data: dict[str, object]
+    score: float = 0.0
+    features: tuple[int, ...] = ()
+    generation: int = 0
+    parent_id: str | None = None
+    mutation_record: MutationRecord | None = None
+    cost_usd: float = 0.0
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def _coerce_features(cls, v: object) -> tuple[int, ...]:
+        if isinstance(v, list):
+            return tuple(v)
+        return v  # type: ignore[return-value]
+
+
+class HyperparameterRecord(BaseModel):
+    """Per-generation evolutionary hyperparameters for Level 3 training data."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int
+    mutation_rate: float
+    population_size: int
+    tournament_size: int
+    designer_ratio: float
+    operator_weights: dict[str, float] = Field(default_factory=dict)
+    best_score: float = 0.0
+    mean_score: float = 0.0
+    diversity: float = 0.0
+    novel_count: int = 0
+
+
+class SwarmConfig(BaseModel):
+    """Configuration for the evolutionary swarm search."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    benchmark: str
+    budget: int
+    population_size: int = 4
+    tournament_size: int = 3
+    mutation_rate: float = 0.3
+    target_score: float | None = None
+    frozen_node_ids: list[str] = Field(default_factory=list)
+    mandatory_node_roles: list[str] = Field(default_factory=list)
+    feature_axes: list[str] = Field(
+        default_factory=lambda: ["depth", "fork_degree", "agent_count", "gate_count"]
+    )
+    mutation_strategy: str = "weighted_random"
+    designer_count: int = 2
+    training_instances: list[str] = Field(default_factory=list)
+    holdout_instances: list[str] = Field(default_factory=list)
+
+    @field_validator("holdout_instances")
+    @classmethod
+    def _no_overlap_with_training(cls, v: list[str], info: object) -> list[str]:
+        data = getattr(info, "data", {})
+        training = data.get("training_instances", [])
+        overlap = set(v) & set(training)
+        if overlap:
+            raise ValueError(
+                f"holdout_instances must not overlap with training_instances: {overlap}"
+            )
+        return v
+
+
+class OuterLoopState(BaseModel):
+    """Checkpoint state for the outer loop evolution."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int = 0
+    total_evaluations: int = 0
+    best_score: float = 0.0
+    budget_remaining: int = 0
+    convergence_reason: str | None = None
+    score_trajectory: list[float] = Field(default_factory=list)
+    hyperparameter_history: list[HyperparameterRecord] = Field(default_factory=list)
+
+
+class GenerationSummary(BaseModel):
+    """Summary of a single generation of evolution."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int
+    population_size: int
+    best_score: float
+    mean_score: float
+    diversity: float
+    mutations_applied: list[MutationRecord] = Field(default_factory=list)
+    novel_count: int = 0
+    rejected_duplicates: int = 0
+    hyperparameters: HyperparameterRecord | None = None
