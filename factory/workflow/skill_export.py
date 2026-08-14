@@ -139,8 +139,8 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         "description": (
             "Create mode — meta-mode for creating new factory modes or updating existing ones. "
             "For new modes: takes a description and produces a fully working workflow definition, "
-            "SKILL.md, CLI wiring, and tests. For updates: use --focus \"mode_name: change description\" "
-            "to modify an existing registered mode (e.g. --focus \"improve: add plateau detection\"). "
+            'SKILL.md, CLI wiring, and tests. For updates: use --focus "mode_name: change description" '
+            'to modify an existing registered mode (e.g. --focus "improve: add plateau detection"). '
             "Use when the user says 'create a mode for X', 'update the improve mode', "
             "'add a new workflow', or wants to extend/modify factory pipelines."
         ),
@@ -263,6 +263,17 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "Terminal mode — does not chain to build or improve."
         ),
         "argument_hint": "<project_path> [--focus <research topic>]",
+    },
+    "study": {
+        "description": (
+            "Codebase structure and dependency graph analysis. "
+            "Updates the code knowledge graph, runs factory study for observations, "
+            "then explores the graph for structural insights via an agent. "
+            "Terminal mode — does not chain to other modes. "
+            "Use when the user says 'study', 'analyze codebase', or wants a structural "
+            "understanding of the project before planning work."
+        ),
+        "argument_hint": "<project_path>",
     },
 }
 
@@ -471,8 +482,15 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
 
 def _has_template_placeholders(text: str) -> bool:
     """Check if a command has $VARIABLE placeholders that need CEO substitution."""
-    placeholders = {"$EXP_ID", "$VERDICT", "$HYPOTHESIS", "$REQUEST",
-                     "$PR_NUMBER", "$SCORE_BEFORE", "$SCORE_AFTER"}
+    placeholders = {
+        "$EXP_ID",
+        "$VERDICT",
+        "$HYPOTHESIS",
+        "$REQUEST",
+        "$PR_NUMBER",
+        "$SCORE_BEFORE",
+        "$SCORE_AFTER",
+    }
     return any(p in text for p in placeholders)
 
 
@@ -529,15 +547,27 @@ def _gate_to_checkpoint(
         lines.append("")
         lines.append(f"### Steering Point — {gate_name} (User Approval)")
         lines.append("")
-        lines.append("**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**")
+        lines.append(
+            "**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**"
+        )
         lines.append("")
-        lines.append("Present the strategy/findings to the user by summarizing key points in your output.")
-        lines.append('Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"')
+        lines.append(
+            "Present the strategy/findings to the user by summarizing key points in your output."
+        )
+        lines.append(
+            'Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"'
+        )
         lines.append("")
         lines.append("**You MUST wait for the user's response before proceeding.**")
-        lines.append("- The user says \"approve\", \"yes\", \"looks good\", or similar → proceed to next step")
-        lines.append("- The user provides feedback or corrections → re-run the previous step incorporating their feedback")
-        lines.append("- Do NOT write a verdict file and auto-proceed — this gate requires human input")
+        lines.append(
+            '- The user says "approve", "yes", "looks good", or similar → proceed to next step'
+        )
+        lines.append(
+            "- The user provides feedback or corrections → re-run the previous step incorporating their feedback"
+        )
+        lines.append(
+            "- Do NOT write a verdict file and auto-proceed — this gate requires human input"
+        )
     elif node.evaluator_type == "fn":
         evaluator_cmd = ""
         if node.evaluator_command:
@@ -564,7 +594,9 @@ def _gate_to_checkpoint(
 
         if proceed_edges:
             proceed_target = proceed_edges[0].target
-            lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
+            lines.append(
+                f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`"
+            )
             if halt_edges:
                 halt_target = halt_edges[0].target
                 lines.append(
@@ -652,10 +684,7 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
     ]
     if agent_nodes:
         # Calculate the maximum timeout among all parallel agents
-        max_timeout = max(
-            (node.timeout or 600 for node in agent_nodes),
-            default=600
-        )
+        max_timeout = max((node.timeout or 600 for node in agent_nodes), default=600)
 
         # Add timeout guidance if max_timeout exceeds Bash tool's default (120s)
         if max_timeout > 120:
@@ -813,7 +842,10 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             fork_targets.update(node.targets)
         elif isinstance(node, SubgraphForkNode):
             from factory.workflow.executor import _collect_subgraph_nodes
-            subgraph_nodes |= _collect_subgraph_nodes(workflow, node.subgraph_entry, node.subgraph_exit)
+
+            subgraph_nodes |= _collect_subgraph_nodes(
+                workflow, node.subgraph_entry, node.subgraph_exit
+            )
 
     sections: list[str] = []
     phase_num = 1
@@ -847,9 +879,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_join_to_instruction(node, workflow))
 
         elif isinstance(node, GateNode):
-            sections.append(
-                _gate_to_checkpoint(node, reloop_map.get(nid, []), workflow)
-            )
+            sections.append(_gate_to_checkpoint(node, reloop_map.get(nid, []), workflow))
 
         elif isinstance(node, Study):
             node_title = "Observe"
@@ -912,6 +942,7 @@ def export_all_skills(
 
     if workflows is None:
         from factory.workflow.definitions import register_all
+
         workflows = register_all()
 
     generated: list[Path] = []

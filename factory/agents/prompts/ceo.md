@@ -285,6 +285,13 @@ At the start of every cycle, create a task list using `TaskCreate` **before spaw
 | 2 | Hypothesize — Strategist | Picking hypothesis |
 | 3 | Prototype — Builder + health check | Prototyping |
 
+**Study mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Graph update + study | Scanning project |
+| 2 | Graph exploration | Exploring code structure |
+
 ### Status Transition Rules
 
 - Mark each task `in_progress` when starting the corresponding phase
@@ -325,6 +332,7 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 - `--refine "<request>"` → read `skills/workflow-refine/SKILL.md`
 - `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
 - `--mode founder` → read `skills/workflow-founder/SKILL.md`
+- `--mode study` → read `skills/workflow-study/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 

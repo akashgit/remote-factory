@@ -244,6 +244,10 @@ factory ceo /path/to/project --mode founder                       # One fast hyp
 factory ceo /path/to/project --mode founder --focus "auth flow"   # Targeted prototype
 factory run /path/to/project --mode founder --loop --interval 300 # Rapid iteration
 
+# Study — graph-powered codebase analysis
+factory ceo /path/to/project --mode study                    # Graph-powered codebase study
+factory ceo /path/to/project --mode study --focus "auth flow" # Focused study with graph context
+
 # Meta — improve the factory's own agents
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
 

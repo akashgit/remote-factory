@@ -302,6 +302,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_graph_update.add_argument("path", help="Path to the project")
     p_graph_status = graph_sub.add_parser("status", help="Show graph freshness and stats")
     p_graph_status.add_argument("path", help="Path to the project")
+    p_graph_query = graph_sub.add_parser("query", help="BFS traversal of the knowledge graph")
+    p_graph_query.add_argument("path", help="Path to the project")
+    p_graph_query.add_argument("question", help="Natural-language query for graph traversal")
+    p_graph_query.add_argument("--depth", type=int, default=2, help="BFS depth (default: 2)")
+    p_graph_explain = graph_sub.add_parser("explain", help="Explain a node and its neighbors")
+    p_graph_explain.add_argument("path", help="Path to the project")
+    p_graph_explain.add_argument("node", help="Node name or label to explain")
+    p_graph_path = graph_sub.add_parser("path", help="Shortest path between two nodes")
+    p_graph_path.add_argument("path", help="Path to the project")
+    p_graph_path.add_argument("source", help="Source node name")
+    p_graph_path.add_argument("target", help="Target node name")
 
     # mempalace — MemPalace operations (read, write, browse)
     mp = sub.add_parser("mempalace", help="MemPalace operations (read, write, browse)")
@@ -424,9 +435,12 @@ def main(argv: list[str] | None = None) -> int:
             "extract": _cli.cmd_graph_extract,
             "update": _cli.cmd_graph_update,
             "status": _cli.cmd_graph_status,
+            "query": _cli.cmd_graph_query,
+            "explain": _cli.cmd_graph_explain,
+            "path": _cli.cmd_graph_path,
         }.get(
             str(getattr(a, "graph_command", "")),
-            lambda args: print("Usage: factory graph {extract,update,status}") or 1,
+            lambda args: print("Usage: factory graph {extract,update,status,query,explain,path}") or 1,
         )(a),
     }
 

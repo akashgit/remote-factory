@@ -59,6 +59,12 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "project's domain broadly. Terminal mode — does not chain to build or improve. "
             "The full step-by-step playbook is in your system prompt above."
         ),
+        "study": (
+            "\n\nRun Study mode: analyze the codebase structure and dependency graph. "
+            "Update the code knowledge graph, then run factory study for observations "
+            "with structural graph context included. "
+            "Terminal mode — does not chain to other modes."
+        ),
     }
     if mode == "discover":
         if discover_only:
@@ -358,8 +364,13 @@ def _build_ceo_task(
         task = _append_deep_research_topic(task, focus)
 
     task += _append_focus_directive(
-        focus, mode, create_description,
-        issue_numbers, issue_urls, issue_number, issue_url,
+        focus,
+        mode,
+        create_description,
+        issue_numbers,
+        issue_urls,
+        issue_number,
+        issue_url,
     )
 
     if branch:

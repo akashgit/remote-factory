@@ -506,6 +506,7 @@ class CycleState(BaseModel):
         "refine",
         "research",
         "review",
+        "study",
         "swebench",
     ]
     initial_prompt: str = ""
