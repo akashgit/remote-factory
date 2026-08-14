@@ -1103,3 +1103,197 @@ class TestMainEntryPoint:
                 main()
                 call_kwargs = mock_trainer.call_args[1]
                 assert call_kwargs["use_slow_update"] is True
+
+
+class TestSlowUpdateWithSlots:
+    def test_slow_update_injects_into_prompt_slot(self, tmp_path):
+        """Verify epoch 0 injects placeholder into the prompt slot, not just SKILL.md."""
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\nContent")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        ann = {"b": {"slots": {"task_prompt_b": "original prompt text"}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=1, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results, results]
+        adapter.reflect.return_value = []
+
+        trainer.train()
+
+        # Verify placeholder is in the prompt slot
+        assert "SLOW_UPDATE_START" in trainer.prompt_slots["task_prompt_b"]
+        # Verify it was written to YAML
+        reloaded = yaml.safe_load(ann_path.read_text())
+        assert "SLOW_UPDATE_START" in reloaded["b"]["slots"]["task_prompt_b"]
+
+    def test_slow_update_guidance_in_prompt_slot(self, tmp_path):
+        """Verify epoch 2 writes guidance into the prompt slot."""
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        prompt_with_markers = "prompt\n\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+        ann = {"b": {"slots": {"task_prompt_b": prompt_with_markers}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=2, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results] * 10
+        adapter.reflect.return_value = []
+
+        # Mock run_slow_update to return guidance
+        with patch("factory.skillopt.trainer.run_slow_update") as mock_slow:
+            mock_slow.return_value = {
+                "slow_update_content": "Focus on test-first debugging.",
+                "reasoning": "Tests help.",
+            }
+            trainer.train()
+
+        # Verify guidance is in the prompt slot
+        assert "Focus on test-first debugging" in trainer.prompt_slots["task_prompt_b"]
+        # Verify YAML was updated
+        reloaded = yaml.safe_load(ann_path.read_text())
+        assert "Focus on test-first debugging" in reloaded["b"]["slots"]["task_prompt_b"]
+
+
+class TestSlowUpdateNoYaml:
+    def test_slow_update_without_yaml_surface(self, tmp_path):
+        """Verify slow update works without YAML surface (legacy SKILL.md mode)."""
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\nContent here")
+        # No annotations file — trainer uses legacy mode
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=2, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+        assert trainer.yaml_surface is None
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results] * 10
+        adapter.reflect.return_value = []
+
+        with patch("factory.skillopt.trainer.run_slow_update") as mock_slow:
+            mock_slow.return_value = {
+                "slow_update_content": "Use test-first approach.",
+                "reasoning": "Tests help.",
+            }
+            trainer.train()
+
+        # Verify slow update applied to current_skill
+        assert "SLOW_UPDATE_START" in trainer.current_skill
+
+    def test_get_primary_prompt_slot_empty(self, tmp_path):
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill")
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"),
+        )
+        assert trainer._get_primary_prompt_slot() is None
+
+    def test_get_primary_prompt_slot_picks_largest(self, tmp_path):
+        import yaml
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        ann = {"a": {"slots": {"system_prompt_a": "short"}},
+               "b": {"slots": {"instance_prompt_b": "this is a much longer prompt text"}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"),
+        )
+        assert trainer._get_primary_prompt_slot() == "instance_prompt_b"
+
+
+class TestSlowUpdatePrevVsCurr:
+    def test_prev_rollout_uses_previous_slots(self, tmp_path):
+        """Verify prev rollout uses the checkpointed slots, not current ones."""
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        prompt = "prompt\n\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+        ann = {"b": {"slots": {"task_prompt_b": prompt}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=2, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results] * 10
+        adapter.reflect.return_value = []
+
+        # Modify prompt_slots between epochs to simulate optimization
+
+        def patched_train():
+            # Run epoch 1
+            trainer.rejected_edits = []
+            trainer.prompt_slots["task_prompt_b"] = "epoch1 prompt\n\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+            trainer._checkpoint("epoch1_step1")
+
+            # Now manually trigger epoch 2 slow update
+            trainer.prompt_slots["task_prompt_b"] = "epoch2 improved prompt\n\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+
+            with patch("factory.skillopt.trainer.run_slow_update", return_value=None):
+                trainer._run_slow_update_epoch(1)  # epoch index 1 = epoch 2
+
+            # Check what rollout received for prev vs curr
+            if adapter.rollout.call_count >= 2:
+                prev_yaml = adapter.rollout.call_args_list[-2][0][1]
+                curr_yaml = adapter.rollout.call_args_list[-1][0][1]
+                prev_parsed = yaml.safe_load(prev_yaml)
+                curr_parsed = yaml.safe_load(curr_yaml)
+                assert "epoch1" in prev_parsed["b"]["slots"]["task_prompt_b"]
+                assert "epoch2" in curr_parsed["b"]["slots"]["task_prompt_b"]
+
+        patched_train()
+
+    def test_checkpoint_saves_slots(self, tmp_path):
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        ann = {"b": {"slots": {"task_prompt_b": "prompt"}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"),
+        )
+
+        trainer._checkpoint("test_label")
+        slots_path = tmp_path / "out" / "checkpoints" / "test_label_slots.json"
+        assert slots_path.exists()
+        saved = json.loads(slots_path.read_text())
+        assert saved["task_prompt_b"] == "prompt"

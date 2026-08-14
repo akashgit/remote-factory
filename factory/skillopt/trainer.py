@@ -129,6 +129,10 @@ class SkillOptTrainer:
         (ckpt_dir / f"{label}_skill.md").write_text(self.current_skill)
         if self.best_skill:
             (ckpt_dir / f"{label}_best_skill.md").write_text(self.best_skill)
+        if self.prompt_slots:
+            (ckpt_dir / f"{label}_slots.json").write_text(
+                json.dumps(self.prompt_slots, indent=2)
+            )
         state = {
             "global_step": self.global_step,
             "current_score": self.current_score,
@@ -299,11 +303,24 @@ class SkillOptTrainer:
             total_steps=self.global_step,
         )
 
+    def _get_primary_prompt_slot(self) -> str | None:
+        """Return the name of the largest prompt slot (the main optimization target)."""
+        if not self.prompt_slots:
+            return None
+        return max(self.prompt_slots, key=lambda k: len(self.prompt_slots[k]))
+
     def _run_slow_update_epoch(self, epoch: int) -> None:
         if not self.use_slow_update:
             return
 
+        primary_slot = self._get_primary_prompt_slot()
+
         if epoch == 0:
+            if self.yaml_surface and primary_slot:
+                self.prompt_slots[primary_slot] = inject_empty_slow_update_field(
+                    self.prompt_slots[primary_slot],
+                )
+                self._write_yaml_annotations()
             self.current_skill = inject_empty_slow_update_field(self.current_skill)
             self._save_skill(self.current_skill)
             log.info("slow update placeholder injected", epoch=epoch + 1)
@@ -316,6 +333,11 @@ class SkillOptTrainer:
             return
         prev_skill = prev_ckpt.read_text()
 
+        prev_slots_path = self.out_dir / "checkpoints" / f"{prev_label}_slots.json"
+        prev_slots: dict[str, str] | None = None
+        if prev_slots_path.exists():
+            prev_slots = json.loads(prev_slots_path.read_text())
+
         env = self.adapter.build_train_env(self.slow_update_samples, seed=1000 + epoch)
 
         slow_dir = self.out_dir / "slow_update" / f"epoch{epoch + 1}"
@@ -326,13 +348,22 @@ class SkillOptTrainer:
             log.info("slow update: resuming from cached result", epoch=epoch + 1)
             return
 
-        results_prev = self.adapter.rollout(env, prev_skill, str(slow_dir / "rollout_prev"))
-        results_curr = self.adapter.rollout(env, self.current_skill, str(slow_dir / "rollout_curr"))
+        rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
+        if self.yaml_surface and prev_slots:
+            prev_rollout = self._serialize_yaml(prev_slots)
+        else:
+            prev_rollout = prev_skill
+        results_prev = self.adapter.rollout(env, prev_rollout, str(slow_dir / "rollout_prev"))
+        results_curr = self.adapter.rollout(env, rollout_content, str(slow_dir / "rollout_curr"))
 
         prev_hard, _ = self._compute_score(results_prev)
         curr_hard, _ = self._compute_score(results_curr)
 
-        prev_guidance = extract_slow_update_field(self.current_skill)
+        prev_guidance = ""
+        if self.yaml_surface and primary_slot:
+            prev_guidance = extract_slow_update_field(self.prompt_slots[primary_slot])
+        else:
+            prev_guidance = extract_slow_update_field(self.current_skill)
 
         slow_result = run_slow_update(
             skill_content=self.current_skill,
@@ -343,9 +374,13 @@ class SkillOptTrainer:
         )
 
         if slow_result and slow_result.get("slow_update_content"):
-            self.current_skill = replace_slow_update_field(
-                self.current_skill, slow_result["slow_update_content"],
-            )
+            guidance = slow_result["slow_update_content"]
+            if self.yaml_surface and primary_slot:
+                self.prompt_slots[primary_slot] = replace_slow_update_field(
+                    self.prompt_slots[primary_slot], guidance,
+                )
+                self._write_yaml_annotations()
+            self.current_skill = replace_slow_update_field(self.current_skill, guidance)
             self._save_skill(self.current_skill)
             slow_result["prev_hard"] = round(prev_hard, 4)
             slow_result["curr_hard"] = round(curr_hard, 4)
@@ -353,7 +388,7 @@ class SkillOptTrainer:
             log.info(
                 "slow update applied",
                 epoch=epoch + 1,
-                guidance_len=len(slow_result["slow_update_content"]),
+                guidance_len=len(guidance),
                 prev_hard=round(prev_hard, 4),
                 curr_hard=round(curr_hard, 4),
             )
