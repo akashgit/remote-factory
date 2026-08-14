@@ -6,7 +6,6 @@ import json
 import os
 import stat
 from pathlib import Path
-from typing import get_args
 from unittest.mock import patch
 
 import pytest
@@ -138,10 +137,10 @@ class TestSessionId:
 
 
 class TestAgentRegistration:
-    def test_refactory_role_in_agent_role(self) -> None:
+    def test_agent_role_accepts_any_string(self) -> None:
         from factory.agents.runner import AgentRole
 
-        assert "refactory" in get_args(AgentRole)
+        assert AgentRole is str
 
     def test_refactory_in_agents_yml(self) -> None:
         import yaml
