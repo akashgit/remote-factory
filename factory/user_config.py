@@ -95,8 +95,11 @@ def load_config(profile: str | None = None) -> dict:
     """Read ~/.factory/config.toml; apply credential profile overlay if given.
 
     Returns the parsed TOML dict. If the file doesn't exist, returns an empty dict.
-    When a profile is specified, its ``[credentials.<name>]`` keys are injected
-    into ``os.environ`` so normal env-var precedence resolves them.
+    When a profile is specified (explicit ``--profile`` opt-in), its
+    ``[credentials.<name>]`` keys **override** existing env vars via direct
+    assignment to ``os.environ``.  A ``[credentials.<name>.unset]`` sub-table
+    with ``vars = [...]`` removes listed env vars before the overrides are
+    applied.  Protected variables (PATH, HOME, etc.) cannot be set or unset.
     """
     if not CONFIG_PATH.exists():
         if profile:
