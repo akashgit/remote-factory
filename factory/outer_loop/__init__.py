@@ -12,6 +12,7 @@ from factory.outer_loop.filesystem import (
     save_generation,
     save_map_elites,
 )
+from factory.outer_loop.direct_evaluator import DirectFeatureBenchEvaluator
 from factory.outer_loop.harbor_evaluator import (
     HarborEvaluator,
     create_seed_workflow,
@@ -34,6 +35,7 @@ from factory.outer_loop.workflow import outer_loop_workflow
 __all__ = [
     "AuditResult",
     "BudgetTracker",
+    "DirectFeatureBenchEvaluator",
     "DesignerAgent",
     "EvalResult",
     "GenerationSummary",

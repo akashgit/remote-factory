@@ -19,9 +19,10 @@ from pathlib import Path
 
 import structlog
 
+from factory.outer_loop.direct_evaluator import DirectFeatureBenchEvaluator
 from factory.outer_loop.engine import SwarmEngine
 from factory.outer_loop.evaluator import SwarmEvaluator
-from factory.outer_loop.harbor_evaluator import HarborEvaluator, create_seed_workflow
+from factory.outer_loop.harbor_evaluator import create_seed_workflow
 from factory.outer_loop.models import SwarmConfig
 
 log = structlog.get_logger()
@@ -30,7 +31,7 @@ log = structlog.get_logger()
 def main(argv: list[str] | None = None) -> int:
     """Run the evolutionary search loop and print results."""
     parser = argparse.ArgumentParser(
-        description="Run outer-loop evolution on FeatureBench via Harbor",
+        description="Run outer-loop evolution on FeatureBench",
     )
     parser.add_argument(
         "--training-instances",
@@ -63,8 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Per-instance solver timeout in seconds (default: 300)",
+        default=1800,
+        help="Per-agent timeout in seconds (default: 1800)",
     )
     parser.add_argument(
         "--output",
@@ -92,12 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         holdout_instances=holdout,
     )
 
-    harbor_eval = HarborEvaluator(timeout=args.timeout)
-    evaluator = SwarmEvaluator(config, evaluator_fn=harbor_eval)
+    direct_eval = DirectFeatureBenchEvaluator(agent_timeout=args.timeout)
+    evaluator = SwarmEvaluator(config, evaluator_fn=direct_eval)
     engine = SwarmEngine(config=config, evaluator=evaluator)
     seed = create_seed_workflow()
 
-    print("=== Outer Loop Evolution — FeatureBench ===")
+    print("=== Outer Loop Evolution — FeatureBench (Direct) ===")
     print(f"Seed:       {seed.name} ({len(seed.nodes)} nodes)")
     print(f"Training:   {len(training)} instances")
     print(f"Holdout:    {len(holdout)} instances")
