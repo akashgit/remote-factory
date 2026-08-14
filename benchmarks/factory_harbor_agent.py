@@ -280,6 +280,7 @@ class FactoryCeo(BaseInstalledAgent):
                 "  sed -i 's|http://mirrors.aliyun.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true;"
                 "  sed -i 's|http://mirrors.cloud.aliyuncs.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true;"
                 "  rm -f /etc/apt/trusted.gpg.d/* 2>/dev/null || true;"
+                "  apt-get clean && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*;"
                 "  apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update && apt-get --allow-unauthenticated install -y curl procps git;"
                 " elif command -v yum &> /dev/null; then"
                 "  yum install -y curl procps-ng git;"
