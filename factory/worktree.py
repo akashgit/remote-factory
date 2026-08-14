@@ -35,6 +35,8 @@ _SHARED_SYMLINK_ENTRIES: Final[tuple[str, ...]] = (
     "archive",
     "events.jsonl",
     ".store.lock",
+    "adversarial_state.json",
+    "performance_report.json",
 )
 
 # .factory entries copied from main — read-only but agents may override per-run.
