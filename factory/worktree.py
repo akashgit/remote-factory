@@ -140,6 +140,16 @@ def create_worktree(
     if backlog_src.exists():
         shutil.copy2(backlog_src, wt_factory / "strategy" / "backlog.md")
 
+    # Copy remaining plugin-created subdirectories not already handled.
+    _handled = set(_SHARED_SYMLINK_ENTRIES) | set(_COPY_ENTRIES)
+    if factory_dir.is_dir():
+        for child in factory_dir.iterdir():
+            if child.name in _handled or not child.is_dir():
+                continue
+            dst = wt_factory / child.name
+            if not dst.exists():
+                shutil.copytree(child, dst)
+
     log.info("worktree_created", branch=branch, path=str(wt_dir))
 
     try:
