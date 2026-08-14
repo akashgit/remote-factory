@@ -277,6 +277,8 @@ class FactoryCeo(BaseInstalledAgent):
                 "if command -v apk &> /dev/null; then"
                 "  apk add --no-cache curl bash nodejs npm procps git;"
                 " elif command -v apt-get &> /dev/null; then"
+                "  sed -i 's|http://mirrors.aliyun.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true;"
+                "  sed -i 's|http://mirrors.cloud.aliyuncs.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true;"
                 "  apt-get update && apt-get install -y curl procps git;"
                 " elif command -v yum &> /dev/null; then"
                 "  yum install -y curl procps-ng git;"
