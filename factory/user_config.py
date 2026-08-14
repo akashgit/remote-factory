@@ -53,14 +53,14 @@ _CONFIG_TEMPLATE = """\
 # FACTORY_RUNNER = "codex"
 # CODEX_API_KEY = "..."
 #
-# [credentials.glaude]
+# [credentials.litellm-proxy]
 # FACTORY_RUNNER = "claude"
-# FACTORY_MODEL = "glm-5.2-fp8"
-# ANTHROPIC_BASE_URL = "https://glm52-litellm.apps.rosa..."
-# ANTHROPIC_API_KEY = "sk-litellm-..."
+# FACTORY_MODEL = "your-model-name"
+# ANTHROPIC_BASE_URL = "https://your-litellm-proxy.example.com"
+# ANTHROPIC_API_KEY = "your-api-key-here"
 # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
 #
-# [credentials.glaude.unset]
+# [credentials.litellm-proxy.unset]
 # vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
 """
 

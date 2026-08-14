@@ -150,19 +150,21 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 - **Unset:** Add a `[credentials.<name>.unset]` sub-table with `vars = ["VAR1", "VAR2"]` to remove env vars before injection. Unsets are processed before sets.
 - **Protected vars:** `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, and `TERM` cannot be set or unset via profiles — a `ValueError` is raised if attempted.
 
-**Glaude profile example** (Claude Code via GLM-5.2 LiteLLM proxy):
+**Custom endpoint example** (e.g. a LiteLLM proxy):
+
+You can use profiles to point the factory at a custom model endpoint:
 ```toml
-[credentials.glaude]
+[credentials.litellm-proxy]
 FACTORY_RUNNER = "claude"
-FACTORY_MODEL = "glm-5.2-fp8"
-ANTHROPIC_BASE_URL = "https://glm52-litellm.apps.rosa..."
-ANTHROPIC_API_KEY = "sk-litellm-..."
+FACTORY_MODEL = "your-model-name"
+ANTHROPIC_BASE_URL = "https://your-litellm-proxy.example.com"
+ANTHROPIC_API_KEY = "your-api-key-here"
 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
 
-[credentials.glaude.unset]
+[credentials.litellm-proxy.unset]
 vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
 ```
-Usage: `factory ceo /path --profile glaude`
+Usage: `factory ceo /path --profile litellm-proxy`
 
 **Implementation:** `factory/user_config.py` — `load_config()`, `resolve()`, `show_config()`, `migrate_env_to_config()`.
 

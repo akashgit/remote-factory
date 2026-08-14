@@ -414,13 +414,13 @@ class TestEnvOverlay:
         from factory.user_config import show_config
 
         config_dir.write_text(
-            '[credentials.glaude]\n'
+            '[credentials.custom]\n'
             'FACTORY_RUNNER = "claude"\n\n'
-            '[credentials.glaude.unset]\n'
+            '[credentials.custom.unset]\n'
             'vars = ["CLAUDE_CODE_USE_VERTEX"]'
         )
         output = show_config()
-        assert "[credentials.glaude]" in output
+        assert "[credentials.custom]" in output
         assert "claude" in output
         assert "unset" in output.lower()
 
