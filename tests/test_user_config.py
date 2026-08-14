@@ -425,6 +425,113 @@ class TestEnvOverlay:
         assert "unset" in output.lower()
 
 
+class TestHardenedProtectedVars:
+    """Tests for expanded protected variable list."""
+
+    def test_protected_var_ld_preload_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text('[credentials.bad]\nLD_PRELOAD = "/evil/lib.so"')
+        with pytest.raises(ValueError, match="protected variable"):
+            load_config(profile="bad")
+
+    def test_protected_var_pythonpath_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text('[credentials.bad]\nPYTHONPATH = "/evil"')
+        with pytest.raises(ValueError, match="protected variable"):
+            load_config(profile="bad")
+
+    def test_protected_var_ifs_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text('[credentials.bad]\nIFS = "x"')
+        with pytest.raises(ValueError, match="protected variable"):
+            load_config(profile="bad")
+
+    def test_protected_var_dyld_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text('[credentials.bad]\nDYLD_INSERT_LIBRARIES = "/evil"')
+        with pytest.raises(ValueError, match="protected variable"):
+            load_config(profile="bad")
+
+    def test_protected_var_factory_trace_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text('[credentials.bad]\nFACTORY_TRACE_ID = "injected"')
+        with pytest.raises(ValueError, match="protected variable"):
+            load_config(profile="bad")
+
+
+class TestUnsetVarsValidation:
+    """Tests for unset.vars type validation."""
+
+    def test_unset_vars_string_not_list_raises(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import load_config
+
+        config_dir.write_text(
+            '[credentials.bad]\nFACTORY_RUNNER = "claude"\n\n'
+            '[credentials.bad.unset]\n'
+            'vars = "not-a-list"'
+        )
+        with pytest.raises(ValueError, match="must be a list"):
+            load_config(profile="bad")
+
+
+class TestOverrideWarning:
+    """Tests for structured log warning on env var override."""
+
+    def test_override_logs_warning(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        config_dir.write_text('[credentials.test]\nFACTORY_RUNNER = "new-value"')
+        monkeypatch.setenv("FACTORY_RUNNER", "old-value")
+
+        mock_log = MagicMock()
+        monkeypatch.setattr("factory.user_config.log", mock_log)
+
+        from factory.user_config import load_config
+        load_config(profile="test")
+
+        mock_log.warning.assert_any_call(
+            "profile_override", key="FACTORY_RUNNER", profile="test"
+        )
+
+
+class TestShowConfigMasksNestedSecrets:
+    """Tests for masking sensitive values in nested sub-tables."""
+
+    def test_show_config_masks_nested_secrets(self, config_dir: Path) -> None:
+        from factory.user_config import show_config
+
+        config_dir.write_text(
+            '[credentials.custom]\n'
+            'FACTORY_RUNNER = "claude"\n\n'
+            '[credentials.custom.secrets]\n'
+            'api_key = "super-secret-key-1234"\n'
+            'name = "visible"'
+        )
+        output = show_config()
+        assert "super-secret-key-1234" not in output
+        assert "1234" in output
+        assert "visible" in output
+
+
 class TestResolveEmptyTomlValue:
     """Cover the branch where toml_val is not None but strips to empty string."""
 

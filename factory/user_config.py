@@ -22,7 +22,13 @@ _CREDENTIAL_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 _SENSITIVE_FRAGMENTS = ("key", "token", "secret", "password", "api_key")
 
-_PROTECTED_VARS = frozenset({"PATH", "HOME", "USER", "SHELL", "TMPDIR", "TERM"})
+_PROTECTED_VARS = frozenset({
+    "PATH", "HOME", "USER", "SHELL", "TMPDIR", "TERM", "PWD",
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+    "PYTHONPATH", "GOPATH", "CLASSPATH", "NODE_PATH",
+    "IFS",
+    "FACTORY_TRACE_ID", "FACTORY_PARENT_SPAN_ID",
+})
 
 _cached_config: dict | None = None
 
@@ -108,6 +114,10 @@ def load_config(profile: str | None = None) -> dict:
             )
         return {}
 
+    stat_mode = CONFIG_PATH.stat().st_mode & 0o077
+    if stat_mode:
+        log.warning("config_permissions_too_open", path=str(CONFIG_PATH), mode=oct(stat_mode))
+
     with open(CONFIG_PATH, "rb") as f:
         data = tomllib.load(f)
 
@@ -125,6 +135,11 @@ def load_config(profile: str | None = None) -> dict:
         unset_vars: list[str] = []
         if isinstance(unset_config, dict):
             raw = unset_config.get("vars", [])
+            if raw is not None and not isinstance(raw, list):
+                raise ValueError(
+                    f"Profile {profile!r}: [credentials.{profile}.unset].vars "
+                    f"must be a list, got {type(raw).__name__}"
+                )
             if isinstance(raw, list):
                 unset_vars = [str(v) for v in raw]
 
@@ -146,6 +161,8 @@ def load_config(profile: str | None = None) -> dict:
             os.environ.pop(var, None)
 
         for k, v in env_keys.items():
+            if k in os.environ and os.environ[k] != str(v):
+                log.warning("profile_override", key=k, profile=profile)
             os.environ[k] = str(v)
 
         log.info(
@@ -248,7 +265,10 @@ def show_config(*, reveal: bool = False) -> str:
             if isinstance(v, dict):
                 lines.append(f"  [{k}]")
                 for sk, sv in v.items():
-                    lines.append(f"    {sk} = {sv}")
+                    display_sv = str(sv)
+                    if not reveal and is_sensitive(sk):
+                        display_sv = mask_value(display_sv)
+                    lines.append(f"    {sk} = {display_sv}")
                 continue
             display = str(v)
             if not reveal and is_sensitive(k):

@@ -148,7 +148,9 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 **Env overlay features:**
 - **Override:** Profile keys are set via `os.environ[k] = v`, not `setdefault` — the profile wins over shell env vars
 - **Unset:** Add a `[credentials.<name>.unset]` sub-table with `vars = ["VAR1", "VAR2"]` to remove env vars before injection. Unsets are processed before sets.
-- **Protected vars:** `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, and `TERM` cannot be set or unset via profiles — a `ValueError` is raised if attempted.
+- **Protected vars:** The following env vars cannot be set or unset via profiles — a `ValueError` is raised if attempted: `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, `TERM`, `PWD` (shell fundamentals); `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES` (code execution vectors); `PYTHONPATH`, `GOPATH`, `CLASSPATH`, `NODE_PATH` (language path injection); `IFS` (shell parsing); `FACTORY_TRACE_ID`, `FACTORY_PARENT_SPAN_ID` (factory observability internals).
+- **Unset vars validation:** The `[credentials.<name>.unset].vars` field must be a list — a `ValueError` is raised if it is a string or other non-list type.
+- **Override warnings:** When a profile overrides an existing env var with a different value, a `log.warning("profile_override", key=k, profile=profile)` is emitted (values are not logged to avoid leaking secrets).
 
 **Custom endpoint example** (e.g. a LiteLLM proxy):
 
