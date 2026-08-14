@@ -1103,3 +1103,70 @@ class TestMainEntryPoint:
                 main()
                 call_kwargs = mock_trainer.call_args[1]
                 assert call_kwargs["use_slow_update"] is True
+
+
+class TestSlowUpdateWithSlots:
+    def test_slow_update_injects_into_prompt_slot(self, tmp_path):
+        """Verify epoch 0 injects placeholder into the prompt slot, not just SKILL.md."""
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\nContent")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        ann = {"b": {"slots": {"task_prompt_b": "original prompt text"}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=1, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results, results]
+        adapter.reflect.return_value = []
+
+        trainer.train()
+
+        # Verify placeholder is in the prompt slot
+        assert "SLOW_UPDATE_START" in trainer.prompt_slots["task_prompt_b"]
+        # Verify it was written to YAML
+        reloaded = yaml.safe_load(ann_path.read_text())
+        assert "SLOW_UPDATE_START" in reloaded["b"]["slots"]["task_prompt_b"]
+
+    def test_slow_update_guidance_in_prompt_slot(self, tmp_path):
+        """Verify epoch 2 writes guidance into the prompt slot."""
+        import yaml
+
+        skill_path = tmp_path / "SKILL.md"
+        skill_path.write_text("# Skill\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->")
+        ann_path = tmp_path / "SKILL.annotations.yaml"
+        prompt_with_markers = "prompt\n\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+        ann = {"b": {"slots": {"task_prompt_b": prompt_with_markers}}}
+        ann_path.write_text(yaml.dump(ann))
+
+        adapter = MagicMock()
+        trainer = SkillOptTrainer(
+            adapter=adapter, skill_path=str(skill_path),
+            out_dir=str(tmp_path / "out"), epochs=2, steps_per_epoch=1,
+            batch_size=2, learning_rate=3, use_slow_update=True,
+        )
+
+        results = [RolloutResult(id="e1", hard=0.5, soft=0.5)]
+        adapter.rollout.side_effect = [results] * 10
+        adapter.reflect.return_value = []
+
+        # Mock run_slow_update to return guidance
+        with patch("factory.skillopt.trainer.run_slow_update") as mock_slow:
+            mock_slow.return_value = {
+                "slow_update_content": "Focus on test-first debugging.",
+                "reasoning": "Tests help.",
+            }
+            trainer.train()
+
+        # Verify guidance is in the prompt slot
+        assert "Focus on test-first debugging" in trainer.prompt_slots["task_prompt_b"]
+        # Verify YAML was updated
+        reloaded = yaml.safe_load(ann_path.read_text())
+        assert "Focus on test-first debugging" in reloaded["b"]["slots"]["task_prompt_b"]
