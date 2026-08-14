@@ -258,6 +258,34 @@ def tmp_project(tmp_path: Path) -> Path:
     return tmp_path
 
 
+async def _run_selection_node(
+    executor: WorkflowExecutor,
+    node: SelectionNode,
+) -> str:
+    """Exercise Factory's selection operation with graph-shaped state."""
+    from factory.workflow.langgraph import initial_state
+
+    state = initial_state(
+        executor.workflow,
+        str(executor.project_path),
+        executor.run_id,
+    )
+    state["node_outputs"] = dict(executor.result.node_outputs)
+    output = await executor._run_selection(node, state)
+    executor.result.node_outputs[node.id] = output
+    return output
+
+
+async def _run_subgraph_fork_node(
+    executor: WorkflowExecutor,
+    node: SubgraphForkNode,
+) -> str:
+    """Exercise Factory's worktree fan-out operation without a second walker."""
+    output = await executor._run_subgraph_fork(node)
+    executor.result.node_outputs[node.id] = output
+    return output
+
+
 class TestSubgraphForkDryRun:
     async def test_dry_run_subgraph_fork(self, tmp_project: Path) -> None:
         wf = Workflow(
@@ -562,7 +590,7 @@ class TestSubgraphForkValidation:
 
 
 class TestSelectionAllFailed:
-    async def test_all_branches_failed_halts(self, tmp_project: Path) -> None:
+    async def test_all_branches_failed_surfaces(self, tmp_project: Path) -> None:
         wf = Workflow(
             name="test-select",
             nodes={
@@ -581,12 +609,11 @@ class TestSelectionAllFailed:
         ])
         executor.completed_files = {"pre.txt"}
 
-        await executor._execute_selection(
-            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-        )
-
-        assert executor.result.halted is True
-        assert "all parallel experiment branches failed" in executor.result.halt_reason
+        with pytest.raises(RuntimeError, match="all parallel experiment branches failed"):
+            await _run_selection_node(
+                executor,
+                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            )
 
 
 class TestSelectionPicksBest:
@@ -623,7 +650,7 @@ class TestSelectionPicksBest:
              patch("factory.store.ExperimentStore.finalize", mock_finalize):
             mock_sp.return_value = MagicMock(returncode=0)
 
-            await executor._execute_selection(
+            await _run_selection_node(executor,
                 SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
             )
 
@@ -663,7 +690,7 @@ class TestSelectionPicksBest:
 
         with patch("subprocess.run") as mock_sp:
             mock_sp.return_value = MagicMock(returncode=0)
-            await executor._execute_selection(
+            await _run_selection_node(executor,
                 SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
             )
 
@@ -693,14 +720,14 @@ class TestSelectionPicksBest:
 
         with patch("subprocess.run") as mock_sp:
             mock_sp.return_value = MagicMock(returncode=0)
-            await executor._execute_selection(
+            await _run_selection_node(executor,
                 SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
             )
 
         selection = json.loads(executor.result.node_outputs["select"])
         assert selection["winner_score"] == 0.0
 
-    async def test_malformed_eval_json_defaults_to_zero(self, tmp_project: Path) -> None:
+    async def test_malformed_eval_json_surfaces(self, tmp_project: Path) -> None:
         wt1 = tmp_project / ".factory-worktrees" / "exp-1"
         wt1.mkdir(parents=True)
         (wt1 / ".factory").mkdir()
@@ -724,16 +751,15 @@ class TestSelectionPicksBest:
 
         with patch("subprocess.run") as mock_sp:
             mock_sp.return_value = MagicMock(returncode=0)
-            await executor._execute_selection(
-                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-            )
-
-        selection = json.loads(executor.result.node_outputs["select"])
-        assert selection["winner_score"] == 0.0
+            with pytest.raises(json.JSONDecodeError):
+                await _run_selection_node(
+                    executor,
+                    SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+                )
 
 
 class TestSelectionMergeFailure:
-    async def test_merge_failure_halts(self, tmp_project: Path) -> None:
+    async def test_merge_failure_surfaces(self, tmp_project: Path) -> None:
         import subprocess as sp
 
         wt1 = tmp_project / ".factory-worktrees" / "exp-1"
@@ -757,16 +783,15 @@ class TestSelectionMergeFailure:
 
         with patch("subprocess.run") as mock_sp:
             mock_sp.side_effect = sp.CalledProcessError(1, "git merge")
-            await executor._execute_selection(
-                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-            )
-
-        assert executor.result.halted is True
-        assert "failed to merge winner branch" in executor.result.halt_reason
+            with pytest.raises(sp.CalledProcessError):
+                await _run_selection_node(
+                    executor,
+                    SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+                )
 
 
 class TestSelectionCleanup:
-    async def test_finalize_failure_is_logged_not_fatal(self, tmp_project: Path) -> None:
+    async def test_finalize_failure_surfaces(self, tmp_project: Path) -> None:
         wt1 = tmp_project / ".factory-worktrees" / "exp-1"
         wt2 = tmp_project / ".factory-worktrees" / "exp-2"
         wt1.mkdir(parents=True)
@@ -794,14 +819,13 @@ class TestSelectionCleanup:
         with patch("subprocess.run") as mock_sp, \
              patch("factory.store.ExperimentStore.finalize", mock_finalize):
             mock_sp.return_value = MagicMock(returncode=0)
-            await executor._execute_selection(
-                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-            )
+            with pytest.raises(RuntimeError, match="db error"):
+                await _run_selection_node(
+                    executor,
+                    SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+                )
 
-        assert not executor.result.halted
-        assert "select" in executor.result.node_outputs
-
-    async def test_worktree_cleanup_failure_not_fatal(self, tmp_project: Path) -> None:
+    async def test_worktree_cleanup_failure_surfaces(self, tmp_project: Path) -> None:
         wt1 = tmp_project / ".factory-worktrees" / "exp-1"
         wt1.mkdir(parents=True)
 
@@ -824,14 +848,14 @@ class TestSelectionCleanup:
         with patch("subprocess.run") as mock_sp, \
              patch("factory.worktree.remove_worktree", side_effect=OSError("rm fail")):
             mock_sp.return_value = MagicMock(returncode=0)
-            await executor._execute_selection(
-                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-            )
+            with pytest.raises(OSError, match="rm fail"):
+                await _run_selection_node(
+                    executor,
+                    SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+                )
 
-        assert not executor.result.halted
-
-    async def test_fork_output_search_skips_invalid_json(self, tmp_project: Path) -> None:
-        """Non-JSON node outputs are skipped when searching for fork results."""
+    async def test_invalid_fork_output_surfaces(self, tmp_project: Path) -> None:
+        """Malformed graph output surfaces at the domain boundary."""
         wf = Workflow(
             name="test-select",
             nodes={
@@ -846,13 +870,11 @@ class TestSelectionCleanup:
         executor.result.node_outputs["plain"] = json.dumps({"some": "data"})
         executor.completed_files = {"pre.txt"}
 
-        await executor._execute_selection(
-            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-        )
-
-        selection = json.loads(executor.result.node_outputs["select"])
-        assert selection["winner"] is None
-        assert selection["reason"] == "dry-run"
+        with pytest.raises(json.JSONDecodeError):
+            await _run_selection_node(
+                executor,
+                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            )
 
 
 # ── _execute_subgraph_fork non-dry-run tests (executor.py) ─────
@@ -875,7 +897,7 @@ class TestSubgraphForkNonDryRun:
         )
         executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
 
-        await executor._execute_subgraph_fork(
+        await _run_subgraph_fork_node(executor,
             SubgraphForkNode(
                 id="fork", subgraph_entry="step", subgraph_exit="step",
                 parallelism=2, writes={"fork.json"},
@@ -915,7 +937,7 @@ class TestSubgraphForkNonDryRun:
              patch("factory.store.ExperimentStore.begin", new_callable=AsyncMock, return_value=1):
             mock_sp.return_value = MagicMock(stdout="abc123\n")
 
-            await executor._execute_subgraph_fork(
+            await _run_subgraph_fork_node(executor,
                 SubgraphForkNode(
                     id="fork", subgraph_entry="step", subgraph_exit="step",
                     parallelism=2, writes={"fork.json"},
@@ -962,7 +984,7 @@ class TestSubgraphForkNonDryRun:
                  return_value=(fake_wt_path, "factory/exp-1"),
              ), \
              patch("factory.store.ExperimentStore.begin", new_callable=AsyncMock, return_value=1):
-            await executor._execute_subgraph_fork(
+            await _run_subgraph_fork_node(executor,
                 SubgraphForkNode(
                     id="fork", subgraph_entry="step", subgraph_exit="step",
                     parallelism=1, writes={"fork.json"},
@@ -1243,7 +1265,7 @@ class TestSelectionLiveExecution:
         }])
         executor.completed_files = {"pre.txt"}
 
-        await executor._execute_selection(
+        await _run_selection_node(executor,
             SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
         )
 
@@ -1305,7 +1327,7 @@ class TestSelectionLiveExecution:
         ])
         executor.completed_files = {"pre.txt"}
 
-        await executor._execute_selection(
+        await _run_selection_node(executor,
             SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
         )
 
@@ -1354,8 +1376,8 @@ class TestErrorRecoveryPaths:
         assert results[0]["success"] is False
         assert results[0]["halted"] is True
 
-    async def test_fork_subprocess_timeout_captured(self, tmp_path: Path) -> None:
-        """When git rev-parse times out, the fork halts gracefully."""
+    async def test_fork_subprocess_failure_surfaces(self, tmp_path: Path) -> None:
+        """A git failure surfaces and leaves the graph checkpoint resumable."""
         import subprocess as sp
 
         project = _git_project(tmp_path)
@@ -1384,12 +1406,11 @@ class TestErrorRecoveryPaths:
             "subprocess.run",
             side_effect=sp.CalledProcessError(128, "git rev-parse"),
         ):
-            result = await executor.execute()
+            with pytest.raises(sp.CalledProcessError):
+                await executor.execute()
 
-        assert result.halted is True
-
-    async def test_selection_merge_conflict_halts(self, tmp_path: Path) -> None:
-        """When merging the winner causes a conflict, selection halts."""
+    async def test_selection_merge_conflict_surfaces(self, tmp_path: Path) -> None:
+        """A winner merge conflict surfaces with the git failure."""
         import subprocess as sp
 
         project = _git_project(tmp_path)
@@ -1443,17 +1464,16 @@ class TestErrorRecoveryPaths:
         }])
         executor.completed_files = {"pre.txt"}
 
-        await executor._execute_selection(
-            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-        )
+        with pytest.raises(sp.CalledProcessError):
+            await _run_selection_node(
+                executor,
+                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            )
 
-        assert executor.result.halted is True
-        assert "failed to merge winner branch" in executor.result.halt_reason
-
-    async def test_selection_worktree_cleanup_failure_non_fatal(
+    async def test_selection_worktree_cleanup_failure_surfaces(
         self, tmp_path: Path,
     ) -> None:
-        """When worktree removal fails, selection still succeeds."""
+        """A worktree cleanup failure surfaces at the selection node."""
         import subprocess as sp
 
         project = _git_project(tmp_path)
@@ -1498,10 +1518,8 @@ class TestErrorRecoveryPaths:
         executor.completed_files = {"pre.txt"}
 
         with patch("factory.worktree.remove_worktree", side_effect=OSError("perm denied")):
-            await executor._execute_selection(
-                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
-            )
-
-        assert not executor.result.halted
-        selection = json.loads(executor.result.node_outputs["select"])
-        assert selection["winner_exp_id"] == 1
+            with pytest.raises(OSError, match="perm denied"):
+                await _run_selection_node(
+                    executor,
+                    SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+                )

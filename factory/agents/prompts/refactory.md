@@ -88,7 +88,8 @@ When the user says "work on X":
    - `factory tmux <path> --mode design` for brainstorming what to work on
    - `factory tmux <path> --mode research` for research-driven improvement
    - `factory tmux <path> --mode create --focus "mode description"` for creating new factory modes
-   - `factory tmux <path> --engine tool` for tool-based execution (CEO drives via workflow tool commands)
+   - `factory tmux <path> --engine langgraph` for persisted LangGraph execution (default)
+   - `factory tmux <path> --engine skill` for the explicit legacy SKILL.md fallback
 
    Create mode is a meta-mode: it requires the factory project path (not a target project), uses `--focus` to provide the mode description, and generates new workflow definitions, CLI wiring, and tests for a new factory mode.
 

@@ -54,7 +54,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In design mode, the Strategist synthesizes research into a buildable plan through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+A persisted LangGraph thread schedules eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The CEO acts as its interactive client and gate evaluator. SQLite checkpoints preserve routing, parallel branches, loops, and human approvals across process restarts.
 
 ---
 
@@ -246,26 +246,34 @@ graph TB
         RF["Refiner"] ~~~ FA["Failure Analyst"]
     end
     subgraph ceo ["CEO Agent"]
-        C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
+        C["Interactive client · Gate evaluator"]
+    end
+    subgraph runtime ["LangGraph Runtime"]
+        W["Route · Fan out/in · Loop · Checkpoint · Resume"]
     end
     subgraph cli ["Python CLI"]
         T["eval · guard · store · discover · events · strategy"]
     end
 
-    agents --> ceo --> cli
+    ceo --> runtime
+    runtime --> agents
+    runtime --> cli
 
     style agents fill:#e8eaf6,stroke:#5c6bc0
     style ceo fill:#fff3e0,stroke:#ff8f00
+    style runtime fill:#e3f2fd,stroke:#1e88e5
     style cli fill:#e8f5e9,stroke:#43a047
 ```
 
-re:factory is a three-layer system:
+re:factory is a four-layer system:
 
 **Layer 1 — Python CLI** (`factory/`): Pure tools that don't make decisions. Eval runner, strategy engine, experiment store, discovery, event logging. Entry point: `factory --help`.
 
-**Layer 2 — CEO Agent** (`factory/agents/prompts/ceo.md`): The orchestrator. Detects project state, spawns specialist agents, and makes the keep/revert decision for each experiment. Mode-specific playbooks are auto-generated from workflow graph definitions.
+**Layer 2 — LangGraph Runtime** (`factory/workflow/`): Compiles the typed Factory DSL and owns scheduling, routing, parallel joins, loops, SQLite checkpoints, and interrupts/resume.
 
-**Layer 3 — Specialist Agents** (`factory/agents/`): Eight independent Claude Code subprocesses — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst. Each has a focused prompt, receives context from the CEO, and returns structured output.
+**Layer 3 — CEO Agent** (`factory/agents/prompts/ceo.md`): Interactive graph client and gate evaluator. Headless runs execute the same graph without a separate CEO scheduler.
+
+**Layer 4 — Specialist Agents** (`factory/agents/`): Eight independent subprocesses invoked by workflow nodes. Each has a focused prompt and returns structured output at an artifact boundary.
 
 See [Architecture](architecture.md) for the full deep-dive.
 

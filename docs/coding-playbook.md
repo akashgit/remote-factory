@@ -1,16 +1,18 @@
 # Coding Playbook — Factory Development Guide
 
-## Workflow-to-Skill Compilation Pipeline
+## Workflow Compilation Pipeline
 
-All factory modes are defined as directed graphs (Pydantic models) that compile into two execution formats. The pipeline has three layers:
+All factory modes are defined as directed graphs (Pydantic models). LangGraph is the runtime;
+skill export remains an optional documentation/legacy format:
 
 ```
 factory/workflow/definitions.py       ← Source of truth (Pydantic graph models)
        │
-       ├──► factory/workflow/executor.py    (headless: walks the DAG)
-       │       factory workflow run <name> --project /path
+       ├──► factory/workflow/langgraph.py   (DSL → StateGraph)
+       │       factory/workflow/executor.py    (domain operations + persistence)
+       │       factory workflow run <name> /path
        │
-       └──► factory/workflow/skill_export.py  (interactive: graph → SKILL.md)
+       └──► factory/workflow/skill_export.py  (optional: graph → SKILL.md)
                WORKFLOW_META dict + compiler
                └── skills/workflow-*/SKILL.md  (generated output)
 ```

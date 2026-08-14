@@ -18,7 +18,7 @@ study (FnNode) → builder (AgentNode) → gate_verify (GateNode) → auto_merge
 ## Usage
 
 ```bash
-factory workflow run swebench --project /path/to/repo
+factory workflow run swebench /path/to/repo
 ```
 
 Typically invoked inside a Harbor container where the task instruction is pre-populated at `/tmp/task-instruction.md`.

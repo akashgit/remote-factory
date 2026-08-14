@@ -1,31 +1,33 @@
-"""Deterministic async graph walker implementing formal execution semantics."""
+"""Factory node behavior executed by the LangGraph workflow runtime."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shlex
-import time
+import subprocess
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.types import Command, Interrupt
 
-from factory.workflow.events import (
-    GateVerdictEvent,
-    NodeCompleted,
-    NodeFailed,
-    NodeStarted,
-    WorkflowCompleted,
-    WorkflowHalted,
-    WorkflowStarted,
-    emit_workflow_event,
+from factory.workflow.events import WorkflowEvent, emit_workflow_event
+from factory.workflow.langgraph import (
+    FactoryRunState,
+    collect_subgraph_nodes,
+    compile_langgraph,
+    initial_state,
 )
 from factory.workflow.primitives import (
     AgentConfig,
     AgentNode,
-    Edge,
     FnNode,
     ForkNode,
     GateNode,
@@ -59,22 +61,28 @@ HALT reason="<your reason>"
 """
 
 
+@dataclass
 class ExecutionResult:
-    """Result of a workflow execution."""
+    """External result returned by a LangGraph workflow invocation."""
 
-    def __init__(self) -> None:
-        self.success: bool = False
-        self.halted: bool = False
-        self.halt_reason: str = ""
-        self.nodes_executed: int = 0
-        self.events: list[dict[str, Any]] = []
-        self.completed_files: set[str] = set()
-        self.node_outputs: dict[str, str] = {}
-        self.duration_ms: float = 0.0
+    success: bool = False
+    completed: bool = False
+    halted: bool = False
+    halt_reason: str = ""
+    interrupted: bool = False
+    thread_id: str = ""
+    interrupts: list[dict[str, Any]] = field(default_factory=list)
+    nodes_executed: int = 0
+    completed_nodes: set[str] = field(default_factory=set)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    completed_files: set[str] = field(default_factory=set)
+    node_outputs: dict[str, str] = field(default_factory=dict)
+    duration_ms: float = 0.0
+    state: dict[str, Any] = field(default_factory=dict)
 
 
 class WorkflowExecutor:
-    """Deterministic async graph walker for workflow execution."""
+    """Compatibility facade over the canonical LangGraph workflow runtime."""
 
     def __init__(
         self,
@@ -84,492 +92,377 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        interactive: bool = False,
+        thread_id: str | None = None,
+        checkpoint_path: Path | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
-        self.run_id = uuid.uuid4().hex[:12]
+        self.interactive = interactive
+        self.run_id = thread_id or uuid.uuid4().hex[:12]
+        self.checkpoint_path = checkpoint_path or (
+            project_path / ".factory" / "langgraph" / "checkpoints.sqlite"
+        )
+        self.result = ExecutionResult(thread_id=self.run_id)
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
         self.iteration_counts: dict[tuple[str, str], int] = {}
-        self.background_tasks: list[asyncio.Task[Any]] = []
-        self.result = ExecutionResult()
-        self._edge_index: dict[str, list[Edge]] = {}
-        for edge in workflow.edges:
-            self._edge_index.setdefault(edge.source, []).append(edge)
+        self._edge_index = {
+            node_id: [edge for edge in workflow.edges if edge.source == node_id]
+            for node_id in workflow.nodes
+        }
+
+    @property
+    def config(self) -> RunnableConfig:
+        """LangGraph thread configuration for this workflow run."""
+        return {"configurable": {"thread_id": self.run_id}}
 
     async def execute(self) -> ExecutionResult:
-        """Run the workflow from start to completion."""
-        start_time = time.monotonic()
+        """Start the workflow and run until completion or an interrupt."""
+        self._write_thread_manifest()
+        state = initial_state(self.workflow, str(self.project_path), self.run_id)
+        result = await self._invoke(state)
+        if result.completed:
+            self._log_timing_summary(result)
+        return result
 
-        self._emit(
-            "workflow.started",
-            WorkflowStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                start_node=self.workflow.start_node,
-            ),
+    async def resume(self, value: Any) -> ExecutionResult:
+        """Resume this persisted workflow thread after an interrupt."""
+        result = await self._invoke(Command(resume=value))
+        if result.completed:
+            self._log_timing_summary(result)
+        return result
+
+    async def inspect(self) -> ExecutionResult:
+        """Read the latest persisted state without advancing the graph."""
+        self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        async with AsyncSqliteSaver.from_conn_string(str(self.checkpoint_path)) as saver:
+            await saver.setup()
+            graph = compile_langgraph(self.workflow, self, checkpointer=saver)
+            snapshot = await graph.aget_state(self.config)
+        return self._sync_result(snapshot.values, snapshot.interrupts)
+
+    @classmethod
+    def from_thread(
+        cls,
+        project_path: Path,
+        thread_id: str,
+        agent_pool: dict[str, AgentConfig] | None = None,
+        *,
+        checkpoint_path: Path | None = None,
+    ) -> WorkflowExecutor:
+        """Reconstruct the exact workflow/runtime settings recorded for a thread."""
+        resolved_checkpoint = checkpoint_path or (
+            project_path / ".factory" / "langgraph" / "checkpoints.sqlite"
+        )
+        manifest_path = resolved_checkpoint.parent / "threads" / f"{thread_id}.json"
+        manifest = json.loads(manifest_path.read_text())
+        workflow = Workflow.model_validate_json(str(manifest["workflow_json"]))
+        return cls(
+            workflow,
+            project_path,
+            agent_pool=agent_pool,
+            dry_run=bool(manifest["dry_run"]),
+            auto_approve=bool(manifest["auto_approve"]),
+            interactive=bool(manifest["interactive"]),
+            thread_id=thread_id,
+            checkpoint_path=resolved_checkpoint,
         )
 
-        try:
-            await self._execute_from(self.workflow.start_node)
-            self.result.success = not self.result.halted
-        except Exception as exc:
-            self.result.success = False
-            self.result.halted = True
-            self.result.halt_reason = str(exc)
-            log.error("workflow.exception", error=str(exc), workflow=self.workflow.name)
+    async def _invoke(self, graph_input: FactoryRunState | Command[Any]) -> ExecutionResult:
+        self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        async with AsyncSqliteSaver.from_conn_string(str(self.checkpoint_path)) as saver:
+            await saver.setup()
+            graph = compile_langgraph(self.workflow, self, checkpointer=saver)
+            await graph.ainvoke(graph_input, self.config)
+            snapshot = await graph.aget_state(self.config)
+        return self._sync_result(snapshot.values, snapshot.interrupts)
 
-        if self.background_tasks:
-            done, pending = await asyncio.wait(
-                self.background_tasks,
-                timeout=30.0,
-            )
-            for task in pending:
-                task.cancel()
+    def _sync_result(
+        self,
+        values: dict[str, Any] | Any,
+        interrupts: tuple[Interrupt, ...],
+    ) -> ExecutionResult:
+        state = cast(FactoryRunState, values or {})
+        events = list(state.get("events", []))
+        interrupted = bool(interrupts)
+        halted = bool(state.get("halted", False))
+        completed = any(
+            event.get("type") in {"workflow.completed", "workflow.halted"}
+            for event in events
+        )
+        duration_ms = 0.0
+        for event in reversed(events):
+            if event.get("type") == "workflow.completed":
+                duration_ms = float(event.get("duration_ms", 0.0))
+                break
 
-        elapsed = (time.monotonic() - start_time) * 1000
-        self.result.duration_ms = elapsed
-        self.result.completed_files = set(self.completed_files)
+        self.completed_files = set(state.get("completed_files", []))
+        self.node_context = {
+            key: str(value) for key, value in state.get("node_context", {}).items()
+        }
+        self.iteration_counts = {}
+        for key, value in state.get("iteration_counts", {}).items():
+            gate_id, target_id = key.split("->", 1)
+            self.iteration_counts[(gate_id, target_id)] = int(value)
+        self.result = ExecutionResult(
+            success=completed and not interrupted and not halted,
+            completed=completed,
+            halted=halted,
+            halt_reason=str(state.get("halt_reason", "")),
+            interrupted=interrupted,
+            thread_id=self.run_id,
+            interrupts=[{"id": item.id, "value": item.value} for item in interrupts],
+            nodes_executed=int(state.get("nodes_executed", 0)),
+            completed_nodes=set(state.get("completed_nodes", [])),
+            events=events,
+            completed_files=self.completed_files,
+            node_outputs={
+                key: str(value) for key, value in state.get("node_outputs", {}).items()
+            },
+            duration_ms=duration_ms,
+            state=dict(state),
+        )
+        return self.result
 
-        # Timing summary: extract per-node durations from completed events
-        node_timings: list[dict[str, Any]] = []
-        for ev in self.result.events:
-            if ev.get("type") == "node.completed" and "duration_ms" in ev:
-                node_timings.append({
-                    "id": ev.get("node_id", ""),
-                    "type": ev.get("node_type", ""),
-                    "duration_ms": round(ev["duration_ms"], 1),
-                })
-        node_timings.sort(key=lambda n: n["duration_ms"], reverse=True)
-        node_total_ms = sum(n["duration_ms"] for n in node_timings)
+    def _log_timing_summary(self, result: ExecutionResult) -> None:
+        """Log timing data projected from durable node-completion events."""
+        node_timings = [
+            {
+                "id": event.get("node_id", ""),
+                "type": event.get("node_type", ""),
+                "duration_ms": round(float(event["duration_ms"]), 1),
+            }
+            for event in result.events
+            if event.get("type") == "node.completed" and "duration_ms" in event
+        ]
+        node_timings.sort(key=lambda entry: float(entry["duration_ms"]), reverse=True)
+        node_total_ms = sum(float(entry["duration_ms"]) for entry in node_timings)
         log.info(
             "workflow.timing_summary",
             workflow=self.workflow.name,
             run_id=self.run_id,
-            total_ms=round(elapsed, 1),
+            total_ms=round(result.duration_ms, 1),
             node_count=len(node_timings),
             nodes=node_timings,
-            overhead_ms=round(elapsed - node_total_ms, 1),
+            overhead_ms=round(result.duration_ms - node_total_ms, 1),
         )
 
-        if self.result.halted:
-            self._emit(
-                "workflow.halted",
-                WorkflowHalted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    reason=self.result.halt_reason,
-                    halted_at_node="unknown",
-                ),
-            )
-        else:
-            self._emit(
-                "workflow.completed",
-                WorkflowCompleted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    nodes_executed=self.result.nodes_executed,
-                    duration_ms=elapsed,
-                ),
+    async def run_node(self, node: NodeType, state: FactoryRunState) -> str:
+        """Run one Factory domain node with a durable completion receipt."""
+        attempt = int(state["node_attempts"].get(node.id, 0)) + 1
+        receipt_path = self._receipt_path(node.id, attempt)
+        if receipt_path.exists():
+            receipt = json.loads(receipt_path.read_text())
+            if receipt["status"] == "completed":
+                return str(receipt["output"])
+            raise RuntimeError(
+                f"operation {receipt['operation_id']} has an ambiguous prior attempt; "
+                "inspect external effects before retrying"
             )
 
-        return self.result
+        operation_id = f"{self.run_id}:{node.id}:{attempt}"
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps({
+            "operation_id": operation_id,
+            "node_id": node.id,
+            "attempt": attempt,
+            "status": "started",
+        }, indent=2))
+        output = await self._run_node(node, state)
+        receipt_path.write_text(json.dumps({
+            "operation_id": operation_id,
+            "node_id": node.id,
+            "attempt": attempt,
+            "status": "completed",
+            "output": output,
+        }, indent=2))
+        return output
 
-    async def _execute_from(self, node_id: str) -> None:
-        """Execute starting from the given node, following edges."""
-        if self.result.halted:
-            return
+    async def evaluate_gate(self, node: GateNode, state: FactoryRunState) -> Verdict:
+        """Evaluate one gate through the Factory-owned evaluator behavior."""
+        self.node_context = {
+            key: str(value) for key, value in state["node_context"].items()
+        }
+        return await self._evaluate_gate(node)
 
-        node = self.workflow.nodes.get(node_id)
-        if not node:
-            self.result.halted = True
-            self.result.halt_reason = f"node '{node_id}' not found"
-            return
+    def parse_gate_submission(self, node: GateNode, output: str) -> Verdict:
+        """Parse an interactive gate response into the Factory verdict algebra."""
+        return self._parse_agent_verdict(output, node.id)
 
-        await self._wait_for_reads(node)
-        if self.result.halted:
-            return
+    def accept_submission(self, node: NodeType, output: str) -> str:
+        """Persist externally executed agent output at its declared artifact boundary."""
+        if isinstance(node, AgentNode):
+            for write_path in node.writes:
+                artifact = self.project_path / write_path
+                artifact.parent.mkdir(parents=True, exist_ok=True)
+                artifact.write_text(output)
+            self._validate_agent_artifacts(node)
+        return output
 
-        if isinstance(node, SubgraphForkNode):
-            await self._execute_subgraph_fork(node)
-            return
+    def emit_event(self, event_type: str, event: WorkflowEvent) -> None:
+        """Write one graph event to the project's append-only event log."""
+        emit_workflow_event(self.project_path, event_type, event)
 
-        if isinstance(node, ForkNode):
-            await self._execute_fork(node)
-            return
+    async def _run_node(self, node: NodeType, state: FactoryRunState) -> str:
+        if self.dry_run:
+            if isinstance(node, SelectionNode):
+                return json.dumps({
+                    "strategy": node.strategy,
+                    "winner": None,
+                    "reason": "dry-run",
+                })
+            if isinstance(node, SubgraphForkNode):
+                return await self._run_subgraph_fork(node)
+            return f"[dry-run] {node.id} executed"
 
+        if isinstance(node, Study):
+            return await self._run_study(node)
+        if isinstance(node, AgentNode):
+            return await self._run_agent(node, state)
+        if isinstance(node, LLMNode):
+            return await self._run_llm(node, state)
         if isinstance(node, SelectionNode):
-            await self._execute_selection(node)
-            return
-
+            return await self._run_selection(node, state)
+        if isinstance(node, SubgraphForkNode):
+            return await self._run_subgraph_fork(node)
+        if isinstance(node, FnNode):
+            return await self._run_fn(node)
+        if isinstance(node, ForkNode):
+            return json.dumps({"targets": node.targets})
         if isinstance(node, JoinNode):
-            self.result.nodes_executed += 1
-            self.completed_files |= node.writes
-            next_id = self._next_unconditional(node_id)
-            if next_id:
-                await self._execute_from(next_id)
-            return
+            return json.dumps({"sources": node.sources})
+        raise TypeError(f"unsupported workflow node: {type(node).__name__}")
 
-        if isinstance(node, GateNode):
-            await self._execute_gate(node)
-            return
+    async def _run_study(self, node: Study) -> str:
+        cmd = node.command or f"factory study {shlex.quote(str(self.project_path))}"
+        if node.focus and "--focus" not in cmd:
+            cmd += f" --focus {shlex.quote(node.focus)}"
+        return await self._run_shell(self._resolve_command(cmd))
 
-        await self._execute_action_node(node)
+    async def _run_fn(self, node: FnNode) -> str:
+        if not node.command:
+            return ""
+        return await self._run_shell(self._resolve_command(node.command))
 
-    async def _execute_action_node(self, node: NodeType) -> None:
-        """Execute an AgentNode, FnNode, or Study node."""
-        node_id = node.id
-        node_type = type(node).__name__
+    async def _run_agent(self, node: AgentNode, state: FactoryRunState) -> str:
+        from factory.agents.runner import invoke_agent
 
-        if not node.blocking:
-            task = asyncio.create_task(self._run_node_background(node))
-            self.background_tasks.append(task)
-            next_id = self._next_unconditional(node_id)
-            if next_id:
-                await self._execute_from(next_id)
-            return
+        task = node.prompt_template
+        context = str(state["node_context"].get(node.id, ""))
+        if context:
+            task = f"{task}\n\n{context}"
 
-        self._emit(
-            "node.started",
-            NodeStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node_id,
-                node_type=node_type,
-            ),
+        pool_entry = self.agent_pool.get(node.role.value)
+        model = node.model or (pool_entry.model if pool_entry else "")
+        timeout = node.timeout or (pool_entry.timeout if pool_entry else 600)
+        stdout, code = await invoke_agent(
+            node.role.value,  # type: ignore[arg-type]
+            task,
+            self.project_path,
+            model=model or None,
+            timeout=float(timeout),
         )
+        if code != 0:
+            raise RuntimeError(f"agent {node.role.value} exited with code {code}")
+        self._validate_agent_artifacts(node)
+        return stdout
 
-        start = time.monotonic()
-        try:
-            output = await self._run_node(node)
-            elapsed = (time.monotonic() - start) * 1000
+    async def _run_llm(self, node: LLMNode, state: FactoryRunState) -> str:
+        from factory.workflow.llm_loop import run_llm_loop
 
-            self.result.node_outputs[node_id] = output
-            self.completed_files |= node.writes
-            self.result.nodes_executed += 1
-
-            self._emit(
-                "node.completed",
-                NodeCompleted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node_id,
-                    node_type=node_type,
-                    files_written=sorted(node.writes),
-                    duration_ms=elapsed,
-                ),
-            )
-
-        except Exception as exc:
-            self._emit(
-                "node.failed",
-                NodeFailed(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node_id,
-                    node_type=node_type,
-                    error=str(exc),
-                ),
-            )
-            self.result.halted = True
-            self.result.halt_reason = f"node '{node_id}' failed: {exc}"
-            return
-
-        next_id = self._next_unconditional(node_id)
-        if next_id:
-            await self._execute_from(next_id)
-
-    async def _run_node_background(self, node: NodeType) -> None:
-        """Run a non-blocking node as a background task."""
-        node_id = node.id
-        node_type = type(node).__name__
-        self._emit(
-            "node.started",
-            NodeStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node_id,
-                node_type=node_type,
+        context_parts = [
+            (self.project_path / path).read_text()
+            for path in sorted(node.reads)
+            if (self.project_path / path).exists()
+        ]
+        gate_context = str(state["node_context"].get(node.id, ""))
+        if gate_context:
+            context_parts.append(gate_context)
+        output = await asyncio.wait_for(
+            run_llm_loop(
+                node,
+                self.project_path,
+                instance_context="\n\n".join(context_parts),
             ),
+            timeout=float(node.timeout),
         )
-        start = time.monotonic()
-        try:
-            output = await self._run_node(node)
-            elapsed = (time.monotonic() - start) * 1000
-            self.result.node_outputs[node_id] = output
-            self.completed_files |= node.writes
-            self.result.nodes_executed += 1
-            self._emit(
-                "node.completed",
-                NodeCompleted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node_id,
-                    node_type=node_type,
-                    files_written=sorted(node.writes),
-                    duration_ms=elapsed,
-                ),
-            )
-        except Exception as exc:
-            self._emit(
-                "node.failed",
-                NodeFailed(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node_id,
-                    node_type=node_type,
-                    error=str(exc),
-                ),
-            )
-            log.warning("background_node_failed", node=node_id, error=str(exc))
+        output_path = self.project_path / ".factory" / "reviews" / "builder-latest.md"
+        if node.writes:
+            output_path = self.project_path / sorted(node.writes)[0]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output)
+        return output
 
-    async def _execute_gate(self, node: GateNode) -> None:
-        """Execute a gate node, parse verdict, follow the matching edge."""
-        node_id = node.id
-        self._emit(
-            "node.started",
-            NodeStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node_id,
-                node_type="GateNode",
-            ),
-        )
-
-        try:
-            verdict = await self._evaluate_gate(node)
-        except Exception as exc:
-            self._emit(
-                "node.failed",
-                NodeFailed(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node_id,
-                    node_type="GateNode",
-                    error=str(exc),
-                ),
-            )
-            self.result.halted = True
-            self.result.halt_reason = f"gate '{node_id}' failed: {exc}"
-            return
-
-        self.result.nodes_executed += 1
-
-        self._emit(
-            "gate.verdict",
-            GateVerdictEvent(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node_id,
-                verdict_type=verdict.type,
-                target=verdict.target,
-                feedback=verdict.feedback,
-                reason=verdict.reason,
-            ),
-        )
-
-        if verdict.type == VerdictType.HALT:
-            self.result.halted = True
-            self.result.halt_reason = verdict.reason or "gate halted"
-            return
-
-        if verdict.type == VerdictType.RELOOP:
-            target = verdict.target
-            if not target:
-                self.result.halted = True
-                self.result.halt_reason = "reloop verdict missing target"
-                return
-
-            key = (node_id, target)
-            count = self.iteration_counts.get(key, 0) + 1
-            self.iteration_counts[key] = count
-
-            if count > verdict.max_iterations:
-                self.result.halted = True
-                self.result.halt_reason = (
-                    f"max iterations ({verdict.max_iterations}) exhausted "
-                    f"for gate '{node_id}' -> '{target}'"
-                )
-                return
-
-            if verdict.feedback:
-                existing = self.node_context.get(target, "")
-                self.node_context[target] = (
-                    f"{existing}\n\n[Feedback iteration {count}]: {verdict.feedback}"
-                    if existing
-                    else f"[Feedback iteration {count}]: {verdict.feedback}"
-                )
-
-            await self._execute_from(target)
-            return
-
-        target_id = self._next_conditional(node_id, VerdictType.PROCEED)
-        if target_id is None:
-            target_id = self._next_unconditional(node_id)
-
-        if target_id:
-            await self._execute_from(target_id)
-
-    async def _execute_fork(self, node: ForkNode) -> None:
-        """Execute all fork targets concurrently via asyncio.gather.
-
-        Branches are run in isolation — they do NOT follow outgoing edges.
-        After all branches complete, the fork's own unconditional edge is followed.
-        """
-        self.result.nodes_executed += 1
-
-        async def run_branch(target_id: str) -> None:
-            target = self.workflow.nodes.get(target_id)
-            if not target:
-                return
-            node_type = type(target).__name__
-            self._emit(
-                "node.started",
-                NodeStarted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=target_id,
-                    node_type=node_type,
-                ),
-            )
-            start = time.monotonic()
-            try:
-                output = await self._run_node(target)
-                elapsed = (time.monotonic() - start) * 1000
-                self.result.node_outputs[target_id] = output
-                self.completed_files |= target.writes
-                self.result.nodes_executed += 1
-                self._emit(
-                    "node.completed",
-                    NodeCompleted(
-                        workflow_name=self.workflow.name,
-                        run_id=self.run_id,
-                        node_id=target_id,
-                        node_type=node_type,
-                        files_written=sorted(target.writes),
-                        duration_ms=elapsed,
-                    ),
-                )
-            except Exception as exc:
-                self._emit(
-                    "node.failed",
-                    NodeFailed(
-                        workflow_name=self.workflow.name,
-                        run_id=self.run_id,
-                        node_id=target_id,
-                        node_type=node_type,
-                        error=str(exc),
-                    ),
-                )
-                if not self.result.halted:
-                    self.result.halt_reason = f"fork branch '{target_id}' failed: {exc}"
-                self.result.halted = True
-
-        await asyncio.gather(*(run_branch(t) for t in node.targets))
-
-        if self.result.halted:
-            return
-
-        branch_set = set(node.targets)
-        next_id: str | None = None
-        for edge in self._edge_index.get(node.id, []):
-            if edge.condition is None and edge.target not in branch_set:
-                next_id = edge.target
-                break
-        if next_id is None and node.targets:
-            next_id = self._next_unconditional(node.targets[0])
-        if next_id:
-            await self._execute_from(next_id)
-
-    async def _execute_subgraph_fork(self, node: SubgraphForkNode) -> None:
-        """Execute N copies of a subgraph in parallel, each in an isolated worktree.
-
-        Each branch gets an independent WorkflowExecutor with its own state,
-        running against a separate git worktree branching from the same commit.
-        """
-        import subprocess as sp
-
+    async def _run_subgraph_fork(self, node: SubgraphForkNode) -> str:
         from factory.worktree import create_experiment_worktree
 
-        self.result.nodes_executed += 1
-
-        self._emit(
-            "node.started",
-            NodeStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node.id,
-                node_type="SubgraphForkNode",
-            ),
-        )
-
-        start = time.monotonic()
-
-        # Resolve base commit for all branches
         if self.dry_run:
             base_commit = "0" * 40
         else:
-            result = sp.run(
+            resolved = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            base_commit = result.stdout.strip()
+            base_commit = resolved.stdout.strip()
 
-        # Parse hypotheses from strategist output to determine branch count
         strategy_file = self.project_path / ".factory" / "strategy" / "current.md"
         hypotheses = _parse_hypotheses(strategy_file) if strategy_file.exists() else []
         branch_count = min(len(hypotheses), node.parallelism) if hypotheses else node.parallelism
-
-        if branch_count < 1:
-            branch_count = 1
-
-        # Collect subgraph node IDs by walking edges from entry to exit
-        subgraph_ids = _collect_subgraph_nodes(
-            self.workflow, node.subgraph_entry, node.subgraph_exit,
+        branch_count = max(branch_count, 1)
+        subgraph_ids = collect_subgraph_nodes(
+            self.workflow,
+            node.subgraph_entry,
+            node.subgraph_exit,
         )
         sub_workflow = self.workflow.subgraph(
-            subgraph_ids, name=f"{self.workflow.name}__branch", start_node=node.subgraph_entry,
+            subgraph_ids,
+            name=f"{self.workflow.name}__branch",
+            start_node=node.subgraph_entry,
         )
 
-        branch_results: list[dict[str, Any]] = []
-        worktrees: list[tuple[Path, str, int]] = []
-
-        async def run_branch(idx: int) -> dict[str, Any]:
+        async def run_branch(index: int) -> dict[str, Any]:
             from factory.store import ExperimentStore
 
-            hypothesis = hypotheses[idx] if idx < len(hypotheses) else f"Hypothesis {idx + 1}"
-
+            hypothesis = (
+                hypotheses[index] if index < len(hypotheses) else f"Hypothesis {index + 1}"
+            )
             if self.dry_run:
-                wt_path = self.project_path / ".factory-worktrees" / f"exp-dry-{idx}"
-                branch_name = f"factory/exp-dry-{idx}"
-                exp_id = idx + 1
+                worktree_path = self.project_path
+                branch = f"factory/exp-dry-{index}"
+                experiment_id = index + 1
             else:
                 store = ExperimentStore(self.project_path)
-                exp_id = await store.begin(hypothesis)
-                wt_path, branch_name = create_experiment_worktree(
-                    self.project_path, exp_id, base_commit,
+                experiment_id = await store.begin(hypothesis)
+                worktree_path, branch = create_experiment_worktree(
+                    self.project_path,
+                    experiment_id,
+                    base_commit,
                 )
-                worktrees.append((wt_path, branch_name, exp_id))
 
             branch_executor = WorkflowExecutor(
                 sub_workflow.model_copy(deep=True),
-                wt_path if not self.dry_run else self.project_path,
+                worktree_path,
                 agent_pool=self.agent_pool,
                 dry_run=self.dry_run,
+                auto_approve=self.auto_approve,
+                checkpoint_path=(
+                    self.checkpoint_path.parent
+                    / f"{self.run_id}-{node.id}-{index}-checkpoints.sqlite"
+                ),
             )
             branch_result = await branch_executor.execute()
-
             return {
-                "exp_id": exp_id,
+                "exp_id": experiment_id,
                 "hypothesis": hypothesis,
-                "worktree_path": str(wt_path),
-                "branch": branch_name,
+                "worktree_path": str(worktree_path),
+                "branch": branch,
                 "success": branch_result.success,
                 "halted": branch_result.halted,
                 "halt_reason": branch_result.halt_reason,
@@ -577,180 +470,94 @@ class WorkflowExecutor:
                 "node_outputs": branch_result.node_outputs,
             }
 
-        sem = asyncio.Semaphore(node.parallelism)
+        semaphore = asyncio.Semaphore(node.parallelism)
 
-        async def throttled_branch(idx: int) -> dict[str, Any]:
-            async with sem:
-                return await run_branch(idx)
+        async def throttled_branch(index: int) -> dict[str, Any]:
+            async with semaphore:
+                return await run_branch(index)
 
-        tasks = [throttled_branch(i) for i in range(branch_count)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for r in results:
-            if isinstance(r, BaseException):
-                log.warning("subgraph_branch_failed", error=str(r))
-                branch_results.append({
-                    "success": False, "halted": True, "halt_reason": str(r),
-                })
-            else:
-                branch_results.append(r)  # type: ignore[arg-type]
-
-        elapsed = (time.monotonic() - start) * 1000
-        self.result.node_outputs[node.id] = json.dumps(branch_results)
-        self.completed_files |= node.writes
-
-        self._emit(
-            "node.completed",
-            NodeCompleted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node.id,
-                node_type="SubgraphForkNode",
-                files_written=sorted(node.writes),
-                duration_ms=elapsed,
-            ),
+        gathered = await asyncio.gather(
+            *(throttled_branch(index) for index in range(branch_count)),
+            return_exceptions=True,
         )
+        branch_results = [
+            (
+                {
+                    "success": False,
+                    "halted": True,
+                    "halt_reason": str(item),
+                }
+                if isinstance(item, BaseException)
+                else item
+            )
+            for item in gathered
+        ]
+        output = json.dumps(branch_results)
+        for write_path in node.writes:
+            target = self.project_path / write_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(output)
+        return output
 
-        next_id = self._next_unconditional(node.id)
-        if next_id:
-            await self._execute_from(next_id)
-
-    async def _execute_selection(self, node: SelectionNode) -> None:
-        """Compare parallel experiment results and select the best."""
-        import subprocess as sp
-
+    async def _run_selection(self, node: SelectionNode, state: FactoryRunState) -> str:
+        from factory.models import ExperimentRecord
+        from factory.store import ExperimentStore
         from factory.worktree import remove_worktree
 
-        self.result.nodes_executed += 1
-
-        self._emit(
-            "node.started",
-            NodeStarted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node.id,
-                node_type="SelectionNode",
-            ),
-        )
-
-        start = time.monotonic()
-
-        # Find the SubgraphForkNode's output (branch results)
-        fork_output = ""
-        for nid, output in self.result.node_outputs.items():
-            try:
-                parsed = json.loads(output)
-                if isinstance(parsed, list) and parsed and "exp_id" in parsed[0]:
-                    fork_output = output
-                    break
-            except (json.JSONDecodeError, TypeError, KeyError):
-                continue
-
-        if self.dry_run or not fork_output:
-            selection_result: dict[str, Any] = {"strategy": node.strategy, "winner": None, "reason": "dry-run"}
-            self.result.node_outputs[node.id] = json.dumps(selection_result)
-            self.completed_files |= node.writes
-            elapsed = (time.monotonic() - start) * 1000
-            self._emit(
-                "node.completed",
-                NodeCompleted(
-                    workflow_name=self.workflow.name,
-                    run_id=self.run_id,
-                    node_id=node.id,
-                    node_type="SelectionNode",
-                    files_written=sorted(node.writes),
-                    duration_ms=elapsed,
-                ),
-            )
-            next_id = self._next_unconditional(node.id)
-            if next_id:
-                await self._execute_from(next_id)
-            return
-
-        branches: list[dict[str, Any]] = json.loads(fork_output)
-        successful = [b for b in branches if b.get("success")]
-
+        branches = self._find_branch_results(state["node_outputs"])
+        successful = [branch for branch in branches if branch.get("success")]
         if not successful:
-            self.result.halted = True
-            self.result.halt_reason = "all parallel experiment branches failed"
-            return
-
-        # best_score: read eval results from each worktree
-        best: dict[str, Any] | None = None
-        best_score = -1.0
+            raise RuntimeError("all parallel experiment branches failed")
 
         for branch in successful:
-            wt_path = Path(branch["worktree_path"])
-            eval_file = wt_path / ".factory" / "last_eval.json"
+            eval_file = Path(str(branch["worktree_path"])) / ".factory" / "last_eval.json"
             score = 0.0
             if eval_file.exists():
-                try:
-                    data = json.loads(eval_file.read_text())
-                    score = float(data.get("total", data.get("score", 0.0)))
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass
-
+                data = json.loads(eval_file.read_text())
+                score = float(data.get("total", data.get("score", 0.0)))
             branch["score"] = score
-            if score > best_score:
-                best_score = score
-                best = branch
 
-        if not best:
-            best = successful[0]
-
-        # Merge winner branch into baseline
-        winner_branch = best["branch"]
-        try:
-            sp.run(
-                ["git", "merge", winner_branch, "--no-edit", "-m",
-                 f"Merge parallel experiment winner (exp {best['exp_id']})"],
-                cwd=self.project_path,
-                check=True,
-                capture_output=True,
-            )
-        except sp.CalledProcessError as exc:
-            log.error("selection_merge_failed", branch=winner_branch, error=str(exc))
-            self.result.halted = True
-            self.result.halt_reason = f"failed to merge winner branch {winner_branch}"
-            return
-
-        # Finalize losers as superseded, clean up all worktrees
-        from factory.store import ExperimentStore
+        best = max(successful, key=lambda branch: float(branch.get("score", 0.0)))
+        subprocess.run(
+            [
+                "git",
+                "merge",
+                str(best["branch"]),
+                "--no-edit",
+                "-m",
+                f"Merge parallel experiment winner (exp {best['exp_id']})",
+            ],
+            cwd=self.project_path,
+            check=True,
+            capture_output=True,
+        )
 
         store = ExperimentStore(self.project_path)
         for branch in branches:
-            wt_path = Path(branch.get("worktree_path", ""))
-            branch_name = branch.get("branch", "")
-            exp_id = branch.get("exp_id")
-
-            if branch is not best and exp_id is not None:
-                from factory.models import ExperimentRecord
+            experiment_id = branch.get("exp_id")
+            if branch is not best and experiment_id is not None:
                 record = ExperimentRecord(
-                    id=exp_id,
-                    timestamp=__import__("datetime").datetime.now(tz=__import__("datetime").timezone.utc),
-                    hypothesis=branch.get("hypothesis", ""),
-                    change_summary="superseded by experiment " + str(best["exp_id"]),
+                    id=int(experiment_id),
+                    timestamp=datetime.now(tz=timezone.utc),
+                    hypothesis=str(branch.get("hypothesis", "")),
+                    change_summary=f"superseded by experiment {best['exp_id']}",
                     issue_number=None,
                     pr_number=None,
                     score_before=None,
-                    score_after=branch.get("score"),
+                    score_after=float(branch.get("score", 0.0)),
                     delta=None,
                     verdict="superseded",
                     cost_usd=None,
                     notes="",
                 )
-                try:
-                    await store.finalize(exp_id, record)
-                except Exception as exc:
-                    log.warning("finalize_superseded_failed", exp_id=exp_id, error=str(exc))
+                await store.finalize(int(experiment_id), record)
 
-            if wt_path.exists() and branch_name:
-                try:
-                    remove_worktree(self.project_path, wt_path, branch_name)
-                except Exception as exc:
-                    log.warning("worktree_cleanup_failed", path=str(wt_path), error=str(exc))
+            worktree_path = Path(str(branch.get("worktree_path", "")))
+            branch_name = str(branch.get("branch", ""))
+            if worktree_path.exists() and branch_name:
+                remove_worktree(self.project_path, worktree_path, branch_name)
 
-        selection_result = {
+        selection = {
             "strategy": node.strategy,
             "winner_exp_id": best["exp_id"],
             "winner_score": best.get("score", 0.0),
@@ -758,378 +565,224 @@ class WorkflowExecutor:
             "total_branches": len(branches),
             "successful_branches": len(successful),
         }
-        self.result.node_outputs[node.id] = json.dumps(selection_result)
-        self.completed_files |= node.writes
-
-        elapsed = (time.monotonic() - start) * 1000
-        self._emit(
-            "node.completed",
-            NodeCompleted(
-                workflow_name=self.workflow.name,
-                run_id=self.run_id,
-                node_id=node.id,
-                node_type="SelectionNode",
-                files_written=sorted(node.writes),
-                duration_ms=elapsed,
-            ),
-        )
-
-        next_id = self._next_unconditional(node.id)
-        if next_id:
-            await self._execute_from(next_id)
-
-    async def _run_node(self, node: NodeType) -> str:
-        """Execute a single node and return its output."""
-        if self.dry_run:
-            return f"[dry-run] {node.id} executed"
-
-        if isinstance(node, Study):
-            return await self._run_study(node)
-
-        if isinstance(node, FnNode):
-            return await self._run_fn(node)
-
-        if isinstance(node, AgentNode):
-            return await self._run_agent(node)
-
-        if isinstance(node, LLMNode):
-            return await self._run_llm(node)
-
-        return f"[unknown node type] {type(node).__name__}"
-
-    async def _run_study(self, node: Study) -> str:
-        """Run factory study command."""
-        cmd = f"factory study {shlex.quote(str(self.project_path))}"
-        if node.focus:
-            cmd += f' --focus "{node.focus}"'
-        return await self._run_shell(cmd)
-
-    async def _run_fn(self, node: FnNode) -> str:
-        """Run a FnNode's shell command."""
-        if not node.command:
-            return ""
-        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
-        return await self._run_shell(cmd)
-
-    async def _run_agent(self, node: AgentNode) -> str:
-        """Invoke an agent via factory/agents/runner.py."""
-        from factory.agents.runner import invoke_agent
-
-        task = node.prompt_template
-        context = self.node_context.get(node.id, "")
-        if context:
-            task = f"{task}\n\n{context}"
-
-        model = node.model
-        if not model:
-            pool_entry = self.agent_pool.get(node.role.value)
-            if pool_entry:
-                model = pool_entry.model
-
-        timeout = node.timeout
-        if timeout is None:
-            pool_entry = self.agent_pool.get(node.role.value)
-            if pool_entry:
-                timeout = pool_entry.timeout
-
-        stdout, code = await invoke_agent(
-            node.role.value,  # type: ignore[arg-type]
-            task,
-            self.project_path,
-            model=model or None,
-            timeout=float(timeout) if timeout is not None else 600.0,
-        )
-
-        if code != 0:
-            raise RuntimeError(f"agent {node.role.value} exited with code {code}")
-
-        return stdout
-
-    async def _run_llm(self, node: LLMNode) -> str:
-        """Run an LLMNode via direct API tool-use loop."""
-        from factory.workflow.llm_loop import run_llm_loop
-
-        context_parts: list[str] = []
-        for read_path in sorted(node.reads):
-            full_path = self.project_path / read_path
-            if full_path.exists():
-                context_parts.append(full_path.read_text())
-        gate_context = self.node_context.get(node.id, "")
-        if gate_context:
-            context_parts.append(gate_context)
-
-        output = await asyncio.wait_for(
-            run_llm_loop(
-                node, self.project_path,
-                instance_context="\n\n".join(context_parts),
-            ),
-            timeout=float(node.timeout),
-        )
-
-        output_path = self.project_path / ".factory" / "reviews" / "builder-latest.md"
-        if node.writes:
-            first_write = next(iter(node.writes))
-            output_path = self.project_path / first_write
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(output)
-
+        output = json.dumps(selection)
+        for write_path in node.writes:
+            target = self.project_path / write_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(output)
         return output
 
     async def _evaluate_gate(self, node: GateNode) -> Verdict:
-        """Evaluate a gate and return a verdict."""
         if self.dry_run:
             return Verdict.proceed()
-
         if node.evaluator_type == "user":
-            if self.auto_approve:
-                log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
+            log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
             return Verdict.proceed()
-
         if node.evaluator_type == "fn":
-            if node.evaluator_command:
-                cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
-                )
-                try:
-                    output = await self._run_shell(cmd)
-                    return self._parse_fn_verdict(output, node.id)
-                except RuntimeError:
-                    return Verdict.halt(reason=f"gate command failed: {cmd}")
-            return Verdict.proceed()
+            if not node.evaluator_command:
+                return Verdict.proceed()
+            cmd = self._resolve_command(node.evaluator_command)
+            stdout, stderr, code = await self._run_shell_result(cmd)
+            if code != 0:
+                reason = stderr.strip() or stdout.strip() or f"gate command failed: {cmd}"
+                return Verdict.halt(reason=reason[:500])
+            return self._parse_fn_verdict(stdout, node.id)
 
-        prompt = self._build_gate_prompt(node)
         from factory.agents.runner import invoke_agent
 
-        model = "opus"
         pool_entry = self.agent_pool.get("ceo")
-        if pool_entry:
-            model = pool_entry.model
-
         stdout, code = await invoke_agent(
             "ceo",
-            prompt,
+            self._build_gate_prompt(node),
             self.project_path,
-            model=model,
+            model=pool_entry.model if pool_entry else "opus",
         )
-
         if code != 0:
-            return Verdict.halt(reason=f"CEO gate agent exited with code {code}")
-
+            raise RuntimeError(f"CEO gate agent exited with code {code}")
         return self._parse_agent_verdict(stdout, node.id)
 
     def _build_gate_prompt(self, node: GateNode) -> str:
-        """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
-            return node.gate_prompt.replace(
-                "{project_path}", str(self.project_path),
-            )
-
-        output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
-        context = self.node_context.get(node.id, "none")
-
-        reloop_targets: list[str] = []
-        for edge in self._edge_index.get(node.id, []):
-            if edge.condition == VerdictType.RELOOP:
-                reloop_targets.append(edge.target)
-
+            return node.gate_prompt.replace("{project_path}", str(self.project_path))
+        reloop_targets = [
+            edge.target
+            for edge in self._edge_index.get(node.id, [])
+            if edge.condition == VerdictType.RELOOP
+        ]
         return CEO_GATE_PROMPT.format(
             step_name=node.id,
             workflow_name=self.workflow.name,
-            output_file=", ".join(output_files),
-            previous_context=context,
-            reloop_targets=", ".join(reloop_targets) if reloop_targets else "(use exact node IDs)",
+            output_file=", ".join(sorted(node.reads)) or "(no specific file)",
+            previous_context=self.node_context.get(node.id, "none"),
+            reloop_targets=", ".join(reloop_targets) or "(use exact node IDs)",
         )
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
-        """Parse agent output into a Verdict by examining the last non-empty line."""
-        import re
-
-        lines = output.strip().splitlines()
-        last_line = ""
-        for line in reversed(lines):
-            if line.strip():
-                last_line = line.strip()
-                break
-
+        last_line = next(
+            (line.strip() for line in reversed(output.strip().splitlines()) if line.strip()),
+            "",
+        )
         text = last_line.upper()
-
-        if text.startswith("HALT") or re.match(r"^HALT\b", text):
+        if text.startswith("HALT"):
             reason_match = re.search(r'REASON="([^"]+)"', last_line, re.IGNORECASE)
-            reason = reason_match.group(1) if reason_match else "gate halted"
-            return Verdict.halt(reason=reason)
-
-        if text.startswith("RELOOP") or re.match(r"^RELOOP\b", text):
-            target_match = re.search(r'TARGET="([^"]+)"', last_line, re.IGNORECASE)
+            return Verdict.halt(
+                reason=reason_match.group(1) if reason_match else "gate halted",
+            )
+        if text.startswith(("RELOOP", "RETRY")):
+            target_match = re.search(
+                r'TARGET=(?:"([^"]+)"|(\S+))',
+                last_line,
+                re.IGNORECASE,
+            )
             feedback_match = re.search(r'FEEDBACK="([^"]+)"', last_line, re.IGNORECASE)
-            target = target_match.group(1) if target_match else None
-
-            if target and target not in self.workflow.nodes:
-                matches = [nid for nid in self.workflow.nodes if target in nid]
-                if len(matches) == 1:
-                    target = matches[0]
-                else:
-                    target = self._next_conditional(gate_id, VerdictType.RELOOP)
-
-            if not target:
+            target = None
+            if target_match:
+                target = target_match.group(1) or target_match.group(2)
+            if target not in self.workflow.nodes:
                 target = self._next_conditional(gate_id, VerdictType.RELOOP)
-            if not target:
-                return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
+            if target is None:
+                return Verdict.halt(
+                    reason=f"RELOOP verdict from gate '{gate_id}' has no target",
+                )
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
             return Verdict.reloop(target=target, feedback=feedback)
-
         return Verdict.proceed()
 
     def _parse_fn_verdict(self, output: str, gate_id: str) -> Verdict:
-        """Parse function output into a Verdict."""
         text = output.strip()
-
-        try:
+        if text.startswith("{"):
             data = json.loads(text)
             if isinstance(data, dict) and "passed" in data:
                 if data["passed"]:
                     return Verdict.proceed()
                 return Verdict.halt(
-                    reason=f"precheck failed: {data.get('blocking_failures', [])!r}"[:200]
+                    reason=f"precheck failed: {data.get('blocking_failures', [])!r}"[:200],
                 )
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-        first_line = text.split("\n")[0].strip().lower()
+        first_line = text.split("\n", 1)[0].strip().lower()
         if first_line.startswith("pass"):
             return Verdict.proceed()
-        if first_line.startswith("fail") or first_line.startswith("revert"):
+        if first_line.startswith(("fail", "revert", "halt")):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
-        if first_line.startswith("reloop"):
+        if first_line.startswith(("reloop", "retry")):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
-            raw_line = text.split("\n")[0].strip()
-            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
-            feedback = after_prefix if after_prefix else "fn gate requested reloop"
+            feedback = first_line.split(":", 1)[1].strip() if ":" in first_line else ""
             if target:
-                return Verdict.reloop(target=target, feedback=feedback)
+                return Verdict.reloop(
+                    target=target,
+                    feedback=feedback or "fn gate requested reloop",
+                )
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
     async def _run_shell(self, cmd: str) -> str:
-        """Run a shell command and return stdout."""
-        proc = await asyncio.create_subprocess_shell(
+        stdout, stderr, code = await self._run_shell_result(cmd)
+        if code != 0:
+            raise RuntimeError(f"command failed (exit {code}): {cmd}\n{stderr[:500]}")
+        return stdout
+
+    async def _run_shell_result(self, cmd: str) -> tuple[str, str, int]:
+        process = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.project_path,
         )
-        stdout_bytes, stderr_bytes = await proc.communicate()
-        stdout = stdout_bytes.decode() if stdout_bytes else ""
+        stdout_bytes, stderr_bytes = await process.communicate()
+        return (
+            stdout_bytes.decode() if stdout_bytes else "",
+            stderr_bytes.decode() if stderr_bytes else "",
+            int(process.returncode or 0),
+        )
 
-        if proc.returncode != 0:
-            stderr = stderr_bytes.decode() if stderr_bytes else ""
-            raise RuntimeError(
-                f"command failed (exit {proc.returncode}): {cmd}\n{stderr[:500]}"
-            )
+    def _resolve_command(self, command: str) -> str:
+        return command.replace("{project_path}", shlex.quote(str(self.project_path)))
 
-        return stdout
+    def _validate_agent_artifacts(self, node: AgentNode) -> None:
+        from factory.workflow.primitives import ArtifactCheck
 
-    async def _wait_for_reads(self, node: NodeType) -> None:
-        """Wait until all files in node.reads are available in completed_files."""
-        if not node.reads:
-            return
-        poll_interval = 0.1
-        max_wait = 60.0
-        waited = 0.0
-        while True:
-            missing = node.reads - self.completed_files
-            if not missing:
-                return
-            if waited >= max_wait:
-                self.result.halted = True
-                self.result.halt_reason = (
-                    f"node '{node.id}' timed out waiting for reads: {sorted(missing)}"
+        checks = node.post_checks or [
+            ArtifactCheck(path=path) for path in sorted(node.writes)
+        ]
+        for check in checks:
+            artifact = self.project_path / check.path
+            if check.must_exist and not artifact.is_file():
+                raise RuntimeError(f"artifact verification failed: {check.path} missing")
+            if artifact.is_file() and artifact.stat().st_size < check.min_size:
+                raise RuntimeError(
+                    f"artifact verification failed: {check.path} smaller than {check.min_size}",
                 )
-                return
-            log.debug(
-                "node.waiting_for_reads",
-                node=node.id,
-                missing=sorted(missing),
-                waited_s=round(waited, 1),
-            )
-            await asyncio.sleep(poll_interval)
-            waited += poll_interval
-
-    def _next_unconditional(self, node_id: str) -> str | None:
-        """Find the next node via unconditional edge."""
-        for edge in self._edge_index.get(node_id, []):
-            if edge.condition is None:
-                return edge.target
-        return None
+            if artifact.is_file() and check.must_contain:
+                content = artifact.read_text()
+                if not any(sentinel in content for sentinel in check.must_contain):
+                    raise RuntimeError(
+                        f"artifact verification failed: {check.path} missing sentinel",
+                    )
 
     def _next_conditional(self, node_id: str, verdict_type: VerdictType) -> str | None:
-        """Find the next node via conditional edge matching the verdict."""
         for edge in self._edge_index.get(node_id, []):
             if edge.condition == verdict_type:
                 return edge.target
         return None
 
-    def _emit(self, event_type: str, event: Any) -> None:
-        """Emit a workflow event."""
-        self.result.events.append({"type": event_type, **event.model_dump(mode="python")})
-        try:
-            emit_workflow_event(self.project_path, event_type, event)
-        except Exception:
-            log.debug("event_emission_failed", event_type=event_type)
+    def _receipt_path(self, node_id: str, attempt: int) -> Path:
+        return (
+            self.project_path
+            / ".factory"
+            / "langgraph"
+            / "receipts"
+            / self.run_id
+            / f"{node_id}-{attempt}.json"
+        )
+
+    def _write_thread_manifest(self) -> None:
+        manifest_path = self.checkpoint_path.parent / "threads" / f"{self.run_id}.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps({
+            "thread_id": self.run_id,
+            "workflow_name": self.workflow.name,
+            "workflow_json": self.workflow.model_dump_json(),
+            "project_path": str(self.project_path),
+            "dry_run": self.dry_run,
+            "auto_approve": self.auto_approve,
+            "interactive": self.interactive,
+        }, indent=2))
+
+    @staticmethod
+    def _find_branch_results(outputs: dict[str, Any]) -> list[dict[str, Any]]:
+        for output in outputs.values():
+            value = json.loads(str(output))
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                if "exp_id" in value[0]:
+                    return value
+        return []
 
 
 def _parse_hypotheses(strategy_file: Path) -> list[str]:
-    """Extract individual hypotheses from the strategist's current.md output."""
+    """Parse hypothesis sections from a strategy markdown file."""
     text = strategy_file.read_text()
     hypotheses: list[str] = []
     current: list[str] = []
-
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("## Hypothesis") or stripped.startswith("### Hypothesis"):
+        if stripped.startswith(("## Hypothesis", "### Hypothesis")):
             if current:
                 hypotheses.append("\n".join(current).strip())
-                current = []
-            current.append(stripped)
+            current = [stripped]
         elif stripped.startswith("## ") and current:
             hypotheses.append("\n".join(current).strip())
             current = []
         elif current:
             current.append(line)
-
     if current:
         hypotheses.append("\n".join(current).strip())
-
     if not hypotheses:
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped.startswith("- **") or stripped.startswith("1. **"):
+            if stripped.startswith("- **") or re.match(r"^\d+\. \*\*", stripped):
                 hypotheses.append(stripped.lstrip("- 0123456789.").strip())
-
     return hypotheses
 
 
-def _collect_subgraph_nodes(
-    workflow: Workflow,
-    entry: str,
-    exit_node: str,
-) -> set[str]:
-    """Collect all node IDs on paths from entry to exit_node (inclusive)."""
-    edges_by_source: dict[str, list[str]] = {}
-    for edge in workflow.edges:
-        edges_by_source.setdefault(edge.source, []).append(edge.target)
-
-    # BFS from entry, stop at exit_node
-    visited: set[str] = set()
-    queue = [entry]
-    while queue:
-        nid = queue.pop(0)
-        if nid in visited:
-            continue
-        visited.add(nid)
-        if nid == exit_node:
-            continue
-        for target in edges_by_source.get(nid, []):
-            if target not in visited:
-                queue.append(target)
-
-    return visited
+def _collect_subgraph_nodes(workflow: Workflow, entry: str, exit_node: str) -> set[str]:
+    """Backward-compatible alias for the compiler's subgraph collector."""
+    return collect_subgraph_nodes(workflow, entry, exit_node)

@@ -18,7 +18,7 @@ study (FnNode) → solver (AgentNode) → gate_verify (GateNode) → auto_merge 
 ## Usage
 
 ```bash
-factory workflow run devopsgym --project /path/to/repo
+factory workflow run devopsgym /path/to/repo
 ```
 
 Typically invoked inside a Harbor container. The benchmark uses hidden verification steps — solutions must implement general fixes, not hardcode outputs.

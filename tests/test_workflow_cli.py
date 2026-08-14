@@ -13,12 +13,13 @@ from factory.workflow.cli import (
     _cmd_export_skills,
     _cmd_lint_contributed,
     _cmd_list,
+    _cmd_resume,
     _cmd_run,
     _cmd_show,
     _cmd_validate,
     cmd_workflow,
 )
-from factory.workflow.executor import ExecutionResult
+from factory.workflow.executor import ExecutionResult, WorkflowExecutor
 from factory.workflow.primitives import (
     DEFAULT_AGENT_POOL,
     AgentNode,
@@ -140,6 +141,29 @@ class TestCmdRun:
             tmp_path.resolve(),
             agent_pool=DEFAULT_AGENT_POOL,
             dry_run=True,
+            auto_approve=False,
+            thread_id=None,
+        )
+
+
+class TestCmdResume:
+    def test_parallel_resume_json_is_forwarded_by_interrupt_id(self, tmp_path: Path) -> None:
+        executor = MagicMock()
+        executor.workflow.name = "build"
+        executor.resume = AsyncMock(return_value=_success_result())
+        args = argparse.Namespace(
+            name="build",
+            project_path=str(tmp_path),
+            thread_id="thread-1",
+            value=None,
+            resume_json='{"interrupt-a": "done-a", "interrupt-b": "done-b"}',
+        )
+
+        with patch.object(WorkflowExecutor, "from_thread", return_value=executor):
+            assert _cmd_resume(args) == 0
+
+        executor.resume.assert_awaited_once_with(
+            {"interrupt-a": "done-a", "interrupt-b": "done-b"}
         )
 
 

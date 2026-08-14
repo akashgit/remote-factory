@@ -250,8 +250,8 @@ class TestForkJoin:
 
 
 class TestNonBlocking:
-    async def test_fire_and_forget(self, tmp_project: Path) -> None:
-        """Non-blocking node fires, executor advances immediately."""
+    async def test_legacy_nonblocking_node_is_durable(self, tmp_project: Path) -> None:
+        """LangGraph completes nodes marked non-blocking before advancing."""
         wf = Workflow(
             name="nonblock_test",
             nodes={
@@ -276,6 +276,7 @@ class TestNonBlocking:
         result = await executor.execute()
 
         assert result.success
+        assert "async_node" in result.completed_nodes
         assert result.nodes_executed >= 2
 
 
@@ -335,8 +336,8 @@ class TestEventEmission:
 
 
 class TestErrorHandling:
-    async def test_node_failure_halts(self, tmp_project: Path) -> None:
-        """Node failure produces Halt with error message."""
+    async def test_node_failure_surfaces(self, tmp_project: Path) -> None:
+        """Node failures surface with the original stack rather than being swallowed."""
         wf = Workflow(
             name="error_test",
             nodes={
@@ -348,10 +349,8 @@ class TestErrorHandling:
         )
 
         executor = WorkflowExecutor(wf, tmp_project)
-        result = await executor.execute()
-
-        assert result.halted
-        assert "failed" in result.halt_reason.lower()
+        with pytest.raises(RuntimeError, match="command failed"):
+            await executor.execute()
 
 
 # ── Auto-approve ────────────────────────────────────────────────
@@ -382,8 +381,8 @@ class TestAutoApprove:
         assert len(gate_events) == 1
         assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
 
-    async def test_executor_default_still_proceeds(self, tmp_project: Path) -> None:
-        """WorkflowExecutor(auto_approve=False) still proceeds through user gates."""
+    async def test_executor_default_interrupts_for_user_gate(self, tmp_project: Path) -> None:
+        """A user gate persists an interrupt until its thread is resumed."""
         wf = Workflow(
             name="default_user_gate",
             nodes={
@@ -401,8 +400,11 @@ class TestAutoApprove:
         executor = WorkflowExecutor(wf, tmp_project, dry_run=True, auto_approve=False)
         result = await executor.execute()
 
+        assert result.interrupted
+        assert result.interrupts[0]["value"]["node_id"] == "gate"
+        result = await executor.resume("PROCEED")
         assert result.success
-        gate_events = [e for e in result.events if e["type"] == "gate.verdict"]
+        gate_events = [event for event in result.events if event["type"] == "gate.verdict"]
         assert len(gate_events) == 1
         assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
 
@@ -476,6 +478,6 @@ class TestAutoApprove:
         finally:
             structlog.reset_defaults()
 
-        assert result.success
+        assert result.interrupted
         auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
         assert len(auto_approved) == 0

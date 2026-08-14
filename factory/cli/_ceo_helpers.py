@@ -10,6 +10,10 @@ import structlog
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from factory.workflow.primitives import Workflow
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
@@ -51,7 +55,7 @@ log = structlog.get_logger()
 
 
 def _tool_exec_protocol(wt_path: Path) -> str:
-    """Return the tool-exec protocol section appended to the CEO prompt."""
+    """Return the LangGraph client protocol appended to the CEO prompt."""
     p = wt_path
 
     overview = ""
@@ -62,10 +66,9 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         pass
 
     protocol = (
-        "\n\n# Tool-Based Execution Protocol\n"
+        "\n\n# LangGraph Execution Protocol\n"
         "\n"
-        "You are executing the workflow using factory tool commands instead of "
-        "following a SKILL.md playbook.\n"
+        "You are a client of the persisted LangGraph workflow thread.\n"
     )
 
     if overview:
@@ -114,7 +117,7 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "## Loop Context\n"
         "\n"
         "For any node that is a RELOOP target in the workflow graph, the tool "
-        "engine automatically injects a **## LOOP CONTEXT** section into the "
+        "runtime automatically injects a **## LOOP CONTEXT** section into the "
         "node's task description — starting from the very first invocation "
         "(iteration 0). This section shows:\n"
         "- The full loop topology (all nodes from this node through the gate) "
@@ -133,7 +136,7 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "reloops by making the builder aware of review criteria upfront.\n"
         "\n"
         "No separate command is needed — context is injected automatically by "
-        "the tool engine.\n"
+        "the LangGraph runtime.\n"
     )
 
     return protocol
@@ -563,9 +566,9 @@ def _execute_ceo(
             feedback_text = "\n\n---\n\n".join(resolved_plan.feedback)
             (strategy_dir / "thread-feedback.md").write_text(feedback_text)
 
-    engine = getattr(args, "engine", "skill")
+    engine = getattr(args, "engine", "langgraph")
 
-    if engine != "tool":
+    if engine == "skill":
         from factory.skill_cache import ensure_skills
 
         ensure_skills(wt_path, mode=mode)
@@ -575,6 +578,7 @@ def _execute_ceo(
     if is_graphify_installed():
         extract_graph(wt_path)
 
+    session_workflow: Workflow | None = None
     overwrite = getattr(args, "overwrite", None)
     if overwrite and mode and mode != "auto":
         from factory.workflow.definitions import register_all
@@ -582,8 +586,9 @@ def _execute_ceo(
 
         workflows = register_all()
         if mode in workflows:
-            mutated = apply_overwrite(workflows[mode], overwrite, wt_path)
-            generate_session_skill(mutated, mode, wt_path)
+            session_workflow = apply_overwrite(workflows[mode], overwrite, wt_path)
+            if engine == "skill":
+                generate_session_skill(session_workflow, mode, wt_path)
         else:
             log.warning("overwrite.mode_not_found", mode=mode)
 
@@ -604,28 +609,11 @@ def _execute_ceo(
     else:
         ceo_mode = mode
 
-    headless_prompt_override: str | None = None
-    if engine == "tool" and headless:
-        base = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=None)
-        headless_prompt_override = base + _tool_exec_protocol(wt_path)
-
-    if engine == "deterministic":
-        if not headless:
-            print(
-                "WARNING: --engine deterministic runs headless (no interactive CEO). "
-                "Adding --headless implicitly.",
-                file=sys.stderr,
-            )
-            headless = True
-
-    if engine == "tool":
+    if engine == "langgraph" and not headless:
         from factory.workflow.tool import tool_init as _tool_init
 
-        try:
-            _tool_init(ceo_mode, wt_path)
-        except Exception as e:
-            log.warning("tool_exec.init_failed", error=str(e), mode=ceo_mode)
-            engine = "skill"
+        override = session_workflow if session_workflow and session_workflow.name == ceo_mode else None
+        _tool_init(ceo_mode, wt_path, workflow=override)
 
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
@@ -728,9 +716,11 @@ def _execute_ceo(
             verification_settings_file=_verification_settings_file,
             just_plan=just_plan,
             engine=engine,
-            prompt_override=headless_prompt_override,
+            workflow_override=session_workflow,
+            auto_approve=auto_approve,
         )
 
+    preserve_langgraph_worktree = False
     try:
         if pending_ids:
             print(
@@ -740,7 +730,7 @@ def _execute_ceo(
             mark_read(project_path, pending_ids)
         from factory.models import AgentRunRequest as _RunReq
 
-        if engine == "tool":
+        if engine == "langgraph":
             base_prompt = resolve_prompt(
                 "ceo", wt_path, use_profile=use_profile, workflow_mode=None,
             )
@@ -767,22 +757,30 @@ def _execute_ceo(
             )
         )
     finally:
-        if engine == "tool":
-            try:
-                from factory.workflow.tool import tool_finalize
-                finalize_result = tool_finalize(wt_path)
-                log.info("tool_exec.finalized", result=finalize_result)
-            except Exception:
-                pass
+        if engine == "langgraph":
+            from factory.workflow.tool import tool_finalize
+
+            finalize_result = tool_finalize(wt_path)
+            log.info("langgraph.finalized", result=finalize_result)
+            preserve_langgraph_worktree = finalize_result.startswith("Pending graph tasks:")
+            if preserve_langgraph_worktree:
+                print(
+                    f"Resume: factory workflow tool next {wt_path}",
+                    file=sys.stderr,
+                )
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
         from factory.ceo_completion import print_resume_hint
 
         print_resume_hint(project_path)
-        if not no_worktree:
+        if not no_worktree and not preserve_langgraph_worktree:
             assert wt_branch is not None
             remove_worktree(project_path, wt_path, wt_branch)
-        if needs_materialize and _is_scaffold_only(project_path):
+        if (
+            needs_materialize
+            and not preserve_langgraph_worktree
+            and _is_scaffold_only(project_path)
+        ):
             import shutil
 
             shutil.rmtree(project_path, ignore_errors=True)
@@ -816,8 +814,10 @@ def _run_headless(
     ceo_mode: str,
     verification_settings_file: str | None,
     just_plan: bool = False,
-    engine: str = "skill",
+    engine: str = "langgraph",
     prompt_override: str | None = None,
+    workflow_override: Workflow | None = None,
+    auto_approve: bool = False,
 ) -> int:
     """Run the CEO in headless mode with completion guard."""
     from factory.ceo_completion import run_ceo_with_completion_guard
@@ -825,30 +825,50 @@ def _run_headless(
     from factory.agents.runner import complete_cycle_session
     from factory.worktree import remove_worktree
 
-    if engine == "deterministic":
+    if engine == "langgraph":
         import asyncio
         from factory.workflow.executor import WorkflowExecutor
         from factory.workflow.registry import WorkflowRegistry
         from factory.workflow.primitives import DEFAULT_AGENT_POOL
 
-        wf = WorkflowRegistry.get_workflow(ceo_mode, wt_path)
+        wf = workflow_override or WorkflowRegistry.get_workflow(ceo_mode, wt_path)
         if not wf:
             print(f'Error: workflow "{ceo_mode}" not found', file=sys.stderr)
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
             return 1
 
-        executor = WorkflowExecutor(wf, wt_path, agent_pool=DEFAULT_AGENT_POOL)
+        executor = WorkflowExecutor(
+            wf,
+            wt_path,
+            agent_pool=DEFAULT_AGENT_POOL,
+            auto_approve=auto_approve,
+            thread_id=ceo_session_id,
+        )
+        preserve_langgraph_worktree = True
         try:
             exec_result = asyncio.run(executor.execute())
+            preserve_langgraph_worktree = exec_result.interrupted or not exec_result.completed
             print(json.dumps({
                 "workflow": ceo_mode,
-                "engine": "deterministic",
+                "engine": "langgraph",
+                "project_path": str(wt_path),
+                "thread_id": exec_result.thread_id,
                 "success": exec_result.success,
+                "completed": exec_result.completed,
+                "interrupted": exec_result.interrupted,
+                "interrupts": exec_result.interrupts,
                 "nodes_executed": exec_result.nodes_executed,
                 "duration_ms": round(exec_result.duration_ms, 1),
             }, indent=2))
-            code = 0 if exec_result.success else 1
+            if exec_result.interrupted:
+                print(
+                    "Resume: "
+                    f"factory workflow resume {ceo_mode} {wt_path} "
+                    f"--thread-id {exec_result.thread_id}",
+                    file=sys.stderr,
+                )
+            code = 2 if exec_result.interrupted else 0 if exec_result.success else 1
             if code != 0:
                 return code
             return _chain_modes(
@@ -865,6 +885,7 @@ def _run_headless(
                 background=background,
                 completed_mode=mode,
                 no_worktree=no_worktree,
+                engine=engine,
             )
         finally:
             _stop_ceo_tailer(ceo_tailer)
@@ -872,9 +893,13 @@ def _run_headless(
             from factory.ceo_completion import print_resume_hint
 
             print_resume_hint(project_path)
-            if not no_worktree and wt_branch:
+            if not no_worktree and wt_branch and not preserve_langgraph_worktree:
                 remove_worktree(project_path, wt_path, wt_branch)
-            if needs_materialize and _is_scaffold_only(project_path):
+            if (
+                needs_materialize
+                and not preserve_langgraph_worktree
+                and _is_scaffold_only(project_path)
+            ):
                 import shutil
 
                 shutil.rmtree(project_path, ignore_errors=True)
@@ -918,14 +943,9 @@ def _run_headless(
             background=background,
             completed_mode=chain_mode,
             no_worktree=no_worktree,
+            engine=engine,
         )
     finally:
-        if engine == "tool":
-            try:
-                from factory.workflow.tool import tool_finalize
-                tool_finalize(wt_path)
-            except Exception:
-                pass
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
         from factory.ceo_completion import print_resume_hint

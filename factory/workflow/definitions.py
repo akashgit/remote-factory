@@ -327,7 +327,7 @@ def build_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
     )
 
-    # Archivist (async, non-blocking)
+    # Archivist (legacy blocking=False annotation; durable in LangGraph)
     nodes["archivist_plan"] = AgentNode(
         id="archivist_plan",
         role=AgentRole.ARCHIVIST,
@@ -419,7 +419,7 @@ def build_workflow() -> Workflow:
     nodes["spec_generate"] = FnNode(
         id="spec_generate",
         command="factory workflow run spec-generate {project_path}",
-        notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
+        notes="Generate the project specification via the gated spec-generate workflow after archival.",
         blocking=False,
     )
 
@@ -455,7 +455,7 @@ def build_workflow() -> Workflow:
         # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
-        # Archivist → spec generate (non-blocking)
+        # Archivist → spec generate (durable; blocking=False is legacy metadata)
         Edge(source="archivist_build", target="spec_generate"),
     ]
 
@@ -909,7 +909,7 @@ def improve_workflow() -> Workflow:
             "sys.exit(0)"
             '"'
         ),
-        notes="Update SPEC.md via the gated spec-update workflow if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
+        notes="Update SPEC.md via the gated spec-update workflow after archival; skips silently if no spec file is present.",
         blocking=False,
     )
 
@@ -948,7 +948,7 @@ def improve_workflow() -> Workflow:
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → spec_update (non-blocking)
+        # Finalize → archivist → spec_update (durable LangGraph sequence)
         Edge(source="finalize", target="archivist"),
         Edge(source="archivist", target="spec_update"),
     ]
@@ -1097,7 +1097,7 @@ def research_workflow() -> Workflow:
         Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → spec_update (non-blocking) → plateau gate
+        # Finalize → archivist → spec_update (durable) → plateau gate
         Edge(source="finalize", target="archivist"),
         Edge(source="archivist", target="spec_update"),
         Edge(source="spec_update", target="plateau_gate"),
@@ -1125,8 +1125,8 @@ def meta_workflow() -> Workflow:
     Archivist(async) → test_collect → test_researcher → gate → test_builder →
     qa_verify → gate_qa_verify(max 3)
 
-    The archivist is non-blocking, so it fires in the background while the
-    test pruning chain proceeds immediately.
+    The archivist retains blocking=False for legacy skill rendering. LangGraph
+    executes it durably before the test-pruning chain proceeds.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -1195,7 +1195,7 @@ def meta_workflow() -> Workflow:
         writes={".factory/archive/playbooks-applied.md"},
     )
 
-    # Archivist (async, non-blocking — fires in background while test chain proceeds)
+    # Archivist (legacy blocking=False annotation; durable in LangGraph)
     nodes["archivist"] = AgentNode(
         id="archivist",
         role=AgentRole.ARCHIVIST,
@@ -1278,7 +1278,7 @@ def meta_workflow() -> Workflow:
         Edge(source="strategist", target="gate_user"),
         Edge(source="gate_user", target="apply_playbooks", condition=VerdictType.PROCEED),
         Edge(source="gate_user", target="strategist", condition=VerdictType.RELOOP),
-        # Apply → archivist (non-blocking) → test chain
+        # Apply → archivist (durable) → test chain
         Edge(source="apply_playbooks", target="archivist"),
         Edge(source="archivist", target="test_collect"),
         # Test pruning branch
@@ -1794,7 +1794,7 @@ def create_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
     )
 
-    # Archivist (async, non-blocking)
+    # Archivist (legacy blocking=False annotation; durable in LangGraph)
     nodes["archivist_plan"] = AgentNode(
         id="archivist_plan",
         role=AgentRole.ARCHIVIST,
@@ -3841,7 +3841,7 @@ def evolve_workflow() -> Workflow:
         writes={".factory/experiments/verdict.json"},
     )
 
-    # Archivist: record results (async, non-blocking)
+    # Archivist: record results (legacy blocking=False annotation; durable in LangGraph)
     nodes["archivist"] = AgentNode(
         id="archivist",
         role=AgentRole.ARCHIVIST,

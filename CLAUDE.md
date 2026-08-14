@@ -61,21 +61,19 @@ Pure tools that don't make decisions. Entry point is `factory/cli.py` → `facto
 
 All 10 factory modes (build, design, improve, research, meta, discover, review, refine, founder, plan) are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives connected by `Edge` objects. See `factory/workflow/README.md` for full documentation.
 
-The same graph definition produces two execution formats:
-- **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
-- **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
+The Factory DSL compiles directly to persisted LangGraph threads for headless and
+interactive execution: `factory workflow run <name> /path`. `skill_export.py` remains
+an optional documentation/legacy renderer for explicit `--engine skill` runs.
 
-### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
+### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md`)
 
-The CEO prompt is split into two parts:
-- **`ceo.md` (501 lines)** — core identity, cross-cutting rules (Sacred Rules, FEEC, keep/revert framework, review gates, error recovery, self-learning). No mode-specific procedures.
-- **`skills/workflow-*/SKILL.md` (8 files)** — each mode's full step-by-step playbook, auto-generated from the workflow graph definitions via `factory workflow export-skills`.
-
-Spawned via `factory ceo /path` or `factory run /path`. The CEO receives `ceo.md` as its system prompt, detects project state, then reads the appropriate `SKILL.md` into its context and follows it as the mode-specific playbook.
+The CEO is the interactive client and gate evaluator for a persisted graph thread. It
+receives `ceo.md` plus the current task/interrupt protocol and advances the thread through
+`factory workflow tool` commands. Generated `SKILL.md` files are an explicit legacy fallback.
 
 ### Layer 4: Specialist Agents (`factory/agents/`)
 
-Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+Eight specialist Claude Code subprocesses invoked by workflow nodes via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
 **Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), QA (health check + code review + adversarial QA), Archivist (record), Refiner (scope refinements), Failure Analyst (research mode), CEO (orchestrate).
 
@@ -88,7 +86,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts. Auto-registers projects in the global registry on `begin()` and updates stats on `finalize()`
 6. **Registry** (`factory/registry.py`): Global project registry at `~/.factory/registry.json` — self-registration pattern, project discovery for ACE/insights without `--projects-dir`
 7. **Report** (`factory/report.py`): Performance report generation — consolidates experiment records, CEO verdicts, and observations into `.factory/performance_report.json` for ACE consumption
-8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
+8. **Workflow runtime** (`factory/workflow/`): Persists LangGraph checkpoints, exact workflow snapshots, and operation receipts; `factory/checkpoint.py` is legacy CEO state
 9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 10. **Adversarial** (`factory/adversarial.py`): GAN-style adversarial eval loop state machine — phase transitions with hysteresis, per-role streak counters, convergence detection. State persisted at `.factory/adversarial_state.json`
 11. **Contained** (`factory/contained/` + `factory/podman.py` + `factory/cli/contained.py`): `factory contained [runtime flags] -- <any factory command>` runs the factory in a podman container (`--target local`) or a cluster pod (`--target k8s`). See "Contained runtimes" below.
@@ -108,6 +106,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 │   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
 ├── adversarial_state.json    # Adversarial loop state (phase, streaks, history)
+├── langgraph/                # SQLite checkpoints, exact thread snapshots, receipts
 ├── archive/                  # Long-term knowledge store (Archivist notes)
 │   ├── experiments/          # Per-experiment learnings and decision rationale
 │   ├── patterns/             # Recurring patterns and anti-patterns

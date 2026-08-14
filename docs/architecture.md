@@ -1,8 +1,8 @@
 # Architecture
 
-re:factory is a three-layer system with strict separation between tooling, orchestration, and execution.
+re:factory is a four-layer system with strict separation between tooling, graph scheduling, orchestration, and execution.
 
-## Three Layers
+## Four Layers
 
 ### Layer 1: Python CLI (`factory/`)
 
@@ -10,19 +10,27 @@ Pure tools that don't make decisions. The CLI provides measurement, storage, and
 
 Entry point: `factory/cli.py` → `factory.cli:main` (registered as `factory` in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict.
 
-### Layer 2: CEO Agent
+### Layer 2: LangGraph Runtime (`factory/workflow/`)
 
-A dedicated Claude Code agent that owns the full workflow. Spawned via `factory ceo <path>` or `factory run <path>`. The CEO:
+The typed Factory workflow DSL compiles directly to LangGraph. The runtime owns:
 
-- Detects project state and routes to the appropriate mode
-- Spawns specialist agents as subprocesses
-- Makes keep/revert decisions based on eval scores
-- Ensures mandatory archival after every cycle
-- Reads event log and `.factory/` state directly for crash-resilient resume
+- Node scheduling, conditional routing, fanout/fanin, and reloop transitions
+- SQLite checkpoints and process-independent thread resume
+- Human approval interrupts and parallel interrupt IDs
+- Durable operation receipts at external side-effect boundaries
+
+Compiler: `factory/workflow/langgraph.py`. Domain operations and persistence facade:
+`factory/workflow/executor.py`.
+
+### Layer 3: CEO Agent
+
+A dedicated agent used as the interactive graph client and gate evaluator. Spawned via
+`factory ceo <path>`, it reads the current graph task and advances the persisted thread
+through `factory workflow tool` commands. Headless execution runs the same graph directly.
 
 Prompt: `factory/agents/prompts/ceo.md`
 
-### Layer 3: Specialist Agents
+### Layer 4: Specialist Agents
 
 Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 
@@ -210,6 +218,9 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/report.py` | Performance report generation and loading |
 | `factory/adversarial.py` | GAN-style adversarial eval loop state machine |
 | `factory/agents/runner.py` | Agent subprocess spawner + event emission |
+| `factory/workflow/langgraph.py` | Factory DSL to LangGraph compiler + state |
+| `factory/workflow/executor.py` | Domain operations, SQLite persistence, resume facade |
+| `factory/workflow/tool.py` | Thin interactive adapters over graph threads |
 
 ## `.factory/` Directory
 
@@ -238,6 +249,7 @@ Generated at runtime — not checked into version control:
 │   ├── <role>-latest.md
 │   └── ceo-verdict-<role>.md
 ├── adversarial_state.json   # Adversarial loop state (phase, streaks, history)
+├── langgraph/               # Checkpoints, thread snapshots, operation receipts
 ├── archive/                 # Archivist notes (institutional memory)
 │   ├── experiments/         # Per-experiment notes
 │   ├── strategies/          # Strategy snapshots

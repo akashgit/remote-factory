@@ -32,7 +32,8 @@ factory tmux <project_path> --mode design    # brainstorm what to work on first
 factory tmux <project_path> --mode research  # research-driven improvement
 factory tmux <project_path> --mode meta      # improve the factory itself + ACE evolution
 factory tmux <factory_project_path> --mode create --focus "mode description"  # create new factory mode
-factory tmux <project_path> --engine tool    # tool-based execution (CEO drives via workflow tool commands)
+factory tmux <project_path> --engine langgraph  # default; CEO drives the persisted graph thread
+factory tmux <project_path> --engine skill      # explicit legacy SKILL.md fallback
 ```
 
 ## Post-Dispatch Verification

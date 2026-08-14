@@ -18,7 +18,7 @@ study (FnNode) → builder (AgentNode) → gate_verify (GateNode) → auto_merge
 ## Usage
 
 ```bash
-factory workflow run featurebench --project /path/to/repo
+factory workflow run featurebench /path/to/repo
 ```
 
 Typically invoked inside a Harbor container where the task instruction contains detailed interface definitions.

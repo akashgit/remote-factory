@@ -1,6 +1,7 @@
 """Workflow graph engine — composable primitives for factory orchestration."""
 
 from factory.workflow.executor import ExecutionResult, WorkflowExecutor
+from factory.workflow.langgraph import FactoryRunState, compile_langgraph, initial_state
 from factory.workflow.primitives import (
     AgentConfig,
     AgentNode,
@@ -26,6 +27,7 @@ __all__ = [
     "Edge",
     "ExecutionResult",
     "Factory",
+    "FactoryRunState",
     "FnNode",
     "ForkNode",
     "GateNode",
@@ -37,4 +39,6 @@ __all__ = [
     "VerdictType",
     "Workflow",
     "WorkflowExecutor",
+    "compile_langgraph",
+    "initial_state",
 ]

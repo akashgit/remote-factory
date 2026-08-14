@@ -181,8 +181,8 @@ class JoinNode(Node):
 class SubgraphForkNode(Node):
     """Fan-out to N copies of a subgraph, each in an isolated worktree.
 
-    The executor creates independent WorkflowExecutor instances per branch,
-    each with its own worktree branching from the same base commit.
+    Factory creates one isolated worktree and compiled child graph thread per
+    branch, all starting from the same base commit.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")

@@ -1,6 +1,7 @@
 """Integration tests — end-to-end workflows."""
 
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -29,7 +30,8 @@ class TestDiscoverToInit:
         compile(script, str(path), "exec")
 
     def test_discover_cli_produces_valid_json(self, python_project, capsys):
-        result = main(["discover", str(python_project)])
+        with patch("factory.cli.spec._run_spec_workflow", return_value=(1, "skipped in test")):
+            result = main(["discover", str(python_project)])
         assert result == 0
         output = json.loads(capsys.readouterr().out)
         assert "project" in output

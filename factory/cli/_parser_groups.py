@@ -452,10 +452,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--just-plan", action="store_true", default=False, dest="just_plan",
                     help="Plan-only mode: research + strategy + GitHub publishing, NO implementation. "
                          "Requires --mode design. Mutually exclusive with --from-plan and --prompt.")
-    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
-                    help="Execution engine: skill (CEO follows SKILL.md, default), "
-                         "tool (CEO drives via factory workflow tool commands), "
-                         "deterministic (headless WorkflowExecutor, no CEO)")
+    p.add_argument("--engine", choices=["langgraph", "skill"], default="langgraph",
+                    help="Execution engine: langgraph (default) or legacy skill rendering")
 
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
@@ -528,10 +526,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--no-worktree", action="store_true", default=False, dest="no_worktree",
                     help="Run directly in the project directory without creating a worktree "
                          "(useful for testing in-flight branch changes)")
-    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
-                    help="Execution engine: skill (CEO follows SKILL.md, default), "
-                         "tool (CEO drives via factory workflow tool commands), "
-                         "deterministic (headless WorkflowExecutor, no CEO)")
+    p.add_argument("--engine", choices=["langgraph", "skill"], default="langgraph",
+                    help="Execution engine: langgraph (default) or legacy skill rendering")
     p.add_argument("--overwrite", default=None, metavar="TEXT",
                     help="Natural-language directive to mutate the workflow for this session")
     p.add_argument("--auto-approve", action="store_true", default=False,
@@ -592,10 +588,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into agent prompts")
-    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
-                    help="Execution engine: skill (CEO follows SKILL.md, default), "
-                         "tool (CEO drives via factory workflow tool commands), "
-                         "deterministic (headless WorkflowExecutor, no CEO)")
+    p.add_argument("--engine", choices=["langgraph", "skill"], default="langgraph",
+                    help="Execution engine: langgraph (default) or legacy skill rendering")
     p.add_argument("--overwrite", default=None, metavar="TEXT",
                     help="Natural-language directive to mutate the workflow for this session")
 

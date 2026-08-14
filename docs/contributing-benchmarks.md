@@ -181,7 +181,7 @@ __all__ = ["meta", "workflow"]
 Include a brief description of what the benchmark tests, an ASCII graph diagram showing the node pipeline, and a CLI usage example:
 
 ```bash
-factory workflow run <name> --project /path/to/repo
+factory workflow run <name> /path/to/repo
 ```
 
 See `factory/workflow/contributed/legacybench/README.md` for the expected format.

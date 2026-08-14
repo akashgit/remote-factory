@@ -1,25 +1,29 @@
-# Workflow Graph Engine
+# Factory Workflow DSL
 
-The workflow graph engine defines all factory modes as directed graphs of typed nodes. One source of truth, two execution formats: headless automation via `WorkflowExecutor` and interactive CEO sessions via auto-generated `SKILL.md` files.
+Factory modes are directed graphs of typed domain nodes. The Factory DSL and validator remain the public API; LangGraph is the single execution runtime. `SKILL.md` export is documentation and a legacy fallback, not the authoritative scheduler.
 
 ## How it works
 
 ```
-definitions.py          (8 Python functions, each returning a Workflow)
+definitions.py          (Python functions returning Workflow objects)
        │
-       ├──► WorkflowExecutor    (headless: walks the DAG deterministically)
-       │       factory workflow run improve --project /path
+       ├──► compile_langgraph()  (direct DSL → StateGraph compiler)
+       │            │
+       │       LangGraph runtime
+       │       SQLite checkpoints
+       │            │
+       │       ┌────┴────┐
+       │       │         │
+       │    headless   interactive CEO client
        │
-       └──► skill_export.py     (interactive: converts graph → SKILL.md)
-               skills/workflow-improve/SKILL.md
-               └── CEO reads this at runtime as its mode-specific playbook
+       └──► skill_export.py     (Workflow → SKILL.md rendering)
 ```
 
-In interactive mode, `factory ceo` launches a Claude Code session with `ceo.md` as the system prompt. The CEO detects project state, then reads the appropriate `SKILL.md` into context and follows it step by step. The SKILL.md files are prose translations of the same graph the executor walks — so both paths execute the same pipeline.
+`factory workflow run` executes the compiled graph directly. Interactive `factory ceo` uses `workflow tool next/submit/status` as a thin client over the same persisted graph thread. LangGraph owns routing, loops, fork/join scheduling, checkpoints, interrupts, and resume.
 
 ## Node types
 
-Every workflow is a graph of 6 node types connected by edges:
+Every workflow is a graph of typed nodes connected by edges:
 
 | Node | Class | Purpose | Example |
 |------|-------|---------|---------|
@@ -29,6 +33,9 @@ Every workflow is a graph of 6 node types connected by edges:
 | Fork | `ForkNode` | Launch multiple targets in parallel | 3 researchers simultaneously |
 | Join | `JoinNode` | Barrier — wait for all parallel branches | Wait for all researchers |
 | Study | `Study` | Distinguished `FnNode` wrapping `factory study` | Local codebase analysis |
+| LLM | `LLMNode` | Run the in-process tool-use loop | Focused LLM transform |
+| Subgraph fork | `SubgraphForkNode` | Run N isolated worktree subgraphs | Parallel experiments |
+| Selection | `SelectionNode` | Select and merge an experiment winner | Best-score selection |
 
 Each node declares `reads` and `writes` — the set of files it consumes and produces. The graph validator (`validation.py`) uses these to verify data flow: every file a node reads must be written by a predecessor. Pre-existing project files (e.g. `CLAUDE.md`, `factory.md`) should not be declared as reads since no workflow node produces them.
 
@@ -48,7 +55,7 @@ Three verdict types:
 
 ## Workflows
 
-8 workflows are registered in `definitions.py`:
+Built-in workflows are registered in `definitions.py`; user and project workflows are discovered through `WorkflowRegistry`:
 
 | Name | Function | Trigger | Purpose |
 |------|----------|---------|---------|
@@ -163,7 +170,7 @@ nodes["join_research"] = JoinNode(
 )
 ```
 
-**Non-blocking archivist** (fire-and-forget):
+**Legacy non-blocking annotation**:
 
 ```python
 nodes["archivist"] = AgentNode(
@@ -171,6 +178,8 @@ nodes["archivist"] = AgentNode(
     model="haiku", blocking=False,
 )
 ```
+
+`blocking=False` is retained in the DSL for compatibility. LangGraph still runs the node durably; it is no longer launched as a cancellable in-process background task.
 
 ## Validation
 
@@ -186,7 +195,7 @@ The graph validator (`validation.py`) checks:
 Run validation:
 
 ```bash
-factory workflow validate              # All 8 workflows
+factory workflow validate              # All workflows
 python -c "from factory.workflow.definitions import register_all
 for name, wf in register_all().items():
     issues = wf.validate_graph()
@@ -196,9 +205,18 @@ for name, wf in register_all().items():
 ## CLI commands
 
 ```bash
-# Run a workflow (headless, deterministic graph execution)
-factory workflow run improve --project /path/to/project
-factory workflow run build --project /path/to/project --dry-run
+# Run through LangGraph + SQLite checkpointing
+factory workflow run improve /path/to/project
+factory workflow run build /path/to/project --dry-run
+
+# Resume a durable user gate
+factory workflow resume design /path/to/project \
+  --thread-id <thread-id> --value PROCEED
+
+# Resume multiple parallel interrupts by their emitted IDs
+factory workflow resume improve /path/to/project \
+  --thread-id <thread-id> \
+  --resume-json '{"<interrupt-id-a>": "done", "<interrupt-id-b>": "done"}'
 
 # List all registered workflows
 factory workflow list
@@ -215,7 +233,7 @@ factory workflow export-skills
 
 ## Launching the factory
 
-### Interactive mode (CEO + skills)
+### Interactive mode (CEO as LangGraph client)
 
 ```bash
 # Improve an existing project
@@ -245,19 +263,19 @@ What happens under the hood:
 1. `cmd_ceo()` resolves path, mode, focus directives
 2. Creates a git worktree for isolation
 3. Builds a task string describing what the CEO should do
-4. Resolves the CEO system prompt from `factory/agents/prompts/ceo.md`
-5. Launches `claude` (or another runner) with the CEO prompt + task
-6. The CEO detects project state → reads the matching `skills/workflow-*/SKILL.md` → follows it step by step, spawning specialist agents via `factory agent <role>`
-7. On exit, the worktree is cleaned up
+4. Compiles the selected Factory workflow and starts a persisted SQLite thread
+5. Launches the CEO with the current graph task/interrupt protocol
+6. CEO outputs resume the graph through `Command(resume=...)`
+7. Completed worktrees are cleaned up; interrupted worktrees are preserved for resume
 
 ### Headless mode (graph executor)
 
 ```bash
-# Direct graph execution — no CEO agent, the executor walks the DAG
-factory workflow run improve --project /path/to/project
+# Direct graph execution — no CEO agent
+factory workflow run improve /path/to/project
 
 # With dry-run (no actual agent spawns or commands)
-factory workflow run build --project /path/to/project --dry-run
+factory workflow run build /path/to/project --dry-run
 
 # Headless CEO (pipe mode — for scripting, cron, tmux)
 factory ceo /path/to/project --headless
@@ -278,14 +296,16 @@ factory tmux /path/to/project --loop
 
 ```
 factory/workflow/
-├── __init__.py          # Public API: re-exports all primitives + executor
+├── __init__.py          # Public workflow API
 ├── primitives.py        # Pydantic models: Node types, Edge, Verdict, Workflow
-├── definitions.py       # 8 workflow functions returning Workflow objects
-├── executor.py          # WorkflowExecutor — async graph walker
+├── definitions.py       # Built-in Workflow definitions
+├── langgraph.py         # Direct StateGraph compiler + serializable state
+├── executor.py          # Factory domain operations + LangGraph facade
+├── tool.py              # Thin interactive adapters over graph threads
 ├── validation.py        # NetworkX-based graph validator
 ├── events.py            # Structured event types for .factory/events.jsonl
-├── skill_export.py      # Graph → SKILL.md converter
-└── cli.py               # CLI subcommands: run, list, show, validate, export-skills
+├── skill_export.py      # Workflow → SKILL.md renderer
+└── cli.py               # CLI subcommands, including run/resume/tool
 
 skills/
 ├── workflow-build/SKILL.md       # Auto-generated from build_workflow()

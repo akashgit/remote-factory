@@ -40,15 +40,16 @@ mypy factory/                    # Type check
 
 ## Architecture
 
-The factory is a three-layer system:
+The factory is a four-layer system:
 
 1. **Python CLI** (`factory/cli/`): Pure tools that don't make decisions. Entry point is `factory/cli/_main.py`.
-2. **CEO Agent** (`factory/agents/prompts/ceo.md`): Orchestrates the full workflow. Spawned via `factory ceo /path`.
-3. **Specialist Agents** (`factory/agents/`): Eight subprocesses spawned by the CEO via `factory agent <role>`.
+2. **LangGraph Runtime** (`factory/workflow/`): Compiles the Factory DSL, persists SQLite checkpoints, and owns routing, fanout/fanin, loops, interrupts, and resume.
+3. **CEO Agent** (`factory/agents/prompts/ceo.md`): Interactive client and gate evaluator for the graph. Spawned via `factory ceo /path`.
+4. **Specialist Agents** (`factory/agents/`): Eight subprocesses invoked by workflow nodes via `factory agent <role>`.
 
 Agent roles: Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, Failure Analyst, CEO.
 
-Key modules: `factory/adversarial.py` (GAN-style adversarial eval loops — phase transitions with hysteresis, convergence detection, state at `.factory/adversarial_state.json`).
+Key modules: `factory/workflow/langgraph.py` (DSL compiler and state), `factory/workflow/executor.py` (domain operations and persistence), and `factory/adversarial.py` (GAN-style adversarial evaluation).
 
 ## MCP Server
 

@@ -18,7 +18,7 @@ study (FnNode) → builder (AgentNode) → gate_verify (GateNode) → auto_merge
 ## Usage
 
 ```bash
-factory workflow run legacybench --project /path/to/repo
+factory workflow run legacybench /path/to/repo
 ```
 
 Typically invoked inside a Harbor container. The benchmark uses hidden test inputs — solutions must implement general algorithms, not hardcode outputs.

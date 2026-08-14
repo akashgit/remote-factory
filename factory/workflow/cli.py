@@ -10,7 +10,7 @@ from pathlib import Path
 import structlog
 
 from factory.workflow.registry import WorkflowRegistry
-from factory.workflow.executor import WorkflowExecutor
+from factory.workflow.executor import ExecutionResult, WorkflowExecutor
 from factory.workflow.primitives import (
     DEFAULT_AGENT_POOL,
     AgentNode,
@@ -28,11 +28,15 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed,tool}")
+        print(
+            "Usage: factory workflow "
+            "{run,resume,list,show,validate,export-skills,lint-contributed,tool}"
+        )
         return 1
 
     handlers = {
         "run": _cmd_run,
+        "resume": _cmd_resume,
         "list": _cmd_list,
         "show": _cmd_show,
         "validate": _cmd_validate,
@@ -85,6 +89,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         project_path,
         agent_pool=DEFAULT_AGENT_POOL,
         dry_run=dry_run,
+        auto_approve=getattr(args, "auto_approve", False),
+        thread_id=getattr(args, "thread_id", None),
     )
 
     from factory.agents.runner import begin_cycle_session, complete_cycle_session
@@ -93,19 +99,55 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         result = asyncio.run(executor.execute())
 
-        print(json.dumps({
-            "workflow": name,
-            "success": result.success,
-            "halted": result.halted,
-            "halt_reason": result.halt_reason,
-            "nodes_executed": result.nodes_executed,
-            "duration_ms": round(result.duration_ms, 1),
-            "files_produced": sorted(result.completed_files),
-        }, indent=2))
-
-        return 0 if result.success else 1
+        print(_execution_result_json(name, result))
+        return 2 if result.interrupted else 0 if result.success else 1
     finally:
         complete_cycle_session(project_path, cycle_span_id)
+
+
+def _cmd_resume(args: argparse.Namespace) -> int:
+    """Resume a persisted workflow thread with scalar or interrupt-ID values."""
+    import sys
+
+    name = args.name
+    project_path = Path(args.project_path).resolve()
+    resume_json = getattr(args, "resume_json", None)
+    if resume_json is not None:
+        value: object = json.loads(resume_json)
+        if not isinstance(value, dict):
+            raise TypeError("--resume-json must decode to an interrupt-ID mapping")
+    else:
+        value = args.value if args.value is not None else sys.stdin.read().strip()
+    executor = WorkflowExecutor.from_thread(
+        project_path,
+        agent_pool=DEFAULT_AGENT_POOL,
+        thread_id=args.thread_id,
+    )
+    if executor.workflow.name != name:
+        raise ValueError(
+            f"thread '{args.thread_id}' belongs to workflow "
+            f"'{executor.workflow.name}', not '{name}'"
+        )
+    result = asyncio.run(executor.resume(value))
+    print(_execution_result_json(name, result))
+    return 2 if result.interrupted else 0 if result.success else 1
+
+
+def _execution_result_json(name: str, result: ExecutionResult) -> str:
+    """Serialize the stable CLI result shape without exposing checkpoint internals."""
+    return json.dumps({
+        "workflow": name,
+        "thread_id": result.thread_id,
+        "success": result.success,
+        "completed": result.completed,
+        "interrupted": result.interrupted,
+        "interrupts": result.interrupts,
+        "halted": result.halted,
+        "halt_reason": result.halt_reason,
+        "nodes_executed": result.nodes_executed,
+        "duration_ms": round(result.duration_ms, 1),
+        "files_produced": sorted(result.completed_files),
+    }, indent=2)
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -140,13 +182,13 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
     # Nodes table
     print("Nodes:")
-    header = f"  {'ID':<25} {'Type':<12} {'Blocking':>8} {'Reads':<30} {'Writes':<30}"
+    header = f"  {'ID':<25} {'Type':<12} {'Legacy':>8} {'Reads':<30} {'Writes':<30}"
     print(header)
     print("  " + "-" * (len(header) - 2))
 
     for nid, node in wf.nodes.items():
         ntype = type(node).__name__
-        blocking = "yes" if node.blocking else "async"
+        blocking = "blocking" if node.blocking else "nonblock"
         reads = ", ".join(sorted(node.reads)) if node.reads else "-"
         writes = ", ".join(sorted(node.writes)) if node.writes else "-"
 
@@ -346,9 +388,28 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
+    p.add_argument("--auto-approve", action="store_true", help="Proceed through user gates")
+    p.add_argument("--thread-id", default=None, help="Explicit LangGraph thread ID")
     p.add_argument(
         "--from-yaml", default=None, metavar="PATH",
         help="Load workflow from YAML annotations file (overrides slot values on base workflow)",
+    )
+
+    # resume
+    p = wf_sub.add_parser("resume", help="Resume a paused LangGraph workflow thread")
+    p.add_argument("name", help="Workflow name")
+    p.add_argument("project_path", help="Path to the project")
+    p.add_argument("--thread-id", required=True, help="LangGraph thread ID returned by run")
+    resume_values = p.add_mutually_exclusive_group()
+    resume_values.add_argument(
+        "--value",
+        default=None,
+        help="Interrupt response (reads stdin when omitted)",
+    )
+    resume_values.add_argument(
+        "--resume-json",
+        default=None,
+        help="JSON mapping of interrupt IDs to responses for parallel interrupts",
     )
 
     # list

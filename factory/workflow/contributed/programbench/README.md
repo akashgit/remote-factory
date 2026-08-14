@@ -19,7 +19,7 @@ discover (AgentNode) → plan (FnNode) → builder (AgentNode) → gate_verify (
 ## Usage
 
 ```bash
-factory workflow run programbench --project /path/to/repo
+factory workflow run programbench /path/to/repo
 ```
 
 Typically invoked inside a Harbor container with a compiled binary at `/workspace/executable`.

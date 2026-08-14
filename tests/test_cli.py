@@ -450,7 +450,9 @@ class TestCmdCeoDesign:
             patch("factory.cli._helpers._ensure_dashboard"),
             patch("factory.graph.is_graphify_installed", return_value=False),
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+            result = main(
+                ["ceo", str(tmp_path), "--mode", "design", "--auto-approve", "--engine", "skill"]
+            )
         assert result == 0
 
     def test_auto_approve_forces_headless(self):
@@ -543,7 +545,9 @@ class TestAutoApproveEvent:
             patch("factory.graph.is_graphify_installed", return_value=False),
             patch("factory.cli._ceo_helpers._emit_cli_event") as mock_emit,
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+            result = main(
+                ["ceo", str(tmp_path), "--mode", "design", "--auto-approve", "--engine", "skill"]
+            )
         assert result == 0
         mock_emit.assert_any_call(tmp_path, "auto_approve.enabled", {"mode": "design"})
 
@@ -745,7 +749,8 @@ class TestCmdDetect:
 
 class TestCmdDiscover:
     def test_discover_python_project(self, python_project, capsys):
-        result = main(["discover", str(python_project)])
+        with patch("factory.cli.spec._run_spec_workflow", return_value=(1, "skipped in unit test")):
+            result = main(["discover", str(python_project)])
         assert result == 0
         output = json.loads(capsys.readouterr().out)
         assert output["project"]["language"] == "python"
@@ -851,16 +856,63 @@ class TestCmdHistory:
 
 
 class TestCmdRun:
+    def test_run_defaults_to_langgraph(self, tmp_path, capsys):
+        """cmd_run starts the persisted graph runtime unless skill is explicit."""
+        from factory.workflow.executor import ExecutionResult
+
+        with (
+            patch("factory.workflow.executor.WorkflowExecutor") as executor_cls,
+            patch(
+                "factory.worktree.create_worktree",
+                return_value=(tmp_path, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli.run._chain_modes", return_value=0),
+            patch("factory.cli.run._ensure_dashboard"),
+        ):
+            executor_cls.return_value.execute = AsyncMock(
+                return_value=ExecutionResult(
+                    success=True,
+                    completed=True,
+                    thread_id="thread-1",
+                )
+            )
+            result = main(["run", str(tmp_path), "--mode", "improve"])
+
+        assert result == 0
+        executor_cls.assert_called_once()
+        assert '"engine": "langgraph"' in capsys.readouterr().out
+
+    def test_langgraph_failure_preserves_worktree_for_resume(self, tmp_path):
+        with (
+            patch("factory.workflow.executor.WorkflowExecutor") as executor_cls,
+            patch(
+                "factory.worktree.create_worktree",
+                return_value=(tmp_path, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree") as remove_worktree,
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli.run._ensure_dashboard"),
+        ):
+            executor_cls.return_value.execute = AsyncMock(
+                side_effect=RuntimeError("ambiguous operation")
+            )
+            result = main(["run", str(tmp_path), "--mode", "improve"])
+
+        assert result == 1
+        remove_worktree.assert_not_called()
+
     def test_run_success(self, tmp_path):
-        """cmd_run returns 0 when CEO agent succeeds."""
+        """The explicit skill fallback returns 0 when its CEO agent succeeds."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
-            result = main(["run", str(tmp_path)])
+            result = main(["run", str(tmp_path), "--engine", "skill"])
         assert result == 0
 
     def test_run_agent_failure(self, tmp_path):
-        """cmd_run returns 1 when CEO agent fails."""
+        """The explicit skill fallback returns 1 when its CEO agent fails."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
-            result = main(["run", str(tmp_path)])
+            result = main(["run", str(tmp_path), "--engine", "skill"])
         assert result == 1
 
 
@@ -1069,7 +1121,7 @@ class TestRunWithGitHubUrl:
             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-abc"),
             patch("factory.cli.run._read_target_branch", return_value="main"),
         ):
-            result = main(["run", url])
+            result = main(["run", url, "--engine", "skill"])
 
         assert result == 0
         mock_clone.assert_called_once_with(
@@ -1088,7 +1140,7 @@ class TestRunWithGitHubUrl:
             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-xyz"),
             patch("factory.cli.run._read_target_branch", return_value="main"),
         ):
-            result = main(["run", url])
+            result = main(["run", url, "--engine", "skill"])
 
         assert result == 0
         mock_clone.assert_called_once_with(
@@ -1104,7 +1156,7 @@ class TestRunWithGitHubUrl:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path)])
+            result = main(["run", str(tmp_path), "--engine", "skill"])
 
         assert result == 0
         mock_agent.assert_called_once()
@@ -1115,7 +1167,9 @@ class TestRunWithGitHubUrl:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path), "--mode", "discover"])
+            result = main(
+                ["run", str(tmp_path), "--mode", "discover", "--engine", "skill"]
+            )
 
         assert result == 0
         call_args = mock_agent.call_args
@@ -1128,7 +1182,7 @@ class TestRunWithGitHubUrl:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path), "--mode", "meta"])
+            result = main(["run", str(tmp_path), "--mode", "meta", "--engine", "skill"])
 
         assert result == 0
         call_args = mock_agent.call_args
@@ -1184,7 +1238,7 @@ class TestHeartbeatLoop:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path)])
+            result = main(["run", str(tmp_path), "--engine", "skill"])
         assert result == 0
         mock_agent.assert_called_once()
 
@@ -1203,6 +1257,8 @@ class TestHeartbeatLoop:
                     "3",
                     "--interval",
                     "0",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0
@@ -1227,6 +1283,8 @@ class TestHeartbeatLoop:
                     "--loop",
                     "--max-cycles",
                     "1",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0
@@ -1257,7 +1315,9 @@ class TestHeartbeatLoop:
             ),
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
+            result = main(
+                ["run", str(tmp_path), "--loop", "--interval", "30", "--engine", "skill"]
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -1286,7 +1346,9 @@ class TestHeartbeatLoop:
             ),
             patch("factory.cli.run._chain_modes", return_value=0),
         ):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
+            result = main(
+                ["run", str(tmp_path), "--loop", "--interval", "30", "--engine", "skill"]
+            )
 
         assert result == 0
         out = capsys.readouterr().out
@@ -1307,6 +1369,8 @@ class TestHeartbeatLoop:
                     "2",
                     "--interval",
                     "0",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0
@@ -1474,7 +1538,12 @@ class TestCmdCeoReview:
     def test_review_mode_headless_builds_correct_task(self, tmp_path, capsys):
         """--mode review --pr 42 --headless builds a review task and invokes CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+            result = main(
+                [
+                    "ceo", str(tmp_path), "--mode", "review", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         assert result == 0
         mock_agent.assert_called_once()
         task = mock_agent.call_args[0][1]
@@ -1502,6 +1571,8 @@ class TestCmdCeoReview:
                     "--repo",
                     "owner/repo",
                     "--headless",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0
@@ -1516,7 +1587,12 @@ class TestCmdCeoReview:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
             patch("factory.worktree.create_worktree") as mock_wt,
         ):
-            main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+            main(
+                [
+                    "ceo", str(tmp_path), "--mode", "review", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         mock_wt.assert_not_called()
 
     def test_review_mode_foreground(self, tmp_path):
@@ -1538,7 +1614,12 @@ class TestCmdCeoReview:
     def test_review_mode_max_respawns_is_1(self, tmp_path):
         """Review mode uses max_respawns=1."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+            main(
+                [
+                    "ceo", str(tmp_path), "--mode", "review", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs.get("timeout") == 7200.0
 
@@ -1557,7 +1638,12 @@ class TestCmdCeoDeepQa:
     def test_qa_mode_headless_builds_correct_task(self, tmp_path, capsys):
         """--mode deep-qa --pr 42 --headless builds a deep-qa task and invokes CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            result = main(
+                [
+                    "ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         assert result == 0
         mock_agent.assert_called_once()
         task = mock_agent.call_args[0][1]
@@ -1582,6 +1668,8 @@ class TestCmdCeoDeepQa:
                     "--repo",
                     "owner/repo",
                     "--headless",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0
@@ -1595,7 +1683,12 @@ class TestCmdCeoDeepQa:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
             patch("factory.worktree.create_worktree") as mock_wt,
         ):
-            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            main(
+                [
+                    "ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         mock_wt.assert_not_called()
 
     def test_qa_mode_foreground(self, tmp_path):
@@ -1617,7 +1710,12 @@ class TestCmdCeoDeepQa:
     def test_qa_mode_max_respawns_is_1(self, tmp_path):
         """Deep-QA mode uses max_respawns=1."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            main(
+                [
+                    "ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
+                    "--headless", "--engine", "skill",
+                ]
+            )
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs.get("timeout") == 7200.0
 
@@ -1629,7 +1727,7 @@ class TestCmdCeo:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
         ):
-            result = main(["ceo", str(tmp_path), "--headless"])
+            result = main(["ceo", str(tmp_path), "--headless", "--engine", "skill"])
         assert result == 0
         mock_agent.assert_called_once()
         call_args = mock_agent.call_args
@@ -1642,7 +1740,9 @@ class TestCmdCeo:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
+            result = main(
+                ["ceo", str(tmp_path), "--mode", "meta", "--headless", "--engine", "skill"]
+            )
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "Meta mode" in task
@@ -1658,7 +1758,7 @@ class TestCmdCeo:
             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
             patch("factory.graph.is_graphify_installed", return_value=False),
         ):
-            result = main(["ceo", url, "--headless"])
+            result = main(["ceo", url, "--headless", "--engine", "skill"])
         assert result == 0
         mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-ceo"],
@@ -1671,7 +1771,7 @@ class TestCmdCeo:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
         ):
-            main(["ceo", str(tmp_path), "--headless"])
+            main(["ceo", str(tmp_path), "--headless", "--engine", "skill"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 7200.0
 
@@ -1899,7 +1999,7 @@ class TestResolveInput:
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
         ):
-            main(["ceo", str(idea_file), "--headless"])
+            main(["ceo", str(idea_file), "--headless", "--engine", "skill"])
 
         task_arg = mock_agent.call_args[0][1]  # second positional = task
         assert "Build X that does Y" in task_arg
@@ -1981,7 +2081,12 @@ class TestResearchMode:
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
             patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
         ):
-            result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])
+            result = main(
+                [
+                    "ceo", str(tmp_path), "--mode", "research", "--headless",
+                    "--engine", "skill",
+                ]
+            )
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "Research mode" in task
@@ -2992,7 +3097,10 @@ class TestFromPlanFeedbackWritesFile:
             patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
         ):
             result = main(
-                ["ceo", str(tmp_path), "--mode", "design", "--from-plan", "42", "--auto-approve"]
+                [
+                    "ceo", str(tmp_path), "--mode", "design", "--from-plan", "42",
+                    "--auto-approve", "--engine", "skill",
+                ]
             )
         assert result == 0
         feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
@@ -3034,6 +3142,8 @@ class TestFromPlanFeedbackWritesFile:
                     "--from-plan",
                     "plan.md",
                     "--auto-approve",
+                    "--engine",
+                    "skill",
                 ]
             )
         assert result == 0

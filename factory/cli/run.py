@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import signal
@@ -77,8 +78,10 @@ def _run_single_cycle(
     run_id: str | None = None,
     no_worktree: bool = False,
     overwrite: str | None = None,
+    engine: str = "langgraph",
+    auto_approve: bool = False,
 ) -> int:
-    """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
+    """Execute one cycle through LangGraph or the explicit legacy skill path."""
     from factory.agents.runner import invoke_agent
     from factory.worktree import create_worktree, remove_worktree
 
@@ -99,20 +102,69 @@ def _run_single_cycle(
     else:
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
-    from factory.skill_cache import ensure_skills
+    if engine == "skill":
+        from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path)
+        ensure_skills(wt_path)
 
+    workflow_override = None
     if overwrite and mode and mode != "auto":
         from factory.workflow.definitions import register_all
         from factory.workflow.overwrite import apply_overwrite, generate_session_skill
 
         workflows = register_all()
         if mode in workflows:
-            mutated = apply_overwrite(workflows[mode], overwrite, wt_path)
-            generate_session_skill(mutated, mode, wt_path)
+            workflow_override = apply_overwrite(workflows[mode], overwrite, wt_path)
+            if engine == "skill":
+                generate_session_skill(workflow_override, mode, wt_path)
 
+    preserve_langgraph_worktree = engine == "langgraph"
     try:
+        if engine == "langgraph":
+            from factory.workflow.executor import WorkflowExecutor
+            from factory.workflow.primitives import DEFAULT_AGENT_POOL
+            from factory.workflow.registry import WorkflowRegistry
+
+            workflow = workflow_override or WorkflowRegistry.get_workflow(mode, wt_path)
+            if not workflow:
+                print(f'Error: workflow "{mode}" not found', file=sys.stderr)
+                return 1
+
+            executor = WorkflowExecutor(
+                workflow,
+                wt_path,
+                agent_pool=DEFAULT_AGENT_POOL,
+                auto_approve=auto_approve,
+            )
+            exec_result = asyncio.run(executor.execute())
+            preserve_langgraph_worktree = exec_result.interrupted or not exec_result.completed
+            print(
+                json.dumps(
+                    {
+                        "workflow": mode,
+                        "engine": "langgraph",
+                        "project_path": str(wt_path),
+                        "thread_id": exec_result.thread_id,
+                        "success": exec_result.success,
+                        "completed": exec_result.completed,
+                        "interrupted": exec_result.interrupted,
+                        "interrupts": exec_result.interrupts,
+                        "nodes_executed": exec_result.nodes_executed,
+                        "duration_ms": round(exec_result.duration_ms, 1),
+                    },
+                    indent=2,
+                )
+            )
+            if exec_result.interrupted:
+                print(
+                    "Resume: "
+                    f"factory workflow resume {mode} {wt_path} "
+                    f"--thread-id {exec_result.thread_id}",
+                    file=sys.stderr,
+                )
+                return 2
+            return 0 if exec_result.success else 1
+
         task = _build_ceo_task(
             wt_path,
             mode,
@@ -154,7 +206,7 @@ def _run_single_cycle(
         print(result)
         return code
     finally:
-        if not no_worktree:
+        if not no_worktree and not preserve_langgraph_worktree:
             assert wt_branch is not None
             remove_worktree(project_path, wt_path, wt_branch)
 
@@ -174,6 +226,7 @@ def _chain_modes(
     background: bool = False,
     completed_mode: str | None = None,
     no_worktree: bool = False,
+    engine: str = "langgraph",
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -225,6 +278,7 @@ def _chain_modes(
             tmux_persist=tmux_persist,
             background=background,
             no_worktree=no_worktree,
+            engine=engine,
         )
         if code != 0:
             return code
@@ -255,6 +309,8 @@ def _run_heartbeat_loop(
     max_cycles: int | None,
     no_worktree: bool = False,
     completed_mode: str | None = None,
+    engine: str = "langgraph",
+    auto_approve: bool = False,
 ) -> int:
     """Continuous heartbeat loop with signal handling."""
     shutdown_event = threading.Event()
@@ -266,6 +322,7 @@ def _run_heartbeat_loop(
     old_sigint = signal.signal(signal.SIGINT, _shutdown_handler)
 
     cycle = 0
+    exit_code = 0
     start_time = time.monotonic()
 
     try:
@@ -275,7 +332,7 @@ def _run_heartbeat_loop(
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(
+            exit_code = _run_single_cycle(
                 project_path,
                 mode,
                 context,
@@ -294,9 +351,13 @@ def _run_heartbeat_loop(
                 background=background,
                 run_id=run_id,
                 no_worktree=no_worktree,
+                engine=engine,
+                auto_approve=auto_approve,
                 **budget_kwargs,
             )
-            _chain_modes(
+            if exit_code != 0:
+                break
+            exit_code = _chain_modes(
                 project_path,
                 focus=focus,
                 already_improved=skip_improve,
@@ -310,7 +371,10 @@ def _run_heartbeat_loop(
                 background=background,
                 completed_mode=completed_mode or mode,
                 no_worktree=no_worktree,
+                engine=engine,
             )
+            if exit_code != 0:
+                break
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
@@ -336,7 +400,7 @@ def _run_heartbeat_loop(
         f"[factory] Shutting down gracefully after {cycle} cycles."
         f" Total runtime: {elapsed:.0f}s"
     )
-    return 0
+    return exit_code
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -407,6 +471,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     warn_deprecated_mode(mode)
     auto_approve: bool = getattr(args, "auto_approve", False)
+    engine: str = getattr(args, "engine", "langgraph")
     if auto_approve and mode != "design":
         print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
         return 1
@@ -482,6 +547,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             run_id=run_id,
             no_worktree=no_worktree,
             overwrite=overwrite,
+            engine=engine,
+            auto_approve=auto_approve,
             **budget_kwargs,
         )
         if code != 0:
@@ -500,6 +567,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             background=background,
             completed_mode=mode,
             no_worktree=no_worktree,
+            engine=engine,
         )
 
     interval: int = getattr(args, "interval", 1800)
@@ -528,4 +596,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         max_cycles=max_cycles,
         no_worktree=no_worktree,
         completed_mode=mode,
+        engine=engine,
+        auto_approve=auto_approve,
     )

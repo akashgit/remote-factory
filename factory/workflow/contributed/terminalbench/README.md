@@ -18,7 +18,7 @@ study (FnNode) → builder (AgentNode) → gate_verify (GateNode) → auto_merge
 ## Usage
 
 ```bash
-factory workflow run terminalbench --project /path/to/repo
+factory workflow run terminalbench /path/to/repo
 ```
 
 Typically invoked inside a Harbor container. Tasks span software engineering, scientific computing, system administration, security, ML, data processing, and more.
