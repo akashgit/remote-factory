@@ -22,6 +22,8 @@ _CREDENTIAL_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 _SENSITIVE_FRAGMENTS = ("key", "token", "secret", "password", "api_key")
 
+_PROTECTED_VARS = frozenset({"PATH", "HOME", "USER", "SHELL", "TMPDIR", "TERM"})
+
 _cached_config: dict | None = None
 
 _CONFIG_TEMPLATE = """\
@@ -50,6 +52,16 @@ _CONFIG_TEMPLATE = """\
 # [credentials.codex]
 # FACTORY_RUNNER = "codex"
 # CODEX_API_KEY = "..."
+#
+# [credentials.glaude]
+# FACTORY_RUNNER = "claude"
+# FACTORY_MODEL = "glm-5.2-fp8"
+# ANTHROPIC_BASE_URL = "https://glm52-litellm.apps.rosa..."
+# ANTHROPIC_API_KEY = "sk-litellm-..."
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+#
+# [credentials.glaude.unset]
+# vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
 """
 
 
@@ -101,11 +113,44 @@ def load_config(profile: str | None = None) -> dict:
         creds = data.get("credentials", {}).get(profile)
         if creds is None:
             available = list(data.get("credentials", {}).keys())
-            raise KeyError(f"Profile {profile!r} not found in config.toml. Available: {available}")
-        _validate_credential_keys(creds)
-        for k, v in creds.items():
-            os.environ.setdefault(k, str(v))
-        log.info("profile_loaded", profile=profile, keys=list(creds.keys()))
+            raise KeyError(
+                f"Profile {profile!r} not found in config.toml. "
+                f"Available: {available}"
+            )
+
+        unset_config = creds.get("unset")
+        unset_vars: list[str] = []
+        if isinstance(unset_config, dict):
+            raw = unset_config.get("vars", [])
+            if isinstance(raw, list):
+                unset_vars = [str(v) for v in raw]
+
+        env_keys = {k: v for k, v in creds.items() if k != "unset"}
+        _validate_credential_keys(env_keys)
+
+        protected_set = _PROTECTED_VARS & env_keys.keys()
+        protected_unset = _PROTECTED_VARS & set(unset_vars)
+        if protected_set or protected_unset:
+            offending = sorted(protected_set | protected_unset)
+            raise ValueError(
+                f"Profile {profile!r} attempts to modify protected variable(s): "
+                f"{', '.join(offending)}. "
+                f"Protected vars ({', '.join(sorted(_PROTECTED_VARS))}) cannot be "
+                f"set or unset via profiles."
+            )
+
+        for var in unset_vars:
+            os.environ.pop(var, None)
+
+        for k, v in env_keys.items():
+            os.environ[k] = str(v)
+
+        log.info(
+            "profile_loaded",
+            profile=profile,
+            keys=list(env_keys.keys()),
+            unset=unset_vars or None,
+        )
 
     global _cached_config  # noqa: PLW0603
     _cached_config = data
@@ -197,6 +242,11 @@ def show_config(*, reveal: bool = False) -> str:
     for profile_name, creds in credentials.items():
         lines.append(f"[credentials.{profile_name}]")
         for k, v in creds.items():
+            if isinstance(v, dict):
+                lines.append(f"  [{k}]")
+                for sk, sv in v.items():
+                    lines.append(f"    {sk} = {sv}")
+                continue
             display = str(v)
             if not reveal and is_sensitive(k):
                 display = mask_value(display)

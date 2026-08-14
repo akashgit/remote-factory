@@ -143,7 +143,26 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 - `factory config edit` — open `~/.factory/config.toml` in `$EDITOR`
 - `factory config migrate` — create starter config from current env vars (requires `tomli_w`)
 
-**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys are injected into `os.environ`.
+**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys **override** existing env vars (explicit `--profile` opt-in means the profile is authoritative). CLI flags still win via 5-tier precedence.
+
+**Env overlay features:**
+- **Override:** Profile keys are set via `os.environ[k] = v`, not `setdefault` — the profile wins over shell env vars
+- **Unset:** Add a `[credentials.<name>.unset]` sub-table with `vars = ["VAR1", "VAR2"]` to remove env vars before injection. Unsets are processed before sets.
+- **Protected vars:** `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, and `TERM` cannot be set or unset via profiles — a `ValueError` is raised if attempted.
+
+**Glaude profile example** (Claude Code via GLM-5.2 LiteLLM proxy):
+```toml
+[credentials.glaude]
+FACTORY_RUNNER = "claude"
+FACTORY_MODEL = "glm-5.2-fp8"
+ANTHROPIC_BASE_URL = "https://glm52-litellm.apps.rosa..."
+ANTHROPIC_API_KEY = "sk-litellm-..."
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+
+[credentials.glaude.unset]
+vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
+```
+Usage: `factory ceo /path --profile glaude`
 
 **Implementation:** `factory/user_config.py` — `load_config()`, `resolve()`, `show_config()`, `migrate_env_to_config()`.
 
