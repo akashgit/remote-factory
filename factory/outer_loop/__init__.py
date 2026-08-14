@@ -12,6 +12,11 @@ from factory.outer_loop.filesystem import (
     save_generation,
     save_map_elites,
 )
+from factory.outer_loop.harbor_evaluator import (
+    HarborEvaluator,
+    create_seed_workflow,
+    workflow_to_harbor_yaml,
+)
 from factory.outer_loop.models import (
     AuditResult,
     EvalResult,
@@ -32,6 +37,7 @@ __all__ = [
     "DesignerAgent",
     "EvalResult",
     "GenerationSummary",
+    "HarborEvaluator",
     "HyperparameterRecord",
     "Individual",
     "MutationRecord",
@@ -40,6 +46,7 @@ __all__ = [
     "OuterLoopState",
     "SwarmConfig",
     "SwarmEngine",
+    "create_seed_workflow",
     "export_best_workflow",
     "extract_telemetry",
     "init_filesystem",
@@ -50,4 +57,5 @@ __all__ = [
     "save_checkpoint",
     "save_generation",
     "save_map_elites",
+    "workflow_to_harbor_yaml",
 ]
