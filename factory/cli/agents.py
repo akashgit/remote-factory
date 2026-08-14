@@ -158,12 +158,24 @@ def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.plugin import load_agent_config
     from factory.agents.runner import invoke_agent
+    from factory.cli._parser_groups import BUILTIN_AGENT_ROLES
+    from factory.plugins import get_registry
     from factory.user_config import load_config
 
     profile = getattr(args, "profile", None)
     load_config(profile=profile)
 
     role = args.role
+    plugin_roles = set(get_registry().agent_roles)
+    valid_roles = BUILTIN_AGENT_ROLES | plugin_roles
+    if role not in valid_roles:
+        print(
+            f"Error: unknown agent role '{role}'. "
+            f"Valid roles: {', '.join(sorted(valid_roles))}",
+            file=sys.stderr,
+        )
+        return 1
+
     task = args.task
     project_path = Path(args.project).resolve()
     timeout = getattr(args, "timeout", 600.0)

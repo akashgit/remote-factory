@@ -49,6 +49,7 @@ class PluginLoadResult:
 class PluginRegistry:
     commands: dict[str, CommandSpec] = field(default_factory=dict)
     modes: list[str] = field(default_factory=list)
+    agent_roles: list[str] = field(default_factory=list)
     ceo_pre_hooks: list[Callable[..., Any]] = field(default_factory=list)
     workflow_search_paths: list[str] = field(default_factory=list)
     parser_extensions: dict[str, list[Callable[[argparse.ArgumentParser], None]]] = field(
@@ -76,6 +77,18 @@ class PluginRegistry:
                 log.warning("plugin_mode_collision", mode=mode, action="keeping_first")
                 continue
             self.modes.append(mode)
+
+    def add_agent_roles(self, roles: list[str]) -> None:
+        from factory.cli._parser_groups import BUILTIN_AGENT_ROLES
+
+        for role in roles:
+            if role in BUILTIN_AGENT_ROLES:
+                log.warning("plugin_agent_role_collision_builtin", role=role, action="skipped")
+                continue
+            if role in self.agent_roles:
+                log.warning("plugin_agent_role_collision", role=role, action="keeping_first")
+                continue
+            self.agent_roles.append(role)
 
     def add_ceo_pre_hook(self, hook: Callable[..., Any]) -> None:
         self.ceo_pre_hooks.append(hook)

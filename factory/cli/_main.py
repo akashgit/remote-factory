@@ -213,6 +213,8 @@ def _cmd_plugins(args: argparse.Namespace) -> int:
         print(f"\nRegistered commands: {', '.join(sorted(registry.commands))}")
     if registry.modes:
         print(f"Registered modes: {', '.join(registry.modes)}")
+    if registry.agent_roles:
+        print(f"Registered agent roles: {', '.join(registry.agent_roles)}")
 
     return 0
 
