@@ -9,7 +9,6 @@ Covers all 10 fixes across 3 phases:
 from __future__ import annotations
 
 import random
-import re
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +21,6 @@ from factory.outer_loop.models import (
     EvalResult,
     GenerationSummary,
     Individual,
-    MutationRecord,
     MutationType,
     SwarmConfig,
 )
@@ -36,14 +34,12 @@ from factory.outer_loop.mutations import (
     prompt_mutate,
 )
 from factory.outer_loop.overfit import CONSECUTIVE_OVERFIT_LIMIT, OverfitDetector
-from factory.outer_loop.subset import CalibratedSubsetSelector, FixedSubsetSelector
+from factory.outer_loop.subset import CalibratedSubsetSelector
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     Edge,
-    FnNode,
     GateNode,
-    VerdictType,
     Workflow,
 )
 
@@ -119,7 +115,6 @@ class TestFix1WebSearchBlocking:
         from pathlib import Path
 
         calls: list[list[str]] = []
-        original_run = subprocess.run
 
         def capture_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             if args and isinstance(args[0], list) and "factory" in str(args[0]):
@@ -281,7 +276,7 @@ class TestFix4CalibratedSubsetSelector:
             return EvalResult(score=s, benchmark_score=s)
 
         wf = _make_workflow()
-        result = selector.calibrate(all_instances, wf, mock_eval)
+        selector.calibrate(all_instances, wf, mock_eval)
 
         assert selector.is_calibrated
         assert len(selector.training_instances) == 3
