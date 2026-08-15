@@ -308,6 +308,71 @@ class Workflow(BaseModel):
         ]
         return Workflow(name=name, nodes=nodes, edges=edges, start_node=start_node)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the workflow to a JSON-safe dict.
+
+        Includes a ``_type`` discriminator on each node so ``from_dict``
+        can reconstruct the correct node subclass.  The ``trigger`` field
+        is excluded (not serializable).
+        """
+        nodes_out: dict[str, Any] = {}
+        for nid, node in self.nodes.items():
+            d = node.model_dump(mode="json")
+            d["_type"] = type(node).__name__
+            nodes_out[nid] = d
+
+        edges_out = [e.model_dump(mode="json") for e in self.edges]
+
+        return {
+            "name": self.name,
+            "nodes": nodes_out,
+            "edges": edges_out,
+            "start_node": self.start_node,
+            "terminal": self.terminal,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Workflow:
+        """Reconstruct a Workflow from a dict produced by ``to_dict``."""
+        _NODE_TYPE_MAP: dict[str, type[Node]] = {
+            "AgentNode": AgentNode,
+            "FnNode": FnNode,
+            "GateNode": GateNode,
+            "ForkNode": ForkNode,
+            "JoinNode": JoinNode,
+            "SubgraphForkNode": SubgraphForkNode,
+            "SelectionNode": SelectionNode,
+            "Study": Study,
+            "LLMNode": LLMNode,
+        }
+
+        # JSON serializes sets as lists; convert back for strict Pydantic models
+        _SET_FIELDS = {"reads", "writes"}
+
+        nodes: dict[str, NodeType] = {}
+        for nid, node_data in data["nodes"].items():
+            node_data = dict(node_data)
+            type_name = node_data.pop("_type", "FnNode")
+            node_cls = _NODE_TYPE_MAP.get(type_name)
+            if node_cls is None:
+                raise ValueError(f"Unknown node type: {type_name}")
+            for field in _SET_FIELDS:
+                if field in node_data and isinstance(node_data[field], list):
+                    node_data[field] = set(node_data[field])
+            nodes[nid] = node_cls.model_validate(  # type: ignore[assignment]
+                node_data, strict=False,
+            )
+
+        edges = [Edge.model_validate(e, strict=False) for e in data["edges"]]
+
+        return cls(
+            name=data["name"],
+            nodes=nodes,
+            edges=edges,
+            start_node=data["start_node"],
+            terminal=data.get("terminal", False),
+        )
+
 
 # ── factory ──────────────────────────────────────────────────────
 

@@ -65,6 +65,13 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "with structural graph context included. "
             "Terminal mode — does not chain to other modes."
         ),
+        "outer-loop": (
+            "\n\nRun Outer Loop mode: evolutionary swarm search for workflow optimization. "
+            "Seed a population from the specified mode, evolve via mutation + selection + "
+            "novelty filtering + LLM-guided design, evaluate against benchmark instances. "
+            "Post-evolution: holdout audit for overfit detection, export best workflow. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
     }
     if mode == "discover":
         if discover_only:
