@@ -3,7 +3,8 @@
 Three-step architecture:
 1. Extract /testbed/ from Docker image to a local temp dir
 2. Run factory agents DIRECTLY ON THE HOST against the extracted testbed
-3. Restore test files and run pytest directly in Docker against the modified testbed
+3. Copy the modified testbed into a fresh container via docker cp + exec
+   (avoids bind-mount cross-platform issues with amd64 images on arm64 hosts)
 
 This avoids installing agents inside Docker containers entirely.
 """
@@ -152,7 +153,7 @@ class DirectFeatureBenchEvaluator:
             return False
 
         image = _parse_from_line(dockerfile)
-        workdir = Path(tempfile.mkdtemp(prefix=f"fb-{instance_id[:30]}-"))
+        workdir = Path(tempfile.mkdtemp(prefix=f"fb-{instance_id[:30]}-", dir="/tmp"))
 
         try:
             # 1. Pull image if needed
@@ -299,7 +300,7 @@ class DirectFeatureBenchEvaluator:
     def _verify_in_docker(
         self, task_dir: Path, image: str, testbed: Path
     ) -> bool:
-        """Run pytest directly in Docker — bypasses test.sh git-baseline guardrails."""
+        """Run pytest via docker cp + exec — avoids bind-mount cross-platform issues."""
         test_patch = task_dir / "environment" / "test_patch.diff"
         test_sh = task_dir / "tests" / "test.sh"
 
@@ -307,10 +308,9 @@ class DirectFeatureBenchEvaluator:
         if test_sh.exists():
             f2p_args, p2p_args, install_cmd = _parse_test_sh(test_sh)
 
-        # Primary: get F2P test files from test_patch.diff (deleted files = tests to restore)
+        # Restore deleted test files into the host testbed before copying to container
         test_files = _parse_deleted_files(test_patch)
         if test_files:
-            # Reverse-apply test_patch to restore deleted test files in the host testbed
             if test_patch.exists() and test_patch.stat().st_size > 0:
                 apply_result = subprocess.run(
                     ["git", "apply", "--reverse", "--whitespace=nowarn", str(test_patch)],
@@ -325,41 +325,81 @@ class DirectFeatureBenchEvaluator:
                         stderr=apply_result.stderr,
                         task_dir=str(task_dir),
                     )
-            f2p_cmd = f"pytest -rA --tb=short {' '.join(test_files)}"
+            f2p_cmd = f"pytest -rA --tb=short --color=no {' '.join(test_files)}"
         elif f2p_args:
-            f2p_cmd = f"pytest {f2p_args}"
+            f2p_cmd = f"pytest -rA --tb=short --color=no {f2p_args}"
         else:
             log.error("no_test_target", task_dir=str(task_dir))
             return False
 
-        script = (
-            f"set -e; "
-            f"source /opt/miniconda3/bin/activate testbed; "
-            f"cd /testbed; "
-            f"{install_cmd}; "
-            f"{f2p_cmd}"
-        )
-        if p2p_args:
-            script += f"; pytest {p2p_args}"
-
-        result = subprocess.run(
+        # 1. Create container (kept alive with sleep so we can exec into it)
+        cid_result = subprocess.run(
             [
-                "docker", "run", "--rm",
-                "--platform", "linux/amd64",
-                "-v", f"{testbed.resolve()}:/testbed",
+                "docker", "create", "--platform", "linux/amd64",
                 image,
-                "bash", "-c", script,
+                "bash", "-c", "sleep 600",
             ],
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=60,
         )
+        if cid_result.returncode != 0:
+            log.error("docker_create_verify_failed", stderr=cid_result.stderr)
+            return False
+        cid = cid_result.stdout.strip()
 
-        log.info(
-            "docker_verify_done",
-            returncode=result.returncode,
-            stdout_tail=result.stdout[-500:] if result.stdout else "",
-            stderr_tail=result.stderr[-500:] if result.stderr else "",
-        )
+        try:
+            # 2. Copy modified testbed INTO the container
+            cp_result = subprocess.run(
+                ["docker", "cp", f"{testbed.resolve()}/.", f"{cid}:/testbed/"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if cp_result.returncode != 0:
+                log.error("docker_cp_verify_failed", stderr=cp_result.stderr)
+                return False
 
-        return result.returncode == 0
+            # 3. Start the container
+            start_result = subprocess.run(
+                ["docker", "start", cid],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if start_result.returncode != 0:
+                log.error("docker_start_failed", stderr=start_result.stderr)
+                return False
+
+            # 4. Exec the test inside the container
+            script = (
+                f"source /opt/miniconda3/bin/activate testbed; "
+                f"cd /testbed; "
+                f"{install_cmd} 2>&1 | tail -2; "
+                f"{f2p_cmd}"
+            )
+            if p2p_args:
+                script += f"; pytest -rA --tb=short --color=no {p2p_args}"
+
+            result = subprocess.run(
+                ["docker", "exec", cid, "bash", "-c", script],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            log.info(
+                "docker_verify_done",
+                returncode=result.returncode,
+                stdout_tail=result.stdout[-500:] if result.stdout else "",
+                stderr_tail=result.stderr[-500:] if result.stderr else "",
+            )
+
+            return result.returncode == 0
+        finally:
+            # 5. Cleanup: force-remove the container
+            subprocess.run(
+                ["docker", "rm", "-f", cid],
+                capture_output=True,
+                timeout=30,
+            )
