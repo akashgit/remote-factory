@@ -28,7 +28,10 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed,tool}")
+        print(
+            "Usage: factory workflow "
+            "{run,list,show,validate,export-skills,lint-contributed,doctor,tool}"
+        )
         return 1
 
     handlers = {
@@ -38,6 +41,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
         "validate": _cmd_validate,
         "export-skills": _cmd_export_skills,
         "lint-contributed": _cmd_lint_contributed,
+        "doctor": _cmd_doctor,
         "tool": _cmd_tool,
     }
 
@@ -111,16 +115,42 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_list(args: argparse.Namespace) -> int:
     """List all registered workflows."""
     project_path = Path(getattr(args, "project_path", None) or ".").resolve()
-    entries = WorkflowRegistry.list_workflows(project_path)
+    plugins_only = getattr(args, "plugins", False)
+    output_format = getattr(args, "format", "table")
 
-    header = f"{'Name':<12} {'Nodes':>6} {'Edges':>6} {'Start Node':<20}"
+    entries = WorkflowRegistry.list_workflows(project_path, plugins_only=plugins_only)
+
+    if output_format == "json":
+        items = []
+        for entry in entries:
+            wf = WorkflowRegistry.get_workflow(entry.name)
+            item: dict[str, object] = {
+                "name": entry.name,
+                "source": entry.source,
+                "description": entry.description,
+                "path": entry.path,
+            }
+            if wf:
+                item["nodes"] = len(wf.nodes)
+                item["edges"] = len(wf.edges)
+                item["start_node"] = wf.start_node
+            if entry.package_name:
+                item["package_name"] = entry.package_name
+            items.append(item)
+        print(json.dumps(items, indent=2))
+        return 0
+
+    header = f"{'Name':<30} {'Source':<14} {'Nodes':>6} {'Edges':>6} {'Start Node':<20}"
     print(header)
     print("-" * len(header))
 
     for entry in entries:
         wf = WorkflowRegistry.get_workflow(entry.name)
         if wf:
-            print(f"{entry.name:<12} {len(wf.nodes):>6} {len(wf.edges):>6} {wf.start_node:<20}")
+            print(
+                f"{entry.name:<30} {entry.source:<14} "
+                f"{len(wf.nodes):>6} {len(wf.edges):>6} {wf.start_node:<20}"
+            )
 
     return 0
 
@@ -284,6 +314,35 @@ def _cmd_lint_contributed(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Validate all discovered workflows and report status."""
+    project_path = Path(getattr(args, "project_path", None) or ".").resolve()
+    entries = WorkflowRegistry.list_workflows(project_path)
+
+    has_issues = False
+    for entry in entries:
+        wf = WorkflowRegistry.get_workflow(entry.name)
+        if wf is None:
+            print(f"[FAIL] {entry.name} — could not load workflow")
+            has_issues = True
+            continue
+
+        issues = wf.validate_graph()
+        if issues:
+            print(f"[FAIL] {entry.name} — {len(issues)} issue(s):")
+            for issue in issues:
+                print(f"       {issue}")
+            has_issues = True
+        else:
+            print(f"[ OK ] {entry.name}")
+
+    if has_issues:
+        return 1
+
+    print(f"\nAll {len(entries)} workflows valid.")
+    return 0
+
+
 def _cmd_tool(args: argparse.Namespace) -> int:
     """Dispatch tool subcommands for step-by-step workflow execution."""
     import sys
@@ -354,6 +413,11 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     # list
     p = wf_sub.add_parser("list", help="List all registered workflows")
     p.add_argument("--project-path", default=None, help="Project path for local workflow discovery")
+    p.add_argument("--plugins", action="store_true", help="Show only plugin (entry-point) workflows")
+    p.add_argument(
+        "--format", choices=["table", "json"], default="table",
+        help="Output format (default: table)",
+    )
 
     # show
     p = wf_sub.add_parser("show", help="Show workflow graph details")
@@ -379,6 +443,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument(
         "--path", default=None, help="Base directory to scan (default: factory/workflow/contributed/)"
     )
+
+    # doctor
+    p = wf_sub.add_parser("doctor", help="Validate all workflows and report status")
+    p.add_argument("--project-path", default=None, help="Project path for local workflow discovery")
 
     # tool
     p_tool = wf_sub.add_parser("tool", help="Tool-based workflow execution")

@@ -65,6 +65,8 @@ The same graph definition produces two execution formats:
 - **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
 - **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
+**Workflow plugins:** Workflows can be extended via pip-installable packages registering under the `factory.workflows` entry_points group, or local `.py` files dropped into `~/.factory/workflows/` or `<project>/.factory/workflows/`. `WorkflowManifest` (`factory/workflow/manifest.py`) provides plugin metadata, namespace enforcement, version compatibility checks, and capability validation. Third-party plugins declaring the `agent_only` capability are restricted to `AgentNode`-only graphs (no `FnNode` shell execution). Discovery uses dual mechanisms: directory-scan for local files and `importlib.metadata.entry_points` for installed packages. The `WorkflowRegistry` (`factory/workflow/registry.py`) manages discovery, validation, and lookup across all sources.
+
 ### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
 
 The CEO prompt is split into two parts:
@@ -91,7 +93,8 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
 9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 10. **Adversarial** (`factory/adversarial.py`): GAN-style adversarial eval loop state machine — phase transitions with hysteresis, per-role streak counters, convergence detection. State persisted at `.factory/adversarial_state.json`
-11. **Contained** (`factory/contained/` + `factory/podman.py` + `factory/cli/contained.py`): `factory contained [runtime flags] -- <any factory command>` runs the factory in a podman container (`--target local`) or a cluster pod (`--target k8s`). See "Contained runtimes" below.
+11. **Workflow plugins** (`factory/workflow/manifest.py` + `factory/workflow/registry.py`): `WorkflowManifest` model for plugin metadata and capability validation. `WorkflowRegistry` discovers workflows via dual mechanisms: directory-scan (`~/.factory/workflows/`, `<project>/.factory/workflows/`) and `importlib.metadata.entry_points(group="factory.workflows")` for pip-installed packages
+12. **Contained** (`factory/contained/` + `factory/podman.py` + `factory/cli/contained.py`): `factory contained [runtime flags] -- <any factory command>` runs the factory in a podman container (`--target local`) or a cluster pod (`--target k8s`). See "Contained runtimes" below.
 
 ### Target project's `.factory/` layout
 
@@ -117,7 +120,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 
 ### Models
 
-All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. `WorkflowManifest` lives in `factory/workflow/manifest.py` — plugin metadata, namespace, version compatibility, and capabilities (`agent_only`, `shell_exec`). The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
 
 ## Environment
 
@@ -265,6 +268,11 @@ factory backlog-remove /path "item text"        # Remove a completed backlog ite
 # Adversarial eval loops
 factory adversarial-state /path/to/project           # Inspect adversarial loop state
 factory adversarial-state /path/to/project --reset   # Reset to defaults
+
+# Workflow plugins
+factory workflow list --plugins          # List only plugin (non-builtin) workflows
+factory workflow list --format json      # Machine-readable output
+factory workflow doctor                  # Validate all discovered workflows
 
 # Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420

@@ -965,7 +965,8 @@ def export_all_skills(
         templatized = workflow_to_skill_md(wf)
         clean_md, annotations = split_skill(templatized)
 
-        skill_dir = output_dir / f"workflow-{name}"
+        dir_name = f"workflow-{name.replace(':', '-')}"
+        skill_dir = output_dir / dir_name
         skill_dir.mkdir(parents=True, exist_ok=True)
 
         skill_path = skill_dir / "SKILL.md"

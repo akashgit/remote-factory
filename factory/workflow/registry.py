@@ -18,6 +18,7 @@ from typing import Any
 
 import structlog
 
+from factory.workflow.manifest import WorkflowManifest
 from factory.workflow.primitives import Workflow
 
 log = structlog.get_logger()
@@ -30,7 +31,9 @@ class WorkflowEntry:
     name: str
     description: str
     path: str
-    source: str  # "builtin", "user", "project"
+    source: str  # "builtin", "user", "project", "entry_point"
+    manifest: WorkflowManifest | None = None
+    package_name: str | None = None
     _workflow_fn: Any = field(default=None, repr=False)
 
 
@@ -40,6 +43,8 @@ class WorkflowRegistry:
     Search paths are scanned for .py files with a `meta` dict and
     `workflow()` function. Built-in workflows from `definitions.py`
     are always available as the lowest-priority source.
+
+    Priority: project > user > entry-points > builtin
     """
 
     _entries: dict[str, WorkflowEntry] = {}
@@ -79,7 +84,7 @@ class WorkflowRegistry:
         Returns
         -------
         dict[str, WorkflowEntry]
-            Name → entry mapping. Project shadows user shadows built-in.
+            Name → entry mapping. Project shadows user shadows entry-point shadows built-in.
         """
         cls._ensure_initialized()
         cls._entries.clear()
@@ -87,18 +92,21 @@ class WorkflowRegistry:
         # Layer 1: built-in workflows (lowest priority)
         cls._load_builtins()
 
-        # Layer 2: user-global workflows
+        # Layer 2: entry-point workflows
+        cls._discover_entry_points()
+
+        # Layer 3: user-global workflows
         for search_path, source in cls._search_paths:
             if source == "user":
                 cls._discover_in_directory(search_path, source)
 
-        # Layer 3: project-local workflows (highest priority)
+        # Layer 4: project-local workflows (highest priority)
         if project_path:
             project_wf_dir = project_path / ".factory" / "workflows"
             if project_wf_dir.is_dir():
                 cls._discover_in_directory(str(project_wf_dir), "project")
 
-        # Layer 4: any explicitly registered paths
+        # Layer 5: any explicitly registered paths
         for search_path, source in cls._search_paths:
             if source not in ("user",):
                 cls._discover_in_directory(search_path, source)
@@ -127,6 +135,107 @@ class WorkflowRegistry:
             )
 
     @classmethod
+    def _discover_entry_points(cls) -> None:
+        """Discover workflows from installed packages via entry points."""
+        try:
+            from importlib.metadata import entry_points
+            eps = entry_points(group="factory.workflows")
+        except Exception:
+            return
+
+        for ep in eps:
+            try:
+                module = ep.load()
+                meta = getattr(module, "meta", None)
+                workflow_fn = getattr(module, "workflow", None)
+
+                if not isinstance(meta, dict) or "name" not in meta:
+                    log.debug(
+                        "workflow_registry.entry_point_skip",
+                        entry_point=ep.name,
+                        reason="missing meta dict with name",
+                    )
+                    continue
+
+                if not callable(workflow_fn):
+                    log.debug(
+                        "workflow_registry.entry_point_skip",
+                        entry_point=ep.name,
+                        reason="missing workflow() function",
+                    )
+                    continue
+
+                name = meta["name"]
+
+                from factory.workflow.manifest import (
+                    check_version_compatibility,
+                    manifest_from_meta,
+                    validate_namespace,
+                )
+
+                ns_issues = validate_namespace(name, "entry_point")
+                if ns_issues:
+                    for issue in ns_issues:
+                        log.warning("workflow_registry.namespace_violation", issue=issue)
+                    continue
+
+                manifest = manifest_from_meta(meta, strict=False)
+                version_issues = check_version_compatibility(manifest)
+                if version_issues:
+                    for issue in version_issues:
+                        log.warning("workflow_registry.version_incompatible", issue=issue)
+                    continue
+
+                # Validate graph at discovery time
+                graph_issues = _validate_workflow_graph(workflow_fn, name)
+                if graph_issues:
+                    for issue in graph_issues:
+                        log.warning("workflow_registry.graph_invalid", name=name, issue=issue)
+                    continue
+
+                # Validate capabilities
+                node_types = _get_node_types(workflow_fn, name)
+                from factory.workflow.manifest import validate_capabilities
+                cap_issues = validate_capabilities(manifest, node_types)
+                if cap_issues:
+                    for issue in cap_issues:
+                        log.warning("workflow_registry.capability_violation", issue=issue)
+                    continue
+
+                prev = cls._entries.get(name)
+                if prev and prev.source not in ("builtin",):
+                    log.warning(
+                        "workflow_registry.shadow",
+                        name=name,
+                        new_source="entry_point",
+                        old_source=prev.source,
+                    )
+
+                pkg_name = ep.dist.name if ep.dist else None
+
+                cls._entries[name] = WorkflowEntry(
+                    name=name,
+                    description=meta.get("description", ""),
+                    path=f"<entry_point:{ep.name}>",
+                    source="entry_point",
+                    manifest=manifest,
+                    package_name=pkg_name,
+                    _workflow_fn=workflow_fn,
+                )
+                log.debug(
+                    "workflow_registry.entry_point_loaded",
+                    name=name,
+                    entry_point=ep.name,
+                    package=pkg_name,
+                )
+            except Exception as exc:
+                log.debug(
+                    "workflow_registry.entry_point_error",
+                    entry_point=ep.name,
+                    error=str(exc),
+                )
+
+    @classmethod
     def _discover_in_directory(cls, directory: str, source: str) -> None:
         """Discover workflow files in a directory."""
         path = Path(directory)
@@ -139,6 +248,42 @@ class WorkflowRegistry:
             try:
                 meta, workflow_fn = _load_workflow_file(py_file)
                 name = meta["name"]
+
+                from factory.workflow.manifest import (
+                    check_version_compatibility,
+                    manifest_from_meta,
+                    validate_namespace,
+                )
+
+                ns_issues = validate_namespace(name, source)
+                if ns_issues:
+                    for issue in ns_issues:
+                        log.warning("workflow_registry.namespace_violation", issue=issue)
+                    continue
+
+                is_strict = source == "entry_point"
+                manifest = manifest_from_meta(meta, strict=is_strict)
+
+                version_issues = check_version_compatibility(manifest)
+                if version_issues:
+                    for issue in version_issues:
+                        log.warning("workflow_registry.version_incompatible", issue=issue)
+                    continue
+
+                graph_issues = _validate_workflow_graph(workflow_fn, name)
+                if graph_issues:
+                    for issue in graph_issues:
+                        log.warning("workflow_registry.graph_invalid", name=name, issue=issue)
+                    continue
+
+                node_types = _get_node_types(workflow_fn, name)
+                from factory.workflow.manifest import validate_capabilities
+                cap_issues = validate_capabilities(manifest, node_types)
+                if cap_issues:
+                    for issue in cap_issues:
+                        log.warning("workflow_registry.capability_violation", issue=issue)
+                    continue
+
                 prev = cls._entries.get(name)
                 if prev and prev.source != "builtin":
                     log.warning(
@@ -152,6 +297,7 @@ class WorkflowRegistry:
                     description=meta.get("description", ""),
                     path=str(py_file),
                     source=source,
+                    manifest=manifest,
                     _workflow_fn=workflow_fn,
                 )
                 log.debug(
@@ -182,11 +328,25 @@ class WorkflowRegistry:
         return entry._workflow_fn()
 
     @classmethod
-    def list_workflows(cls, project_path: Path | None = None) -> list[WorkflowEntry]:
-        """List all discovered workflows."""
+    def list_workflows(
+        cls,
+        project_path: Path | None = None,
+        *,
+        plugins_only: bool = False,
+    ) -> list[WorkflowEntry]:
+        """List all discovered workflows.
+
+        Parameters
+        ----------
+        plugins_only : bool
+            If True, only return entry-point (plugin) workflows.
+        """
         if not cls._entries:
             cls.discover(project_path)
-        return sorted(cls._entries.values(), key=lambda e: (e.source != "builtin", e.name))
+        result = list(cls._entries.values())
+        if plugins_only:
+            result = [e for e in result if e.source == "entry_point"]
+        return sorted(result, key=lambda e: (e.source != "builtin", e.name))
 
 
 def _load_workflow_file(path: Path) -> tuple[dict[str, Any], Any]:
@@ -227,3 +387,25 @@ def _get_builtin_description(name: str) -> str:
 
     meta = WORKFLOW_META.get(name, {})
     return str(meta.get("description", f"Built-in {name} workflow"))
+
+
+def _validate_workflow_graph(workflow_fn: Any, name: str) -> list[str]:
+    """Validate the workflow graph at discovery time. Returns issues."""
+    try:
+        wf = workflow_fn()
+        if not isinstance(wf, Workflow):
+            return [f"workflow() for '{name}' did not return a Workflow object"]
+        return wf.validate_graph()
+    except Exception as exc:
+        return [f"workflow() for '{name}' raised: {exc}"]
+
+
+def _get_node_types(workflow_fn: Any, name: str) -> set[str]:
+    """Get the set of node type names in a workflow."""
+    try:
+        wf = workflow_fn()
+        if not isinstance(wf, Workflow):
+            return set()
+        return {type(node).__name__ for node in wf.nodes.values()}
+    except Exception:
+        return set()

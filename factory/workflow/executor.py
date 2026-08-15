@@ -42,6 +42,9 @@ from factory.workflow.primitives import (
 
 log = structlog.get_logger()
 
+MAX_GLOBAL_RELOOPS = 20
+MAX_NODE_TIMEOUT = 3600
+
 CEO_GATE_PROMPT = """\
 You are reviewing the output of the {step_name} step in the {workflow_name} workflow.
 The output is at: {output_file}
@@ -96,6 +99,7 @@ class WorkflowExecutor:
         self.iteration_counts: dict[tuple[str, str], int] = {}
         self.background_tasks: list[asyncio.Task[Any]] = []
         self.result = ExecutionResult()
+        self._global_reloop_count = 0
         self._edge_index: dict[str, list[Edge]] = {}
         for edge in workflow.edges:
             self._edge_index.setdefault(edge.source, []).append(edge)
@@ -381,6 +385,14 @@ class WorkflowExecutor:
             if not target:
                 self.result.halted = True
                 self.result.halt_reason = "reloop verdict missing target"
+                return
+
+            self._global_reloop_count += 1
+            if self._global_reloop_count > MAX_GLOBAL_RELOOPS:
+                self.result.halted = True
+                self.result.halt_reason = (
+                    f"global reloop ceiling ({MAX_GLOBAL_RELOOPS}) exceeded"
+                )
                 return
 
             key = (node_id, target)
@@ -832,12 +844,22 @@ class WorkflowExecutor:
             if pool_entry:
                 timeout = pool_entry.timeout
 
+        effective_timeout = float(timeout) if timeout is not None else 600.0
+        if effective_timeout > MAX_NODE_TIMEOUT:
+            log.warning(
+                "executor.timeout_capped",
+                node=node.id,
+                requested=effective_timeout,
+                capped_to=MAX_NODE_TIMEOUT,
+            )
+            effective_timeout = float(MAX_NODE_TIMEOUT)
+
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
             model=model or None,
-            timeout=float(timeout) if timeout is not None else 600.0,
+            timeout=effective_timeout,
         )
 
         if code != 0:
