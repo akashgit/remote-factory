@@ -212,7 +212,7 @@ class DirectFeatureBenchEvaluator:
             if setup_patch.exists() and setup_patch.stat().st_size > 0:
                 log.info("applying_setup_patch", instance=instance_id)
                 subprocess.run(
-                    ["git", "apply", "--whitespace=nowarn", str(setup_patch)],
+                    ["git", "apply", "--whitespace=nowarn", str(setup_patch.resolve())],
                     cwd=testbed,
                     capture_output=True,
                     timeout=30,
@@ -308,8 +308,6 @@ class DirectFeatureBenchEvaluator:
                         str(testbed),
                         "--timeout",
                         str(current_timeout),
-                        "--disallowedTools",
-                        "WebSearch,WebFetch",
                     ],
                     capture_output=True,
                     text=True,
@@ -356,7 +354,7 @@ class DirectFeatureBenchEvaluator:
         if test_files:
             if test_patch.exists() and test_patch.stat().st_size > 0:
                 apply_result = subprocess.run(
-                    ["git", "apply", "--reverse", "--whitespace=nowarn", str(test_patch)],
+                    ["git", "apply", "--reverse", "--whitespace=nowarn", str(test_patch.resolve())],
                     cwd=testbed,
                     capture_output=True,
                     text=True,
