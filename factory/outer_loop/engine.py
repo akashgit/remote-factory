@@ -305,6 +305,20 @@ class SwarmEngine:
             novel_count=novel_count,
         )
 
+        # Holdout evaluation for best candidate
+        holdout_score = 0.0
+        if best and self._config.holdout_instances:
+            best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
+            holdout_result = self._evaluator.evaluate(best_wf, project_dir, self._config.holdout_instances)
+            holdout_score = holdout_result.score
+            self._budget.consume(1, cost_usd=holdout_result.cost_usd)
+            log.info(
+                "holdout_eval",
+                generation=generation,
+                holdout_score=holdout_score,
+                training_best=best_score,
+            )
+
         return GenerationSummary(
             generation=generation,
             population_size=population.size,
@@ -314,6 +328,7 @@ class SwarmEngine:
             mutations_applied=mutations_applied,
             novel_count=novel_count,
             rejected_duplicates=rejected_dupes,
+            holdout_score=holdout_score,
             hyperparameters=hp_record,
         )
 

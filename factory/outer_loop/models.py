@@ -137,6 +137,7 @@ class GenerationSummary(BaseModel):
     mutations_applied: list[MutationRecord] = Field(default_factory=list)
     novel_count: int = 0
     rejected_duplicates: int = 0
+    holdout_score: float = 0.0
     hyperparameters: HyperparameterRecord | None = None
 
 

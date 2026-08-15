@@ -283,6 +283,8 @@ class DirectFeatureBenchEvaluator:
                         str(testbed),
                         "--timeout",
                         str(timeout),
+                        "--disallowedTools",
+                        "WebSearch,WebFetch",
                     ],
                     capture_output=True,
                     text=True,
