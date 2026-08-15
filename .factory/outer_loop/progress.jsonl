@@ -1,0 +1,23 @@
+{"event_type": "calibration_start", "instances": 10, "timestamp": "2026-08-15T22:16:43"}
+{"event_type": "cal_instance_start", "instance": "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1", "index": 1, "timestamp": "2026-08-15T22:16:43"}
+{"event_type": "cal_instance_done", "instance": "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1", "score": 1.0, "elapsed": 518.5, "timestamp": "2026-08-15T22:25:22"}
+{"event_type": "cal_instance_start", "instance": "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv1", "index": 2, "timestamp": "2026-08-15T22:25:22"}
+{"event_type": "cal_instance_done", "instance": "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv1", "score": 1.0, "elapsed": 242.2, "timestamp": "2026-08-15T22:29:24"}
+{"event_type": "cal_instance_start", "instance": "pandas-dev__pandas.82fa2715.test_col.a592871d.lv1", "index": 3, "timestamp": "2026-08-15T22:29:24"}
+{"event_type": "cal_instance_done", "instance": "pandas-dev__pandas.82fa2715.test_col.a592871d.lv1", "score": 1.0, "elapsed": 307.5, "timestamp": "2026-08-15T22:34:31"}
+{"event_type": "cal_instance_start", "instance": "mwaskom__seaborn.7001ebe7.test_bar.123ed709.lv1", "index": 4, "timestamp": "2026-08-15T22:34:31"}
+{"event_type": "cal_instance_done", "instance": "mwaskom__seaborn.7001ebe7.test_bar.123ed709.lv1", "score": 1.0, "elapsed": 319.5, "timestamp": "2026-08-15T22:39:51"}
+{"event_type": "cal_instance_start", "instance": "sphinx-doc__sphinx.e347e59c.test_build_gettext.2721e644.lv1", "index": 5, "timestamp": "2026-08-15T22:39:51"}
+{"event_type": "cal_instance_done", "instance": "sphinx-doc__sphinx.e347e59c.test_build_gettext.2721e644.lv1", "score": 1.0, "elapsed": 1006.9, "timestamp": "2026-08-15T22:56:38"}
+{"event_type": "cal_instance_start", "instance": "matplotlib__matplotlib.86a476d2.test_backend_registry.872ba384.lv1", "index": 6, "timestamp": "2026-08-15T22:56:38"}
+{"event_type": "cal_instance_done", "instance": "matplotlib__matplotlib.86a476d2.test_backend_registry.872ba384.lv1", "score": 1.0, "elapsed": 410.6, "timestamp": "2026-08-15T23:03:28"}
+{"event_type": "cal_instance_start", "instance": "sympy__sympy.c1097516.test_inverse.c240ffe7.lv1", "index": 7, "timestamp": "2026-08-15T23:03:28"}
+{"event_type": "cal_instance_start", "instance": "sympy__sympy.c1097516.test_inverse.c240ffe7.lv1", "index": 7, "timestamp": "2026-08-15T23:05:40"}
+{"event_type": "cal_instance_done", "instance": "sympy__sympy.c1097516.test_inverse.c240ffe7.lv1", "score": 1.0, "elapsed": 31.4, "timestamp": "2026-08-15T23:06:12"}
+{"event_type": "cal_instance_start", "instance": "mlflow__mlflow.93dab383.test_abstract_store.e5ff5123.lv1", "index": 8, "timestamp": "2026-08-15T23:06:12"}
+{"event_type": "cal_instance_done", "instance": "mlflow__mlflow.93dab383.test_abstract_store.e5ff5123.lv1", "score": 1.0, "elapsed": 235.8, "timestamp": "2026-08-15T23:10:07"}
+{"event_type": "cal_instance_start", "instance": "pytest-dev__pytest.68016f0e.raises_group.c28bf36a.lv1", "index": 9, "timestamp": "2026-08-15T23:10:07"}
+{"event_type": "cal_instance_done", "instance": "pytest-dev__pytest.68016f0e.raises_group.c28bf36a.lv1", "score": 1.0, "elapsed": 79.2, "timestamp": "2026-08-15T23:11:27"}
+{"event_type": "cal_instance_start", "instance": "pypa__packaging.013f3b03.test_metadata.e00b5801.lv1", "index": 10, "timestamp": "2026-08-15T23:11:27"}
+{"event_type": "cal_instance_done", "instance": "pypa__packaging.013f3b03.test_metadata.e00b5801.lv1", "score": 1.0, "elapsed": 49.6, "timestamp": "2026-08-15T23:12:16"}
+{"event_type": "calibration_complete", "seed_score": 1.0, "resolved": 10, "total": 10, "training": 7, "holdout": 3, "timestamp": "2026-08-15T23:12:16"}
