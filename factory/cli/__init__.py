@@ -39,6 +39,7 @@ from factory.cli._tmux_commands import (
     cmd_tmux_stop as cmd_tmux_stop,
 )
 from factory.cli.mempalace import cmd_mempalace as cmd_mempalace
+from factory.cli.outer_loop import cmd_outer_loop as cmd_outer_loop
 from factory.cli.contained import (
     cmd_contained as cmd_contained,
 )
