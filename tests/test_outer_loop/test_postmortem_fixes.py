@@ -8,6 +8,7 @@ Covers all 10 fixes across 3 phases:
 
 from __future__ import annotations
 
+import random
 import re
 from unittest.mock import patch
 
@@ -430,6 +431,7 @@ class TestFix6PromptMutate:
         assert result is None
 
     def test_prompt_mutate_with_archive_prompts(self) -> None:
+        random.seed(42)
         wf = _make_workflow()
         archive_prompts = {
             "researcher": (
