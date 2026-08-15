@@ -349,18 +349,32 @@ class DirectFeatureBenchEvaluator:
         cid = cid_result.stdout.strip()
 
         try:
-            # 2. Copy modified testbed INTO the container
-            cp_result = subprocess.run(
-                ["docker", "cp", f"{testbed.resolve()}/.", f"{cid}:/testbed/"],
+            # 2. Copy only changed files into the container (avoids symlink conflicts
+            #    where docker cp fails with "cannot overwrite directory with non-directory")
+            diff_result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=testbed,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=30,
             )
-            if cp_result.returncode != 0:
-                log.error("docker_cp_verify_failed", stderr=cp_result.stderr)
-                return False
+            changed_files: list[str] = []
+            if diff_result.returncode == 0:
+                changed_files.extend(f for f in diff_result.stdout.strip().splitlines() if f)
 
-            # 3. Start the container
+            untracked_result = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=testbed,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if untracked_result.returncode == 0:
+                changed_files.extend(f for f in untracked_result.stdout.strip().splitlines() if f)
+
+            log.info("copying_changed_files", count=len(changed_files), task_dir=str(task_dir))
+
+            # Start container first so we can mkdir for new files
             start_result = subprocess.run(
                 ["docker", "start", cid],
                 capture_output=True,
@@ -371,7 +385,29 @@ class DirectFeatureBenchEvaluator:
                 log.error("docker_start_failed", stderr=start_result.stderr)
                 return False
 
-            # 4. Exec the test inside the container
+            parents_ensured: set[str] = set()
+            for rel_path in changed_files:
+                src = testbed / rel_path
+                if not src.exists() or not src.is_file():
+                    continue
+                parent = str(Path(rel_path).parent)
+                if parent and parent != "." and parent not in parents_ensured:
+                    subprocess.run(
+                        ["docker", "exec", cid, "mkdir", "-p", f"/testbed/{parent}"],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    parents_ensured.add(parent)
+                cp_result = subprocess.run(
+                    ["docker", "cp", str(src), f"{cid}:/testbed/{rel_path}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if cp_result.returncode != 0:
+                    log.warning("docker_cp_file_failed", file=rel_path, stderr=cp_result.stderr)
+
+            # 3. Exec the test inside the container
             script = (
                 f"source /opt/miniconda3/bin/activate testbed; "
                 f"cd /testbed; "
@@ -397,7 +433,7 @@ class DirectFeatureBenchEvaluator:
 
             return result.returncode == 0
         finally:
-            # 5. Cleanup: force-remove the container
+            # 4. Cleanup: force-remove the container
             subprocess.run(
                 ["docker", "rm", "-f", cid],
                 capture_output=True,
