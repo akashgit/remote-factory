@@ -44,7 +44,7 @@ def create_seed_workflow() -> Workflow:
             id="researcher",
             role=AgentRole.RESEARCHER,
             prompt_template=(
-                "Study the codebase and task. Read /tmp/task-instruction.md. "
+                "Study the codebase and task. Read task-instruction.md in the project root. "
                 "Explore the repository structure and identify files to modify. "
                 "Write findings to .factory/reviews/study-output.md."
             ),
@@ -56,7 +56,7 @@ def create_seed_workflow() -> Workflow:
             role=AgentRole.BUILDER,
             prompt_template=(
                 "You are implementing a new feature in a Python codebase.\n\n"
-                "1. Read the FULL task description at /tmp/task-instruction.md.\n"
+                "1. Read the FULL task description at task-instruction.md in the project root.\n"
                 "2. Read .factory/reviews/study-output.md for codebase context.\n"
                 "3. CRITICAL: Read the actual source code for every function, class, "
                 "or module you reference. Do NOT guess signatures or imports.\n"

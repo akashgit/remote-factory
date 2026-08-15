@@ -63,7 +63,7 @@ def cmd_outer_loop_calibrate(args: argparse.Namespace) -> int:
 
     seed_wf = create_seed_workflow()
     evaluator = DirectFeatureBenchEvaluator(
-        featurebench_dir=project / "featurebench",
+        featurebench_dir=project / "featurebench" / "featurebench",
         agent_timeout=timeout,
     )
 
@@ -158,7 +158,7 @@ def cmd_outer_loop_evolve(args: argparse.Namespace) -> int:
     )
 
     direct_eval = DirectFeatureBenchEvaluator(
-        featurebench_dir=project / "featurebench",
+        featurebench_dir=project / "featurebench" / "featurebench",
         agent_timeout=timeout,
     )
     evaluator = SwarmEvaluator(config=config, evaluator_fn=direct_eval)

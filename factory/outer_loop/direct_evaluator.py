@@ -24,7 +24,7 @@ from factory.workflow.primitives import AgentNode, ForkNode, GateNode, JoinNode,
 
 log = structlog.get_logger()
 
-_FEATUREBENCH_DIR = Path(__file__).resolve().parents[2] / "featurebench"
+_FEATUREBENCH_DIR = Path(__file__).resolve().parents[2] / "featurebench" / "featurebench"
 _PYTEST_F2P_RE = re.compile(r"pytest\s+(.+?)\s*>\s*/tmp/f2p_output")
 _PYTEST_P2P_RE = re.compile(r"pytest\s+(.+?)\s*>\s*/tmp/p2p_output")
 _INSTALL_RE = re.compile(r"#\s*Repo-specific install[^\n]*\n(pip install[^\n]+)")
