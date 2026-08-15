@@ -258,7 +258,27 @@ class SwarmEngine:
         project_dir: str,
     ) -> None:
         """Evaluate all individuals in the population on training instances."""
-        for ind in population.individuals:
+        individuals = [ind for ind in population.individuals if not self._budget.exhausted]
+
+        if self._config.parallelism > 1 and len(individuals) > 1:
+            workflows = [Workflow.from_dict(ind.workflow_data) for ind in individuals]  # type: ignore[arg-type]
+            results = self._evaluator.evaluate_batch(
+                workflows, project_dir, instances, parallelism=self._config.parallelism,
+            )
+            for ind, ev in zip(individuals, results):
+                self._budget.consume(1, cost_usd=ev.cost_usd)
+                instance_results = _extract_instance_results(ev)
+                updated = ind.model_copy(update={
+                    "score": ev.score,
+                    "cost_usd": ev.cost_usd,
+                    "instance_results": instance_results,
+                })
+                population.remove(ind.id)
+                population.add(updated)
+                self._archive.add(updated)
+            return
+
+        for ind in individuals:
             if self._budget.exhausted:
                 break
             wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]

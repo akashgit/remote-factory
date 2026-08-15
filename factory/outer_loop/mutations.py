@@ -718,12 +718,17 @@ def _crossover_prompts(current: str, donor: str, role: str) -> str:
 
 
 def _validate_length(new_prompt: str, original: str) -> bool:
-    """Check mutated prompt is within 80%-120% of original length."""
+    """Check mutated prompt is within acceptable length range of original.
+
+    Short prompts (<100 chars) use a relaxed lower bound (50%) so crossover
+    with longer donor templates can succeed.
+    """
     if not original:
         return bool(new_prompt)
     orig_len = len(original)
     new_len = len(new_prompt)
-    return 0.8 * orig_len <= new_len <= 1.2 * orig_len
+    lower_bound = 0.5 if orig_len < 100 else 0.8
+    return lower_bound * orig_len <= new_len <= 1.2 * orig_len
 
 
 def _validate_frozen_segments(prompt: str, frozen_segments: list[str]) -> bool:

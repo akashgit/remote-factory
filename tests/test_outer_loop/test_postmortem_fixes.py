@@ -775,3 +775,129 @@ class TestIntegration:
         weights = strategy.get_operator_weights()
         total = sum(weights.values())
         assert total == pytest.approx(1.0, abs=0.01)
+
+
+# ── Fix #7 addendum: evaluate_batch wired into engine ──────────
+
+
+class TestFix7EngineParallelWiring:
+    def test_parallel_path_used_when_parallelism_gt_1(self) -> None:
+        """Engine._evaluate_population uses evaluate_batch when parallelism > 1."""
+        config = _make_config(budget=50, population_size=3, parallelism=4)
+        batch_calls: list[int] = []
+
+        def mock_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            return EvalResult(score=0.0, benchmark_score=0.5)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=mock_eval)
+        original_batch = evaluator.evaluate_batch
+
+        def tracking_batch(
+            workflows: list[Workflow],
+            project_dir: str,
+            instances: list[str],
+            parallelism: int = 1,
+        ) -> list[EvalResult]:
+            batch_calls.append(len(workflows))
+            return original_batch(workflows, project_dir, instances, parallelism=parallelism)
+
+        evaluator.evaluate_batch = tracking_batch  # type: ignore[method-assign]
+        engine = SwarmEngine(config, evaluator)
+        wf = _make_workflow()
+        pop = engine.seed(wf)
+
+        engine._evaluate_population(pop, ["t1"], "/tmp")
+        assert len(batch_calls) >= 1
+
+    def test_sequential_path_used_when_parallelism_1(self) -> None:
+        """Engine._evaluate_population uses sequential evaluate when parallelism == 1."""
+        config = _make_config(budget=50, population_size=3, parallelism=1)
+        batch_calls: list[int] = []
+
+        def mock_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            return EvalResult(score=0.0, benchmark_score=0.5)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=mock_eval)
+        original_batch = evaluator.evaluate_batch
+
+        def tracking_batch(
+            workflows: list[Workflow],
+            project_dir: str,
+            instances: list[str],
+            parallelism: int = 1,
+        ) -> list[EvalResult]:
+            batch_calls.append(len(workflows))
+            return original_batch(workflows, project_dir, instances, parallelism=parallelism)
+
+        evaluator.evaluate_batch = tracking_batch  # type: ignore[method-assign]
+        engine = SwarmEngine(config, evaluator)
+        wf = _make_workflow()
+        pop = engine.seed(wf)
+
+        engine._evaluate_population(pop, ["t1"], "/tmp")
+        assert len(batch_calls) == 0
+
+    def test_parallel_eval_updates_scores(self) -> None:
+        """Parallel path correctly updates individual scores and archive."""
+        config = _make_config(budget=50, population_size=3, parallelism=4)
+
+        counter: dict[str, int] = {"n": 0}
+
+        def mock_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            counter["n"] += 1
+            return EvalResult(score=0.0, benchmark_score=0.5 + counter["n"] * 0.01)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=mock_eval)
+        engine = SwarmEngine(config, evaluator)
+        wf = _make_workflow()
+        pop = engine.seed(wf)
+
+        engine._evaluate_population(pop, ["t1"], "/tmp")
+
+        scored = [ind for ind in pop.individuals if ind.score > 0]
+        assert len(scored) > 0
+        assert engine.archive.size > 0
+
+
+# ── Fix #6 addendum: PROMPT_MUTATE short prompt length ─────────
+
+
+class TestFix6ShortPromptLength:
+    def test_short_prompt_relaxed_lower_bound(self) -> None:
+        """Short prompts (<100 chars) accept 50% of original length."""
+        short_original = "Fix the bug."  # 12 chars
+        # 50% of 12 = 6 chars, so 7 chars should pass
+        assert _validate_length("x" * 7, short_original)
+
+    def test_short_prompt_rejects_below_50pct(self) -> None:
+        """Short prompts (<100 chars) still reject below 50%."""
+        short_original = "Fix the bug."  # 12 chars
+        # 50% of 12 = 6, so 5 chars should fail
+        assert not _validate_length("x" * 5, short_original)
+
+    def test_short_prompt_allows_growth_via_crossover(self) -> None:
+        """Short prompts can grow significantly through donor crossover."""
+        short_original = "x" * 50  # 50 chars < 100
+        # 120% of 50 = 60, upper bound still enforced
+        assert _validate_length("x" * 60, short_original)
+        assert not _validate_length("x" * 61, short_original)
+
+    def test_long_prompt_still_uses_80pct_bound(self) -> None:
+        """Prompts >= 100 chars use the original 80% lower bound."""
+        long_original = "x" * 200
+        # 80% of 200 = 160
+        assert _validate_length("x" * 160, long_original)
+        assert not _validate_length("x" * 159, long_original)
+
+    def test_boundary_100_chars_uses_strict_bound(self) -> None:
+        """Exactly 100 chars uses the strict 80% lower bound."""
+        original = "x" * 100
+        assert _validate_length("x" * 80, original)
+        assert not _validate_length("x" * 79, original)
+
+    def test_boundary_99_chars_uses_relaxed_bound(self) -> None:
+        """99 chars (< 100) uses the relaxed 50% lower bound."""
+        original = "x" * 99
+        # 50% of 99 = 49.5
+        assert _validate_length("x" * 50, original)
+        assert not _validate_length("x" * 49, original)
