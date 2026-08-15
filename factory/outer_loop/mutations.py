@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import random
 from typing import Protocol, runtime_checkable
 
 import networkx as nx
 import structlog
 
+from factory.outer_loop.designer import populate_prompt
 from factory.outer_loop.models import MutationRecord, MutationType
 from factory.workflow.primitives import (
     AgentNode,
@@ -20,6 +22,14 @@ from factory.workflow.primitives import (
 )
 
 log = structlog.get_logger()
+
+_FROZEN_SEGMENT_PATTERNS = [
+    re.compile(r"MUST\s+NOT", re.IGNORECASE),
+    re.compile(r"MUST\s+", re.IGNORECASE),
+    re.compile(r"FORBIDDEN", re.IGNORECASE),
+    re.compile(r"DO\s+NOT", re.IGNORECASE),
+    re.compile(r"NEVER\s+", re.IGNORECASE),
+]
 
 
 @runtime_checkable
@@ -45,12 +55,13 @@ class WeightedRandomStrategy:
         designer_ratio: float = 0.3,
     ) -> None:
         self.weights = weights or {
-            MutationType.NODE_INSERT.value: 0.2,
+            MutationType.NODE_INSERT.value: 0.15,
             MutationType.NODE_REMOVE.value: 0.15,
             MutationType.EDGE_REDIRECT.value: 0.2,
             MutationType.PARALLELIZE.value: 0.15,
             MutationType.SERIALIZE.value: 0.1,
-            MutationType.PARAM_MUTATE.value: 0.2,
+            MutationType.PARAM_MUTATE.value: 0.1,
+            MutationType.PROMPT_MUTATE.value: 0.15,
         }
         self._mutation_rate = mutation_rate
         self._designer_ratio = designer_ratio
@@ -500,10 +511,35 @@ def _try_mutation(
     if op == MutationType.NODE_INSERT:
         target = random.choice(list(workflow.nodes.keys()))
         new_id = f"agent_{random.randint(100, 999)}"
-        roles = list(AgentRole)
+
+        target_node = workflow.nodes.get(target)
+        outgoing = [e.target for e in workflow.edges if e.source == target]
+        next_node = workflow.nodes.get(outgoing[0]) if outgoing else None
+
+        next_is_builder = (
+            next_node is not None
+            and hasattr(next_node, "role")
+            and next_node.role == AgentRole.BUILDER  # type: ignore[union-attr]
+        )
+        target_is_builder = (
+            target_node is not None
+            and hasattr(target_node, "role")
+            and target_node.role == AgentRole.BUILDER  # type: ignore[union-attr]
+        )
+
+        if next_is_builder:
+            role = AgentRole.RESEARCHER
+        elif target_is_builder:
+            role = AgentRole.HEALTH_CHECKER
+        else:
+            role = random.choice([AgentRole.RESEARCHER, AgentRole.BUILDER, AgentRole.HEALTH_CHECKER])
+
+        prompt = populate_prompt(role.value, "featurebench")
+
         new_node = AgentNode(
             id=new_id,
-            role=random.choice(roles),
+            role=role,
+            prompt_template=prompt,
         )
         return insert_node(workflow, new_node, target, frozen_nodes=frozen)
 
@@ -554,4 +590,147 @@ def _try_mutation(
             changes = {"model": random.choice(["sonnet", "opus", "haiku"])}
         return mutate_params(workflow, target, changes, frozen_nodes=frozen)
 
+    elif op == MutationType.PROMPT_MUTATE:
+        agent_nodes = [
+            nid for nid in workflow.nodes
+            if type(workflow.nodes[nid]).__name__ == "AgentNode" and nid not in frozen
+        ]
+        if not agent_nodes:
+            return None
+        count = min(random.randint(1, 3), len(agent_nodes))
+        targets = random.sample(agent_nodes, count)
+        return prompt_mutate(workflow, targets, frozen_nodes=frozen)
+
     return None
+
+
+def prompt_mutate(
+    workflow: Workflow,
+    target_node_ids: list[str],
+    *,
+    frozen_nodes: set[str] | None = None,
+    archive_best_prompts: dict[str, str] | None = None,
+) -> tuple[Workflow, MutationRecord] | None:
+    """Mutate prompts on selected AgentNodes using EvoPrompt-style crossover.
+
+    Combines the current prompt with a donor prompt (from archive or template),
+    preserving frozen segments (MUST/MUST NOT/FORBIDDEN/NEVER).
+    """
+    frozen = frozen_nodes or set()
+    wf = _deep_copy_workflow(workflow)
+    mutated_nodes: list[str] = []
+
+    for node_id in target_node_ids:
+        if node_id in frozen or node_id not in wf.nodes:
+            continue
+        node = wf.nodes[node_id]
+        if type(node).__name__ != "AgentNode":
+            continue
+
+        agent_node: AgentNode = node  # type: ignore[assignment]
+        original_prompt = agent_node.prompt_template or ""
+        role_name = agent_node.role.value
+
+        donor_prompt = ""
+        if archive_best_prompts and role_name in archive_best_prompts:
+            donor_prompt = archive_best_prompts[role_name]
+        else:
+            donor_prompt = populate_prompt(role_name, "featurebench")
+
+        frozen_segments = _extract_frozen_segments(original_prompt)
+
+        new_prompt = _crossover_prompts(original_prompt, donor_prompt, role_name)
+
+        if not _validate_length(new_prompt, original_prompt):
+            continue
+
+        if not _validate_frozen_segments(new_prompt, frozen_segments):
+            for seg in frozen_segments:
+                if seg not in new_prompt:
+                    new_prompt = new_prompt.rstrip(". ") + ". " + seg
+            if not _validate_frozen_segments(new_prompt, frozen_segments):
+                continue
+
+        wf.nodes[node_id] = agent_node.model_copy(  # type: ignore[assignment]
+            update={"prompt_template": new_prompt}
+        )
+        mutated_nodes.append(node_id)
+
+    if not mutated_nodes:
+        return None
+
+    result = validate_and_repair(wf)
+    if result is None:
+        return None
+
+    record = MutationRecord(
+        operator=MutationType.PROMPT_MUTATE,
+        target_node=mutated_nodes[0] if len(mutated_nodes) == 1 else None,
+        before={"nodes": mutated_nodes},
+        after={"mutated_count": len(mutated_nodes)},
+        rationale=f"Prompt mutation on {mutated_nodes}",
+    )
+    return result, record
+
+
+def _extract_frozen_segments(prompt: str) -> list[str]:
+    """Extract frozen segments (MUST, MUST NOT, FORBIDDEN, etc.) from a prompt."""
+    segments: list[str] = []
+    for pattern in _FROZEN_SEGMENT_PATTERNS:
+        for match in pattern.finditer(prompt):
+            start = max(0, prompt.rfind(".", 0, match.start()) + 1)
+            end = prompt.find(".", match.end())
+            if end == -1:
+                end = len(prompt)
+            else:
+                end += 1
+            segment = prompt[start:end].strip()
+            if segment and segment not in segments:
+                segments.append(segment)
+    return segments
+
+
+def _crossover_prompts(current: str, donor: str, role: str) -> str:
+    """EvoPrompt-style crossover: combine ideas from current and donor prompts."""
+    if not current:
+        return donor
+    if not donor:
+        return current
+
+    current_sentences = [s.strip() for s in current.split(".") if s.strip()]
+    donor_sentences = [s.strip() for s in donor.split(".") if s.strip()]
+
+    result_sentences: list[str] = []
+
+    max_len = max(len(current_sentences), len(donor_sentences))
+    for i in range(max_len):
+        if i < len(current_sentences) and i < len(donor_sentences):
+            if random.random() < 0.5:
+                result_sentences.append(current_sentences[i])
+            else:
+                result_sentences.append(donor_sentences[i])
+        elif i < len(current_sentences):
+            result_sentences.append(current_sentences[i])
+        else:
+            result_sentences.append(donor_sentences[i])
+
+    return ". ".join(result_sentences) + "."
+
+
+def _validate_length(new_prompt: str, original: str) -> bool:
+    """Check mutated prompt is within acceptable length range of original.
+
+    Short prompts (<100 chars) use a relaxed lower bound (50%) so crossover
+    with longer donor templates can succeed.
+    """
+    if not original:
+        return bool(new_prompt)
+    orig_len = len(original)
+    new_len = len(new_prompt)
+    lower_bound = 0.5 if orig_len < 100 else 0.8
+    return lower_bound * orig_len <= new_len <= 1.2 * orig_len
+
+
+def _validate_frozen_segments(prompt: str, frozen_segments: list[str]) -> bool:
+    """Verify all frozen segments survive in the mutated prompt."""
+    return all(seg in prompt for seg in frozen_segments)

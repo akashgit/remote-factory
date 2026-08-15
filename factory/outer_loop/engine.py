@@ -105,6 +105,7 @@ class SwarmEngine:
         self._budget = BudgetTracker(config.budget)
         self._archive = MAPElitesArchive()
         self._score_trajectory: list[float] = []
+        self._early_stop_reason: str | None = None
 
     @property
     def archive(self) -> MAPElitesArchive:
@@ -218,30 +219,137 @@ class SwarmEngine:
         generation: int,
         project_dir: str = "",
     ) -> GenerationSummary:
-        """Run one generation of evolution."""
+        """Run one generation of evolution.
+
+        Clean lifecycle: evaluate → holdout → select & mutate → log.
+        """
         instances = self._subset.select(
             self._config.training_instances, generation, self._budget.remaining
         )
 
-        # Evaluate current population
-        for ind in population.individuals:
+        # Step 1: Evaluate population on training set
+        self._evaluate_population(population, instances, project_dir)
+
+        # Step 2: Evaluate best on holdout
+        holdout_score, overfit_delta = self._evaluate_holdout(
+            population, generation, project_dir
+        )
+
+        # Step 3: Select parents and create offspring
+        mutations_applied, novel_count, rejected_dupes = self._select_and_mutate(
+            population, generation, instances, project_dir
+        )
+
+        # Step 4: Log generation summary
+        return self._log_generation(
+            population,
+            generation,
+            mutations_applied,
+            novel_count,
+            rejected_dupes,
+            holdout_score,
+            overfit_delta,
+        )
+
+    def _evaluate_population(
+        self,
+        population: Population,
+        instances: list[str],
+        project_dir: str,
+    ) -> None:
+        """Evaluate all individuals in the population on training instances."""
+        individuals = [ind for ind in population.individuals if not self._budget.exhausted]
+
+        if self._config.parallelism > 1 and len(individuals) > 1:
+            workflows = [Workflow.from_dict(ind.workflow_data) for ind in individuals]  # type: ignore[arg-type]
+            results = self._evaluator.evaluate_batch(
+                workflows, project_dir, instances, parallelism=self._config.parallelism,
+            )
+            for ind, ev in zip(individuals, results):
+                self._budget.consume(1, cost_usd=ev.cost_usd)
+                instance_results = _extract_instance_results(ev)
+                updated = ind.model_copy(update={
+                    "score": ev.score,
+                    "cost_usd": ev.cost_usd,
+                    "instance_results": instance_results,
+                })
+                population.remove(ind.id)
+                population.add(updated)
+                self._archive.add(updated)
+            return
+
+        for ind in individuals:
             if self._budget.exhausted:
                 break
             wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
             ev = self._evaluator.evaluate(wf, project_dir, instances)
             self._budget.consume(1, cost_usd=ev.cost_usd)
-            updated = ind.model_copy(update={"score": ev.score, "cost_usd": ev.cost_usd})
+
+            instance_results = _extract_instance_results(ev)
+            updated = ind.model_copy(update={
+                "score": ev.score,
+                "cost_usd": ev.cost_usd,
+                "instance_results": instance_results,
+            })
             population.remove(ind.id)
             population.add(updated)
             self._archive.add(updated)
 
-        # Select parents and create offspring
+    def _evaluate_holdout(
+        self,
+        population: Population,
+        generation: int,
+        project_dir: str,
+    ) -> tuple[float, float | None]:
+        """Evaluate best candidate on holdout set and track overfitting."""
+        best = population.best()
+        holdout_score = 0.0
+        overfit_delta: float | None = None
+
+        if best and self._config.holdout_instances:
+            best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
+            holdout_result = self._evaluator.evaluate(
+                best_wf, project_dir, self._config.holdout_instances
+            )
+            holdout_score = holdout_result.score
+            self._budget.consume(1, cost_usd=holdout_result.cost_usd)
+
+            audit = self._overfit.audit_generation(
+                generation, best.score, holdout_score,
+            )
+            overfit_delta = audit.delta
+
+            if self._overfit.should_early_stop():
+                self._early_stop_reason = "overfitting"
+                log.warning(
+                    "early_stop_overfitting",
+                    generation=generation,
+                    delta=overfit_delta,
+                )
+
+            log.info(
+                "holdout_eval",
+                generation=generation,
+                holdout_score=holdout_score,
+                training_best=best.score,
+                overfit_delta=overfit_delta,
+            )
+
+        return holdout_score, overfit_delta
+
+    def _select_and_mutate(
+        self,
+        population: Population,
+        generation: int,
+        instances: list[str],
+        project_dir: str,
+    ) -> tuple[list[MutationRecord], int, int]:
+        """Select parents, create and evaluate offspring."""
         mutations_applied: list[MutationRecord] = []
         novel_count = 0
         rejected_dupes = 0
         offspring: list[tuple[Workflow, MutationRecord, str]] = []
 
-        mutation_rate = self._strategy.get_mutation_rate(generation)
         for _ in range(self._config.population_size):
             parent = self._archive.sample_parent(self._config.tournament_size)
             if parent is None:
@@ -264,12 +372,13 @@ class SwarmEngine:
             else:
                 rejected_dupes += 1
 
-        # Evaluate offspring and add to population
         for child_wf, mutation_rec, parent_id in offspring:
             if self._budget.exhausted:
                 break
             eval_result = self._evaluator.evaluate(child_wf, project_dir, instances)
             self._budget.consume(1, cost_usd=eval_result.cost_usd)
+
+            instance_results = _extract_instance_results(eval_result)
             ind = Population.make_individual(
                 child_wf,
                 generation=generation,
@@ -278,15 +387,30 @@ class SwarmEngine:
                 score=eval_result.score,
                 cost_usd=eval_result.cost_usd,
             )
+            ind = ind.model_copy(update={"instance_results": instance_results})
             population.add(ind)
             self._archive.add(ind)
 
-        # Track best score
+        return mutations_applied, novel_count, rejected_dupes
+
+    def _log_generation(
+        self,
+        population: Population,
+        generation: int,
+        mutations_applied: list[MutationRecord],
+        novel_count: int,
+        rejected_dupes: int,
+        holdout_score: float,
+        overfit_delta: float | None,
+    ) -> GenerationSummary:
+        """Compute and return the generation summary."""
         best = population.best()
         best_score = best.score if best else 0.0
         mean_score = population.mean_score()
         diversity = self._archive.diversity_metric()
         self._score_trajectory.append(best_score)
+
+        mutation_rate = self._strategy.get_mutation_rate(generation)
 
         hp_record = HyperparameterRecord(
             generation=generation,
@@ -305,20 +429,6 @@ class SwarmEngine:
             novel_count=novel_count,
         )
 
-        # Holdout evaluation for best candidate
-        holdout_score = 0.0
-        if best and self._config.holdout_instances:
-            best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
-            holdout_result = self._evaluator.evaluate(best_wf, project_dir, self._config.holdout_instances)
-            holdout_score = holdout_result.score
-            self._budget.consume(1, cost_usd=holdout_result.cost_usd)
-            log.info(
-                "holdout_eval",
-                generation=generation,
-                holdout_score=holdout_score,
-                training_best=best_score,
-            )
-
         return GenerationSummary(
             generation=generation,
             population_size=population.size,
@@ -329,6 +439,7 @@ class SwarmEngine:
             novel_count=novel_count,
             rejected_duplicates=rejected_dupes,
             holdout_score=holdout_score,
+            overfit_delta=overfit_delta,
             hyperparameters=hp_record,
         )
 
@@ -405,11 +516,12 @@ class SwarmEngine:
     def _should_terminate(self, generation: int) -> bool:
         if self._budget.exhausted:
             return True
+        if self._early_stop_reason:
+            return True
         if self._config.target_score is not None and self._score_trajectory:
             if self._score_trajectory[-1] >= self._config.target_score:
                 return True
         if self._detect_plateau():
-            # Give one extra generation after plateau adaptation
             if len(self._score_trajectory) >= PLATEAU_WINDOW + 2:
                 recent = self._score_trajectory[-(PLATEAU_WINDOW + 2):]
                 if all(s <= recent[0] for s in recent[1:]):
@@ -419,9 +531,29 @@ class SwarmEngine:
     def _get_convergence_reason(self, generation: int) -> str:
         if self._budget.exhausted:
             return "budget_exhausted"
+        if self._early_stop_reason:
+            return self._early_stop_reason
         if self._config.target_score is not None and self._score_trajectory:
             if self._score_trajectory[-1] >= self._config.target_score:
                 return "target_score_reached"
         if self._detect_plateau():
             return "plateau"
         return "unknown"
+
+
+def _extract_instance_results(eval_result: object) -> dict[str, bool]:
+    """Extract per-instance pass/fail results from an EvalResult's details."""
+    from factory.outer_loop.models import EvalResult as EvalResultModel
+
+    if not isinstance(eval_result, EvalResultModel):
+        return {}
+    instances = eval_result.details.get("instances", {})
+    if not isinstance(instances, dict):
+        return {}
+    results: dict[str, bool] = {}
+    for iid, data in instances.items():
+        if isinstance(data, dict):
+            results[iid] = bool(data.get("resolved", False))
+        elif isinstance(data, bool):
+            results[iid] = data
+    return results

@@ -334,10 +334,11 @@ class DirectFeatureBenchEvaluator:
             log.error("no_test_target", task_dir=str(task_dir))
             return False
 
-        # 1. Create container (kept alive with sleep so we can exec into it)
+        # 1. Create container with network disabled to prevent answer leakage
         cid_result = subprocess.run(
             [
                 "docker", "create", "--platform", "linux/amd64",
+                "--network", "none",
                 image,
                 "bash", "-c", "sleep 600",
             ],

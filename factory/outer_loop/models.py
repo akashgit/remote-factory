@@ -16,6 +16,7 @@ class MutationType(str, Enum):
     PARALLELIZE = "parallelize"
     SERIALIZE = "serialize"
     PARAM_MUTATE = "param_mutate"
+    PROMPT_MUTATE = "prompt_mutate"
 
 
 class MutationRecord(BaseModel):
@@ -50,6 +51,7 @@ class Individual(BaseModel):
     parent_id: str | None = None
     mutation_record: MutationRecord | None = None
     cost_usd: float = 0.0
+    instance_results: dict[str, bool] = Field(default_factory=dict)
 
     @field_validator("features", mode="before")
     @classmethod
@@ -57,6 +59,12 @@ class Individual(BaseModel):
         if isinstance(v, list):
             return tuple(v)
         return v  # type: ignore[return-value]
+
+    def per_instance_summary(self) -> dict[str, int]:
+        """Return pass/fail counts from instance_results."""
+        passed = sum(1 for v in self.instance_results.values() if v)
+        failed = sum(1 for v in self.instance_results.values() if not v)
+        return {"passed": passed, "failed": failed, "total": len(self.instance_results)}
 
 
 class HyperparameterRecord(BaseModel):
@@ -96,6 +104,10 @@ class SwarmConfig(BaseModel):
     designer_count: int = 2
     training_instances: list[str] = Field(default_factory=list)
     holdout_instances: list[str] = Field(default_factory=list)
+    training_size: int = 10
+    holdout_size: int = 5
+    difficulty_range: tuple[float, float] = (0.3, 0.7)
+    parallelism: int = 4
 
     @field_validator("holdout_instances")
     @classmethod
@@ -138,6 +150,7 @@ class GenerationSummary(BaseModel):
     novel_count: int = 0
     rejected_duplicates: int = 0
     holdout_score: float = 0.0
+    overfit_delta: float | None = None
     hyperparameters: HyperparameterRecord | None = None
 
 

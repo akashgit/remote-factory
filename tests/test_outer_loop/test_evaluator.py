@@ -162,20 +162,19 @@ class TestSwarmEvaluator:
         assert len(results) == 2
         assert all(r.score > 0 for r in results)
 
-    def test_multi_metric_composition(self) -> None:
+    def test_raw_pass_rate_fitness(self) -> None:
         config = _make_config()
 
         def mock_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
             return EvalResult(
-                score=0.0, benchmark_score=1.0, hygiene_score=1.0,
+                score=0.0, benchmark_score=0.75, hygiene_score=1.0,
                 cost_usd=0.0, complexity=0.0,
             )
 
         evaluator = SwarmEvaluator(config, evaluator_fn=mock_eval)
         wf = _make_simple_workflow()
         result = evaluator.evaluate(wf, "/tmp/test", ["t1"])
-        # 0.6*1.0 + 0.2*1.0 + 0.1*(1-0) + 0.1*(1-0) = 1.0
-        assert result.score == 1.0
+        assert result.score == 0.75
 
     def test_no_evaluator_fn(self) -> None:
         config = _make_config()

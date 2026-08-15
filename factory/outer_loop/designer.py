@@ -3,8 +3,8 @@
 Design mode: creates from-scratch workflow designs (minimal, thorough, custom).
 Mutation mode: proposes targeted mutations based on failure telemetry.
 
-v1 uses deterministic templates. LLM integration comes when the outer loop
-runs against real benchmarks.
+Prompts are populated with benchmark-specific context so all designed workflows
+produce agents that reference task files, testbed paths, and test files.
 """
 
 from __future__ import annotations
@@ -23,12 +23,61 @@ from factory.workflow.primitives import (
 
 log = structlog.get_logger()
 
+_ROLE_PROMPT_TEMPLATES: dict[str, str] = {
+    "researcher": (
+        "Study the codebase at {{testbed_path}}. Read the issue at {{task_file}}. "
+        "Explore the repository structure, identify relevant files, and write "
+        "findings to .factory/strategy/research.md."
+    ),
+    "builder": (
+        "Read the task description at {{task_file}}. Read any prior research at "
+        ".factory/strategy/research.md. Implement the fix in the codebase at "
+        "{{testbed_path}}. Run pytest on {{test_file}} to verify. Fix any failures. "
+        "Commit your changes."
+    ),
+    "health_checker": (
+        "Run the test suite at {{test_file}} in the codebase at {{testbed_path}}. "
+        "Report results including pass/fail counts."
+    ),
+    "code_reviewer": (
+        "Review the changes made in {{testbed_path}} for the task described in "
+        "{{task_file}}. Check for correctness, edge cases, and style."
+    ),
+    "adversarial_tester": (
+        "Test the implementation in {{testbed_path}} adversarially. Try edge cases "
+        "and unexpected inputs. Run {{test_file}} and report any failures."
+    ),
+    "strategist": (
+        "Read the research at .factory/strategy/research.md and the task at "
+        "{{task_file}}. Formulate a strategy for solving the issue."
+    ),
+}
+
+
+def populate_prompt(role: str, benchmark_spec: str) -> str:
+    """Generate a role-specific functional prompt with benchmark context.
+
+    The benchmark_spec is used as-is for placeholder values when specific
+    paths are not known at design time.
+    """
+    template = _ROLE_PROMPT_TEMPLATES.get(role)
+    if template is None:
+        return f"Complete the {role} task for the benchmark: {benchmark_spec}"
+
+    return (
+        template
+        .replace("{{testbed_path}}", "/tmp/testbed")
+        .replace("{{task_file}}", "/tmp/testbed/task-instruction.md")
+        .replace("{{test_file}}", "the relevant test files")
+    )
+
 
 class DesignerAgent:
     """LLM-guided workflow designer with design and mutation modes.
 
     Design mode produces from-scratch workflows for seed diversity.
     Mutation mode proposes targeted mutations from failure telemetry.
+    All designed workflows include benchmark-specific prompts.
     """
 
     def design_minimal(self, benchmark_spec: str) -> Workflow:
@@ -40,12 +89,14 @@ class DesignerAgent:
             "researcher": AgentNode(
                 id="researcher",
                 role=AgentRole.RESEARCHER,
+                prompt_template=populate_prompt("researcher", benchmark_spec),
                 writes={".factory/strategy/research.md"},
                 timeout=300,
             ),
             "builder": AgentNode(
                 id="builder",
                 role=AgentRole.BUILDER,
+                prompt_template=populate_prompt("builder", benchmark_spec),
                 reads={".factory/strategy/research.md"},
                 writes={".factory/reviews/builder-latest.md"},
                 timeout=600,
@@ -87,6 +138,7 @@ class DesignerAgent:
             "researcher": AgentNode(
                 id="researcher",
                 role=AgentRole.RESEARCHER,
+                prompt_template=populate_prompt("researcher", benchmark_spec),
                 reads={".factory/strategy/observations.md"},
                 writes={".factory/strategy/research.md"},
                 timeout=600,
@@ -94,6 +146,7 @@ class DesignerAgent:
             "strategist": AgentNode(
                 id="strategist",
                 role=AgentRole.STRATEGIST,
+                prompt_template=populate_prompt("strategist", benchmark_spec),
                 reads={".factory/strategy/research.md"},
                 writes={".factory/strategy/current.md"},
                 timeout=600,
@@ -106,6 +159,7 @@ class DesignerAgent:
             "builder_a": AgentNode(
                 id="builder_a",
                 role=AgentRole.BUILDER,
+                prompt_template=populate_prompt("builder", benchmark_spec),
                 reads={".factory/strategy/current.md"},
                 writes={".factory/reviews/builder-a.md"},
                 timeout=1200,
@@ -113,6 +167,7 @@ class DesignerAgent:
             "builder_b": AgentNode(
                 id="builder_b",
                 role=AgentRole.BUILDER,
+                prompt_template=populate_prompt("builder", benchmark_spec),
                 reads={".factory/strategy/current.md"},
                 writes={".factory/reviews/builder-b.md"},
                 timeout=1200,
@@ -124,6 +179,7 @@ class DesignerAgent:
             "code_reviewer": AgentNode(
                 id="code_reviewer",
                 role=AgentRole.CODE_REVIEWER,
+                prompt_template=populate_prompt("code_reviewer", benchmark_spec),
                 reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
                 writes={".factory/reviews/code-review.md"},
                 timeout=900,
@@ -131,6 +187,7 @@ class DesignerAgent:
             "adversarial_tester": AgentNode(
                 id="adversarial_tester",
                 role=AgentRole.ADVERSARIAL_TESTER,
+                prompt_template=populate_prompt("adversarial_tester", benchmark_spec),
                 reads={".factory/reviews/code-review.md"},
                 writes={".factory/reviews/adversarial-qa.md"},
                 timeout=1800,
@@ -201,6 +258,7 @@ class DesignerAgent:
             nodes[node_id] = AgentNode(
                 id=node_id,
                 role=role,
+                prompt_template=populate_prompt(node_id, benchmark_spec),
                 timeout=600,
             )
             if prev_id is not None:
