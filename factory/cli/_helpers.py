@@ -39,6 +39,7 @@ CEO_MODES = [
     "frontend-design-scan",
     "evolve",
     "deep-research",
+    "outer-loop",
 ]
 
 
@@ -55,6 +56,7 @@ RUN_MODES = [
     "study",
     "swebench",
     "frontend-design-scan",
+    "outer-loop",
 ]
 
 

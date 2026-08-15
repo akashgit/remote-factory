@@ -459,6 +459,22 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                          "tool (CEO drives via factory workflow tool commands), "
                          "deterministic (headless WorkflowExecutor, no CEO)")
 
+    # Outer-loop specific arguments
+    p.add_argument("--benchmark", default=None,
+                    help="Benchmark adapter for outer-loop fitness evaluation (required for --mode outer-loop)")
+    p.add_argument("--budget", type=int, default=None, dest="ol_budget",
+                    help="Max evaluations for outer-loop evolution (default: 100)")
+    p.add_argument("--population", type=int, default=None,
+                    help="Population size per generation for outer-loop (default: 4)")
+    p.add_argument("--target-score", type=float, default=None, dest="target_score",
+                    help="Optional early stop score for outer-loop evolution")
+    p.add_argument("--seed", default=None, dest="seed_mode",
+                    help="Existing mode name to seed the outer-loop from (default: benchmark's contributed workflow)")
+    p.add_argument("--training-instances", default=None, dest="training_instances",
+                    help="Comma-separated problem IDs for evolution (required for --mode outer-loop)")
+    p.add_argument("--holdout-instances", default=None, dest="holdout_instances",
+                    help="Comma-separated held-out problem IDs for overfit detection (required for --mode outer-loop)")
+
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
     p.add_argument(
