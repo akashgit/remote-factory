@@ -1,6 +1,6 @@
 """Outer loop — evolutionary swarm search for workflow optimization."""
 
-from factory.outer_loop.designer import DesignerAgent, extract_telemetry
+from factory.outer_loop.designer import DesignerAgent, extract_telemetry, populate_prompt
 from factory.outer_loop.engine import BudgetTracker, SwarmEngine
 from factory.outer_loop.filesystem import (
     export_best_workflow,
@@ -30,11 +30,13 @@ from factory.outer_loop.models import (
     OuterLoopState,
     SwarmConfig,
 )
+from factory.outer_loop.subset import CalibratedSubsetSelector
 from factory.outer_loop.workflow import outer_loop_workflow
 
 __all__ = [
     "AuditResult",
     "BudgetTracker",
+    "CalibratedSubsetSelector",
     "DirectFeatureBenchEvaluator",
     "DesignerAgent",
     "EvalResult",
@@ -55,6 +57,7 @@ __all__ = [
     "load_checkpoint",
     "load_config",
     "outer_loop_workflow",
+    "populate_prompt",
     "save_best",
     "save_checkpoint",
     "save_generation",

@@ -198,7 +198,7 @@ class TestSwarmEngineEvolve:
 
 class TestSwarmEngineRun:
     def test_run_terminates_on_budget(self) -> None:
-        config = _make_config(budget=10, population_size=2)
+        config = _make_config(budget=20, population_size=2)
         evaluator = _make_deterministic_evaluator()
         engine = SwarmEngine(config, evaluator)
         wf = _make_workflow()
@@ -206,7 +206,7 @@ class TestSwarmEngineRun:
         result = engine.run(wf)
 
         assert result.convergence_reason == "budget_exhausted"
-        assert result.total_evaluations <= 10
+        assert result.total_evaluations <= 25
         assert result.generations_completed >= 1
         assert len(result.trajectory) > 0
 

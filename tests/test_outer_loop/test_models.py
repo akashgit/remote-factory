@@ -18,9 +18,10 @@ from factory.outer_loop.models import (
 
 class TestMutationType:
     def test_all_variants(self) -> None:
-        assert len(MutationType) == 6
+        assert len(MutationType) == 7
         assert MutationType.NODE_INSERT.value == "node_insert"
         assert MutationType.PARAM_MUTATE.value == "param_mutate"
+        assert MutationType.PROMPT_MUTATE.value == "prompt_mutate"
 
 
 class TestMutationRecord:

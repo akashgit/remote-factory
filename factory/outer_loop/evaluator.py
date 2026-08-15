@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol, runtime_checkable
 
 import structlog
@@ -91,10 +92,10 @@ class SwarmEvaluator:
         else:
             result = EvalResult(score=0.0, details={"note": "no_evaluator_fn_configured"})
 
-        composite = self._compute_composite(result)
-        result = result.model_copy(update={"score": composite})
+        score = result.benchmark_score
+        result = result.model_copy(update={"score": score})
 
-        self._cache.put(workflow, instances, composite, result.cost_usd)
+        self._cache.put(workflow, instances, score, result.cost_usd)
         return result
 
     def evaluate_batch(
@@ -104,19 +105,25 @@ class SwarmEvaluator:
         instances: list[str],
         parallelism: int = 1,
     ) -> list[EvalResult]:
-        """Evaluate multiple workflows. Currently sequential; parallelism is reserved."""
-        return [self.evaluate(wf, project_dir, instances) for wf in workflows]
+        """Evaluate multiple workflows, optionally in parallel."""
+        if parallelism <= 1 or len(workflows) <= 1:
+            return [self.evaluate(wf, project_dir, instances) for wf in workflows]
 
-    def _compute_composite(self, result: EvalResult) -> float:
-        """Multi-metric fitness: 0.6*benchmark + 0.2*hygiene + 0.1*(1-cost) + 0.1*(1-complexity)."""
-        norm_cost = min(result.cost_usd / 10.0, 1.0) if result.cost_usd > 0 else 0.0
-        norm_complexity = min(result.complexity / 20.0, 1.0) if result.complexity > 0 else 0.0
-        return (
-            0.6 * result.benchmark_score
-            + 0.2 * result.hygiene_score
-            + 0.1 * (1.0 - norm_cost)
-            + 0.1 * (1.0 - norm_complexity)
-        )
+        results: list[EvalResult | None] = [None] * len(workflows)
+        with ThreadPoolExecutor(max_workers=min(parallelism, len(workflows))) as executor:
+            future_to_idx = {
+                executor.submit(self.evaluate, wf, project_dir, instances): i
+                for i, wf in enumerate(workflows)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception:
+                    log.error("parallel_eval_failed", index=idx, exc_info=True)
+                    results[idx] = EvalResult(score=0.0, details={"error": "parallel_eval_exception"})
+
+        return [r if r is not None else EvalResult(score=0.0) for r in results]
 
     def _check_mandatory_components(self, workflow: Workflow) -> bool:
         """Verify workflow contains all mandatory node roles."""
