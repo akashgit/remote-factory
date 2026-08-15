@@ -122,7 +122,7 @@ class ClaudeRunner:
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
-        if request.skip_permissions:
+        if request.skip_permissions and os.getuid() != 0:
             cmd.append("--dangerously-skip-permissions")
         if request.model:
             cmd.extend(["--model", request.model])
@@ -290,7 +290,7 @@ class ClaudeRunner:
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
-        if request.skip_permissions:
+        if request.skip_permissions and os.getuid() != 0:
             cmd.append("--dangerously-skip-permissions")
         cmd.append(request.task)
         if request.model:
