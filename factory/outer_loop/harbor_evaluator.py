@@ -74,7 +74,7 @@ def create_seed_workflow() -> Workflow:
             ),
             reads={".factory/reviews/study-output.md"},
             writes={".factory/reviews/builder-latest.md"},
-            timeout=7200,
+            timeout=600,
         ),
         "health_checker": AgentNode(
             id="health_checker",

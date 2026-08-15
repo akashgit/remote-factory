@@ -269,7 +269,7 @@ class DirectFeatureBenchEvaluator:
         for node_id in order:
             node = workflow.nodes[node_id]
             if isinstance(node, AgentNode):
-                timeout = node.timeout or self._agent_timeout
+                timeout = min(node.timeout, self._agent_timeout) if node.timeout else self._agent_timeout
                 prompt = node.prompt_template
                 if not prompt:
                     continue
