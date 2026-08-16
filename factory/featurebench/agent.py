@@ -221,8 +221,8 @@ STATE
             "NVM_DIR=${NVM_DIR:-$HOME/.nvm}; "
             '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true; '
             "cd /testbed && "
-            "factory workflow run featurebench /testbed "
-            "2>&1 | tee /agent-logs/factory_stream_output.jsonl"
+            "PYTHONUNBUFFERED=1 factory workflow run featurebench /testbed "
+            "2>&1 | stdbuf -oL tee /agent-logs/factory_stream_output.jsonl"
         )
 
     def pre_run_hook(self, container, log_file) -> bool:
