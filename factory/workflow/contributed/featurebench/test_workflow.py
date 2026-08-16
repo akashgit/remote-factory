@@ -21,17 +21,13 @@ class TestFeaturebenchWorkflow:
         assert wf.name == "featurebench"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 10 nodes for the two-loop QA pipeline."""
+        """Workflow has exactly 6 nodes for the hybrid host/container pipeline."""
         wf = workflow()
-        assert len(wf.nodes) == 10
+        assert len(wf.nodes) == 6
         assert set(wf.nodes.keys()) == {
             "researcher",
             "strategist",
             "builder",
-            "code_reviewer",
-            "gate_review",
-            "adversarial_tester",
-            "gate_qa",
             "health_checker",
             "gate_tests",
             "archivist",
@@ -48,15 +44,23 @@ class TestFeaturebenchWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """12 edges for the two-loop architecture."""
+        """6 edges for the single-loop architecture."""
         wf = workflow()
-        assert len(wf.edges) == 12
+        assert len(wf.edges) == 6
 
     def test_researcher_node(self) -> None:
         wf = workflow()
         node = wf.nodes["researcher"]
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.RESEARCHER
+        assert node.metadata.get("execution_context") is None
+
+    def test_strategist_node(self) -> None:
+        wf = workflow()
+        node = wf.nodes["strategist"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.STRATEGIST
+        assert node.metadata.get("execution_context") is None
 
     def test_builder_node(self) -> None:
         wf = workflow()
@@ -65,35 +69,15 @@ class TestFeaturebenchWorkflow:
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
         assert node.timeout == 1200
+        assert node.metadata.get("execution_context") == "container"
 
-    def test_code_reviewer_node(self) -> None:
+    def test_health_checker_node(self) -> None:
         wf = workflow()
-        node = wf.nodes["code_reviewer"]
+        node = wf.nodes["health_checker"]
         assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.CODE_REVIEWER
-        assert node.timeout == 900
-
-    def test_gate_review_is_fn_evaluator(self) -> None:
-        wf = workflow()
-        node = wf.nodes["gate_review"]
-        assert isinstance(node, GateNode)
-        assert node.evaluator_type == "fn"
-        assert node.evaluator_command is not None
-        assert "CRITICAL_FOUND" in node.evaluator_command
-
-    def test_adversarial_tester_node(self) -> None:
-        wf = workflow()
-        node = wf.nodes["adversarial_tester"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.ADVERSARIAL_TESTER
-        assert node.timeout == 1800
-
-    def test_gate_qa_is_agent_evaluator(self) -> None:
-        wf = workflow()
-        node = wf.nodes["gate_qa"]
-        assert isinstance(node, GateNode)
-        assert node.evaluator_type == "agent"
-        assert node.evaluator_role == AgentRole.CEO
+        assert node.role == AgentRole.HEALTH_CHECKER
+        assert node.timeout == 600
+        assert node.metadata.get("execution_context") == "container"
 
     def test_gate_tests_is_fn_evaluator(self) -> None:
         wf = workflow()
@@ -110,39 +94,9 @@ class TestFeaturebenchWorkflow:
         assert node.role == AgentRole.ARCHIVIST
         assert node.blocking is False
         assert node.model == "haiku"
+        assert node.metadata.get("execution_context") is None
 
-    def test_proceed_edge_gate_review(self) -> None:
-        wf = workflow()
-        proceed_edges = [
-            e for e in wf.edges
-            if e.source == "gate_review"
-            and e.target == "adversarial_tester"
-            and e.condition == VerdictType.PROCEED
-        ]
-        assert len(proceed_edges) == 1
-
-    def test_halt_edge_gate_review(self) -> None:
-        wf = workflow()
-        halt_edges = [
-            e for e in wf.edges
-            if e.source == "gate_review"
-            and e.target == "health_checker"
-            and e.condition == VerdictType.HALT
-        ]
-        assert len(halt_edges) == 1
-
-    def test_qa_reloop_edge(self) -> None:
-        """gate_qa has a RELOOP edge back to builder."""
-        wf = workflow()
-        reloop_edges = [
-            e for e in wf.edges
-            if e.source == "gate_qa"
-            and e.target == "builder"
-            and e.condition == VerdictType.RELOOP
-        ]
-        assert len(reloop_edges) == 1
-
-    def test_test_reloop_edge(self) -> None:
+    def test_reloop_edge(self) -> None:
         """gate_tests has a RELOOP edge back to builder."""
         wf = workflow()
         reloop_edges = [
@@ -177,6 +131,18 @@ class TestFeaturebenchWorkflow:
         for node in wf.nodes.values():
             if isinstance(node, GateNode):
                 assert node.evaluator_type != "user"
+
+    def test_container_nodes_have_metadata(self) -> None:
+        """Builder and health_checker must have execution_context=container."""
+        wf = workflow()
+        for nid in ("builder", "health_checker"):
+            assert wf.nodes[nid].metadata["execution_context"] == "container"
+
+    def test_host_nodes_no_container_metadata(self) -> None:
+        """Host nodes must NOT have execution_context=container."""
+        wf = workflow()
+        for nid in ("researcher", "strategist", "gate_tests", "archivist"):
+            assert wf.nodes[nid].metadata.get("execution_context") != "container"
 
 
 class TestFeaturebenchTerminal:
@@ -233,5 +199,5 @@ class TestFeaturebenchMeta:
     def test_meta_has_description(self) -> None:
         assert "FeatureBench" in meta["description"]
 
-    def test_meta_mentions_two_loop(self) -> None:
-        assert "two-loop" in meta["description"]
+    def test_meta_mentions_hybrid(self) -> None:
+        assert "hybrid" in meta["description"].lower()
