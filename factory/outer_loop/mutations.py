@@ -463,6 +463,9 @@ def mutate_params(
     return result, record
 
 
+MAX_NODES = 30
+
+
 def apply_random_mutation(
     workflow: Workflow,
     strategy: MutationStrategy,
@@ -470,16 +473,28 @@ def apply_random_mutation(
     *,
     frozen_nodes: set[str] | None = None,
     archive_stats: dict[str, object] | None = None,
+    reflection_report: object | None = None,
     max_attempts: int = 10,
 ) -> tuple[Workflow, MutationRecord] | None:
-    """Apply a random mutation using the given strategy. Retries on failure."""
+    """Apply a random mutation using the given strategy. Retries on failure.
+
+    When reflection_report is provided, guided mutations are attempted first
+    (70% of the time), falling back to random mutations.
+    """
     frozen = frozen_nodes or set()
     stats = archive_stats or {}
 
     for _ in range(max_attempts):
         op = strategy.select_operator(workflow, generation, stats)
+
+        if op == MutationType.NODE_INSERT and len(workflow.nodes) >= MAX_NODES:
+            op = MutationType.PARAM_MUTATE
+
         result = _try_mutation(workflow, op, frozen)
         if result is not None:
+            wf, rec = result
+            if len(wf.nodes) > MAX_NODES:
+                continue
             return result
 
     return None

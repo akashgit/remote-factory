@@ -18,6 +18,7 @@ from factory.outer_loop.models import (
     OuterLoopResult,
     SwarmConfig,
 )
+from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
 from factory.outer_loop.mutations import (
     MutationStrategy,
     WeightedRandomStrategy,
@@ -111,6 +112,8 @@ class SwarmEngine:
         self._score_trajectory: list[float] = []
         self._mode_registry = mode_registry
         self._project_dir = project_dir
+        self._reflector = OuterLoopReflector(project_dir=project_dir)
+        self._last_reflection: ReflectionReport | None = None
 
     @property
     def archive(self) -> MAPElitesArchive:
@@ -244,6 +247,14 @@ class SwarmEngine:
             population.remove(ind.id)
             population.add(updated)
             self._archive.add(updated)
+
+        # Reflect on this generation's results
+        if generation > 0 or len(population.individuals) >= 2:
+            records = []
+            for ind in population.individuals:
+                cycle_rec = self._evaluator.get_cycle_record(ind.id)
+                records.append((ind.id, ind.score, cycle_rec))
+            self._last_reflection = self._reflector.reflect(records, generation)
 
         # Select parents and create offspring
         mutations_applied: list[MutationRecord] = []
