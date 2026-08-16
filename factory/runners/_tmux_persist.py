@@ -196,17 +196,15 @@ async def run_in_tmux(
     )
     wrapper_script.chmod(0o755)
 
-    has_session = _session_exists(session)
-    if has_session:
+    result = subprocess.run(
+        ["tmux", "new-session", "-d", "-s", session, "-n", window,
+         "-x", "200", "-y", "50", str(wrapper_script)],
+        cwd=cwd,
+        capture_output=True,
+    )
+    if result.returncode != 0:
         result = subprocess.run(
             ["tmux", "new-window", "-t", session, "-n", window, str(wrapper_script)],
-            cwd=cwd,
-            capture_output=True,
-        )
-    else:
-        result = subprocess.run(
-            ["tmux", "new-session", "-d", "-s", session, "-n", window,
-             "-x", "200", "-y", "50", str(wrapper_script)],
             cwd=cwd,
             capture_output=True,
         )
