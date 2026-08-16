@@ -21,12 +21,14 @@ factory graph update "$(pwd)"
 factory study "$(pwd)"
 ```
 
-If graphify is installed and `graph.json` exists, explore the code graph:
+Check whether a code knowledge graph is available by running `factory graph status "$(pwd)"`.
+
+If the graph is available (status shows node/edge counts), explore the code graph:
 
 ```bash
-factory graph query "<focus from observations>" --depth 2
-factory graph explain "<key node>"
-factory graph path "<A>" "<B>"
+factory graph query "$(pwd)" "<focus from observations>" --depth 2
+factory graph explain "$(pwd)" "<key node>"
+factory graph path "$(pwd)" "<A>" "<B>"
 ```
 
 Write graph findings to `.factory/strategy/graph-context.md`, then combine:

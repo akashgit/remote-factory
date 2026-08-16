@@ -390,6 +390,15 @@ class TestStudyWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.RESEARCHER
 
+    def test_graph_explorer_prompt_includes_project_path_in_commands(self) -> None:
+        wf = study_standalone_workflow()
+        node = wf.nodes["graph_explorer"]
+        prompt = node.prompt_template
+        assert "factory graph status ." in prompt, "prompt must include explicit graph detection step"
+        assert "factory graph query ." in prompt, "graph query command must include project path"
+        assert "factory graph explain ." in prompt, "graph explain command must include project path"
+        assert "factory graph path ." in prompt, "graph path command must include project path"
+
     def test_concat_study_writes_combined(self) -> None:
         wf = study_standalone_workflow()
         node = wf.nodes["concat_study"]
