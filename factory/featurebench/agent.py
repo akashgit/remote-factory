@@ -1,16 +1,13 @@
 """FeatureBench agent adapter — hybrid host/container workflow execution.
 
 Runs the factory workflow pipeline with host-side orchestration:
-  researcher (host) → strategist (host) → builder (container) →
+  researcher (host) → strategist (host) → builder (host) →
     health_checker (container) → gate_tests (host) → archivist (host)
 
-Host nodes (researcher, strategist, archivist) run on the host machine where
-Claude Code is already installed. Container nodes (builder, health_checker)
-are routed into the FeatureBench Docker container via `docker exec` by the
-WorkflowExecutor's container routing (execution_context metadata).
-
-File sync between host workspace and container is handled via `docker cp`
-in pre/post node hooks.
+Most nodes run on the host where Claude Code is already installed. Only
+health_checker runs inside the FeatureBench Docker container (needs the
+conda env for tests). Code changes from the builder are synced into the
+container via docker cp before health_checker runs.
 """
 
 import shutil
@@ -245,11 +242,11 @@ STATE
         return "echo 'ERROR: get_run_command should not be called in hybrid mode'; exit 1"
 
     def run(self, container, instruction: str, log_file, timeout=None) -> bool:
-        """Run the workflow with host-side orchestration and container-side execution.
+        """Run the workflow with host-side orchestration and container-side testing.
 
-        Host nodes (researcher, strategist, archivist) run on the host.
-        Container nodes (builder, health_checker) are routed into the
-        FeatureBench Docker container via docker exec.
+        Most nodes run on the host. Only health_checker runs inside the
+        container (needs conda env for tests). Code changes are synced
+        into the container before health_checker via docker cp.
         """
         self.pre_run_hook(container, log_file)
         self.prepare_run(container, instruction, log_file)
@@ -309,7 +306,7 @@ STATE
 
         async def pre_node_hook(node_id, node):
             if getattr(node, 'metadata', {}).get('execution_context') == 'container':
-                self._sync_to_container(host_workspace, container_id)
+                self._sync_workspace_to_container(host_workspace, container_id)
 
         async def post_node_hook(node_id, node):
             if getattr(node, 'metadata', {}).get('execution_context') == 'container':
@@ -339,18 +336,23 @@ STATE
 
         return result.success
 
-    def _sync_to_container(self, host_workspace: Path, container_id: str) -> None:
-        """Sync .factory/ from host workspace to container /testbed/.factory/."""
-        factory_dir = host_workspace / ".factory"
-        if not factory_dir.exists():
-            return
-        subprocess.run(
-            ["docker", "exec", container_id, "mkdir", "-p", "/testbed/.factory"],
-            check=False, timeout=10,
-        )
+    def _sync_workspace_to_container(self, host_workspace: Path, container_id: str) -> None:
+        """Sync the full host workspace into the container's /testbed/.
+
+        Copies all source files and .factory/ so the container has the
+        builder's code changes before health_checker runs tests.
+        """
         subprocess.run(
             ["docker", "cp",
-             f"{factory_dir}/.", f"{container_id}:/testbed/.factory/"],
+             f"{host_workspace}/.", f"{container_id}:/testbed/"],
+            check=False, timeout=120,
+        )
+        # Commit the synced changes inside the container so git diff works
+        subprocess.run(
+            ["docker", "exec", container_id, "bash", "-c",
+             "cd /testbed && git add -A && "
+             "git diff --cached --quiet || "
+             "git commit -m 'sync from host builder'"],
             check=False, timeout=30,
         )
 

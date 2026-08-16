@@ -1,17 +1,14 @@
 """FeatureBench mode — hybrid host/container execution pipeline.
 
-6-node pipeline with host-side orchestration and container-side execution:
-  researcher (host) → strategist (host) → builder (container) →
+6-node pipeline with host-side orchestration and container-side testing:
+  researcher (host) → strategist (host) → builder (host) →
     health_checker (container) → gate_tests → [RELOOP to builder, max 3] →
     archivist (host, async)
 
-Host nodes (researcher, strategist, archivist) run on the host where Claude Code
-is already available. Container nodes (builder, health_checker) run inside the
-FeatureBench container via podman exec, accessing /testbed and conda env testbed.
-
-The WorkflowExecutor routes container nodes via podman exec based on the
-execution_context metadata field. File sync between host and container is handled
-by the adapter via podman cp.
+Most nodes run on the host where Claude Code is already installed. Only
+health_checker runs inside the FeatureBench container (needs the conda env
+and project dependencies to run tests). File sync between host workspace
+and container is handled by the adapter via docker cp.
 """
 
 from typing import Any
@@ -32,9 +29,9 @@ meta = {
     "description": (
         "FeatureBench mode — implement complete features from interface specifications. "
         "Reads problem_statement.md, analyzes repo structure, creates an implementation plan, "
-        "builds the feature inside a container, then verifies via test suite. "
-        "Uses hybrid host/container execution: orchestration agents run on the host, "
-        "builder and health_checker run inside the container via podman exec. "
+        "builds the feature on the host, then verifies via test suite inside the container. "
+        "Uses hybrid host/container execution: all agents run on the host except "
+        "health_checker which runs inside the container for test execution. "
         "Supports iterative refinement (max 3 builder loops via gate_tests). "
         "Use when invoked with --mode featurebench."
     ),
@@ -128,14 +125,13 @@ def workflow() -> Workflow:
         ],
     )
 
-    # ── Builder: implement the feature (CONTAINER) ─────────────────
+    # ── Builder: implement the feature (HOST) ───────────────────────
 
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
         timeout=1200,
         max_iterations=3,
-        metadata={"execution_context": "container"},
         prompt_template=(
             "CRITICAL: Your job is to implement or modify SOURCE CODE only. Do NOT create, "
             "modify, or recreate test files (tests/*). The FeatureBench evaluator provides "
@@ -144,7 +140,6 @@ def workflow() -> Workflow:
             "satisfies them in the appropriate source files.\n\n"
             "Implement the FeatureBench feature according to the plan at "
             ".factory/strategy/current.md.\n\n"
-            "You are running inside a container at /testbed with conda env testbed.\n"
             "The working directory is {project_path} — a git-tracked repository.\n"
             "You MUST commit all changes so the FeatureBench harness can extract your git diff.\n\n"
             "CRITICAL RULES:\n"
