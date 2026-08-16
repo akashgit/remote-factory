@@ -134,6 +134,7 @@ class CodexRunner:
         cmd.extend(["--", full_prompt])
 
         env, tmpdir = _make_codex_env()
+        env.update(request.extra_env)
         self._tmpdir = tmpdir
         return cmd, env, []
 

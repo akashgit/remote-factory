@@ -10,6 +10,7 @@ conda env for tests). Code changes from the builder are synced into the
 container via docker cp before health_checker runs.
 """
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -18,9 +19,29 @@ from pathlib import Path
 from featurebench.infer.agents.base import BaseAgent
 from featurebench.infer.container import DOCKER_HOST_GATEWAY
 
+_AVAILABLE_REGIONS = ["us-east5", "europe-west1", "asia-southeast1"]
+
 
 class FactoryAgent(BaseAgent):
     FACTORY_WHEEL: str | None = None
+    _region_counter: int = 0
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        regions_str = os.environ.get("FACTORY_REGIONS", "")
+        if regions_str:
+            regions = [r.strip() for r in regions_str.split(",") if r.strip()]
+        else:
+            regions = []
+        if regions:
+            idx = FactoryAgent._region_counter % len(regions)
+            FactoryAgent._region_counter += 1
+            self._assigned_region = regions[idx]
+            self.env_vars["CLOUD_ML_REGION"] = self._assigned_region
+        else:
+            self._assigned_region = self.env_vars.get(
+                "CLOUD_ML_REGION", os.environ.get("CLOUD_ML_REGION", "")
+            )
 
     @property
     def name(self) -> str:
@@ -312,6 +333,11 @@ STATE
             if getattr(node, 'metadata', {}).get('execution_context') == 'container':
                 self._sync_from_container(host_workspace, container_id)
 
+        subprocess_env = {}
+        if self._assigned_region:
+            subprocess_env["CLOUD_ML_REGION"] = self._assigned_region
+            self.logger.info(f"Using Vertex AI region: {self._assigned_region}")
+
         executor = WorkflowExecutor(
             workflow=wf,
             project_path=host_workspace,
@@ -320,6 +346,7 @@ STATE
                 "container_runtime": "docker",
                 "container_env_script": "/installed-agent/setup-env.sh",
                 "container_conda_env": "testbed",
+                "subprocess_env": subprocess_env,
             },
             pre_node_hook=pre_node_hook,
             post_node_hook=post_node_hook,

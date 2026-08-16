@@ -134,6 +134,7 @@ class ClaudeRunner:
             cmd.extend(["--session-id", request.session_id])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        env.update(request.extra_env)
         if request.model:
             env["FACTORY_MODEL"] = request.model
         if request.cwd:

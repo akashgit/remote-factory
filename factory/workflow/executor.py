@@ -867,12 +867,15 @@ class WorkflowExecutor:
             if pool_entry:
                 timeout = pool_entry.timeout
 
+        extra_env = self.context.get("subprocess_env")
+
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
             model=model or None,
             timeout=float(timeout) if timeout is not None else 600.0,
+            extra_env=extra_env,
         )
 
         if code != 0:
@@ -928,11 +931,12 @@ class WorkflowExecutor:
 
         cmd: list[str] = [runtime, "exec", "--workdir", "/testbed"]
 
+        sub_env = self.context.get("subprocess_env", {})
         if not env_script:
             for env_var in ("ANTHROPIC_API_KEY", "FACTORY_RUNNER",
                             "CLAUDE_CODE_USE_VERTEX",
                             "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"):
-                val = os.environ.get(env_var)
+                val = sub_env.get(env_var) or os.environ.get(env_var)
                 if val:
                     cmd.extend(["--env", f"{env_var}={val}"])
 

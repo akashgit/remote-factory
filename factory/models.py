@@ -623,6 +623,7 @@ class AgentRunRequest(BaseModel):
     session_id: str | None = None
     resume_session_id: str | None = None
     project_path: Path | None = None
+    extra_env: dict[str, str] = {}
     extras: dict[str, object] = {}
 
 
