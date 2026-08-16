@@ -72,3 +72,13 @@
 {"event_type": "cal_lv2_instance_start", "instance": "mesonbuild__meson.f5d81d07.cargotests.8e49c2d0.lv2", "index": 10, "timestamp": "2026-08-16T03:13:33"}
 {"event_type": "cal_lv2_instance_done", "instance": "mesonbuild__meson.f5d81d07.cargotests.8e49c2d0.lv2", "score": 0.0, "elapsed": 943.0, "timestamp": "2026-08-16T03:29:16"}
 {"event_type": "calibration_lv2_complete", "seed_score": 0.0, "resolved": 0, "total": 10, "training_count": 7, "holdout_count": 3, "timestamp": "2026-08-16T03:29:16"}
+{"event_type": "evolution_lv2_start", "training": 7, "holdout": 3, "population": 4, "budget": 20, "generations": 2, "timestamp": "2026-08-16T03:30:40"}
+{"event_type": "generation_start", "generation": 0, "budget_remaining": 20, "timestamp": "2026-08-16T03:30:40"}
+{"event_type": "generation_start", "generation": 0, "budget_remaining": 20, "timestamp": "2026-08-16T03:33:07"}
+{"event_type": "generation_start", "generation": 0, "budget_remaining": 20, "timestamp": "2026-08-16T03:49:13"}
+{"event_type": "generation_complete", "generation": 0, "best_score": 0.0, "mean_score": 0.0, "duration_seconds": 25611.55, "timestamp": "2026-08-16T10:37:32"}
+{"event_type": "checkpoint_saved", "generation": 0, "path": "/Users/akasriva/cursor-projects/remote-factory/.factory-worktrees/run-17122260/.factory/outer_loop/checkpoint_gen_0.json", "timestamp": "2026-08-16T10:37:32"}
+{"event_type": "generation_start", "generation": 1, "budget_remaining": 15, "timestamp": "2026-08-16T10:37:32"}
+{"event_type": "generation_complete", "generation": 1, "best_score": 0.0, "mean_score": 0.0, "duration_seconds": 13305.75, "timestamp": "2026-08-16T14:19:18"}
+{"event_type": "checkpoint_saved", "generation": 1, "path": "/Users/akasriva/cursor-projects/remote-factory/.factory-worktrees/run-17122260/.factory/outer_loop/checkpoint_gen_1.json", "timestamp": "2026-08-16T14:19:18"}
+{"event_type": "generation_start", "generation": 2, "budget_remaining": 9, "timestamp": "2026-08-16T14:19:18"}
