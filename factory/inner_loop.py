@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -176,9 +177,10 @@ class InnerLoop:
         1. Write directives (steering from outer loop) if provided
         2. Snapshot artifact offsets for isolation
         3. Run the factory mode via subprocess
-        4. CycleAnalyzer reads only new execution artifacts (scoped by offset)
-        5. Evaluator parses eval-specific artifacts (scores, metrics)
-        6. Return composed CycleRecord
+        4. Write cycle_summary.json with observable outcomes
+        5. CycleAnalyzer reads only new execution artifacts (scoped by offset)
+        6. Evaluator parses eval-specific artifacts (scores, metrics)
+        7. Return composed CycleRecord
         """
         if directives:
             self._write_directives(directives)
@@ -186,15 +188,35 @@ class InnerLoop:
         event_offset = self._count_lines(self.factory_dir / "events.jsonl")
         tsv_offset = self._count_tsv_data_rows(self.factory_dir / "results.tsv")
 
+        head_before = self._get_git_head()
+        t0 = time.monotonic()
+
         result = subprocess.run(
             [sys.executable, "-m", "factory", "ceo", str(self.project_dir),
              "--mode", self.mode, "--headless", "--no-worktree"],
             cwd=self.project_dir,
         )
 
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        head_after = self._get_git_head()
+        builder_committed = (
+            head_before is not None
+            and head_after is not None
+            and head_before != head_after
+        )
+
         record = self._collect_results(
             event_offset=event_offset, tsv_offset=tsv_offset,
         )
+
+        self._write_cycle_summary(
+            returncode=result.returncode,
+            event_offset=event_offset,
+            duration_ms=duration_ms,
+            builder_committed=builder_committed,
+            experiments=len(record.experiments),
+        )
+
         if result.returncode != 0:
             record.errored = (record.errored or 0) + 1
         record.cycle_number = self._step_count + 1
@@ -273,6 +295,92 @@ class InnerLoop:
                 record.score_end = final.score
 
         return record
+
+    def _get_git_head(self) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.stdout.strip() if result.returncode == 0 else None
+        except Exception:
+            return None
+
+    def _write_cycle_summary(
+        self,
+        returncode: int,
+        event_offset: int,
+        duration_ms: int,
+        builder_committed: bool,
+        experiments: int,
+    ) -> Path:
+        """Write a structured summary of observable outcomes from this cycle."""
+        events_path = self.factory_dir / "events.jsonl"
+
+        agents_spawned = 0
+        agents_succeeded = 0
+        agents_failed = 0
+        total_cost = 0.0
+
+        if events_path.exists():
+            for idx, line in enumerate(events_path.read_text().splitlines()):
+                if idx < event_offset:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                etype = e.get("type", "")
+                if etype == "agent.started":
+                    agents_spawned += 1
+                elif etype == "agent.completed":
+                    agents_succeeded += 1
+                    total_cost += e.get("data", {}).get("total_cost_usd", 0) or 0
+                elif etype == "agent.failed":
+                    agents_failed += 1
+
+        score = 0.0
+        if agents_spawned > 0:
+            score += 0.2
+        if builder_committed:
+            score += 0.2
+        if returncode == 0:
+            score += 0.2
+        if agents_failed == 0 and agents_spawned > 0:
+            score += 0.2
+        if returncode == 0:
+            score += 0.2
+
+        errors: list[str] = []
+        if returncode != 0:
+            errors.append(f"subprocess exited with code {returncode}")
+
+        summary = {
+            "mode": self.mode,
+            "score": round(score, 2),
+            "cost_usd": round(total_cost, 2),
+            "agents_spawned": agents_spawned,
+            "agents_succeeded": agents_succeeded,
+            "agents_failed": agents_failed,
+            "builder_committed": builder_committed,
+            "tests_passed": returncode == 0,
+            "experiments": experiments,
+            "duration_ms": duration_ms,
+            "errors": errors,
+        }
+
+        summary_dir = self.factory_dir / "outer_loop" / "runs" / self.mode
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        summary_path = summary_dir / "cycle_summary.json"
+        summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+
+        return summary_path
 
     def _write_directives(self, directives: dict[str, Any]) -> None:
         """Write outer-loop directives as a factory message."""

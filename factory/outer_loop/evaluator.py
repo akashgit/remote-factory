@@ -180,7 +180,10 @@ class SwarmEvaluator:
             )
             record = loop.step()
 
-            score = record.score_end or 0.0
+            summary_score = self._read_cycle_summary_score(
+                loop.project_dir, loop.mode
+            )
+            score = summary_score if summary_score is not None else (record.score_end or 0.0)
             cost = record.total_cost_usd
 
             self._cycle_cache.put(workflow, record)
@@ -231,6 +234,19 @@ class SwarmEvaluator:
             + 0.1 * (1.0 - norm_cost)
             + 0.1 * (1.0 - norm_complexity)
         )
+
+    @staticmethod
+    def _read_cycle_summary_score(project_dir: Path, mode: str) -> float | None:
+        summary_path = (
+            project_dir / ".factory" / "outer_loop" / "runs" / mode / "cycle_summary.json"
+        )
+        if not summary_path.exists():
+            return None
+        try:
+            data = json.loads(summary_path.read_text())
+            return float(data.get("score", 0.0))
+        except (json.JSONDecodeError, OSError, ValueError, TypeError):
+            return None
 
     def _check_mandatory_components(self, workflow: Workflow) -> bool:
         if not self._config.mandatory_node_roles:
