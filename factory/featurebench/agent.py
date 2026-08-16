@@ -294,7 +294,9 @@ STATE
 
             subprocess.run(
                 ["docker", "exec", container_id, "bash", "-c",
-                 "cd /testbed && git add -A && "
+                 "cd /testbed && "
+                 "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
+                 "git add -A && "
                  "git diff --cached --quiet || "
                  "git commit -m 'FeatureBench: implement feature'"],
                 check=False,
@@ -377,7 +379,9 @@ STATE
         # Commit the synced changes inside the container so git diff works
         subprocess.run(
             ["docker", "exec", container_id, "bash", "-c",
-             "cd /testbed && git add -A && "
+             "cd /testbed && "
+             "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
+             "git add -A && "
              "git diff --cached --quiet || "
              "git commit -m 'sync from host builder'"],
             check=False, timeout=30,
@@ -417,7 +421,9 @@ STATE
 
         self.cm.exec_command(
             container,
-            "cd /testbed && git add -A && "
+            "cd /testbed && "
+            "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
+            "git add -A && "
             "git diff --cached --quiet || "
             "git commit -m 'FeatureBench: implement feature'",
             log_file=log_file,
