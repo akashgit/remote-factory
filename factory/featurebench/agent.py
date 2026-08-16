@@ -98,6 +98,9 @@ STATE
                 return p
 
         import factory as factory_pkg
+
+        # Try 1: look relative to the factory source (works in editable installs
+        # or when running from the repo directory)
         factory_root = Path(factory_pkg.__file__).resolve().parent.parent
         dist_dir = factory_root / "dist"
         if dist_dir.exists():
@@ -105,6 +108,33 @@ STATE
             if wheels:
                 return wheels[0]
 
+        # Try 2: check dist-info direct_url.json for the original wheel path
+        # (works when installed via `uv pip install <wheel>`)
+        import importlib.metadata
+        try:
+            dist = importlib.metadata.distribution("remote-factory")
+            for f in dist.files or []:
+                if f.name == "direct_url.json":
+                    import json
+                    url_data = json.loads(f.read_text())
+                    url = url_data.get("url", "")
+                    if url.startswith("file://") and url.endswith(".whl"):
+                        wheel_path = Path(url.removeprefix("file://"))
+                        if wheel_path.exists():
+                            return wheel_path
+                        # Try the dist/ directory containing the referenced wheel
+                        parent_dist = wheel_path.parent
+                        if parent_dist.exists():
+                            wheels = sorted(
+                                parent_dist.glob("remote_factory-*.whl"),
+                                reverse=True,
+                            )
+                            if wheels:
+                                return wheels[0]
+        except importlib.metadata.PackageNotFoundError:
+            pass
+
+        # Try 3: build from source
         import subprocess as sp
         self.logger.info("Building factory wheel...")
         sp.run(
