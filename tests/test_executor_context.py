@@ -204,6 +204,34 @@ class TestHostGateIntegration:
         content = fb_path.read_text()
         assert "SPEC_COMPLIANCE: PASS" in content
 
+    def test_host_gate_no_broken_pytest_rc_capture(self) -> None:
+        """gate_tests L1 path must not use $(cmd) && PYTEST_RC=$? pattern.
+
+        That pattern short-circuits on pytest failure: the $() returns
+        non-zero, && skips PYTEST_RC=$?, RELOOP never fires, and the
+        overall command exits non-zero causing _run_shell to raise.
+        """
+        fb_path = Path(__file__).parents[3] / ".factory" / "workflows" / "featurebench.py"
+        if not fb_path.exists():
+            pytest.skip("Host featurebench workflow not found")
+        content = fb_path.read_text()
+        # Extract the gate_tests evaluator_command block
+        lines = content.split("\n")
+        in_gate = False
+        gate_lines = []
+        for line in lines:
+            if "gate_tests" in line and "GateNode" in line:
+                in_gate = True
+            elif in_gate:
+                gate_lines.append(line)
+                if line.strip().startswith(")") and not line.strip().startswith("'"):
+                    break
+        gate_text = "\n".join(gate_lines)
+        assert "PYTEST_RC" not in gate_text, (
+            "gate_tests must not capture PYTEST_RC with && — "
+            "use 'cmd && echo PROCEED || echo RELOOP' pattern instead"
+        )
+
     def test_host_health_checker_no_resolved(self) -> None:
         """Health checker prompt does NOT instruct writing RESOLVED."""
         fb_path = Path(__file__).parents[3] / ".factory" / "workflows" / "featurebench.py"
