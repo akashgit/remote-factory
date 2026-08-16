@@ -10,7 +10,6 @@ from factory.workflow.primitives import (
     Edge,
     FnNode,
     GateNode,
-    VerdictType,
     Workflow,
 )
 

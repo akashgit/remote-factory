@@ -129,11 +129,15 @@ class DirectFeatureBenchEvaluator:
             total_score += partial
 
         score = total_score / max(total, 1)
+        per_scores: dict[str, float] = {}
+        for k, v in per_instance.items():
+            if isinstance(v, dict):
+                per_scores[k] = float(v.get("score", 0.0))
         log.info(
             "direct_eval_done",
             score=score,
             total=total,
-            per_instance_scores={k: v["score"] for k, v in per_instance.items()},
+            per_instance_scores=per_scores,
         )
         return EvalResult(
             score=score,

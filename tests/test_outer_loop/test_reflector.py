@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from factory.cycle_analyzer import AgentStep, CycleRecord
-from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
+from factory.outer_loop.reflector import OuterLoopReflector
 
 
 def _make_record(

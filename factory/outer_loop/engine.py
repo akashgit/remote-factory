@@ -275,6 +275,7 @@ class SwarmEngine:
                 self._strategy,
                 generation,
                 frozen_nodes=set(self._config.frozen_node_ids),
+                reflection_report=self._last_reflection,
             )
             if mutation_result is None:
                 continue
@@ -304,6 +305,14 @@ class SwarmEngine:
             updated = ind.model_copy(update={"score": eval_result.score, "cost_usd": eval_result.cost_usd})
             population.add(updated)
             self._archive.add(updated)
+
+        # Cleanup non-surviving ephemeral mode files
+        if self._mode_registry:
+            survivor_names = set()
+            for ind in population.individuals:
+                for g in range(generation + 1):
+                    survivor_names.add(f"evolve-gen{g}-{ind.id[:8]}")
+            self._mode_registry.cleanup_generation(survivor_names)
 
         # Track best score and diversity
         best = population.best()

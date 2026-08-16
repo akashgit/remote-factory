@@ -58,26 +58,130 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
-    """Evaluate the current generation."""
+    """Evaluate the current generation's population."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
     print(f"Evaluating generation {generation} at {project_path}")
+
+    from factory.outer_loop.evaluator import SwarmEvaluator
+    from factory.outer_loop.filesystem import load_checkpoint, load_config, save_checkpoint
+    from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.models import OuterLoopState
+
+    config = load_config(project_path)
+    if config is None:
+        print("Error: no outer loop config found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
+        return 1
+
+    registry = EphemeralModeRegistry(project_path)
+    modes = registry.list_modes()
+    if not modes:
+        print("Error: no ephemeral modes found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
+        return 1
+
+    evaluator = SwarmEvaluator(config)
+    results: dict[str, object] = {}
+    for mode_name in modes:
+        wf = registry.load(mode_name)
+        if wf is None:
+            continue
+        ev = evaluator.evaluate(wf, str(project_path), config.training_instances)
+        results[mode_name] = {"score": ev.score, "cost_usd": ev.cost_usd}
+        print(f"  {mode_name}: score={ev.score:.4f} cost=${ev.cost_usd:.4f}")
+
+    results_dir = project_path / ".factory" / "outer_loop" / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / f"gen{generation}.json"
+    results_path.write_text(json.dumps(results, indent=2))
+
+    state = load_checkpoint(project_path) or OuterLoopState(budget_remaining=config.budget)
+    state = state.model_copy(update={"generation": generation, "total_evaluations": state.total_evaluations + len(results)})
+    save_checkpoint(project_path, state)
+
+    print(f"Evaluated {len(results)} candidates. Results saved to {results_path}")
     return 0
 
 
 def _cmd_reflect(args: argparse.Namespace) -> int:
-    """Run reflection on the current generation."""
+    """Run contrastive reflection on the current generation."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
     print(f"Reflecting on generation {generation} at {project_path}")
+
+    from factory.outer_loop.evaluator import SwarmEvaluator
+    from factory.outer_loop.filesystem import load_config
+    from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.reflector import OuterLoopReflector
+
+    config = load_config(project_path)
+    if config is None:
+        print("Error: no outer loop config found.", file=sys.stderr)
+        return 1
+
+    registry = EphemeralModeRegistry(project_path)
+    evaluator = SwarmEvaluator(config)
+    reflector = OuterLoopReflector(project_dir=project_path)
+
+    records: list[tuple[str, float, object]] = []
+    for mode_name in registry.list_modes():
+        wf = registry.load(mode_name)
+        if wf is None:
+            continue
+        ev = evaluator.evaluate(wf, str(project_path), config.training_instances)
+        cycle_rec = evaluator.get_cycle_record(mode_name)
+        records.append((mode_name, ev.score, cycle_rec))
+
+    if len(records) < 2:
+        print("Not enough candidates for reflection (need >= 2).", file=sys.stderr)
+        return 1
+
+    report = reflector.reflect(records, generation)
+    print(f"Reflection complete: {len(report.failure_patterns)} failures, "
+          f"{len(report.success_patterns)} successes, "
+          f"{len(report.mutation_suggestions)} suggestions")
     return 0
 
 
 def _cmd_evolve(args: argparse.Namespace) -> int:
-    """Produce the next generation via mutation."""
+    """Produce the next generation via mutation and selection."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
     print(f"Evolving generation {generation} at {project_path}")
+
+    from factory.outer_loop.filesystem import load_config
+    from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.mutations import WeightedRandomStrategy, apply_random_mutation
+
+    config = load_config(project_path)
+    if config is None:
+        print("Error: no outer loop config found.", file=sys.stderr)
+        return 1
+
+    registry = EphemeralModeRegistry(project_path)
+    modes = registry.list_modes()
+    if not modes:
+        print("Error: no ephemeral modes to evolve.", file=sys.stderr)
+        return 1
+
+    strategy = WeightedRandomStrategy(mutation_rate=config.mutation_rate)
+    offspring_count = 0
+
+    for mode_name in modes[:config.population_size]:
+        wf = registry.load(mode_name)
+        if wf is None:
+            continue
+        result = apply_random_mutation(
+            wf, strategy, generation + 1,
+            frozen_nodes=set(config.frozen_node_ids),
+        )
+        if result is not None:
+            child_wf, mutation_rec = result
+            child_id = f"gen{generation + 1}_{offspring_count}"
+            registry.register(child_id, generation + 1, child_wf)
+            offspring_count += 1
+            print(f"  Created offspring {child_id} via {mutation_rec.operator.value}")
+
+    print(f"Evolution complete: {offspring_count} offspring created for generation {generation + 1}")
     return 0
 
 

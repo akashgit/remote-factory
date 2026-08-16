@@ -8,6 +8,7 @@ failure patterns, success patterns, and informed mutation suggestions.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -94,7 +95,7 @@ class OuterLoopReflector:
 
     def _extract_failure_patterns(
         self,
-        bottom_k: list[tuple[str, float, CycleRecord | None]],
+        bottom_k: Sequence[tuple[str, float, CycleRecord | None]],
         report: ReflectionReport,
     ) -> None:
         for id_, score, rec in bottom_k:
@@ -117,7 +118,7 @@ class OuterLoopReflector:
 
     def _extract_success_patterns(
         self,
-        top_k: list[tuple[str, float, CycleRecord | None]],
+        top_k: Sequence[tuple[str, float, CycleRecord | None]],
         report: ReflectionReport,
     ) -> None:
         for id_, score, rec in top_k:
@@ -136,8 +137,8 @@ class OuterLoopReflector:
 
     def _generate_mutation_suggestions(
         self,
-        top_k: list[tuple[str, float, CycleRecord | None]],
-        bottom_k: list[tuple[str, float, CycleRecord | None]],
+        top_k: Sequence[tuple[str, float, CycleRecord | None]],
+        bottom_k: Sequence[tuple[str, float, CycleRecord | None]],
         report: ReflectionReport,
     ) -> None:
         top_roles: set[str] = set()
@@ -185,8 +186,8 @@ class OuterLoopReflector:
 
     def _generate_structural_recommendations(
         self,
-        top_k: list[tuple[str, float, CycleRecord | None]],
-        bottom_k: list[tuple[str, float, CycleRecord | None]],
+        top_k: Sequence[tuple[str, float, CycleRecord | None]],
+        bottom_k: Sequence[tuple[str, float, CycleRecord | None]],
         report: ReflectionReport,
     ) -> None:
         for _, score, rec in bottom_k:

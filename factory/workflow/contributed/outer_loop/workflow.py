@@ -13,8 +13,6 @@ from typing import Any
 
 from factory.models import ProjectState
 from factory.workflow.primitives import (
-    AgentNode,
-    AgentRole,
     Edge,
     FnNode,
     GateNode,

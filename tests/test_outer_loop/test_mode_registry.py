@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from factory.outer_loop.mode_registry import EphemeralModeRegistry
 from factory.workflow.primitives import (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import networkx as nx
 import structlog
@@ -18,6 +18,9 @@ from factory.workflow.primitives import (
     NodeType,
     Workflow,
 )
+
+if TYPE_CHECKING:
+    from factory.outer_loop.reflector import ReflectionReport
 
 log = structlog.get_logger()
 
@@ -45,12 +48,13 @@ class WeightedRandomStrategy:
         designer_ratio: float = 0.3,
     ) -> None:
         self.weights = weights or {
-            MutationType.NODE_INSERT.value: 0.2,
-            MutationType.NODE_REMOVE.value: 0.15,
-            MutationType.EDGE_REDIRECT.value: 0.2,
-            MutationType.PARALLELIZE.value: 0.15,
-            MutationType.SERIALIZE.value: 0.1,
-            MutationType.PARAM_MUTATE.value: 0.2,
+            MutationType.NODE_INSERT.value: 0.18,
+            MutationType.NODE_REMOVE.value: 0.13,
+            MutationType.EDGE_REDIRECT.value: 0.18,
+            MutationType.PARALLELIZE.value: 0.13,
+            MutationType.SERIALIZE.value: 0.08,
+            MutationType.PARAM_MUTATE.value: 0.15,
+            MutationType.PROMPT_MUTATE.value: 0.15,
         }
         self._mutation_rate = mutation_rate
         self._designer_ratio = designer_ratio
@@ -61,6 +65,34 @@ class WeightedRandomStrategy:
         types = list(MutationType)
         w = [self.weights.get(t.value, 0.1) for t in types]
         return random.choices(types, weights=w, k=1)[0]
+
+    def select_guided_operator(
+        self,
+        parent: Workflow,
+        generation: int,
+        reflection: ReflectionReport,
+    ) -> MutationType:
+        """Select an operator guided by reflection suggestions."""
+        op_counts: dict[MutationType, int] = {}
+        for suggestion in reflection.mutation_suggestions + reflection.structural_recommendations:
+            upper = suggestion.upper()
+            if "NODE_INSERT" in upper:
+                op_counts[MutationType.NODE_INSERT] = op_counts.get(MutationType.NODE_INSERT, 0) + 1
+            elif "NODE_REMOVE" in upper:
+                op_counts[MutationType.NODE_REMOVE] = op_counts.get(MutationType.NODE_REMOVE, 0) + 1
+            elif "PARALLELIZE" in upper:
+                op_counts[MutationType.PARALLELIZE] = op_counts.get(MutationType.PARALLELIZE, 0) + 1
+            elif "PARAM_MUTATE" in upper:
+                op_counts[MutationType.PARAM_MUTATE] = op_counts.get(MutationType.PARAM_MUTATE, 0) + 1
+            elif "PROMPT_MUTATE" in upper:
+                op_counts[MutationType.PROMPT_MUTATE] = op_counts.get(MutationType.PROMPT_MUTATE, 0) + 1
+
+        if not op_counts:
+            return self.select_operator(parent, generation, {})
+
+        types = list(op_counts.keys())
+        weights = [float(op_counts[t]) for t in types]
+        return random.choices(types, weights=weights, k=1)[0]
 
     def get_mutation_rate(self, generation: int) -> float:
         return self._mutation_rate
@@ -463,7 +495,58 @@ def mutate_params(
     return result, record
 
 
+_PROMPT_VARIANTS = [
+    "Think step by step. Analyze the problem carefully before proposing changes.",
+    "Focus on the failing tests. Read error messages, trace root causes, fix precisely.",
+    "Prioritize minimal changes. Change only what is necessary to solve the problem.",
+    "Start by reading all relevant files. Map dependencies before editing anything.",
+    "Write tests first, then implement. Verify each change passes tests before moving on.",
+    "Look for existing patterns in the codebase and follow them consistently.",
+    "Check edge cases explicitly. Validate inputs and handle error paths.",
+    "Consider performance implications. Avoid O(n^2) patterns when O(n) alternatives exist.",
+]
+
 MAX_NODES = 30
+
+
+def mutate_prompt(
+    workflow: Workflow,
+    node_id: str,
+    *,
+    frozen_nodes: set[str] | None = None,
+    prompt_hint: str | None = None,
+) -> tuple[Workflow, MutationRecord] | None:
+    """Mutate the prompt_template of an AgentNode."""
+    frozen = frozen_nodes or set()
+    if node_id in frozen:
+        return None
+
+    wf = _deep_copy_workflow(workflow)
+    node = wf.nodes.get(node_id)
+    if node is None or not isinstance(node, AgentNode):
+        return None
+
+    old_prompt = node.prompt_template or ""
+    if prompt_hint:
+        new_prompt = f"{old_prompt}\n\n{prompt_hint}" if old_prompt else prompt_hint
+    else:
+        variant = random.choice(_PROMPT_VARIANTS)
+        new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
+
+    try:
+        updated = node.model_copy(update={"prompt_template": new_prompt})
+        wf.nodes[node_id] = updated  # type: ignore[assignment]
+    except Exception:
+        return None
+
+    record = MutationRecord(
+        operator=MutationType.PROMPT_MUTATE,
+        target_node=node_id,
+        before={"prompt": old_prompt[:100]},
+        after={"prompt": new_prompt[:100]},
+        rationale=f"Mutated prompt on {node_id}",
+    )
+    return wf, record
 
 
 def apply_random_mutation(
@@ -473,24 +556,35 @@ def apply_random_mutation(
     *,
     frozen_nodes: set[str] | None = None,
     archive_stats: dict[str, object] | None = None,
-    reflection_report: object | None = None,
+    reflection_report: ReflectionReport | None = None,
     max_attempts: int = 10,
 ) -> tuple[Workflow, MutationRecord] | None:
-    """Apply a random mutation using the given strategy. Retries on failure.
+    """Apply a mutation using the given strategy. Retries on failure.
 
     When reflection_report is provided, guided mutations are attempted first
     (70% of the time), falling back to random mutations.
     """
     frozen = frozen_nodes or set()
     stats = archive_stats or {}
+    use_guided = (
+        reflection_report is not None
+        and hasattr(strategy, "select_guided_operator")
+        and (reflection_report.mutation_suggestions or reflection_report.structural_recommendations)
+    )
 
-    for _ in range(max_attempts):
-        op = strategy.select_operator(workflow, generation, stats)
+    for attempt in range(max_attempts):
+        if use_guided and random.random() < 0.7:
+            op = strategy.select_guided_operator(  # type: ignore[attr-defined]
+                workflow, generation, reflection_report,
+            )
+        else:
+            op = strategy.select_operator(workflow, generation, stats)
 
         if op == MutationType.NODE_INSERT and len(workflow.nodes) >= MAX_NODES:
             op = MutationType.PARAM_MUTATE
 
-        result = _try_mutation(workflow, op, frozen)
+        prompt_hint = _extract_prompt_hint(reflection_report) if reflection_report else None
+        result = _try_mutation(workflow, op, frozen, prompt_hint=prompt_hint)
         if result is not None:
             wf, rec = result
             if len(wf.nodes) > MAX_NODES:
@@ -500,16 +594,27 @@ def apply_random_mutation(
     return None
 
 
+def _extract_prompt_hint(report: ReflectionReport) -> str | None:
+    """Extract a prompt improvement hint from a ReflectionReport."""
+    if report.prompt_improvements:
+        return random.choice(report.prompt_improvements)
+    if report.success_patterns:
+        return random.choice(report.success_patterns)
+    return None
+
+
 def _try_mutation(
     workflow: Workflow,
     op: MutationType,
     frozen: set[str],
+    *,
+    prompt_hint: str | None = None,
 ) -> tuple[Workflow, MutationRecord] | None:
     """Attempt a single mutation of the given type."""
     mutable_nodes = [
         nid for nid in workflow.nodes if nid not in frozen and nid != workflow.start_node
     ]
-    if not mutable_nodes and op != MutationType.NODE_INSERT:
+    if not mutable_nodes and op not in (MutationType.NODE_INSERT,):
         return None
 
     if op == MutationType.NODE_INSERT:
@@ -568,5 +673,15 @@ def _try_mutation(
         else:
             changes = {"model": random.choice(["sonnet", "opus", "haiku"])}
         return mutate_params(workflow, target, changes, frozen_nodes=frozen)
+
+    elif op == MutationType.PROMPT_MUTATE:
+        agent_nodes = [
+            nid for nid in mutable_nodes
+            if isinstance(workflow.nodes[nid], AgentNode)
+        ]
+        if not agent_nodes:
+            return None
+        target = random.choice(agent_nodes)
+        return mutate_prompt(workflow, target, frozen_nodes=frozen, prompt_hint=prompt_hint)
 
     return None
