@@ -35,8 +35,11 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     print(f"Calibrating outer loop for {project_path}")
 
-    from factory.outer_loop.filesystem import init_filesystem, load_config
-    from factory.outer_loop.models import SwarmConfig
+    from factory.outer_loop.engine import SwarmEngine
+    from factory.outer_loop.evaluator import SwarmEvaluator
+    from factory.outer_loop.filesystem import init_filesystem, load_config, save_checkpoint
+    from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.models import OuterLoopState, SwarmConfig
 
     config = load_config(project_path)
     if config is None:
@@ -52,7 +55,43 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         )
 
     root = init_filesystem(project_path, config)
+
+    benchmark = config.benchmark
+    try:
+        from factory.workflow.contributed.featurebench.workflow import (
+            workflow as featurebench_workflow,
+        )
+
+        base_workflow = featurebench_workflow()
+    except ImportError:
+        print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
+        return 1
+
+    registry = EphemeralModeRegistry(project_path)
+    evaluator = SwarmEvaluator(config)
+    engine = SwarmEngine(
+        config=config,
+        evaluator=evaluator,
+        mode_registry=registry,
+        project_dir=project_path,
+    )
+
+    population = engine.seed(base_workflow, config)
+
+    pop_dir = root / "population"
+    population.save(pop_dir)
+
+    state = OuterLoopState(
+        budget_remaining=config.budget,
+        generation=0,
+    )
+    save_checkpoint(project_path, state)
+
+    modes = registry.list_modes()
     print(f"Outer loop initialized at {root}")
+    print(f"Seeded {population.size} individuals ({len(modes)} ephemeral modes):")
+    for mode_name in modes:
+        print(f"  - {mode_name}")
     print(json.dumps(config.model_dump(mode="json"), indent=2))
     return 0
 
