@@ -1,7 +1,7 @@
 """Deep-QA standalone verification workflow.
 
-Runs the decomposed QA pipeline (health_checker → code_reviewer →
-adversarial_tester) with a gate after code review as a standalone mode.
+Runs the parallel QA pipeline (health_checker, code_reviewer,
+adversarial_tester via fork/join) as a standalone mode.
 Triggered via `factory workflow run deep-qa` or `factory ceo /path --mode deep-qa`.
 """
 
@@ -14,9 +14,9 @@ from factory.workflow.primitives import AgentNode, Edge, FnNode, GateNode, Verdi
 meta = {
     "name": "deep-qa",
     "description": (
-        "Standalone deep-QA verification pipeline — 3 sequential specialist "
-        "agents (health_checker, code_reviewer, adversarial_tester) with a gate "
-        "after code review to short-circuit on critical bugs."
+        "Standalone deep-QA verification pipeline — 3 parallel specialist "
+        "agents (health_checker, code_reviewer, adversarial_tester) via "
+        "fork/join."
     ),
 }
 
@@ -50,7 +50,7 @@ def workflow() -> Workflow:
 
     edges = [
         *dq_edges,
-        Edge(source="adversarial_tester", target="gate_precheck"),
+        Edge(source="join_qa", target="gate_precheck"),
         Edge(source="gate_precheck", target="post_review", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="post_review", condition=VerdictType.HALT),
     ]
@@ -62,6 +62,6 @@ def workflow() -> Workflow:
         name="deep-qa",
         nodes=nodes,
         edges=edges,
-        start_node="health_checker",
+        start_node="fork_qa",
         trigger=trigger,
     )

@@ -418,7 +418,15 @@ COMMON_AE=(
     --ae "FACTORY_INSTANCE_ID=${INSTANCE_ID}"
 )
 
-HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}")
+SKILLOPT_AE=()
+if [ -n "${FACTORY_WORKFLOW_YAML_B64:-}" ]; then
+    SKILLOPT_AE+=(--ae "FACTORY_WORKFLOW_YAML_B64=${FACTORY_WORKFLOW_YAML_B64}")
+fi
+if [ -n "${FACTORY_STUDENT_MODEL:-}" ]; then
+    SKILLOPT_AE+=(--ae "FACTORY_STUDENT_MODEL=${FACTORY_STUDENT_MODEL}")
+fi
+
+HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}" ${SKILLOPT_AE[@]+"${SKILLOPT_AE[@]}"})
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     HARBOR_CMD+=(--mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]')

@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import structlog
+
 from factory.cli._ceo_helpers import (
     _execute_ceo,
     _resolve_ceo_project,
@@ -38,7 +40,25 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return validated
     mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan, just_plan = validated
 
-    assert raw_path is not None
+    from factory.plugins import get_registry
+
+    _log = structlog.get_logger()
+    registry = get_registry()
+    for hook in registry.ceo_pre_hooks:
+        try:
+            override = hook(mode, args)
+            if override is not None:
+                raw_path = str(override)
+                args.path = raw_path
+        except Exception as exc:
+            _log.warning("plugin_pre_hook_failed", error=str(exc))
+
+    if raw_path is None:
+        print(
+            "Error: no project path provided and no plugin pre-hook supplied one.",
+            file=sys.stderr,
+        )
+        return 1
 
     if mode == "review":
         return handle_review_mode(args, raw_path, headless)

@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import argparse
 
+BUILTIN_AGENT_ROLES: frozenset[str] = frozenset({
+    "researcher", "strategist", "builder",
+    "health_checker", "code_reviewer", "adversarial_tester",
+    "archivist", "ceo", "failure_analyst", "refiner",
+})
 
 
 def add_project_setup_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -334,11 +339,8 @@ def add_validation_recovery_parsers(sub: argparse._SubParsersAction) -> None:  #
 
 def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder",
-                                     "health_checker", "code_reviewer", "adversarial_tester",
-                                     "archivist", "ceo",
-                                     "failure_analyst", "refiner"],
-                    help="Agent role to invoke")
+    p.add_argument("role",
+                    help="Agent role to invoke (built-in or plugin-registered)")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
     p.add_argument("--timeout", type=float, default=600.0,

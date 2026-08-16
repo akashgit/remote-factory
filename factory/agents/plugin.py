@@ -105,9 +105,7 @@ def _sandbox_mode(role: str) -> str:
         return "read-only"
     if role in _WORKSPACE_WRITE_ROLES:
         return "workspace-write"
-    raise ValueError(
-        f"Unknown role {role!r}: not in _READ_ONLY_ROLES or _WORKSPACE_WRITE_ROLES"
-    )
+    return "read-only"
 
 
 def _escape_toml_multiline_literal(text: str) -> str:

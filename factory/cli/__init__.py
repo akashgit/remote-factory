@@ -50,7 +50,10 @@ from factory.cli.run import (
     cmd_run as cmd_run,
 )
 from factory.cli.graph import (
+    cmd_graph_explain as cmd_graph_explain,
     cmd_graph_extract as cmd_graph_extract,
+    cmd_graph_path as cmd_graph_path,
+    cmd_graph_query as cmd_graph_query,
     cmd_graph_status as cmd_graph_status,
     cmd_graph_update as cmd_graph_update,
 )

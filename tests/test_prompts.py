@@ -237,16 +237,16 @@ class TestCeoPrompt:
         assert has_deep_qa
 
     def test_e2e_gate_before_improve(self, ceo_prompt: str) -> None:
-        """Build workflow has health_checker after builder in topological order."""
+        """Build workflow has fork_qa (QA entry) after builder in topological order."""
         from factory.workflow.skill_export import _topological_sort
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
         order = _topological_sort(build)
         builder_ids = [nid for nid in order if nid == "builder"]
-        hc_ids = [nid for nid in order if nid == "health_checker"]
-        if builder_ids and hc_ids:
-            assert order.index(builder_ids[0]) < order.index(hc_ids[0])
+        fork_ids = [nid for nid in order if nid == "fork_qa"]
+        if builder_ids and fork_ids:
+            assert order.index(builder_ids[0]) < order.index(fork_ids[0])
 
     def test_e2e_gate_asks_user_for_input(self, ceo_prompt: str) -> None:
         """CEO prompt communicates with user in foreground mode."""

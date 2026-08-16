@@ -830,6 +830,87 @@ class TestHelpers:
         result = _detect_artifact("g", node, tmp_path)
         assert result is None
 
+    def test_detect_artifact_same_role_collision(self, tmp_path: Path) -> None:
+        """Two same-role nodes with writes: generic review must not cause collision."""
+        reviews_dir = tmp_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("generic output")
+
+        node1 = AgentNode(
+            id="researcher_alpha", role=AgentRole.RESEARCHER,
+            prompt_template="r", writes={".factory/strategy/alpha.md"},
+        )
+        (strategy_dir / "alpha.md").write_text("alpha content")
+        result1 = _detect_artifact("researcher_alpha", node1, tmp_path)
+        assert result1 == "alpha content"
+
+        node2 = AgentNode(
+            id="researcher_beta", role=AgentRole.RESEARCHER,
+            prompt_template="r", writes={".factory/strategy/beta.md"},
+        )
+        result2 = _detect_artifact("researcher_beta", node2, tmp_path)
+        assert result2 is None
+
+    def test_detect_artifact_writes_before_generic(self, tmp_path: Path) -> None:
+        """Writes file takes priority over generic review file."""
+        reviews_dir = tmp_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("generic")
+        (strategy_dir / "output.md").write_text("writes content")
+
+        node = AgentNode(
+            id="researcher", role=AgentRole.RESEARCHER,
+            prompt_template="r", writes={".factory/strategy/output.md"},
+        )
+        result = _detect_artifact("researcher", node, tmp_path)
+        assert result == "writes content"
+
+    def test_detect_artifact_no_writes_backward_compat(self, tmp_path: Path) -> None:
+        """Node with no writes falls back to generic review file."""
+        reviews_dir = tmp_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("review output")
+
+        node = AgentNode(
+            id="researcher", role=AgentRole.RESEARCHER,
+            prompt_template="r",
+        )
+        result = _detect_artifact("researcher", node, tmp_path)
+        assert result == "review output"
+
+    def test_detect_artifact_writes_absent_no_fallthrough(self, tmp_path: Path) -> None:
+        """Declared writes that don't exist must return None, not fall through to generic."""
+        reviews_dir = tmp_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("generic output")
+
+        node = AgentNode(
+            id="researcher", role=AgentRole.RESEARCHER,
+            prompt_template="r", writes={".factory/strategy/missing.md"},
+        )
+        result = _detect_artifact("researcher", node, tmp_path)
+        assert result is None
+
+    def test_detect_artifact_graph_explorer_scenario(self, tmp_path: Path) -> None:
+        """graph_explorer node with writes must match on writes, not generic."""
+        reviews_dir = tmp_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "researcher-latest.md").write_text("stale generic")
+        (strategy_dir / "graph-context.md").write_text("graph analysis")
+
+        node = AgentNode(
+            id="graph_explorer", role=AgentRole.RESEARCHER,
+            prompt_template="r", writes={".factory/strategy/graph-context.md"},
+        )
+        result = _detect_artifact("graph_explorer", node, tmp_path)
+        assert result == "graph analysis"
+
 
 class TestFinalize:
     def test_finalize_marks_remaining_nodes(self, tmp_path: Path) -> None:

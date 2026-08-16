@@ -1,0 +1,604 @@
+"""DL-style training loop for SKILL.md optimization."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import structlog
+import yaml
+
+from factory.skillopt.adapter import EnvAdapter
+from factory.skillopt.aggregate import merge_patches
+from factory.skillopt.clip import rank_and_select
+from factory.skillopt.failure_tracker import FailureTracker
+from factory.skillopt.gate import evaluate_gate, select_gate_score
+from factory.skillopt.skill import apply_patch
+from factory.skillopt.slow_update import (
+    extract_slow_update_field,
+    inject_empty_slow_update_field,
+    replace_slow_update_field,
+    run_slow_update,
+)
+from factory.skillopt.types import GateResult, Patch, RolloutResult
+from factory.skillopt.yaml_surface import (
+    extract_prompt_slots,
+    format_prompt_slots_for_llm,
+    load_yaml,
+    render_skill_from_slots,
+)
+
+log = structlog.get_logger()
+
+
+class SkillOptTrainer:
+
+    def __init__(
+        self,
+        adapter: EnvAdapter,
+        skill_path: str,
+        epochs: int = 3,
+        steps_per_epoch: int = 5,
+        batch_size: int = 8,
+        learning_rate: int = 3,
+        eval_split_seed: int = 42,
+        metric: str = "hard",
+        out_dir: str = ".skillopt",
+        overfit: bool = False,
+        results_from: str = "",
+        annotations_path: str = "",
+        workflow_name: str = "",
+        use_slow_update: bool = False,
+        slow_update_samples: int = 20,
+    ) -> None:
+        self.adapter = adapter
+        self.skill_path = Path(skill_path)
+        self.epochs = epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.eval_split_seed = eval_split_seed
+        self.metric = metric
+        self.out_dir = Path(out_dir)
+        self.overfit = overfit
+        self.results_from = Path(results_from) if results_from else None
+
+        self.use_slow_update = use_slow_update
+        self.slow_update_samples = slow_update_samples
+
+        self.rejected_edits: list[Patch] = []
+        self.best_skill: str = ""
+        self.best_score: float = -1.0
+        self.best_step: int = 0
+        self.current_skill: str = ""
+        self.current_score: float = -1.0
+        self.global_step: int = 0
+
+        self._workflow_name = workflow_name
+        self.yaml_surface: dict | None = None
+        self.prompt_slots: dict[str, str] = {}
+        self.prompt_slots_text: str = ""
+        self.failure_tracker = FailureTracker(out_dir)
+        self._resolve_annotations(annotations_path)
+
+    def _resolve_annotations(self, annotations_path: str) -> None:
+        if annotations_path:
+            path = Path(annotations_path)
+        else:
+            path = self.skill_path.parent / (self.skill_path.stem + ".annotations.yaml")
+        if path.exists():
+            self.yaml_surface = load_yaml(path)
+            self.prompt_slots = extract_prompt_slots(self.yaml_surface)
+            self.prompt_slots_text = format_prompt_slots_for_llm(self.yaml_surface)
+            log.info(
+                "loaded YAML annotations",
+                path=str(path),
+                prompt_slots=len(self.prompt_slots),
+            )
+        else:
+            log.info("no YAML annotations found, using legacy SKILL.md surface", path=str(path))
+
+    def _load_skill(self) -> str:
+        return self.skill_path.read_text()
+
+    def _save_skill(self, content: str) -> None:
+        self.skill_path.write_text(content)
+
+    def _write_yaml_annotations(self) -> None:
+        """Write current prompt_slots back to the YAML annotations file."""
+        ann_path = self.skill_path.parent / (self.skill_path.stem + ".annotations.yaml")
+        yaml_text = self._serialize_yaml()
+        ann_path.write_text(yaml_text)
+        log.info("yaml annotations updated", path=str(ann_path))
+
+    def _serialize_yaml(self, slots: dict[str, str] | None = None) -> str:
+        """Serialize current YAML surface with given (or current) slot values."""
+        surface = self._build_updated_yaml_surface()
+        if slots:
+            for node_id, node in surface.items():
+                if not isinstance(node, dict):
+                    continue
+                node_slots = node.get("slots", {})
+                for k in node_slots:
+                    if k in slots:
+                        node_slots[k] = slots[k]
+        return yaml.dump(surface, default_flow_style=False, allow_unicode=True, width=120)
+
+    def _checkpoint(self, label: str) -> None:
+        ckpt_dir = self.out_dir / "checkpoints"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        (ckpt_dir / f"{label}_skill.md").write_text(self.current_skill)
+        if self.best_skill:
+            (ckpt_dir / f"{label}_best_skill.md").write_text(self.best_skill)
+        if self.prompt_slots:
+            (ckpt_dir / f"{label}_slots.json").write_text(
+                json.dumps(self.prompt_slots, indent=2)
+            )
+        state = {
+            "global_step": self.global_step,
+            "current_score": self.current_score,
+            "best_score": self.best_score,
+            "best_step": self.best_step,
+            "rejected_count": len(self.rejected_edits),
+        }
+        (ckpt_dir / f"{label}_state.json").write_text(json.dumps(state, indent=2))
+        log.info("checkpoint saved", label=label)
+
+    def _compute_score(self, results: list[RolloutResult]) -> tuple[float, float]:
+        if not results:
+            return 0.0, 0.0
+        hard = sum(r.hard for r in results) / len(results)
+        soft = sum(r.soft for r in results) / len(results)
+        return hard, soft
+
+    def _build_step_buffer_context(self) -> str:
+        if not self.rejected_edits:
+            return ""
+        lines = ["Previously rejected edits (DO NOT re-propose these):"]
+        for i, patch in enumerate(self.rejected_edits):
+            for edit in patch.edits:
+                target = edit.target[:60] if edit.target else edit.content[:60]
+                reasoning = patch.reasoning[:100] if patch.reasoning else ""
+                lines.append(f"  Rejected: {edit.op} at {target} — {reasoning}")
+        result = "\n".join(lines)
+        if len(result) > 2000:
+            result = result[:1997] + "..."
+        return result
+
+    def _load_results(self, path: Path) -> list[RolloutResult]:
+        raw = json.loads(path.read_text())
+        items = raw if isinstance(raw, list) else raw.get("results", raw.get("items", []))
+        return [RolloutResult(**r) for r in items]
+
+    def _validate_edits_target_prompts_only(self, patch: Patch) -> list[str]:
+        """Validate that all edits in the patch target known prompt slot values."""
+        if not self.prompt_slots:
+            return []
+        known_values = list(self.prompt_slots.values())
+        violations: list[str] = []
+        for edit in patch.edits:
+            if edit.op == "replace" and edit.target:
+                target = edit.target.strip()
+                is_prompt = any(
+                    target == kv.strip()
+                    or target in kv
+                    for kv in known_values
+                )
+                if not is_prompt:
+                    violations.append(f"Edit targets non-prompt content: {edit.target[:80]}...")
+        return violations
+
+    def _update_prompt_slots_after_accept(
+        self,
+        accepted_patch: Patch,
+        candidate_slots: dict[str, str] | None = None,
+    ) -> None:
+        """After accepting edits, update prompt_slots to reflect the new prompt values."""
+        if not self.prompt_slots:
+            return
+        if candidate_slots is not None:
+            self.prompt_slots = candidate_slots
+        else:
+            for edit in accepted_patch.edits:
+                if edit.op != "replace" or not edit.target:
+                    continue
+                for slot_name, slot_value in list(self.prompt_slots.items()):
+                    if slot_value == edit.target:
+                        self.prompt_slots[slot_name] = edit.content
+                        break
+        self.prompt_slots_text = format_prompt_slots_for_llm(self._build_updated_yaml_surface())
+
+    def _build_updated_yaml_surface(self) -> dict:
+        """Build a YAML surface dict with current prompt slot values for formatting."""
+        if not self.yaml_surface:
+            return {}
+        import copy
+        surface = copy.deepcopy(self.yaml_surface)
+        for node_id, node in surface.items():
+            if not isinstance(node, dict):
+                continue
+            slots = node.get("slots", {})
+            for k in slots:
+                if k.startswith("task_prompt_") and k in self.prompt_slots:
+                    slots[k] = self.prompt_slots[k]
+        return surface
+
+    def train(self) -> None:
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.current_skill = self._load_skill()
+        self.best_skill = self.current_skill
+
+        log.info(
+            "training started",
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            batch_size=self.batch_size,
+            learning_rate=self.learning_rate,
+            skill_path=str(self.skill_path),
+            overfit=self.overfit,
+            results_from=str(self.results_from) if self.results_from else "",
+            yaml_surface="yes" if self.yaml_surface else "no",
+        )
+
+        if self.current_score < 0:
+            log.info("running baseline eval on validation set")
+            eval_env = self.adapter.build_eval_env(
+                env_num=0, split="eval", seed=self.eval_split_seed,
+            )
+            self._save_skill(self.current_skill)
+            baseline_dir = str(self.out_dir / "baseline_eval")
+            Path(baseline_dir).mkdir(parents=True, exist_ok=True)
+            rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
+            baseline_results = self.adapter.rollout(
+                eval_env, rollout_content, baseline_dir,
+            )
+            self.failure_tracker.record_rollout(baseline_results, 0, "baseline")
+            base_hard, base_soft = self._compute_score(baseline_results)
+            self.current_score = select_gate_score(base_hard, base_soft, self.metric)
+            self.best_score = self.current_score
+            log.info(
+                "baseline eval complete",
+                score=round(self.current_score, 4),
+                items=len(baseline_results),
+            )
+
+        for epoch in range(self.epochs):
+            self.rejected_edits = []
+            log.info("epoch started", epoch=epoch + 1, total=self.epochs)
+
+            for step in range(self.steps_per_epoch):
+                self.global_step += 1
+                log.info(
+                    "step started",
+                    epoch=epoch + 1,
+                    step=step + 1,
+                    global_step=self.global_step,
+                )
+
+                gate_result = self._run_step(epoch, step)
+
+                if gate_result.action == "reject":
+                    log.info("step rejected", global_step=self.global_step)
+                else:
+                    action = gate_result.action
+                    log.info(
+                        "step accepted",
+                        action=action,
+                        score=round(gate_result.current_score, 4),
+                        global_step=self.global_step,
+                    )
+
+                self._checkpoint(f"epoch{epoch + 1}_step{step + 1}")
+
+            self._run_slow_update_epoch(epoch)
+
+            log.info("epoch completed", epoch=epoch + 1)
+
+        self._save_skill(self.best_skill)
+        self._checkpoint("final")
+        self.failure_tracker.print_summary()
+        log.info(
+            "training complete",
+            best_score=round(self.best_score, 4),
+            best_step=self.best_step,
+            total_steps=self.global_step,
+        )
+
+    def _get_primary_prompt_slot(self) -> str | None:
+        """Return the name of the largest prompt slot (the main optimization target)."""
+        if not self.prompt_slots:
+            return None
+        return max(self.prompt_slots, key=lambda k: len(self.prompt_slots[k]))
+
+    def _run_slow_update_epoch(self, epoch: int) -> None:
+        if not self.use_slow_update:
+            return
+
+        primary_slot = self._get_primary_prompt_slot()
+
+        if epoch == 0:
+            if self.yaml_surface and primary_slot:
+                self.prompt_slots[primary_slot] = inject_empty_slow_update_field(
+                    self.prompt_slots[primary_slot],
+                )
+                self._write_yaml_annotations()
+            self.current_skill = inject_empty_slow_update_field(self.current_skill)
+            self._save_skill(self.current_skill)
+            log.info("slow update placeholder injected", epoch=epoch + 1)
+            return
+
+        prev_label = f"epoch{epoch}_step{self.steps_per_epoch}"
+        prev_ckpt = self.out_dir / "checkpoints" / f"{prev_label}_skill.md"
+        if not prev_ckpt.exists():
+            log.warning("slow update: previous checkpoint not found", path=str(prev_ckpt))
+            return
+        prev_skill = prev_ckpt.read_text()
+
+        prev_slots_path = self.out_dir / "checkpoints" / f"{prev_label}_slots.json"
+        prev_slots: dict[str, str] | None = None
+        if prev_slots_path.exists():
+            prev_slots = json.loads(prev_slots_path.read_text())
+
+        env = self.adapter.build_train_env(self.slow_update_samples, seed=1000 + epoch)
+
+        slow_dir = self.out_dir / "slow_update" / f"epoch{epoch + 1}"
+        slow_dir.mkdir(parents=True, exist_ok=True)
+
+        result_path = slow_dir / "slow_result.json"
+        if result_path.exists():
+            log.info("slow update: resuming from cached result", epoch=epoch + 1)
+            return
+
+        rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
+        if self.yaml_surface and prev_slots:
+            prev_rollout = self._serialize_yaml(prev_slots)
+        else:
+            prev_rollout = prev_skill
+        results_prev = self.adapter.rollout(env, prev_rollout, str(slow_dir / "rollout_prev"))
+        results_curr = self.adapter.rollout(env, rollout_content, str(slow_dir / "rollout_curr"))
+
+        prev_hard, _ = self._compute_score(results_prev)
+        curr_hard, _ = self._compute_score(results_curr)
+
+        prev_guidance = ""
+        if self.yaml_surface and primary_slot:
+            prev_guidance = extract_slow_update_field(self.prompt_slots[primary_slot])
+        else:
+            prev_guidance = extract_slow_update_field(self.current_skill)
+
+        slow_result = run_slow_update(
+            skill_content=self.current_skill,
+            prev_skill=prev_skill,
+            results_prev=results_prev,
+            results_curr=results_curr,
+            prev_slow_update_content=prev_guidance,
+        )
+
+        if slow_result and slow_result.get("slow_update_content"):
+            guidance = slow_result["slow_update_content"]
+            if self.yaml_surface and primary_slot:
+                self.prompt_slots[primary_slot] = replace_slow_update_field(
+                    self.prompt_slots[primary_slot], guidance,
+                )
+                self._write_yaml_annotations()
+            self.current_skill = replace_slow_update_field(self.current_skill, guidance)
+            self._save_skill(self.current_skill)
+            slow_result["prev_hard"] = round(prev_hard, 4)
+            slow_result["curr_hard"] = round(curr_hard, 4)
+            result_path.write_text(json.dumps(slow_result, indent=2))
+            log.info(
+                "slow update applied",
+                epoch=epoch + 1,
+                guidance_len=len(guidance),
+                prev_hard=round(prev_hard, 4),
+                curr_hard=round(curr_hard, 4),
+            )
+        else:
+            log.info("slow update: no guidance produced", epoch=epoch + 1)
+
+    def _run_step(self, epoch: int, step: int) -> GateResult:
+        step_dir = str(self.out_dir / f"epoch{epoch + 1}" / f"step{step + 1}")
+        Path(step_dir).mkdir(parents=True, exist_ok=True)
+
+        use_preloaded = (
+            self.results_from
+            and self.global_step == 1
+            and self.results_from.exists()
+        )
+
+        if use_preloaded and self.results_from:
+            results = self._load_results(self.results_from)
+            env = None
+            log.info("loaded results from file", path=str(self.results_from), count=len(results))
+        else:
+            env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
+            self._save_skill(self.current_skill)
+            rollout_content = self._serialize_yaml() if self.yaml_surface else self.current_skill
+            results = self.adapter.rollout(env, rollout_content, step_dir)
+            log.info("rollout complete", results=len(results))
+
+        self.failure_tracker.record_rollout(results, self.global_step, "train")
+        hard_before, soft_before = self._compute_score(results)
+
+        step_buffer_context = self._build_step_buffer_context()
+
+        reflect_kwargs: dict = {
+            "minibatch_size": max(1, self.batch_size // 2),
+            "edit_budget": self.learning_rate + 2,
+            "step_buffer_context": step_buffer_context,
+        }
+        if self.yaml_surface and self.prompt_slots:
+            reflect_kwargs["prompt_slots"] = self.prompt_slots
+            reflect_kwargs["prompt_slots_text"] = self.prompt_slots_text
+            reflect_kwargs["learning_rate"] = self.learning_rate
+
+        raw_patches = self.adapter.reflect(
+            results, self.current_skill, step_dir,
+            **reflect_kwargs,
+        )
+
+        if not raw_patches:
+            log.warning("no patches from reflect")
+            return GateResult(
+                action="reject",
+                current_skill=self.current_skill,
+                current_score=self.current_score,
+                best_skill=self.best_skill,
+                best_score=self.best_score,
+                best_step=self.best_step,
+            )
+
+        failure_patches = [rp for rp in raw_patches if rp.source_type == "failure"]
+        success_patches = [rp for rp in raw_patches if rp.source_type == "success"]
+
+        merged = merge_patches(self.current_skill, failure_patches, success_patches)
+
+        if not merged.edits:
+            log.warning("merged patch has no edits")
+            return GateResult(
+                action="reject",
+                current_skill=self.current_skill,
+                current_score=self.current_score,
+                best_skill=self.best_skill,
+                best_score=self.best_score,
+                best_step=self.best_step,
+            )
+
+        clipped = rank_and_select(self.current_skill, merged, max_edits=self.learning_rate)
+
+        if self.yaml_surface:
+            violations = self._validate_edits_target_prompts_only(clipped)
+            if violations:
+                log.warning("edits target non-prompt content, rejecting", violations=violations)
+                self.rejected_edits.append(clipped)
+                return GateResult(
+                    action="reject",
+                    current_skill=self.current_skill,
+                    current_score=self.current_score,
+                    best_skill=self.best_skill,
+                    best_score=self.best_score,
+                    best_step=self.best_step,
+                )
+
+        candidate_slots: dict[str, str] | None = None
+        if self.yaml_surface and self._workflow_name:
+            candidate_slots = dict(self.prompt_slots)
+            for edit in clipped.edits:
+                if edit.op == "replace":
+                    for slot_name, slot_value in self.prompt_slots.items():
+                        if slot_value == edit.target:
+                            candidate_slots[slot_name] = edit.content
+                            break
+                        if edit.target in slot_value:
+                            candidate_slots[slot_name] = slot_value.replace(
+                                edit.target, edit.content, 1,
+                            )
+                            break
+
+            n_ops = len(clipped.edits)
+            has_changes = any(
+                candidate_slots.get(s) != self.prompt_slots.get(s)
+                for s in candidate_slots
+            )
+            if not has_changes:
+                log.warning("no actual prompt changes after merge/clip — skipping eval")
+                return GateResult(
+                    action="reject",
+                    current_skill=self.current_skill,
+                    current_score=self.current_score,
+                    best_skill=self.best_skill,
+                    best_score=self.best_score,
+                    best_step=self.best_step,
+                )
+            log.info(
+                "edit budget ok",
+                n_ops=n_ops,
+                limit=self.learning_rate,
+            )
+
+            candidate_skill = render_skill_from_slots(
+                workflow_name=self._workflow_name,
+                prompt_slots=candidate_slots,
+                skill_path=self.skill_path,
+            )
+        else:
+            candidate_skill = apply_patch(self.current_skill, clipped)
+
+        candidate_yaml = self._serialize_yaml(candidate_slots) if self.yaml_surface else candidate_skill
+
+        if self.overfit:
+            self._save_skill(candidate_skill)
+            if use_preloaded:
+                env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
+            eval_content = candidate_yaml if self.yaml_surface else candidate_skill
+            eval_results = self.adapter.rollout(env, eval_content, step_dir + "/eval")
+            self.failure_tracker.record_rollout(eval_results, self.global_step, "eval_overfit")
+            cand_hard, cand_soft = self._compute_score(eval_results)
+            log.info(
+                "overfit eval",
+                step=self.global_step,
+                baseline=round(self.current_score, 4),
+                candidate=round(
+                    select_gate_score(cand_hard, cand_soft, self.metric), 4,
+                ),
+            )
+        else:
+            self._save_skill(candidate_skill)
+            eval_env = self.adapter.build_eval_env(
+                env_num=0, split="eval", seed=self.eval_split_seed,
+            )
+            eval_content = candidate_yaml if self.yaml_surface else candidate_skill
+            eval_results = self.adapter.rollout(eval_env, eval_content, step_dir + "/eval")
+            self.failure_tracker.record_rollout(eval_results, self.global_step, "eval")
+            cand_hard, cand_soft = self._compute_score(eval_results)
+
+        gate = evaluate_gate(
+            candidate_skill=candidate_skill,
+            cand_hard=cand_hard,
+            cand_soft=cand_soft,
+            current_skill=self.current_skill,
+            current_score=self.current_score,
+            best_skill=self.best_skill,
+            best_score=self.best_score,
+            best_step=self.best_step,
+            global_step=self.global_step,
+            metric=self.metric,
+            accept_ties=self.overfit,
+        )
+
+        if gate.action == "reject":
+            self.rejected_edits.append(clipped)
+            self._save_skill(self.current_skill)
+            log.info(
+                "step result",
+                step=self.global_step,
+                action="reject",
+                accepted_total=self.global_step - len(self.rejected_edits),
+                rejected_total=len(self.rejected_edits),
+            )
+        else:
+            self.current_skill = gate.current_skill
+            self.current_score = gate.current_score
+            if self.yaml_surface:
+                self._update_prompt_slots_after_accept(clipped, candidate_slots)
+                self._write_yaml_annotations()
+            if gate.action == "accept_new_best":
+                self.best_skill = gate.best_skill
+                self.best_score = gate.best_score
+                self.best_step = gate.best_step
+            log.info(
+                "step result",
+                step=self.global_step,
+                action=gate.action,
+                score=round(gate.current_score, 4),
+                accepted_total=self.global_step - len(self.rejected_edits),
+                rejected_total=len(self.rejected_edits),
+            )
+
+        (Path(step_dir) / "patch.json").write_text(
+            json.dumps(clipped.model_dump(), indent=2)
+        )
+        (Path(step_dir) / "gate.json").write_text(
+            json.dumps(gate.model_dump(), indent=2)
+        )
+
+        return gate

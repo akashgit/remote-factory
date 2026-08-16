@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ $# -lt 2 ]; then
     echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]"
     echo ""
-    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe"
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe, devopsgym"
     exit 1
 fi
 
@@ -58,10 +58,10 @@ esac
 
 # Validate benchmark
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench|programbench|legacybench|harborindex|tomswe) ;;
+    swebench|featurebench|terminalbench|programbench|legacybench|harborindex|tomswe|devopsgym) ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe, devopsgym"
         exit 1
         ;;
 esac

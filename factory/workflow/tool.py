@@ -799,6 +799,7 @@ def _detect_artifact(
 
     if isinstance(node, AgentNode):
         role = node.role.value
+        # 1. Tagged review file
         tag = nid.replace(f"{role}_", "").replace(role, "")
         if tag and tag != nid:
             tagged_file = reviews_dir / f"{role}-{tag}-latest.md"
@@ -806,11 +807,7 @@ def _detect_artifact(
                 content = tagged_file.read_text().strip()
                 if content:
                     return content
-        review_file = reviews_dir / f"{role}-latest.md"
-        if review_file.exists() and _fresh(review_file):
-            content = review_file.read_text().strip()
-            if content:
-                return content
+        # 2. Declared writes — checked before generic to avoid same-role collision
         if node.writes:
             for wp in node.writes:
                 f = project_path / wp
@@ -818,6 +815,13 @@ def _detect_artifact(
                     content = f.read_text().strip()
                     if content:
                         return content
+            return None
+        # 3. Generic review file — only for nodes without writes and no tag match
+        review_file = reviews_dir / f"{role}-latest.md"
+        if review_file.exists() and _fresh(review_file):
+            content = review_file.read_text().strip()
+            if content:
+                return content
         return None
 
     elif isinstance(node, Study):

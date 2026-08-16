@@ -1,4 +1,5 @@
 """CLI _helpers commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -16,16 +17,68 @@ log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
 
-CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "design", "interactive", "parallel-improve", "research", "review", "deep-qa", "create", "swebench", "frontend-design", "frontend-design-discover", "frontend-design-scan", "evolve", "deep-research"]
+CEO_MODES = [
+    "auto",
+    "auto-fresh",
+    "build",
+    "discover",
+    "founder",
+    "improve",
+    "meta",
+    "design",
+    "interactive",
+    "parallel-improve",
+    "research",
+    "review",
+    "deep-qa",
+    "create",
+    "study",
+    "swebench",
+    "frontend-design",
+    "frontend-design-discover",
+    "frontend-design-scan",
+    "evolve",
+    "deep-research",
+]
 
 
-RUN_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "parallel-improve", "research", "swebench", "frontend-design-scan"]
+RUN_MODES = [
+    "auto",
+    "auto-fresh",
+    "build",
+    "discover",
+    "founder",
+    "improve",
+    "meta",
+    "parallel-improve",
+    "research",
+    "study",
+    "swebench",
+    "frontend-design-scan",
+]
 
 
-DEPRECATED_MODES: frozenset[str] = frozenset({
-    "build", "improve", "research", "meta", "discover",
-    "review", "refine", "parallel-improve", "interactive",
-})
+def get_all_ceo_modes() -> list[str]:
+    """Return CEO_MODES plus any modes registered by plugins."""
+    from factory.plugins import get_registry
+
+    registry = get_registry()
+    return CEO_MODES + [m for m in registry.modes if m not in CEO_MODES]
+
+
+DEPRECATED_MODES: frozenset[str] = frozenset(
+    {
+        "build",
+        "improve",
+        "research",
+        "meta",
+        "discover",
+        "review",
+        "refine",
+        "parallel-improve",
+        "interactive",
+    }
+)
 
 
 def warn_deprecated_mode(mode: str) -> None:
@@ -112,10 +165,16 @@ def _ensure_dashboard(project_path: Path, port: int = _DASHBOARD_PORT) -> None:
 
     # Start dashboard as a detached background process
     cmd = [
-        sys.executable, "-m", "factory", "dashboard",
-        "--projects-dir", str(projects_dir),
-        "--port", str(port),
-        "--host", "0.0.0.0",
+        sys.executable,
+        "-m",
+        "factory",
+        "dashboard",
+        "--projects-dir",
+        str(projects_dir),
+        "--port",
+        str(port),
+        "--host",
+        "0.0.0.0",
     ]
     subprocess.Popen(
         cmd,
@@ -134,19 +193,25 @@ def _print_banner(mode: str = "improve") -> None:
         else:
             print(f"Factory v2 — mode: {mode}", file=sys.stderr)
         if mode == "founder":
-            print("WARNING: Founder mode — prototype only, not for production use.", file=sys.stderr)
+            print(
+                "WARNING: Founder mode — prototype only, not for production use.", file=sys.stderr
+            )
         return
 
     c = "\033[1;36m"  # bold cyan
-    d = "\033[2m"      # dim
-    r = "\033[0m"      # reset
+    d = "\033[2m"  # dim
+    r = "\033[0m"  # reset
 
     mode_line = "" if mode == "welcome" else f"{d}  Mode: {mode}{r}\n"
     y = "\033[1;33m"  # bold yellow
     founder_warn = (
-        f"{y}  ⚠  PROTOTYPE ONLY — not for production use.{r}\n"
-        f"{y}  ⚠  Run --mode improve afterward to harden.{r}\n"
-    ) if mode == "founder" else ""
+        (
+            f"{y}  ⚠  PROTOTYPE ONLY — not for production use.{r}\n"
+            f"{y}  ⚠  Run --mode improve afterward to harden.{r}\n"
+        )
+        if mode == "founder"
+        else ""
+    )
     banner = (
         f"\n{c}  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻{r}\n"
         f"{c}  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛{r}\n"
@@ -241,4 +306,3 @@ def _load_env_local() -> None:
                     key, _, value = line.partition("=")
                     os.environ.setdefault(key.strip(), value.strip())
             break
-

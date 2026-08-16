@@ -26,6 +26,24 @@ _EXPERIMENT_SEED_ENTRIES: Final[tuple[str, ...]] = (
     "agents",
 )
 
+# .factory entries symlinked to main — shared, append-only/read-only project state.
+_SHARED_SYMLINK_ENTRIES: Final[tuple[str, ...]] = (
+    "config.json",
+    "eval_profile.json",
+    "results.tsv",
+    "experiments",
+    "archive",
+    "events.jsonl",
+    ".store.lock",
+    "adversarial_state.json",
+    "performance_report.json",
+)
+
+# .factory entries copied from main — read-only but agents may override per-run.
+_COPY_ENTRIES: Final[tuple[str, ...]] = (
+    "agents",
+)
+
 
 def create_worktree(
     project_path: Path,
@@ -89,15 +107,48 @@ def create_worktree(
         capture_output=True,
     )
 
-    # Symlink worktree/.factory → the real .factory dir so the CEO can
-    # access experiment data from within the worktree.
+    # Create independent .factory/ with selective sharing — shared append-only
+    # state is symlinked, per-cycle mutable state gets fresh directories.
     wt_factory = wt_dir / ".factory"
     if wt_factory.exists() or wt_factory.is_symlink():
         if wt_factory.is_dir() and not wt_factory.is_symlink():
             shutil.rmtree(wt_factory)
         else:
             wt_factory.unlink()
-    wt_factory.symlink_to(factory_dir)
+
+    wt_factory.mkdir(parents=True, exist_ok=True)
+
+    for entry in _SHARED_SYMLINK_ENTRIES:
+        src = factory_dir / entry
+        if src.exists():
+            (wt_factory / entry).symlink_to(src)
+
+    for entry in _COPY_ENTRIES:
+        src = factory_dir / entry
+        if src.exists():
+            dst = wt_factory / entry
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+
+    (wt_factory / "strategy").mkdir(exist_ok=True)
+    (wt_factory / "reviews").mkdir(exist_ok=True)
+    (wt_factory / "state").mkdir(exist_ok=True)
+
+    backlog_src = factory_dir / "strategy" / "backlog.md"
+    if backlog_src.exists():
+        shutil.copy2(backlog_src, wt_factory / "strategy" / "backlog.md")
+
+    # Copy remaining plugin-created subdirectories not already handled.
+    _handled = set(_SHARED_SYMLINK_ENTRIES) | set(_COPY_ENTRIES)
+    if factory_dir.is_dir():
+        for child in factory_dir.iterdir():
+            if child.name in _handled or not child.is_dir():
+                continue
+            dst = wt_factory / child.name
+            if not dst.exists():
+                shutil.copytree(child, dst)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
 
@@ -199,23 +250,24 @@ def _seed_experiment_factory(source: Path, dest: Path) -> None:
             shutil.copy2(src, dst)
 
 
-def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
-    """Copy telemetry files from worktree .factory/ to main project .factory/.
+def _sync_backlog_to_main(worktree_path: Path, project_path: Path) -> None:
+    """Sync backlog changes from worktree back to main .factory/."""
+    wt_backlog = worktree_path / ".factory" / "strategy" / "backlog.md"
+    main_backlog = project_path / ".factory" / "strategy" / "backlog.md"
+    if wt_backlog.exists() and not wt_backlog.is_symlink():
+        main_backlog.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(wt_backlog, main_backlog)
+        log.info("backlog_synced", src=str(wt_backlog), dst=str(main_backlog))
 
-    If .factory/ is a symlink, files are already in the right place — no copy needed.
-    """
+
+def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
+    """Copy telemetry files from worktree .factory/ to main project .factory/."""
     wt_factory = worktree_path / ".factory"
     main_factory = project_path / ".factory"
 
     if not wt_factory.exists():
         return
 
-    # If .factory is a symlink to main .factory, files are already preserved
-    if wt_factory.is_symlink():
-        log.debug("telemetry_preserve_skip", reason="symlink", path=str(wt_factory))
-        return
-
-    # .factory is a separate directory — copy telemetry files to main .factory
     main_factory.mkdir(parents=True, exist_ok=True)
     for filename in _TELEMETRY_FILES:
         src = wt_factory / filename
@@ -311,6 +363,7 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
                 file=sys.stderr,
             )
             return
+        _sync_backlog_to_main(worktree_path, project_path)
         _preserve_telemetry(worktree_path, project_path)
         shutil.rmtree(worktree_path)
 

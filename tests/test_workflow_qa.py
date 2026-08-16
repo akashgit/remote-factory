@@ -12,7 +12,6 @@ from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     FnNode,
-    GateNode,
     VerdictType,
 )
 
@@ -52,18 +51,18 @@ class TestSubgraph:
     def test_preserves_edge_between_included_nodes(self) -> None:
         wf = improve_workflow()
         sub = wf.subgraph(
-            {"health_checker", "code_reviewer", "gate_review"}, name="test", start_node="health_checker",
+            {"fork_qa", "join_qa", "gate_qa"}, name="test", start_node="fork_qa",
         )
         edge_pairs = {(e.source, e.target) for e in sub.edges}
-        assert ("health_checker", "code_reviewer") in edge_pairs
-        assert ("code_reviewer", "gate_review") in edge_pairs
+        assert ("fork_qa", "join_qa") in edge_pairs
+        assert ("join_qa", "gate_qa") in edge_pairs
 
     def test_excludes_edges_to_outside_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
+        sub = wf.subgraph({"fork_qa", "join_qa"}, name="test", start_node="fork_qa")
         for edge in sub.edges:
-            assert edge.target != "gate_review"
             assert edge.target != "builder"
+            assert edge.target != "gate_qa"
 
 
 # ── deep-qa workflow structure ─────────────────────────────────
@@ -85,15 +84,16 @@ class TestDeepQaWorkflow:
 
     def test_start_node(self) -> None:
         wf = self._get_wf()
-        assert wf.start_node == "health_checker"
+        assert wf.start_node == "fork_qa"
 
     def test_has_expected_nodes(self) -> None:
         wf = self._get_wf()
-        assert set(wf.nodes.keys()) == {
-            "health_checker", "code_reviewer", "gate_review",
-            "adversarial_tester",
+        expected = {
+            "fork_qa", "health_checker", "code_reviewer",
+            "adversarial_tester", "join_qa",
             "gate_precheck", "post_review",
         }
+        assert set(wf.nodes.keys()) == expected
 
     def test_specialist_roles(self) -> None:
         wf = self._get_wf()
@@ -131,12 +131,10 @@ class TestDeepQaWorkflow:
         reloop = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
         assert reloop == []
 
-    def test_gate_review_is_fn(self) -> None:
+    def test_fork_join_present(self) -> None:
         wf = self._get_wf()
-        gate = wf.nodes["gate_review"]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "fn"
-        assert "CRITICAL_FOUND" in gate.evaluator_command
+        assert "fork_qa" in wf.nodes
+        assert "join_qa" in wf.nodes
 
     def test_precheck_routes_to_post_review(self) -> None:
         wf = self._get_wf()

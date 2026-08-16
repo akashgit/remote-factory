@@ -251,11 +251,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
+                MagicMock(returncode=0),  # new-session succeeds
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
@@ -284,11 +283,11 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=True),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-window
+                MagicMock(returncode=1, stderr=b"duplicate session"),  # new-session fails
+                MagicMock(returncode=0),  # new-window fallback succeeds
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
@@ -297,13 +296,49 @@ class TestRunInTmux:
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
 
-                await run_in_tmux(
+                stdout, code, _ = await run_in_tmux(
                     "prompt", "task", project_path, "builder", project_path,
                 )
 
-            new_window_call = mock_run.call_args_list[0]
-            cmd = new_window_call[0][0]
-            assert "new-window" in cmd
+            assert code == 0
+            first_call = mock_run.call_args_list[0]
+            assert "new-session" in first_call[0][0]
+            fallback_call = mock_run.call_args_list[1]
+            assert "new-window" in fallback_call[0][0]
+
+    async def test_race_condition_fallback_to_new_window(self, tmp_path: Path) -> None:
+        """When new-session fails (e.g. duplicate session from parallel agents), fall back to new-window."""
+        project_path = tmp_path / "my-project"
+        project_path.mkdir()
+
+        with (
+            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
+            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+        ):
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stderr=b"duplicate session: factory-persist-my-project-abc123"),
+                MagicMock(returncode=0),  # new-window fallback
+                MagicMock(returncode=0),  # send-keys /exit
+            ]
+
+            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+                tmpdir = tmp_path / "tmp"
+                tmpdir.mkdir()
+                (tmpdir / "output.log").write_text("race condition output")
+
+                stdout, code, _ = await run_in_tmux(
+                    "prompt", "task", project_path, "researcher", project_path,
+                )
+
+            assert code == 0
+            assert "race condition output" in stdout
+            assert len(mock_run.call_args_list) == 3
+            assert "new-session" in mock_run.call_args_list[0][0][0]
+            assert "new-window" in mock_run.call_args_list[1][0][0]
+            assert "send-keys" in mock_run.call_args_list[2][0][0]
 
     async def test_wrapper_script_includes_settings_and_trap(self, tmp_path: Path) -> None:
         """Verify the wrapper script has --settings flag and trap EXIT."""
@@ -324,7 +359,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
             patch.object(Path, "write_text", spy_write_text),
         ):
@@ -366,7 +401,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
             patch.object(Path, "write_text", spy_write_text),
         ):
@@ -395,10 +430,10 @@ class TestRunInTmux:
 
         with (
             patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=1, stderr=b"error"),  # new-session fails
+                MagicMock(returncode=1, stderr=b"error"),  # new-window fallback also fails
             ]
 
             stdout, code, _ = await run_in_tmux(
@@ -415,7 +450,7 @@ class TestRunInTmux:
         with (
             patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=False),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
@@ -443,7 +478,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
@@ -473,7 +508,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
@@ -505,7 +540,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=True),
         ):
             mock_run.side_effect = [
@@ -538,7 +573,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
@@ -581,7 +616,7 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", side_effect=mock_wait_for_exitcode),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
@@ -625,7 +660,7 @@ class TestRunInTmux:
         with (
             patch("factory.runners._tmux_persist.subprocess.run", side_effect=track_subprocess_run),
             patch("factory.runners._tmux_persist._wait_for_sentinel", side_effect=sentinel_raises_cancelled),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+
             patch("factory.runners._tmux_persist._window_exists", return_value=True),
         ):
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):

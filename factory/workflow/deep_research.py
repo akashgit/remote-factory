@@ -1,7 +1,8 @@
-"""Deep-research single-agent iterative research workflow.
+"""Deep-research iterative research workflow with decomposition.
 
-Runs study → deep_researcher (single agent with internal iteration loop) →
-CEO coverage gate. Terminal mode — does not chain to build or improve.
+Runs study → decomposer → deep_researcher → CEO coverage gate.
+The decomposer generates research directions; the researcher executes them.
+Terminal mode — does not chain to build or improve.
 Triggered via `factory workflow run deep-research` or
 `factory ceo /path --mode deep-research`.
 """
@@ -23,11 +24,42 @@ from factory.workflow.primitives import (
 meta = {
     "name": "deep-research",
     "description": (
-        "Single-agent iterative research with built-in faithfulness checking "
-        "and coverage evaluation. The researcher performs multiple rounds of "
-        "WebSearch/WebFetch internally, following an inside-out protocol."
+        "Iterative research with decomposition, faithfulness checking, and "
+        "coverage evaluation. A decomposer generates research directions; "
+        "the researcher executes them with multiple rounds of "
+        "WebSearch/WebFetch, following an inside-out protocol."
     ),
 }
+
+_DECOMPOSER_PROMPT = (
+    "You are the Research Decomposer. Produce 3-5 research directions tailored "
+    "to the current mode and project context.\n\n"
+    "Read:\n"
+    "- The CEO's task (contains the original prompt and mode context)\n"
+    "- .factory/strategy/observations.md (if exists — project state)\n"
+    "- .factory/config.json (if exists — project config, research_target)\n\n"
+    "Based on what you find, determine the research context:\n"
+    "- New project (no .factory/) → web-focused directions (similar, tech, pitfalls)\n"
+    "- Existing project, improve → mixed directions (internal assessment first, then "
+    "targeted external search for weak dimensions)\n"
+    "- Factory itself, create mode → code-focused directions (read existing patterns, "
+    "parse mode intent, minimal web for novel patterns only)\n"
+    "- Research target configured → failure-focused directions (within mutable surfaces)\n\n"
+    "For each direction, write:\n\n"
+    "### Direction N: [title]\n"
+    "- **What to research:** specific question, not generic\n"
+    "- **Why it matters:** how this connects to the original prompt and project\n"
+    "- **Type:** internal (code/project reading), external (web search), or mixed\n"
+    "- **Coverage signal:** how the researcher knows this direction is adequately covered\n\n"
+    "Rules:\n"
+    "- Directions must be derived from the ORIGINAL PROMPT\n"
+    "- If the project already uses pytest, don't direct 'research testing frameworks'\n"
+    "- Each direction should produce findings the strategist can act on\n"
+    "- 3-5 directions maximum\n"
+    "- Specify type (internal/external/mixed) so the researcher knows whether to "
+    "read code or search the web\n\n"
+    "Write to .factory/strategy/research-directions.md"
+)
 
 _DEEP_RESEARCHER_PROMPT = (
     "You are the Deep Researcher — a single agent performing iterative, "
@@ -48,22 +80,24 @@ _DEEP_RESEARCHER_PROMPT = (
     "- If research_target is configured in .factory/config.json, read "
     "mutable_surfaces, fixed_surfaces, and constraints\n\n"
     "Write a summary of what you found internally. This shapes your external search.\n\n"
-    "### Phase 2: Decompose into Sub-Questions\n\n"
-    "Break the original prompt into 3-5 sub-questions. These must be:\n"
-    "- Derived from the ORIGINAL PROMPT, not from previous search results\n"
-    "- Shaped by internal findings (don't search for things the project already has)\n"
-    "- Specific enough to produce actionable search queries\n\n"
-    "Example: If the project already uses pytest, don't search for 'best testing framework'. "
-    "Instead search for 'pytest advanced patterns for <specific need>'.\n\n"
+    "### Phase 2: Read Research Directions\n\n"
+    "Read .factory/strategy/research-directions.md — the decomposer has already "
+    "generated 3-5 research directions for you.\n"
+    "- These are your sub-questions — follow them\n"
+    "- Note each direction's type (internal/external/mixed)\n"
+    "- You may add follow-up sub-questions in later iterations based on gaps, "
+    "but initial directions come from the decomposer\n\n"
     "### Phase 3: External Search\n\n"
-    "For each sub-question:\n"
+    "For each direction marked external or mixed:\n"
     "- Run 3-5 WebSearch queries with varied phrasing\n"
     "- WebFetch the 2-3 most promising pages from the results\n"
     "- Extract concrete findings: techniques, patterns, code examples, pitfalls\n"
-    "- Note the source URL for every finding\n\n"
+    "- Note the source URL for every finding\n"
+    "For internal directions: read the specified code/files instead of searching.\n"
+    "Don't search for things the project already has.\n\n"
     "### Phase 4: Synthesize Running Report\n\n"
     "Merge external findings with internal state into a structured report:\n"
-    "- Organize by topic, not by search query\n"
+    "- Organize by topic, not by search query or direction number\n"
     "- Connect each external finding to something concrete in the codebase\n"
     "- Generic advice without project grounding is noise — cut it\n\n"
     "### Phase 5: Faithfulness Check (MANDATORY — every iteration)\n\n"
@@ -78,11 +112,10 @@ _DEEP_RESEARCHER_PROMPT = (
     "sub-question wouldn't make sense without reading previous results, "
     "you're drifting\n\n"
     "**Hard rule:** If 2 of last 3 search rounds fail the relevance check, "
-    "STOP that direction. Return to Phase 2 and decompose from the original "
-    "prompt again.\n\n"
+    "STOP that direction. Return to Phase 2 and pick the next direction.\n\n"
     "### Phase 6: Coverage Check\n\n"
     "After completing a search round, evaluate:\n"
-    "- Are there major gaps in the research? Important aspects not yet covered?\n"
+    "- Check each direction from research-directions.md: adequately covered?\n"
     "- If gaps remain → go back to Phase 3 with targeted sub-questions for "
     "the gaps\n"
     "- If coverage is sufficient → proceed to Phase 7\n"
@@ -112,38 +145,32 @@ _DEEP_RESEARCHER_PROMPT = (
 )
 
 _GATE_COVERAGE_PROMPT = (
-    "Safety-net review of the deep research report.\n\n"
-    "Read the research report at .factory/strategy/research-combined.md.\n\n"
-    "Check these four things:\n\n"
-    "1. **Traceability:** Does every section trace back to the original "
-    "research prompt? Are there sections answering questions nobody asked?\n\n"
-    "2. **Grounding:** Are findings grounded in both external sources AND "
-    "internal project context — not just generic advice?\n\n"
-    "3. **Actionability:** Is the report actionable? "
-    "Can concrete next steps be derived from it?\n\n"
-    "4. **Citations:** Are claims cited with source URLs (external) or "
-    "file paths (internal)?\n\n"
-    "**Decision:**\n"
-    "- PROCEED if the report is faithful, grounded, and actionable. "
-    "Minor gaps are fine — the researcher has already done internal "
-    "coverage checking.\n"
-    "- RELOOP only if sections are missing or disconnected from the "
-    "original prompt. In your verdict, list the specific gaps.\n\n"
-    "This gate should almost always PROCEED — the researcher's internal "
-    "faithfulness checks catch most issues. Only RELOOP for structural "
-    "problems (missing sections, drift from prompt, no citations)."
+    "Check the deep research report against the research directions.\n\n"
+    "Read .factory/strategy/research-directions.md (what was asked for) and "
+    ".factory/strategy/research-combined.md (what was produced).\n\n"
+    "For each direction the decomposer specified:\n"
+    "1. Is it covered in the research report?\n"
+    "2. Is the coverage adequate (actually researched, not just mentioned)?\n"
+    "3. Did the researcher stay within the direction's scope?\n\n"
+    "Also check:\n"
+    "4. Does the report trace back to the original prompt?\n"
+    "5. Are findings grounded (connected to codebase, not generic advice)?\n"
+    "6. Are claims cited with URLs or file paths?\n\n"
+    "PROCEED if all directions are covered.\n"
+    "RELOOP listing which directions are missing or inadequately covered."
 )
 
 
 def workflow() -> Workflow:
-    """W₁₅: Deep Research Mode — single-agent iterative research with coverage checking.
+    """W₁₅: Deep Research Mode — decompose-then-research with coverage checking.
 
-    Study → deep_researcher (single AgentNode with internal iteration loop) →
-    gate_coverage (CEO safety net).
+    Study → decomposer (generates research directions) →
+    deep_researcher (executes directions with internal iteration) →
+    gate_coverage (CEO safety net checking per-direction coverage).
 
-    The researcher performs multiple rounds of search internally using WebSearch
-    and WebFetch, with built-in faithfulness checking and coverage evaluation.
-    The gate is a rare safety net — it should almost always PROCEED on first pass.
+    The decomposer produces 3-5 research directions. The researcher executes
+    them using WebSearch/WebFetch with built-in faithfulness checking. The gate
+    checks coverage against the original directions.
 
     Terminal mode — does not chain to build or improve.
     """
@@ -155,12 +182,30 @@ def workflow() -> Workflow:
         writes={".factory/strategy/observations.md"},
     )
 
+    nodes["decomposer"] = AgentNode(
+        id="decomposer",
+        role=AgentRole.RESEARCHER,
+        prompt_template=_DECOMPOSER_PROMPT,
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/research-directions.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-directions.md",
+                must_exist=True,
+                min_size=200,
+            )
+        ],
+        model="sonnet",
+        timeout=120,
+    )
+
     nodes["deep_researcher"] = AgentNode(
         id="deep_researcher",
         role=AgentRole.RESEARCHER,
         prompt_template=_DEEP_RESEARCHER_PROMPT,
         reads={
             ".factory/strategy/observations.md",
+            ".factory/strategy/research-directions.md",
         },
         writes={".factory/strategy/research-combined.md"},
         post_checks=[
@@ -170,6 +215,7 @@ def workflow() -> Workflow:
                 min_size=500,
             )
         ],
+        timeout=1800,
     )
 
     nodes["gate_coverage"] = GateNode(
@@ -177,11 +223,15 @@ def workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=_GATE_COVERAGE_PROMPT,
-        reads={".factory/strategy/research-combined.md"},
+        reads={
+            ".factory/strategy/research-directions.md",
+            ".factory/strategy/research-combined.md",
+        },
     )
 
     edges = [
-        Edge(source="study", target="deep_researcher"),
+        Edge(source="study", target="decomposer"),
+        Edge(source="decomposer", target="deep_researcher"),
         Edge(source="deep_researcher", target="gate_coverage"),
         Edge(source="gate_coverage", target="deep_researcher", condition=VerdictType.RELOOP),
     ]

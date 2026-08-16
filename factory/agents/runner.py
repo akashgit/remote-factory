@@ -5,28 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Literal
 
 from factory.ace.injector import inject_playbook, load_playbook
 from factory.runners import get_runner
 
 logger = logging.getLogger(__name__)
 
-AgentRole = Literal[
-    "researcher",
-    "strategist",
-    "builder",
-    "health_checker",
-    "code_reviewer",
-    "adversarial_tester",
-    "archivist",
-    "ceo",
-    "failure_analyst",
-    "refiner",
-    "profiler",
-    "refactory",
-    "lumen_context_agent",
-]
+AgentRole = str
 
 # Consecutive failure tracking
 _consecutive_failures: int = 0
@@ -63,6 +48,7 @@ IDENTITY_REANCHOR = """\
 
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+_USER_PROMPTS_DIR = Path.home() / ".factory" / "agents" / "prompts"
 
 
 def resolve_prompt(
@@ -76,7 +62,8 @@ def resolve_prompt(
 
     Resolution order:
     1. Project-specific override: <project>/.factory/agents/<role>.md
-    2. Factory default: factory/agents/prompts/<role>.md
+    2. User-global: ~/.factory/agents/prompts/<role>.md
+    3. Factory default: factory/agents/prompts/<role>.md
 
     When *use_profile* is True, loads ~/.factory/profile.md and appends it
     after the ACE playbook injection.
@@ -104,6 +91,21 @@ def resolve_prompt(
                 prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
             return prompt
 
+    # Check user-global prompts (~/.factory/agents/prompts/)
+    user_path = _USER_PROMPTS_DIR / f"{role}.md"
+    if user_path.exists():
+        logger.info("Using user-global prompt for %s: %s", role, user_path)
+        prompt = user_path.read_text()
+        playbook = load_playbook(role)
+        if playbook:
+            prompt = inject_playbook(prompt, playbook)
+            logger.info("Injected playbook for %s (user-global)", role)
+        if use_profile:
+            prompt = _maybe_inject_profile(prompt, role)
+        if role == "ceo" and workflow_mode and project_path is not None:
+            prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
+        return prompt
+
     # Fall back to factory default
     default_path = _PROMPTS_DIR / f"{role}.md"
     if not default_path.exists():
@@ -111,7 +113,8 @@ def resolve_prompt(
             f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
         )
         raise FileNotFoundError(
-            f"No prompt found for agent role '{role}'. Expected at {default_path}{override_hint}"
+            f"No prompt found for agent role '{role}'. "
+            f"Expected at {default_path}, {_USER_PROMPTS_DIR / f'{role}.md'}{override_hint}"
         )
 
     prompt = default_path.read_text()

@@ -1,10 +1,10 @@
-"""Tests for the deep-research workflow (W₁₅ v4).
+"""Tests for the deep-research workflow (W₁₅ v5).
 
 Validates graph structure, node properties, edge wiring, trigger function,
 registration, and skill export. Verifies existing workflows are unchanged.
 
-v4: Single AgentNode researcher with internal iteration loop.
-No ForkNode, no JoinNode, no parallel researchers.
+v5: Decomposer + researcher pipeline. Decomposer generates research directions;
+researcher executes them. No ForkNode, no JoinNode, no parallel researchers.
 """
 
 from __future__ import annotations
@@ -49,6 +49,7 @@ class TestDeepResearchWorkflowStructure:
         wf = deep_research_workflow()
         expected_nodes = {
             "study",
+            "decomposer",
             "deep_researcher",
             "gate_coverage",
         }
@@ -56,7 +57,7 @@ class TestDeepResearchWorkflowStructure:
 
     def test_node_count(self) -> None:
         wf = deep_research_workflow()
-        assert len(wf.nodes) == 3
+        assert len(wf.nodes) == 4
 
     def test_no_fork_or_join_nodes(self) -> None:
         """v4 constraint: no ForkNode or JoinNode in the graph."""
@@ -76,6 +77,45 @@ class TestDeepResearchNodeTypes:
         wf = deep_research_workflow()
         assert isinstance(wf.nodes["study"], Study)
 
+    def test_decomposer_is_agent_node(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+
+    def test_decomposer_model_and_timeout(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert isinstance(node, AgentNode)
+        assert node.model == "sonnet"
+        assert node.timeout == 120
+
+    def test_decomposer_reads_observations(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert ".factory/strategy/observations.md" in node.reads
+
+    def test_decomposer_writes_directions(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert ".factory/strategy/research-directions.md" in node.writes
+
+    def test_decomposer_has_post_check(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert isinstance(node, AgentNode)
+        assert len(node.post_checks) == 1
+        assert node.post_checks[0].must_exist is True
+        assert node.post_checks[0].min_size == 200
+        assert node.post_checks[0].path == ".factory/strategy/research-directions.md"
+
+    def test_decomposer_prompt_mentions_directions(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["decomposer"]
+        assert isinstance(node, AgentNode)
+        assert "research directions" in node.prompt_template.lower()
+        assert "3-5" in node.prompt_template
+
     def test_deep_researcher_is_agent_node(self) -> None:
         wf = deep_research_workflow()
         node = wf.nodes["deep_researcher"]
@@ -91,43 +131,27 @@ class TestDeepResearchNodeTypes:
         assert node.post_checks[0].min_size == 500
         assert node.post_checks[0].path == ".factory/strategy/research-combined.md"
 
-    def test_deep_researcher_prompt_has_inside_out_protocol(self) -> None:
+    def test_deep_researcher_reads_directions(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["deep_researcher"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/strategy/research-directions.md" in node.reads
+        assert ".factory/strategy/observations.md" in node.reads
+
+    def test_deep_researcher_timeout(self) -> None:
+        wf = deep_research_workflow()
+        node = wf.nodes["deep_researcher"]
+        assert isinstance(node, AgentNode)
+        assert node.timeout == 1800
+
+    def test_deep_researcher_prompt_contains_protocol(self) -> None:
         wf = deep_research_workflow()
         node = wf.nodes["deep_researcher"]
         assert isinstance(node, AgentNode)
         prompt = node.prompt_template
         assert "Phase 1: Internal Research" in prompt
-        assert "Phase 2: Decompose" in prompt
-        assert "Phase 3: External Search" in prompt
-        assert "WebSearch" in prompt
-        assert "WebFetch" in prompt
-
-    def test_deep_researcher_prompt_has_faithfulness_check(self) -> None:
-        wf = deep_research_workflow()
-        node = wf.nodes["deep_researcher"]
-        assert isinstance(node, AgentNode)
-        prompt = node.prompt_template
-        assert "Faithfulness Check" in prompt
-        assert "Relevance" in prompt
-        assert "Grounding" in prompt
-        assert "Drift detection" in prompt
-
-    def test_deep_researcher_prompt_has_coverage_check(self) -> None:
-        wf = deep_research_workflow()
-        node = wf.nodes["deep_researcher"]
-        assert isinstance(node, AgentNode)
-        prompt = node.prompt_template
-        assert "Coverage Check" in prompt
-        assert "25 WebSearch" in prompt
-
-    def test_deep_researcher_prompt_has_reloop_handling(self) -> None:
-        wf = deep_research_workflow()
-        node = wf.nodes["deep_researcher"]
-        assert isinstance(node, AgentNode)
-        prompt = node.prompt_template
-        assert "research-combined.md" in prompt
-        assert "ceo-verdict-coverage.md" in prompt
-        assert "RELOOP" in prompt
+        assert "Phase 2: Read Research Directions" in prompt
+        assert "research-directions.md" in prompt
 
     def test_deep_researcher_writes_combined_report(self) -> None:
         wf = deep_research_workflow()
@@ -141,21 +165,22 @@ class TestDeepResearchNodeTypes:
         assert gate.evaluator_type == "agent"
         assert gate.evaluator_role == AgentRole.CEO
 
-    def test_gate_prompt_mentions_safety_net(self) -> None:
+    def test_gate_coverage_reads_directions_and_report(self) -> None:
         wf = deep_research_workflow()
         gate = wf.nodes["gate_coverage"]
         assert isinstance(gate, GateNode)
-        assert "safety net" in gate.gate_prompt.lower() or "Safety-net" in gate.gate_prompt
+        assert ".factory/strategy/research-directions.md" in gate.reads
+        assert ".factory/strategy/research-combined.md" in gate.reads
 
-    def test_gate_prompt_has_four_checks(self) -> None:
+    def test_gate_prompt_checks_per_direction_coverage(self) -> None:
         wf = deep_research_workflow()
         gate = wf.nodes["gate_coverage"]
         assert isinstance(gate, GateNode)
         prompt = gate.gate_prompt
-        assert "Traceability" in prompt
-        assert "Grounding" in prompt
-        assert "Actionability" in prompt
-        assert "Citations" in prompt
+        assert "research-directions.md" in prompt
+        assert "research-combined.md" in prompt
+        assert "PROCEED" in prompt
+        assert "RELOOP" in prompt
 
 
 
@@ -163,10 +188,19 @@ class TestDeepResearchNodeTypes:
 
 
 class TestDeepResearchEdges:
-    def test_study_to_deep_researcher_edge(self) -> None:
+    def test_study_to_decomposer_edge(self) -> None:
         wf = deep_research_workflow()
         assert any(
             e.source == "study"
+            and e.target == "decomposer"
+            and e.condition is None
+            for e in wf.edges
+        )
+
+    def test_decomposer_to_deep_researcher_edge(self) -> None:
+        wf = deep_research_workflow()
+        assert any(
+            e.source == "decomposer"
             and e.target == "deep_researcher"
             and e.condition is None
             for e in wf.edges
@@ -198,9 +232,18 @@ class TestDeepResearchEdges:
             for e in wf.edges
         )
 
+    def test_reloop_not_to_decomposer(self) -> None:
+        """RELOOP goes to deep_researcher, NOT decomposer."""
+        wf = deep_research_workflow()
+        assert not any(
+            e.source == "gate_coverage"
+            and e.target == "decomposer"
+            for e in wf.edges
+        )
+
     def test_total_edge_count(self) -> None:
         wf = deep_research_workflow()
-        assert len(wf.edges) == 3
+        assert len(wf.edges) == 4
 
 
 # ── Trigger function ──────────────────────────────────────────────
