@@ -27,13 +27,22 @@ class EphemeralModeRegistry:
     A thin .py wrapper is also written to .factory/workflows/{mode_name}.py so the
     WorkflowRegistry can discover the mode when a sub-CEO runs --mode <name>.
     Naming: evolve-gen{N}-{individual_id[:8]} — never collides with main registry.
+
+    When target_dir differs from project_dir (e.g. --project-dir targets a
+    FeatureBench instance), wrappers and mode JSONs are also written to the
+    target directory so the sub-CEO can resolve the ephemeral mode.
     """
 
-    def __init__(self, project_dir: Path) -> None:
+    def __init__(self, project_dir: Path, target_dir: Path | None = None) -> None:
         self._project_dir = Path(project_dir)
+        self._target_dir = Path(target_dir) if target_dir else None
         self._modes_dir = self._project_dir / ".factory" / "outer_loop" / "modes"
         self._workflows_dir = self._project_dir / ".factory" / "workflows"
         self._registered: dict[str, str] = {}
+
+    @property
+    def has_target(self) -> bool:
+        return self._target_dir is not None and self._target_dir != self._project_dir
 
     def __enter__(self) -> EphemeralModeRegistry:
         self._modes_dir.mkdir(parents=True, exist_ok=True)
@@ -42,9 +51,10 @@ class EphemeralModeRegistry:
     def __exit__(self, *exc: object) -> None:
         self.cleanup_all()
 
-    def _write_workflow_wrapper(self, mode_name: str) -> None:
+    def _write_workflow_wrapper(self, mode_name: str, base_dir: Path | None = None) -> None:
         """Write a thin .py wrapper to .factory/workflows/ for WorkflowRegistry discovery."""
-        self._workflows_dir.mkdir(parents=True, exist_ok=True)
+        workflows_dir = (base_dir or self._project_dir) / ".factory" / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
         wrapper = (
             "import json\n"
             "from pathlib import Path\n"
@@ -58,11 +68,12 @@ class EphemeralModeRegistry:
             "    data.pop('_content_hash', None)\n"
             "    return Workflow.from_dict(data)\n"
         )
-        (self._workflows_dir / f"{mode_name}.py").write_text(wrapper)
+        (workflows_dir / f"{mode_name}.py").write_text(wrapper)
 
-    def _remove_workflow_wrapper(self, mode_name: str) -> None:
+    def _remove_workflow_wrapper(self, mode_name: str, base_dir: Path | None = None) -> None:
         """Remove the .py wrapper from .factory/workflows/."""
-        wrapper = self._workflows_dir / f"{mode_name}.py"
+        workflows_dir = (base_dir or self._project_dir) / ".factory" / "workflows"
+        wrapper = workflows_dir / f"{mode_name}.py"
         if wrapper.exists():
             wrapper.unlink()
 
@@ -83,10 +94,19 @@ class EphemeralModeRegistry:
         content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
         wf_data["_content_hash"] = content_hash
 
+        mode_json = json.dumps(wf_data, indent=2, sort_keys=True)
         mode_path = self._modes_dir / f"{mode_name}.json"
-        mode_path.write_text(json.dumps(wf_data, indent=2, sort_keys=True))
+        mode_path.write_text(mode_json)
 
         self._write_workflow_wrapper(mode_name)
+
+        if self.has_target:
+            assert self._target_dir is not None
+            target_modes = self._target_dir / ".factory" / "outer_loop" / "modes"
+            target_modes.mkdir(parents=True, exist_ok=True)
+            (target_modes / f"{mode_name}.json").write_text(mode_json)
+            self._write_workflow_wrapper(mode_name, base_dir=self._target_dir)
+            log.debug("ephemeral_mode_mirrored_to_target", mode=mode_name, target=str(self._target_dir))
 
         self._registered[mode_name] = str(mode_path)
         log.info(
@@ -122,6 +142,16 @@ class EphemeralModeRegistry:
             log.error("ephemeral_mode_load_failed", mode=mode_name, exc_info=True)
             return None
 
+    def _remove_target_artifacts(self, mode_name: str) -> None:
+        """Remove mirrored artifacts from the target directory."""
+        if not self.has_target:
+            return
+        assert self._target_dir is not None
+        target_mode = self._target_dir / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json"
+        if target_mode.exists():
+            target_mode.unlink()
+        self._remove_workflow_wrapper(mode_name, base_dir=self._target_dir)
+
     def cleanup_generation(self, survivors: set[str]) -> int:
         """Delete non-surviving mode files. Returns count of removed modes."""
         removed = 0
@@ -133,6 +163,7 @@ class EphemeralModeRegistry:
             if mode_name not in survivors:
                 mode_file.unlink()
                 self._remove_workflow_wrapper(mode_name)
+                self._remove_target_artifacts(mode_name)
                 self._registered.pop(mode_name, None)
                 removed += 1
 
@@ -152,6 +183,7 @@ class EphemeralModeRegistry:
                 continue
             mode_file.unlink()
             self._remove_workflow_wrapper(mode_name)
+            self._remove_target_artifacts(mode_name)
             self._registered.pop(mode_name, None)
             removed += 1
 

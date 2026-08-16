@@ -197,3 +197,92 @@ class TestEphemeralModeRegistry:
             assert (tmp_path / ".factory" / "workflows" / "evolve-gen0-test.py").exists()
 
         assert not (tmp_path / ".factory" / "workflows" / "evolve-gen0-test.py").exists()
+
+
+class TestEphemeralModeRegistryTargetDir:
+    """Tests for target_dir mirroring when sub-CEO runs in a different project."""
+
+    def test_register_mirrors_to_target(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer, target_dir=target)
+        wf = _make_workflow()
+        mode_name = registry.register("abc12345", 0, wf)
+
+        assert (outer / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json").exists()
+        assert (outer / ".factory" / "workflows" / f"{mode_name}.py").exists()
+        assert (target / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json").exists()
+        assert (target / ".factory" / "workflows" / f"{mode_name}.py").exists()
+
+    def test_target_wrapper_loads_correctly(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer, target_dir=target)
+        wf = _make_workflow()
+        mode_name = registry.register("abc12345", 0, wf)
+
+        wrapper = target / ".factory" / "workflows" / f"{mode_name}.py"
+        spec = importlib.util.spec_from_file_location(f"_test_target_{mode_name}", wrapper)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        sys.modules.pop(spec.name, None)
+
+        loaded = mod.workflow()
+        assert set(loaded.nodes.keys()) == {"builder", "gate"}
+
+    def test_cleanup_all_removes_target_artifacts(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer, target_dir=target)
+        wf = _make_workflow()
+        mode_name = registry.register("aaa", 0, wf)
+
+        registry.cleanup_all()
+        assert not (target / ".factory" / "workflows" / f"{mode_name}.py").exists()
+        assert not (target / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json").exists()
+
+    def test_cleanup_generation_removes_target_artifacts(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer, target_dir=target)
+        wf = _make_workflow()
+        registry.register("aaa", 0, wf)
+        registry.register("bbb", 0, wf)
+
+        registry.cleanup_generation({"evolve-gen0-aaa"})
+        assert (target / ".factory" / "workflows" / "evolve-gen0-aaa.py").exists()
+        assert not (target / ".factory" / "workflows" / "evolve-gen0-bbb.py").exists()
+
+    def test_no_target_dir_no_mirroring(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer)
+        wf = _make_workflow()
+        registry.register("abc12345", 0, wf)
+
+        assert not (target / ".factory" / "workflows").exists()
+        assert not (target / ".factory" / "outer_loop").exists()
+
+    def test_same_dir_target_no_duplicate(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path, target_dir=tmp_path)
+        assert not registry.has_target
+        wf = _make_workflow()
+        mode_name = registry.register("abc12345", 0, wf)
+        assert (tmp_path / ".factory" / "workflows" / f"{mode_name}.py").exists()

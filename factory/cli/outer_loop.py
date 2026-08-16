@@ -169,7 +169,8 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         print("Error: no outer loop config found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
         return 1
 
-    registry = EphemeralModeRegistry(project_path)
+    target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
+    registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
     modes = registry.list_modes()
     if not modes:
         print("Error: no ephemeral modes found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
