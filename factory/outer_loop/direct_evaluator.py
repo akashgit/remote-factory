@@ -30,6 +30,12 @@ _PYTEST_P2P_RE = re.compile(r"pytest\s+(.+?)\s*>\s*/tmp/p2p_output")
 _INSTALL_RE = re.compile(r"#\s*Repo-specific install[^\n]*\n(pip install[^\n]+)")
 
 
+def _is_lv2(task_dir: Path) -> bool:
+    """Detect lv2 instances by checking for empty setup_patch.diff."""
+    setup_patch = task_dir / "environment" / "setup_patch.diff"
+    return not setup_patch.exists() or setup_patch.stat().st_size == 0
+
+
 def _parse_from_line(dockerfile: Path) -> str:
     """Extract the base image from a Dockerfile's FROM line."""
     for line in dockerfile.read_text().splitlines():
@@ -342,6 +348,9 @@ class DirectFeatureBenchEvaluator:
         self, task_dir: Path, image: str, testbed: Path
     ) -> bool:
         """Run pytest via docker cp + exec — avoids bind-mount cross-platform issues."""
+        if _is_lv2(task_dir):
+            return self._verify_lv2_in_docker(task_dir, image, testbed)
+
         test_patch = task_dir / "environment" / "test_patch.diff"
         test_sh = task_dir / "tests" / "test.sh"
 
@@ -476,6 +485,128 @@ class DirectFeatureBenchEvaluator:
             return result.returncode == 0
         finally:
             # 4. Cleanup: force-remove the container
+            subprocess.run(
+                ["docker", "rm", "-f", cid],
+                capture_output=True,
+                timeout=30,
+            )
+
+    def _verify_lv2_in_docker(
+        self, task_dir: Path, image: str, testbed: Path
+    ) -> bool:
+        """Verify lv2 instances using test.sh flow.
+
+        lv2 flow: agent creates a standalone package from scratch.
+        Verification: pip install agent code → restore original from backup →
+        apply test_patch (rewrites imports to agent_code) → run tests.
+        """
+        test_sh = task_dir / "tests" / "test.sh"
+        if not test_sh.exists():
+            log.error("test_sh_missing_lv2", task_dir=str(task_dir))
+            return False
+
+        cid_result = subprocess.run(
+            [
+                "docker", "create", "--platform", "linux/amd64",
+                "--network", "none",
+                image,
+                "bash", "-c", "sleep 600",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if cid_result.returncode != 0:
+            log.error("docker_create_verify_lv2_failed", stderr=cid_result.stderr)
+            return False
+        cid = cid_result.stdout.strip()
+
+        try:
+            start_result = subprocess.run(
+                ["docker", "start", cid],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if start_result.returncode != 0:
+                log.error("docker_start_lv2_failed", stderr=start_result.stderr)
+                return False
+
+            # Collect ALL files the agent created (everything except .git and .factory)
+            all_files: list[str] = []
+            for f in testbed.rglob("*"):
+                if f.is_file():
+                    rel = f.relative_to(testbed)
+                    parts = rel.parts
+                    if parts[0] in (".git", ".factory"):
+                        continue
+                    if rel.name == "task-instruction.md":
+                        continue
+                    all_files.append(str(rel))
+
+            log.info("copying_lv2_files", count=len(all_files), task_dir=str(task_dir))
+
+            parents_ensured: set[str] = set()
+            for rel_path in all_files:
+                src = testbed / rel_path
+                parent = str(Path(rel_path).parent)
+                if parent and parent != "." and parent not in parents_ensured:
+                    subprocess.run(
+                        ["docker", "exec", cid, "mkdir", "-p", f"/testbed/{parent}"],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    parents_ensured.add(parent)
+                cp_result = subprocess.run(
+                    ["docker", "cp", str(src), f"{cid}:/testbed/{rel_path}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if cp_result.returncode != 0:
+                    log.warning("docker_cp_lv2_failed", file=rel_path, stderr=cp_result.stderr)
+
+            # Stage the agent's files so test.sh's guardrail detects changes
+            subprocess.run(
+                ["docker", "exec", cid, "bash", "-c",
+                 "cd /testbed && git add -A && git diff --cached --stat"],
+                capture_output=True,
+                timeout=30,
+            )
+
+            # Copy test.sh and run it inside the container
+            subprocess.run(
+                ["docker", "cp", str(test_sh), f"{cid}:/tmp/test.sh"],
+                capture_output=True,
+                timeout=30,
+            )
+
+            result = subprocess.run(
+                ["docker", "exec", cid, "bash", "/tmp/test.sh"],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            # Parse reward from output (test.sh writes "Reward: N")
+            reward = 0
+            for line in result.stdout.splitlines():
+                if line.startswith("Reward:"):
+                    try:
+                        reward = int(line.split(":")[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+
+            log.info(
+                "docker_verify_lv2_done",
+                reward=reward,
+                returncode=result.returncode,
+                stdout_tail=result.stdout[-500:] if result.stdout else "",
+                stderr_tail=result.stderr[-500:] if result.stderr else "",
+            )
+
+            return reward == 1
+        finally:
             subprocess.run(
                 ["docker", "rm", "-f", cid],
                 capture_output=True,
