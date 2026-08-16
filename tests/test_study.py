@@ -1501,6 +1501,19 @@ class TestFocusMutualExclusion:
         result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "meta"])
         assert result == 1
 
+    def test_focus_accepted_with_deep_research_mode(self):
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+        import argparse
+
+        args = argparse.Namespace(
+            path="/tmp/fake", mode="deep-research", focus="test topic",
+            headless=False, bg=False, bg_agents=False, prompt=None,
+            dir=None, auto_approve=False, from_plan=None, just_plan=False,
+            refine=None,
+        )
+        result = _validate_ceo_flags(args)
+        assert not isinstance(result, int), f"Expected tuple but got error code {result}"
+
 
 class TestStudyParserFocus:
     def test_study_parser_accepts_focus(self):

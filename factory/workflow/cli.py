@@ -87,6 +87,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         dry_run=dry_run,
     )
 
+    focus = getattr(args, "focus", None)
+    if focus:
+        for node_id, node in wf.nodes.items():
+            if isinstance(node, AgentNode):
+                executor.node_context[node_id] = f"Research topic: {focus}"
+
     from factory.agents.runner import begin_cycle_session, complete_cycle_session
     cycle_span_id = begin_cycle_session(project_path, cycle_id=name)
 
@@ -346,6 +352,7 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
+    p.add_argument("--focus", default=None, help="Research topic or focus query passed to agent nodes")
     p.add_argument(
         "--from-yaml", default=None, metavar="PATH",
         help="Load workflow from YAML annotations file (overrides slot values on base workflow)",

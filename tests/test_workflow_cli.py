@@ -43,8 +43,10 @@ def _reset_registry():
     WorkflowRegistry.reset()
 
 
-def _make_args(name: str, project_path: str, dry_run: bool = False) -> argparse.Namespace:
-    return argparse.Namespace(name=name, project_path=project_path, dry_run=dry_run)
+def _make_args(
+    name: str, project_path: str, dry_run: bool = False, focus: str | None = None,
+) -> argparse.Namespace:
+    return argparse.Namespace(name=name, project_path=project_path, dry_run=dry_run, focus=focus)
 
 
 def _success_result() -> ExecutionResult:
@@ -141,6 +143,92 @@ class TestCmdRun:
             agent_pool=DEFAULT_AGENT_POOL,
             dry_run=True,
         )
+
+    def test_focus_injects_node_context(self, tmp_path: Path) -> None:
+        """--focus should populate node_context for all AgentNodes."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "study": Study(id="study", writes={"obs.md"}),
+                "researcher": AgentNode(id="researcher", role=AgentRole.RESEARCHER),
+                "gate": GateNode(id="gate", evaluator_type="agent", evaluator_role=AgentRole.CEO),
+            },
+            edges=[
+                Edge(source="study", target="researcher"),
+                Edge(source="researcher", target="gate"),
+            ],
+            start_node="study",
+        )
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=_success_result())
+        mock_executor.node_context = {}
+
+        with (
+            patch.object(WorkflowRegistry, "get_workflow", return_value=wf),
+            patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
+            patch("factory.agents.runner.begin_cycle_session", return_value=None),
+            patch("factory.agents.runner.complete_cycle_session"),
+        ):
+            result = _cmd_run(_make_args("test", str(tmp_path), focus="LLM safety"))
+
+        assert result == 0
+        assert "LLM safety" in mock_executor.node_context.get("researcher", "")
+        assert "gate" not in mock_executor.node_context
+
+    def test_no_focus_leaves_node_context_empty(self, tmp_path: Path) -> None:
+        """Without --focus, node_context should not be populated."""
+        mock_wf = MagicMock()
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=_success_result())
+        mock_executor.node_context = {}
+
+        with (
+            patch.object(WorkflowRegistry, "get_workflow", return_value=mock_wf),
+            patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
+            patch("factory.agents.runner.begin_cycle_session", return_value=None),
+            patch("factory.agents.runner.complete_cycle_session"),
+        ):
+            result = _cmd_run(_make_args("build", str(tmp_path)))
+
+        assert result == 0
+        assert mock_executor.node_context == {}
+
+    def test_focus_only_targets_agent_nodes(self, tmp_path: Path) -> None:
+        """--focus should inject context into AgentNodes, not FnNodes/GateNodes/Study."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "study": Study(id="study", writes={"obs.md"}),
+                "fn": FnNode(id="fn", command="echo hi"),
+                "agent1": AgentNode(id="agent1", role=AgentRole.RESEARCHER),
+                "agent2": AgentNode(id="agent2", role=AgentRole.STRATEGIST),
+                "gate": GateNode(id="gate", evaluator_type="fn", evaluator_command="true"),
+            },
+            edges=[
+                Edge(source="study", target="fn"),
+                Edge(source="fn", target="agent1"),
+                Edge(source="agent1", target="agent2"),
+                Edge(source="agent2", target="gate"),
+            ],
+            start_node="study",
+        )
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=_success_result())
+        mock_executor.node_context = {}
+
+        with (
+            patch.object(WorkflowRegistry, "get_workflow", return_value=wf),
+            patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
+            patch("factory.agents.runner.begin_cycle_session", return_value=None),
+            patch("factory.agents.runner.complete_cycle_session"),
+        ):
+            _cmd_run(_make_args("test", str(tmp_path), focus="topic X"))
+
+        assert "topic X" in mock_executor.node_context.get("agent1", "")
+        assert "topic X" in mock_executor.node_context.get("agent2", "")
+        assert "study" not in mock_executor.node_context
+        assert "fn" not in mock_executor.node_context
+        assert "gate" not in mock_executor.node_context
 
 
 # ── helpers for new tests ──────────────────────────────────────
