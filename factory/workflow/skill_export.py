@@ -377,7 +377,9 @@ def _agent_to_instruction(
     default_timeout = node.timeout or (pool_entry.timeout if pool_entry else 600)
     model_flag = " --model haiku" if role == "archivist" else ""
 
-    prompt = node.prompt_template or f"Execute {role} task for the project."
+    prompt = (node.prompt_template or f"Execute {role} task for the project.").replace(
+        "{project_path}", "$PROJECT_PATH",
+    )
 
     if node.reads:
         reads_str = ", ".join(sorted(node.reads))
