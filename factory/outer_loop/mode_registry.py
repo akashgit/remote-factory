@@ -24,12 +24,15 @@ class EphemeralModeRegistry:
     """Register/cleanup/promote ephemeral workflow modes for evolution.
 
     Each mode is stored as a JSON file at .factory/outer_loop/modes/{mode_name}.json.
+    A thin .py wrapper is also written to .factory/workflows/{mode_name}.py so the
+    WorkflowRegistry can discover the mode when a sub-CEO runs --mode <name>.
     Naming: evolve-gen{N}-{individual_id[:8]} — never collides with main registry.
     """
 
     def __init__(self, project_dir: Path) -> None:
         self._project_dir = Path(project_dir)
         self._modes_dir = self._project_dir / ".factory" / "outer_loop" / "modes"
+        self._workflows_dir = self._project_dir / ".factory" / "workflows"
         self._registered: dict[str, str] = {}
 
     def __enter__(self) -> EphemeralModeRegistry:
@@ -38,6 +41,30 @@ class EphemeralModeRegistry:
 
     def __exit__(self, *exc: object) -> None:
         self.cleanup_all()
+
+    def _write_workflow_wrapper(self, mode_name: str) -> None:
+        """Write a thin .py wrapper to .factory/workflows/ for WorkflowRegistry discovery."""
+        self._workflows_dir.mkdir(parents=True, exist_ok=True)
+        wrapper = (
+            "import json\n"
+            "from pathlib import Path\n"
+            "from factory.workflow.primitives import Workflow\n"
+            "\n"
+            f"meta = {{'name': '{mode_name}', 'description': 'Ephemeral outer-loop candidate'}}\n"
+            "\n"
+            "def workflow():\n"
+            f"    data_path = Path(__file__).parent.parent / 'outer_loop' / 'modes' / '{mode_name}.json'\n"
+            "    data = json.loads(data_path.read_text())\n"
+            "    data.pop('_content_hash', None)\n"
+            "    return Workflow.from_dict(data)\n"
+        )
+        (self._workflows_dir / f"{mode_name}.py").write_text(wrapper)
+
+    def _remove_workflow_wrapper(self, mode_name: str) -> None:
+        """Remove the .py wrapper from .factory/workflows/."""
+        wrapper = self._workflows_dir / f"{mode_name}.py"
+        if wrapper.exists():
+            wrapper.unlink()
 
     def register(
         self,
@@ -58,6 +85,8 @@ class EphemeralModeRegistry:
 
         mode_path = self._modes_dir / f"{mode_name}.json"
         mode_path.write_text(json.dumps(wf_data, indent=2, sort_keys=True))
+
+        self._write_workflow_wrapper(mode_name)
 
         self._registered[mode_name] = str(mode_path)
         log.info(
@@ -103,6 +132,7 @@ class EphemeralModeRegistry:
             mode_name = mode_file.stem
             if mode_name not in survivors:
                 mode_file.unlink()
+                self._remove_workflow_wrapper(mode_name)
                 self._registered.pop(mode_name, None)
                 removed += 1
 
@@ -121,6 +151,7 @@ class EphemeralModeRegistry:
             if mode_name == keep_best:
                 continue
             mode_file.unlink()
+            self._remove_workflow_wrapper(mode_name)
             self._registered.pop(mode_name, None)
             removed += 1
 

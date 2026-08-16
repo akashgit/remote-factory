@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -141,3 +143,57 @@ class TestEphemeralModeRegistry:
         assert len(modes) == 2
         assert "evolve-gen0-aaa" in modes
         assert "evolve-gen1-bbb" in modes
+
+    def test_register_creates_workflow_wrapper(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+        mode_name = registry.register("abc12345", 0, wf)
+
+        wrapper = tmp_path / ".factory" / "workflows" / f"{mode_name}.py"
+        assert wrapper.exists()
+
+        spec = importlib.util.spec_from_file_location(f"_test_{mode_name}", wrapper)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        sys.modules.pop(spec.name, None)
+
+        assert mod.meta["name"] == mode_name
+        loaded = mod.workflow()
+        assert set(loaded.nodes.keys()) == {"builder", "gate"}
+
+    def test_cleanup_generation_removes_wrappers(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+
+        registry.register("aaa", 0, wf)
+        registry.register("bbb", 0, wf)
+
+        wf_dir = tmp_path / ".factory" / "workflows"
+        assert (wf_dir / "evolve-gen0-aaa.py").exists()
+        assert (wf_dir / "evolve-gen0-bbb.py").exists()
+
+        registry.cleanup_generation({"evolve-gen0-aaa"})
+        assert (wf_dir / "evolve-gen0-aaa.py").exists()
+        assert not (wf_dir / "evolve-gen0-bbb.py").exists()
+
+    def test_cleanup_all_removes_wrappers(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+
+        registry.register("aaa", 0, wf)
+        registry.register("bbb", 0, wf)
+
+        wf_dir = tmp_path / ".factory" / "workflows"
+        registry.cleanup_all(keep_best="evolve-gen0-aaa")
+        assert (wf_dir / "evolve-gen0-aaa.py").exists()
+        assert not (wf_dir / "evolve-gen0-bbb.py").exists()
+
+    def test_context_manager_removes_wrappers(self, tmp_path: Path) -> None:
+        with EphemeralModeRegistry(tmp_path) as registry:
+            wf = _make_workflow()
+            registry.register("test", 0, wf)
+            assert (tmp_path / ".factory" / "workflows" / "evolve-gen0-test.py").exists()
+
+        assert not (tmp_path / ".factory" / "workflows" / "evolve-gen0-test.py").exists()
