@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Run calibration with the builder-only seed on 10 lv2 instances.
-
-lv2 instances are harder: the agent starts from an empty testbed and must
-create everything from scratch. Expected ~30-50% pass rate.
-"""
+"""Continue lv2 calibration from instance 4 (instances 1-3 already done, all FAIL)."""
 
 from __future__ import annotations
 
@@ -15,9 +11,7 @@ from pathlib import Path
 import structlog
 
 structlog.configure(
-    processors=[
-        structlog.dev.ConsoleRenderer(colors=True),
-    ],
+    processors=[structlog.dev.ConsoleRenderer(colors=True)],
     wrapper_class=structlog.make_filtering_bound_logger(20),
 )
 log = structlog.get_logger()
@@ -39,6 +33,20 @@ LV2_INSTANCES = [
     "mesonbuild__meson.f5d81d07.cargotests.8e49c2d0.lv2",
 ]
 
+ALREADY_DONE = {
+    "astropy__astropy.b0db0daa.test_basic_rgb.067e927c.lv2": {
+        "score": 0.0, "resolved": False, "elapsed_seconds": 259.2,
+    },
+    "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv2": {
+        "score": 0.0, "resolved": False, "elapsed_seconds": 267.7,
+    },
+    "huggingface__transformers.e2e8dbed.test_modeling_pixtral.a620bb0b.lv2": {
+        "score": 0.0, "resolved": False, "elapsed_seconds": 692.2,
+    },
+}
+
+RESUME_FROM = 4
+
 
 def main() -> int:
     from factory.outer_loop.direct_evaluator import DirectFeatureBenchEvaluator
@@ -52,31 +60,26 @@ def main() -> int:
     )
     progress = ProgressTracker(OUTER_LOOP_DIR)
 
-    # Verify all instances exist
-    missing = [i for i in LV2_INSTANCES if not (FB_DIR / i).exists()]
+    missing = [i for i in LV2_INSTANCES[RESUME_FROM - 1:] if not (FB_DIR / i).exists()]
     if missing:
         print(f"Missing instances: {missing}", file=sys.stderr)
         return 1
 
     print("=" * 60)
-    print("Calibration lv2 — Builder-Only Seed")
+    print(f"Calibration lv2 — Resuming from instance {RESUME_FROM}")
     print("=" * 60)
-    print(f"Seed:      {seed_wf.name} ({len(seed_wf.nodes)} node)")
-    print(f"Instances: {len(LV2_INSTANCES)} (lv2 — from-scratch)")
+    print(f"Already done: {len(ALREADY_DONE)} (all FAIL)")
+    print(f"Remaining:    {len(LV2_INSTANCES) - RESUME_FROM + 1}")
     print()
 
-    progress._emit({
-        "event_type": "calibration_lv2_start",
-        "instances": len(LV2_INSTANCES),
-        "seed": seed_wf.name,
-        "level": "lv2",
-    })
-
-    results: dict[str, dict[str, object]] = {}
-    total_elapsed = 0.0
+    results: dict[str, dict[str, object]] = dict(ALREADY_DONE)
+    total_elapsed = sum(d["elapsed_seconds"] for d in ALREADY_DONE.values())
     resolved_count = 0
 
     for i, instance_id in enumerate(LV2_INSTANCES, 1):
+        if i < RESUME_FROM:
+            continue
+
         print(f"\n[{i}/{len(LV2_INSTANCES)}] {instance_id}")
         progress._emit({
             "event_type": "cal_lv2_instance_start",
@@ -111,20 +114,31 @@ def main() -> int:
 
     seed_score = resolved_count / len(LV2_INSTANCES)
 
-    # Split 7 training / 3 holdout
-    training = LV2_INSTANCES[:7]
-    holdout = LV2_INSTANCES[7:]
+    # Split: training 7, holdout 3
+    # Ensure mix of pass/fail in both splits if possible
+    passed = [iid for iid, d in results.items() if d.get("resolved")]
+    failed = [iid for iid, d in results.items() if not d.get("resolved")]
+
+    if len(passed) >= 2 and len(failed) >= 2:
+        holdout = passed[:1] + failed[:2]
+        training = [iid for iid in LV2_INSTANCES if iid not in holdout]
+    elif len(passed) >= 1:
+        holdout = passed[:1] + failed[:2]
+        training = [iid for iid in LV2_INSTANCES if iid not in holdout]
+    else:
+        training = LV2_INSTANCES[:7]
+        holdout = LV2_INSTANCES[7:]
 
     cal_lv2 = {
         "instances": results,
-        "training": training,
-        "holdout": holdout,
         "total": len(LV2_INSTANCES),
         "seed_score": round(seed_score, 4),
         "seed_name": seed_wf.name,
         "resolved_count": resolved_count,
         "total_elapsed_seconds": round(total_elapsed, 1),
         "level": "lv2",
+        "training": training,
+        "holdout": holdout,
     }
 
     out = OUTER_LOOP_DIR / "calibration_lv2.json"
@@ -137,12 +151,16 @@ def main() -> int:
         "seed_score": seed_score,
         "resolved": resolved_count,
         "total": len(LV2_INSTANCES),
+        "training_count": len(training),
+        "holdout_count": len(holdout),
     })
 
     print()
     print("=" * 60)
     print(f"Seed score:  {seed_score:.2%} ({resolved_count}/{len(LV2_INSTANCES)})")
-    print(f"Total time:  {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)")
+    print(f"Total time:  {total_elapsed:.0f}s ({total_elapsed / 60:.1f}min)")
+    print(f"Training:    {len(training)} instances")
+    print(f"Holdout:     {len(holdout)} instances")
     print(f"Written to:  {out}")
     print("=" * 60)
     return 0
