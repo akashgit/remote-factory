@@ -1,0 +1,160 @@
+"""Ephemeral mode lifecycle management for outer loop evolution.
+
+Each candidate workflow is registered as a temporary mode (evolve-gen{N}-{id[:8]})
+so InnerLoop.step() can run it via `factory ceo --mode <name>`. Modes are stored
+as JSON files in .factory/outer_loop/modes/ with content-addressable hashing.
+
+Uses context manager protocol for guaranteed cleanup.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+from pathlib import Path
+
+import structlog
+
+from factory.workflow.primitives import Workflow
+
+log = structlog.get_logger()
+
+
+class EphemeralModeRegistry:
+    """Register/cleanup/promote ephemeral workflow modes for evolution.
+
+    Each mode is stored as a JSON file at .factory/outer_loop/modes/{mode_name}.json.
+    Naming: evolve-gen{N}-{individual_id[:8]} — never collides with main registry.
+    """
+
+    def __init__(self, project_dir: Path) -> None:
+        self._project_dir = Path(project_dir)
+        self._modes_dir = self._project_dir / ".factory" / "outer_loop" / "modes"
+        self._registered: dict[str, str] = {}
+
+    def __enter__(self) -> EphemeralModeRegistry:
+        self._modes_dir.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.cleanup_all()
+
+    def register(
+        self,
+        individual_id: str,
+        generation: int,
+        workflow: Workflow,
+    ) -> str:
+        """Register a workflow as an ephemeral mode. Returns the mode name."""
+        mode_name = f"evolve-gen{generation}-{individual_id[:8]}"
+        self._modes_dir.mkdir(parents=True, exist_ok=True)
+
+        wf_data = workflow.to_dict()
+        wf_data["name"] = mode_name
+
+        content = json.dumps(wf_data, indent=2, sort_keys=True)
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+        wf_data["_content_hash"] = content_hash
+
+        mode_path = self._modes_dir / f"{mode_name}.json"
+        mode_path.write_text(json.dumps(wf_data, indent=2, sort_keys=True))
+
+        self._registered[mode_name] = str(mode_path)
+        log.info(
+            "ephemeral_mode_registered",
+            mode=mode_name,
+            generation=generation,
+            nodes=len(workflow.nodes),
+            hash=content_hash,
+        )
+        return mode_name
+
+    def load(self, mode_name: str) -> Workflow | None:
+        """Load a registered ephemeral mode's workflow."""
+        mode_path = self._modes_dir / f"{mode_name}.json"
+        if not mode_path.exists():
+            return None
+        try:
+            data = json.loads(mode_path.read_text())
+            stored_hash = data.pop("_content_hash", None)
+            if stored_hash:
+                verify_data = dict(data)
+                verify_content = json.dumps(verify_data, indent=2, sort_keys=True)
+                actual_hash = hashlib.sha256(verify_content.encode()).hexdigest()[:16]
+                if actual_hash != stored_hash:
+                    log.warning(
+                        "ephemeral_mode_hash_mismatch",
+                        mode=mode_name,
+                        expected=stored_hash,
+                        actual=actual_hash,
+                    )
+            return Workflow.from_dict(data)
+        except Exception:
+            log.error("ephemeral_mode_load_failed", mode=mode_name, exc_info=True)
+            return None
+
+    def cleanup_generation(self, survivors: set[str]) -> int:
+        """Delete non-surviving mode files. Returns count of removed modes."""
+        removed = 0
+        if not self._modes_dir.exists():
+            return 0
+
+        for mode_file in self._modes_dir.glob("evolve-gen*.json"):
+            mode_name = mode_file.stem
+            if mode_name not in survivors:
+                mode_file.unlink()
+                self._registered.pop(mode_name, None)
+                removed += 1
+
+        if removed:
+            log.info("ephemeral_modes_cleaned", removed=removed, survivors=len(survivors))
+        return removed
+
+    def cleanup_all(self, keep_best: str | None = None) -> int:
+        """Delete all ephemeral mode files except optionally the best one."""
+        removed = 0
+        if not self._modes_dir.exists():
+            return 0
+
+        for mode_file in self._modes_dir.glob("evolve-gen*.json"):
+            mode_name = mode_file.stem
+            if mode_name == keep_best:
+                continue
+            mode_file.unlink()
+            self._registered.pop(mode_name, None)
+            removed += 1
+
+        if removed:
+            log.info("ephemeral_modes_cleanup_all", removed=removed, kept=keep_best)
+        return removed
+
+    def promote(self, mode_name: str, permanent_name: str) -> Path | None:
+        """Copy an ephemeral mode to factory/workflow/contributed/ as a permanent mode."""
+        mode_path = self._modes_dir / f"{mode_name}.json"
+        if not mode_path.exists():
+            log.error("promote_source_missing", mode=mode_name)
+            return None
+
+        contrib_dir = self._project_dir / "factory" / "workflow" / "contributed" / permanent_name
+        contrib_dir.mkdir(parents=True, exist_ok=True)
+
+        data = json.loads(mode_path.read_text())
+        data.pop("_content_hash", None)
+        data["name"] = permanent_name
+
+        dest = contrib_dir / "workflow.json"
+        dest.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+        log.info("ephemeral_mode_promoted", source=mode_name, dest=str(dest))
+        return dest
+
+    def list_modes(self) -> list[str]:
+        """List all registered ephemeral mode names."""
+        if not self._modes_dir.exists():
+            return []
+        return sorted(f.stem for f in self._modes_dir.glob("evolve-gen*.json"))
+
+    @property
+    def count(self) -> int:
+        return len(self.list_modes())

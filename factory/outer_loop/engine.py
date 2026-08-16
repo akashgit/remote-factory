@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 
 from factory.outer_loop.designer import DesignerAgent
 from factory.outer_loop.evaluator import SwarmEvaluator
+from factory.outer_loop.mode_registry import EphemeralModeRegistry
 from factory.outer_loop.models import (
     GenerationSummary,
     HyperparameterRecord,
@@ -90,6 +92,8 @@ class SwarmEngine:
         overfit_detector: OverfitDetector | None = None,
         novelty_filter: NoveltyFilter | None = None,
         designer: DesignerAgent | None = None,
+        mode_registry: EphemeralModeRegistry | None = None,
+        project_dir: Path | None = None,
     ) -> None:
         self._config = config
         self._evaluator = evaluator
@@ -105,6 +109,8 @@ class SwarmEngine:
         self._budget = BudgetTracker(config.budget)
         self._archive = MAPElitesArchive()
         self._score_trajectory: list[float] = []
+        self._mode_registry = mode_registry
+        self._project_dir = project_dir
 
     @property
     def archive(self) -> MAPElitesArchive:
@@ -131,6 +137,8 @@ class SwarmEngine:
         seed_ind = Population.make_individual(base_workflow, generation=0)
         pop.add(seed_ind)
         self._novelty.add(base_workflow)
+        if self._mode_registry:
+            self._mode_registry.register(seed_ind.id, 0, base_workflow)
 
         designer_count = cfg.designer_count
         mutation_slots = max(0, cfg.population_size - 1 - designer_count)
@@ -158,6 +166,8 @@ class SwarmEngine:
                 mutation_record=mutation_rec,
             )
             pop.add(ind)
+            if self._mode_registry:
+                self._mode_registry.register(ind.id, 0, mutated_wf)
 
         if designer_count > 0:
             self._add_designer_variants(pop, cfg, designer_count)
@@ -268,19 +278,19 @@ class SwarmEngine:
         for child_wf, mutation_rec, parent_id in offspring:
             if self._budget.exhausted:
                 break
-            child_ind_id = None
-            eval_result = self._evaluator.evaluate(child_wf, project_dir, instances, individual_id=child_ind_id)
-            self._budget.consume(1, cost_usd=eval_result.cost_usd)
             ind = Population.make_individual(
                 child_wf,
                 generation=generation,
                 parent_id=parent_id,
                 mutation_record=mutation_rec,
-                score=eval_result.score,
-                cost_usd=eval_result.cost_usd,
             )
-            population.add(ind)
-            self._archive.add(ind)
+            if self._mode_registry:
+                self._mode_registry.register(ind.id, generation, child_wf)
+            eval_result = self._evaluator.evaluate(child_wf, project_dir, instances, individual_id=ind.id)
+            self._budget.consume(1, cost_usd=eval_result.cost_usd)
+            updated = ind.model_copy(update={"score": eval_result.score, "cost_usd": eval_result.cost_usd})
+            population.add(updated)
+            self._archive.add(updated)
 
         # Track best score
         best = population.best()
