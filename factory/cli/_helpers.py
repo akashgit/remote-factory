@@ -39,6 +39,7 @@ CEO_MODES = [
     "frontend-design-scan",
     "evolve",
     "deep-research",
+    "outer-loop",
 ]
 
 
