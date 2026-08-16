@@ -89,15 +89,19 @@ DOC_FRESHNESS_GATE_PROMPT = (
 _GRAPH_EXPLORER_PROMPT = (
     "Explore the project's code knowledge graph to build structural understanding. "
     "Read .factory/strategy/observations.md for focus context.\n\n"
-    "**Step 0 — detect graph availability:** Run `factory graph status .` to check "
-    "whether a code knowledge graph exists for this project. If it reports node and "
-    "edge counts, use the graph commands below. If it says 'not available', use the "
-    "fallback path.\n\n"
-    "If the graph IS available (status shows nodes/edges):\n"
-    '1. Run `factory graph query . "<focus from observations>" --depth 2` to find relevant nodes\n'
-    '2. Run `factory graph explain . "<key node>"` on the most important nodes to understand '
-    "their connections and dependencies\n"
-    '3. Run `factory graph path . "<A>" "<B>"` to trace dependency paths between key components\n'
+    "**Step 0 — detect graph availability:** The graph file lives at the PROJECT "
+    "ROOT as `graph.json` (NOT inside `.factory/`). Run this smoke check: "
+    "`test -f graph.json && echo GRAPH_EXISTS || echo NO_GRAPH` — then run "
+    '`factory graph status "$(pwd)"` for node/edge counts. If the smoke check '
+    "prints GRAPH_EXISTS and status shows counts, use the graph commands below. "
+    "Otherwise use the fallback path.\n\n"
+    "If the graph IS available:\n"
+    '1. Run `factory graph query "$(pwd)" "<focus from observations>" --depth 2` '
+    "to find relevant nodes\n"
+    '2. Run `factory graph explain "$(pwd)" "<key node>"` on the most important '
+    "nodes to understand their connections and dependencies\n"
+    '3. Run `factory graph path "$(pwd)" "<A>" "<B>"` to trace dependency paths '
+    "between key components\n"
     "4. Write structured findings to .factory/strategy/graph-context.md covering: "
     "key modules and their relationships, dependency paths, architectural layers, "
     "entry points and hotspots\n\n"

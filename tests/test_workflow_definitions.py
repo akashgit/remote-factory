@@ -394,10 +394,12 @@ class TestStudyWorkflow:
         wf = study_standalone_workflow()
         node = wf.nodes["graph_explorer"]
         prompt = node.prompt_template
-        assert "factory graph status ." in prompt, "prompt must include explicit graph detection step"
-        assert "factory graph query ." in prompt, "graph query command must include project path"
-        assert "factory graph explain ." in prompt, "graph explain command must include project path"
-        assert "factory graph path ." in prompt, "graph path command must include project path"
+        assert 'factory graph status' in prompt, "prompt must include explicit graph detection step"
+        assert 'factory graph query "$(pwd)"' in prompt, "graph query command must use $(pwd)"
+        assert 'factory graph explain "$(pwd)"' in prompt, "graph explain command must use $(pwd)"
+        assert 'factory graph path "$(pwd)"' in prompt, "graph path command must use $(pwd)"
+        assert "graph.json" in prompt, "prompt must mention graph.json location"
+        assert "NOT inside `.factory/`" in prompt, "prompt must clarify graph.json is not in .factory/"
 
     def test_concat_study_writes_combined(self) -> None:
         wf = study_standalone_workflow()
