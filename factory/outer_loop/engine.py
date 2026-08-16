@@ -1,0 +1,596 @@
+"""Core evolutionary search controller for workflow optimization."""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import structlog
+
+from factory.outer_loop.checkpoint import CheckpointData, save_checkpoint
+from factory.outer_loop.designer import DesignerAgent
+from factory.outer_loop.evaluator import SwarmEvaluator
+from factory.outer_loop.models import (
+    GenerationSummary,
+    HyperparameterRecord,
+    MutationRecord,
+    OuterLoopResult,
+    SwarmConfig,
+)
+from factory.outer_loop.mutations import (
+    MutationStrategy,
+    WeightedRandomStrategy,
+    apply_random_mutation,
+)
+from factory.outer_loop.overfit import OverfitDetector
+from factory.outer_loop.population import MAPElitesArchive, Population
+from factory.outer_loop.progress import ProgressTracker
+from factory.outer_loop.similarity import NoveltyFilter
+from factory.outer_loop.subset import FixedSubsetSelector, SubsetSelector
+from factory.workflow.primitives import Workflow
+
+if TYPE_CHECKING:
+    pass
+
+log = structlog.get_logger()
+
+PLATEAU_WINDOW = 3
+
+
+class BudgetTracker:
+    """Tracks evaluation budget consumption, cost, and wall-clock time."""
+
+    def __init__(self, total_budget: int) -> None:
+        self._total = total_budget
+        self._consumed = 0
+        self._cost_usd = 0.0
+        self._start_time = time.monotonic()
+        self._warned_80 = False
+        self._warned_95 = False
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self._total - self._consumed)
+
+    @property
+    def consumed(self) -> int:
+        return self._consumed
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self._cost_usd
+
+    @property
+    def elapsed_seconds(self) -> float:
+        return time.monotonic() - self._start_time
+
+    @property
+    def exhausted(self) -> bool:
+        return self._consumed >= self._total
+
+    def consume(self, count: int = 1, cost_usd: float = 0.0) -> None:
+        self._consumed += count
+        self._cost_usd += cost_usd
+        pct = self._consumed / self._total if self._total > 0 else 1.0
+        if pct >= 0.95 and not self._warned_95:
+            log.warning("budget_95_percent", consumed=self._consumed, total=self._total)
+            self._warned_95 = True
+        elif pct >= 0.80 and not self._warned_80:
+            log.warning("budget_80_percent", consumed=self._consumed, total=self._total)
+            self._warned_80 = True
+
+
+class SwarmEngine:
+    """Orchestrates the evolutionary search loop."""
+
+    def __init__(
+        self,
+        config: SwarmConfig,
+        evaluator: SwarmEvaluator,
+        strategy: MutationStrategy | None = None,
+        subset_selector: SubsetSelector | None = None,
+        overfit_detector: OverfitDetector | None = None,
+        novelty_filter: NoveltyFilter | None = None,
+        designer: DesignerAgent | None = None,
+        checkpoint_dir: Path | None = None,
+        progress_tracker: ProgressTracker | None = None,
+    ) -> None:
+        self._config = config
+        self._evaluator = evaluator
+        self._strategy: MutationStrategy = strategy or WeightedRandomStrategy(
+            mutation_rate=config.mutation_rate,
+        )
+        self._subset: SubsetSelector = subset_selector or FixedSubsetSelector(
+            config.training_instances,
+        )
+        self._overfit = overfit_detector or OverfitDetector()
+        self._novelty = novelty_filter or NoveltyFilter(min_edit_distance=3)
+        self._designer = designer or DesignerAgent()
+        self._budget = BudgetTracker(config.budget)
+        self._archive = MAPElitesArchive()
+        self._score_trajectory: list[float] = []
+        self._early_stop_reason: str | None = None
+        self._checkpoint_dir = checkpoint_dir
+        self._progress = progress_tracker
+        self._all_mutations: list[MutationRecord] = []
+
+    @property
+    def archive(self) -> MAPElitesArchive:
+        return self._archive
+
+    @property
+    def budget(self) -> BudgetTracker:
+        return self._budget
+
+    def seed(
+        self,
+        base_workflow: Workflow,
+        config: SwarmConfig | None = None,
+    ) -> Population:
+        """Create the initial population from a base workflow.
+
+        Slot 0: unmodified seed.
+        Slots 1..N-designer_count: random mutations of seed.
+        Last designer_count slots: from-scratch designs via DesignerAgent.
+        """
+        cfg = config or self._config
+        pop = Population()
+
+        seed_ind = Population.make_individual(base_workflow, generation=0)
+        pop.add(seed_ind)
+        self._novelty.add(base_workflow)
+
+        designer_count = cfg.designer_count
+        mutation_slots = max(0, cfg.population_size - 1 - designer_count)
+
+        attempts = 0
+        max_attempts = mutation_slots * 10
+        while pop.size < 1 + mutation_slots and attempts < max_attempts:
+            attempts += 1
+            result = apply_random_mutation(
+                base_workflow,
+                self._strategy,
+                generation=0,
+                frozen_nodes=set(cfg.frozen_node_ids),
+            )
+            if result is None:
+                continue
+            mutated_wf, mutation_rec = result
+            if not self._novelty.is_novel(mutated_wf):
+                continue
+            self._novelty.add(mutated_wf)
+            ind = Population.make_individual(
+                mutated_wf,
+                generation=0,
+                parent_id=seed_ind.id,
+                mutation_record=mutation_rec,
+            )
+            pop.add(ind)
+
+        if designer_count > 0:
+            self._add_designer_variants(pop, cfg, designer_count)
+
+        log.info(
+            "population_seeded",
+            size=pop.size,
+            target=cfg.population_size,
+            designer_variants=min(designer_count, pop.size),
+        )
+        return pop
+
+    def _add_designer_variants(
+        self,
+        pop: Population,
+        cfg: SwarmConfig,
+        designer_count: int,
+    ) -> None:
+        """Add from-scratch designed workflows to the population."""
+        benchmark_spec = cfg.benchmark
+        designs: list[Workflow] = []
+
+        if designer_count >= 1:
+            try:
+                minimal = self._designer.design_minimal(benchmark_spec)
+                designs.append(minimal)
+            except Exception:
+                log.warning("designer_minimal_failed", exc_info=True)
+
+        if designer_count >= 2:
+            try:
+                thorough = self._designer.design_thorough(benchmark_spec)
+                designs.append(thorough)
+            except Exception:
+                log.warning("designer_thorough_failed", exc_info=True)
+
+        for i in range(2, designer_count):
+            try:
+                custom = self._designer.design_custom(
+                    benchmark_spec,
+                    {"max_nodes": 4 + i, "parallel": i % 2 == 0},
+                )
+                designs.append(custom)
+            except Exception:
+                log.warning("designer_custom_failed", index=i, exc_info=True)
+
+        for wf in designs:
+            if pop.size >= cfg.population_size:
+                break
+            if self._novelty.is_novel(wf):
+                self._novelty.add(wf)
+                ind = Population.make_individual(wf, generation=0)
+                pop.add(ind)
+
+    def evolve_generation(
+        self,
+        population: Population,
+        generation: int,
+        project_dir: str = "",
+    ) -> GenerationSummary:
+        """Run one generation of evolution.
+
+        Clean lifecycle: evaluate → holdout → select & mutate → log.
+        """
+        instances = self._subset.select(
+            self._config.training_instances, generation, self._budget.remaining
+        )
+
+        # Step 1: Evaluate population on training set
+        self._evaluate_population(population, instances, project_dir)
+
+        # Step 2: Evaluate best on holdout
+        holdout_score, overfit_delta = self._evaluate_holdout(
+            population, generation, project_dir
+        )
+
+        # Step 3: Select parents and create offspring
+        mutations_applied, novel_count, rejected_dupes = self._select_and_mutate(
+            population, generation, instances, project_dir
+        )
+
+        # Step 4: Log generation summary
+        return self._log_generation(
+            population,
+            generation,
+            mutations_applied,
+            novel_count,
+            rejected_dupes,
+            holdout_score,
+            overfit_delta,
+        )
+
+    def _evaluate_population(
+        self,
+        population: Population,
+        instances: list[str],
+        project_dir: str,
+    ) -> None:
+        """Evaluate all individuals in the population on training instances."""
+        individuals = [ind for ind in population.individuals if not self._budget.exhausted]
+
+        if self._config.parallelism > 1 and len(individuals) > 1:
+            workflows = [Workflow.from_dict(ind.workflow_data) for ind in individuals]  # type: ignore[arg-type]
+            results = self._evaluator.evaluate_batch(
+                workflows, project_dir, instances, parallelism=self._config.parallelism,
+            )
+            for ind, ev in zip(individuals, results):
+                self._budget.consume(1, cost_usd=ev.cost_usd)
+                instance_results = _extract_instance_results(ev)
+                updated = ind.model_copy(update={
+                    "score": ev.score,
+                    "cost_usd": ev.cost_usd,
+                    "instance_results": instance_results,
+                })
+                population.remove(ind.id)
+                population.add(updated)
+                self._archive.add(updated)
+            return
+
+        for ind in individuals:
+            if self._budget.exhausted:
+                break
+            wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
+            ev = self._evaluator.evaluate(wf, project_dir, instances)
+            self._budget.consume(1, cost_usd=ev.cost_usd)
+
+            instance_results = _extract_instance_results(ev)
+            updated = ind.model_copy(update={
+                "score": ev.score,
+                "cost_usd": ev.cost_usd,
+                "instance_results": instance_results,
+            })
+            population.remove(ind.id)
+            population.add(updated)
+            self._archive.add(updated)
+
+    def _evaluate_holdout(
+        self,
+        population: Population,
+        generation: int,
+        project_dir: str,
+    ) -> tuple[float, float | None]:
+        """Evaluate best candidate on holdout set and track overfitting."""
+        best = population.best()
+        holdout_score = 0.0
+        overfit_delta: float | None = None
+
+        if best and self._config.holdout_instances:
+            best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
+            holdout_result = self._evaluator.evaluate(
+                best_wf, project_dir, self._config.holdout_instances
+            )
+            holdout_score = holdout_result.score
+            self._budget.consume(1, cost_usd=holdout_result.cost_usd)
+
+            audit = self._overfit.audit_generation(
+                generation, best.score, holdout_score,
+            )
+            overfit_delta = audit.delta
+
+            if self._overfit.should_early_stop():
+                self._early_stop_reason = "overfitting"
+                log.warning(
+                    "early_stop_overfitting",
+                    generation=generation,
+                    delta=overfit_delta,
+                )
+
+            log.info(
+                "holdout_eval",
+                generation=generation,
+                holdout_score=holdout_score,
+                training_best=best.score,
+                overfit_delta=overfit_delta,
+            )
+
+        return holdout_score, overfit_delta
+
+    def _select_and_mutate(
+        self,
+        population: Population,
+        generation: int,
+        instances: list[str],
+        project_dir: str,
+    ) -> tuple[list[MutationRecord], int, int]:
+        """Select parents, create and evaluate offspring."""
+        mutations_applied: list[MutationRecord] = []
+        novel_count = 0
+        rejected_dupes = 0
+        offspring: list[tuple[Workflow, MutationRecord, str]] = []
+
+        for _ in range(self._config.population_size):
+            parent = self._archive.sample_parent(self._config.tournament_size)
+            if parent is None:
+                continue
+            parent_wf = Workflow.from_dict(parent.workflow_data)  # type: ignore[arg-type]
+            mutation_result = apply_random_mutation(
+                parent_wf,
+                self._strategy,
+                generation,
+                frozen_nodes=set(self._config.frozen_node_ids),
+            )
+            if mutation_result is None:
+                continue
+            child_wf, mutation_rec = mutation_result
+            if self._novelty.is_novel(child_wf):
+                self._novelty.add(child_wf)
+                offspring.append((child_wf, mutation_rec, parent.id))
+                mutations_applied.append(mutation_rec)
+                novel_count += 1
+            else:
+                rejected_dupes += 1
+
+        for child_wf, mutation_rec, parent_id in offspring:
+            if self._budget.exhausted:
+                break
+            eval_result = self._evaluator.evaluate(child_wf, project_dir, instances)
+            self._budget.consume(1, cost_usd=eval_result.cost_usd)
+
+            instance_results = _extract_instance_results(eval_result)
+            ind = Population.make_individual(
+                child_wf,
+                generation=generation,
+                parent_id=parent_id,
+                mutation_record=mutation_rec,
+                score=eval_result.score,
+                cost_usd=eval_result.cost_usd,
+            )
+            ind = ind.model_copy(update={"instance_results": instance_results})
+            population.add(ind)
+            self._archive.add(ind)
+
+        return mutations_applied, novel_count, rejected_dupes
+
+    def _log_generation(
+        self,
+        population: Population,
+        generation: int,
+        mutations_applied: list[MutationRecord],
+        novel_count: int,
+        rejected_dupes: int,
+        holdout_score: float,
+        overfit_delta: float | None,
+    ) -> GenerationSummary:
+        """Compute and return the generation summary."""
+        best = population.best()
+        best_score = best.score if best else 0.0
+        mean_score = population.mean_score()
+        diversity = self._archive.diversity_metric()
+        self._score_trajectory.append(best_score)
+
+        mutation_rate = self._strategy.get_mutation_rate(generation)
+
+        hp_record = HyperparameterRecord(
+            generation=generation,
+            mutation_rate=mutation_rate,
+            population_size=population.size,
+            tournament_size=self._config.tournament_size,
+            designer_ratio=self._strategy.get_designer_ratio(generation),
+            operator_weights=(
+                self._strategy.get_operator_weights()
+                if hasattr(self._strategy, "get_operator_weights")
+                else {}
+            ),
+            best_score=best_score,
+            mean_score=mean_score,
+            diversity=diversity,
+            novel_count=novel_count,
+        )
+
+        return GenerationSummary(
+            generation=generation,
+            population_size=population.size,
+            best_score=best_score,
+            mean_score=mean_score,
+            diversity=diversity,
+            mutations_applied=mutations_applied,
+            novel_count=novel_count,
+            rejected_duplicates=rejected_dupes,
+            holdout_score=holdout_score,
+            overfit_delta=overfit_delta,
+            hyperparameters=hp_record,
+        )
+
+    def _detect_plateau(self) -> bool:
+        """Detect plateau: 3 consecutive non-improving generations."""
+        if len(self._score_trajectory) < PLATEAU_WINDOW + 1:
+            return False
+        recent = self._score_trajectory[-(PLATEAU_WINDOW + 1):]
+        baseline = recent[0]
+        return all(s <= baseline for s in recent[1:])
+
+    def run(
+        self,
+        base_workflow: Workflow,
+        project_dir: str = "",
+    ) -> OuterLoopResult:
+        """Run the full evolutionary search loop."""
+        population = self.seed(base_workflow)
+        generation = 0
+        summaries: list[GenerationSummary] = []
+        hp_history: list[HyperparameterRecord] = []
+
+        while not self._should_terminate(generation):
+            gen_start = time.monotonic()
+            log.info("generation_start", generation=generation, budget_remaining=self._budget.remaining)
+            if self._progress:
+                self._progress.generation_start(generation, self._budget.remaining)
+
+            summary = self.evolve_generation(population, generation, project_dir)
+            summaries.append(summary)
+            if summary.hyperparameters:
+                hp_history.append(summary.hyperparameters)
+            self._all_mutations.extend(summary.mutations_applied)
+
+            gen_elapsed = time.monotonic() - gen_start
+            if self._progress:
+                self._progress.generation_complete(
+                    generation, summary.best_score, summary.mean_score, gen_elapsed,
+                )
+
+            # Checkpoint after every generation
+            if self._checkpoint_dir is not None:
+                best = population.best()
+                cp = CheckpointData(
+                    generation=generation,
+                    population=population.individuals,
+                    best_individual=best,
+                    score_trajectory=list(self._score_trajectory),
+                    mutation_history=list(self._all_mutations),
+                    budget_consumed=self._budget.consumed,
+                    budget_total=self._budget._total,
+                    generation_summaries=summaries,
+                    hyperparameter_history=hp_history,
+                )
+                cp_path = save_checkpoint(self._checkpoint_dir, cp)
+                if self._progress:
+                    self._progress.checkpoint_saved(generation, str(cp_path))
+
+            # Plateau detection with adaptive response
+            if self._detect_plateau():
+                if hasattr(self._strategy, "on_plateau"):
+                    self._strategy.on_plateau()  # type: ignore[union-attr]
+                    log.info("plateau_detected_adapting", generation=generation)
+            elif len(self._score_trajectory) >= 2 and self._score_trajectory[-1] > self._score_trajectory[-2]:
+                if hasattr(self._strategy, "on_improvement"):
+                    self._strategy.on_improvement()  # type: ignore[union-attr]
+
+            generation += 1
+
+        convergence_reason = self._get_convergence_reason(generation)
+        log.info("evolution_complete", reason=convergence_reason, generations=generation)
+
+        # Post-evolution overfit audit
+        best = self._archive.best()
+        audit_result = None
+        if best and self._config.holdout_instances:
+            best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
+            audit_result = self._overfit.audit(
+                best_wf,
+                self._config.training_instances,
+                self._config.holdout_instances,
+                self._evaluator,
+                project_dir,
+            )
+
+        pareto = self._archive.pareto_front()
+
+        return OuterLoopResult(
+            best_workflow_data=best.workflow_data if best else {},
+            best_score=best.score if best else 0.0,
+            holdout_score=audit_result.holdout_score if audit_result else 0.0,
+            overfit_flag=audit_result.overfit_flag if audit_result else False,
+            trajectory=summaries,
+            total_cost_usd=self._budget.total_cost_usd,
+            convergence_reason=convergence_reason,
+            generations_completed=generation,
+            total_evaluations=self._budget.consumed,
+            archive_size=self._archive.size,
+            pareto_front=pareto,
+            hyperparameter_history=hp_history,
+        )
+
+    def _should_terminate(self, generation: int) -> bool:
+        if self._budget.exhausted:
+            return True
+        if self._early_stop_reason:
+            return True
+        if self._config.target_score is not None and self._score_trajectory:
+            if self._score_trajectory[-1] >= self._config.target_score:
+                return True
+        if self._detect_plateau():
+            if len(self._score_trajectory) >= PLATEAU_WINDOW + 2:
+                recent = self._score_trajectory[-(PLATEAU_WINDOW + 2):]
+                if all(s <= recent[0] for s in recent[1:]):
+                    return True
+        return False
+
+    def _get_convergence_reason(self, generation: int) -> str:
+        if self._budget.exhausted:
+            return "budget_exhausted"
+        if self._early_stop_reason:
+            return self._early_stop_reason
+        if self._config.target_score is not None and self._score_trajectory:
+            if self._score_trajectory[-1] >= self._config.target_score:
+                return "target_score_reached"
+        if self._detect_plateau():
+            return "plateau"
+        return "unknown"
+
+
+def _extract_instance_results(eval_result: object) -> dict[str, bool]:
+    """Extract per-instance pass/fail results from an EvalResult's details."""
+    from factory.outer_loop.models import EvalResult as EvalResultModel
+
+    if not isinstance(eval_result, EvalResultModel):
+        return {}
+    instances = eval_result.details.get("instances", {})
+    if not isinstance(instances, dict):
+        return {}
+    results: dict[str, bool] = {}
+    for iid, data in instances.items():
+        if isinstance(data, dict):
+            results[iid] = bool(data.get("resolved", False))
+        elif isinstance(data, bool):
+            results[iid] = data
+    return results

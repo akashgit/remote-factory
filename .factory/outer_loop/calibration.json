@@ -1,0 +1,72 @@
+{
+  "instances": {
+    "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 518.5
+    },
+    "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 242.2
+    },
+    "pandas-dev__pandas.82fa2715.test_col.a592871d.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 307.5
+    },
+    "mwaskom__seaborn.7001ebe7.test_bar.123ed709.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 319.5
+    },
+    "sphinx-doc__sphinx.e347e59c.test_build_gettext.2721e644.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 1006.9
+    },
+    "matplotlib__matplotlib.86a476d2.test_backend_registry.872ba384.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 410.6
+    },
+    "sympy__sympy.c1097516.test_inverse.c240ffe7.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 31.4
+    },
+    "mlflow__mlflow.93dab383.test_abstract_store.e5ff5123.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 235.8
+    },
+    "pytest-dev__pytest.68016f0e.raises_group.c28bf36a.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 79.2
+    },
+    "pypa__packaging.013f3b03.test_metadata.e00b5801.lv1": {
+      "score": 1.0,
+      "resolved": true,
+      "elapsed_seconds": 49.6
+    }
+  },
+  "training": [
+    "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1",
+    "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv1",
+    "pandas-dev__pandas.82fa2715.test_col.a592871d.lv1",
+    "mwaskom__seaborn.7001ebe7.test_bar.123ed709.lv1",
+    "sphinx-doc__sphinx.e347e59c.test_build_gettext.2721e644.lv1",
+    "matplotlib__matplotlib.86a476d2.test_backend_registry.872ba384.lv1",
+    "sympy__sympy.c1097516.test_inverse.c240ffe7.lv1"
+  ],
+  "holdout": [
+    "mlflow__mlflow.93dab383.test_abstract_store.e5ff5123.lv1",
+    "pytest-dev__pytest.68016f0e.raises_group.c28bf36a.lv1",
+    "pypa__packaging.013f3b03.test_metadata.e00b5801.lv1"
+  ],
+  "total": 10,
+  "seed_score": 1.0,
+  "resolved_count": 10,
+  "total_elapsed_seconds": 3201.2
+}

@@ -284,6 +284,67 @@ class Workflow(BaseModel):
 
         return validate_workflow(self)
 
+    def to_dict(self) -> dict[str, object]:
+        """Serialize to a plain dict with type discriminators for nodes."""
+        nodes_data: dict[str, object] = {}
+        for nid, node in self.nodes.items():
+            node_data = node.model_dump(mode="json")
+            node_data["_type"] = type(node).__name__
+            nodes_data[nid] = node_data
+        edges_data = [e.model_dump(mode="json") for e in self.edges]
+        return {
+            "name": self.name,
+            "nodes": nodes_data,
+            "edges": edges_data,
+            "start_node": self.start_node,
+            "terminal": self.terminal,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Workflow:
+        """Reconstruct a Workflow from a dict with type discriminators."""
+        _node_type_map: dict[str, type[Node]] = {
+            "AgentNode": AgentNode,
+            "FnNode": FnNode,
+            "GateNode": GateNode,
+            "ForkNode": ForkNode,
+            "JoinNode": JoinNode,
+            "SubgraphForkNode": SubgraphForkNode,
+            "SelectionNode": SelectionNode,
+            "Study": Study,
+            "LLMNode": LLMNode,
+        }
+        raw_nodes = data.get("nodes", {})
+        if not isinstance(raw_nodes, dict):
+            raise ValueError("nodes must be a dict")
+        nodes: dict[str, NodeType] = {}
+        for nid, node_data in raw_nodes.items():
+            if not isinstance(node_data, dict):
+                raise ValueError(f"node {nid} must be a dict")
+            nd = dict(node_data)
+            type_name = nd.pop("_type", None)
+            if type_name is None:
+                raise ValueError(f"node {nid} missing _type discriminator")
+            node_cls = _node_type_map.get(str(type_name))
+            if node_cls is None:
+                raise ValueError(f"Unknown node type: {type_name}")
+            # model_dump(mode="json") converts sets to lists; coerce back
+            for key in ("reads", "writes"):
+                if key in nd and isinstance(nd[key], list):
+                    nd[key] = set(nd[key])
+            nodes[nid] = node_cls.model_validate(nd, strict=False)  # type: ignore[assignment]
+        raw_edges = data.get("edges", [])
+        if not isinstance(raw_edges, list):
+            raise ValueError("edges must be a list")
+        edges = [Edge.model_validate(e, strict=False) for e in raw_edges]
+        return cls(
+            name=str(data.get("name", "")),
+            nodes=nodes,
+            edges=edges,
+            start_node=str(data.get("start_node", "")),
+            terminal=bool(data.get("terminal", False)),
+        )
+
     def subgraph(
         self,
         node_ids: set[str],

@@ -105,7 +105,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "mempalace"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "mempalace", "outer-loop"]),
     (
         "Configuration",
         [
@@ -295,6 +295,23 @@ def build_parser() -> argparse.ArgumentParser:
             for ext_fn in ext_fns:
                 ext_fn(ext_parser)
 
+    # outer-loop — evolutionary search
+    ol_parser = sub.add_parser("outer-loop", help="Outer loop evolutionary workflow search")
+    ol_sub = ol_parser.add_subparsers(dest="outer_loop_command")
+    p_ol_cal = ol_sub.add_parser("calibrate", help="Calibrate FeatureBench instances for evolution")
+    p_ol_cal.add_argument("--project", required=True, help="Path to the project")
+    p_ol_cal.add_argument("--parallelism", type=int, default=4, help="Parallel evaluations (default: 4)")
+    p_ol_cal.add_argument("--timeout", type=int, default=1800, help="Agent timeout in seconds (default: 1800)")
+    p_ol_evolve = ol_sub.add_parser("evolve", help="Run evolutionary search")
+    p_ol_evolve.add_argument("--project", required=True, help="Path to the project")
+    p_ol_evolve.add_argument("--generations", type=int, default=3, help="Number of generations (default: 3)")
+    p_ol_evolve.add_argument("--population", type=int, default=6, help="Population size (default: 6)")
+    p_ol_evolve.add_argument("--parallelism", type=int, default=4, help="Parallel evaluations (default: 4)")
+    p_ol_evolve.add_argument("--budget", type=int, default=40, help="Evaluation budget (default: 40)")
+    p_ol_evolve.add_argument("--timeout", type=int, default=1800, help="Agent timeout in seconds (default: 1800)")
+    p_ol_evolve.add_argument("--resume", action="store_true", default=False,
+                              help="Resume from latest checkpoint")
+
     # graph — code knowledge graph operations
     graph_parser = sub.add_parser("graph", help="Code knowledge graph via graphify")
     graph_sub = graph_parser.add_subparsers(dest="graph_command")
@@ -433,6 +450,7 @@ def main(argv: list[str] | None = None) -> int:
         ).cmd_workflow(a),
         "plugins": _cmd_plugins,
         "mempalace": _cli.cmd_mempalace,
+        "outer-loop": _cli.cmd_outer_loop,
         "graph": lambda a: {
             "extract": _cli.cmd_graph_extract,
             "update": _cli.cmd_graph_update,

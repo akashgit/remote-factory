@@ -1,0 +1,198 @@
+"""Pydantic v2 strict models for the outer loop evolutionary search."""
+
+from __future__ import annotations
+
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class MutationType(str, Enum):
+    """Types of graph mutation operators."""
+
+    NODE_INSERT = "node_insert"
+    NODE_REMOVE = "node_remove"
+    EDGE_REDIRECT = "edge_redirect"
+    PARALLELIZE = "parallelize"
+    SERIALIZE = "serialize"
+    PARAM_MUTATE = "param_mutate"
+    PROMPT_MUTATE = "prompt_mutate"
+
+
+class MutationRecord(BaseModel):
+    """Record of a single mutation applied to a workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    operator: MutationType
+    target_node: str | None = None
+    before: dict[str, object] = Field(default_factory=dict)
+    after: dict[str, object] = Field(default_factory=dict)
+    rationale: str = ""
+
+    @field_validator("operator", mode="before")
+    @classmethod
+    def _coerce_operator(cls, v: object) -> MutationType:
+        if isinstance(v, str):
+            return MutationType(v)
+        return v  # type: ignore[return-value]
+
+
+class Individual(BaseModel):
+    """A single candidate in the evolutionary population."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: str
+    workflow_data: dict[str, object]
+    score: float = 0.0
+    features: tuple[int, ...] = ()
+    generation: int = 0
+    parent_id: str | None = None
+    mutation_record: MutationRecord | None = None
+    cost_usd: float = 0.0
+    instance_results: dict[str, bool] = Field(default_factory=dict)
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def _coerce_features(cls, v: object) -> tuple[int, ...]:
+        if isinstance(v, list):
+            return tuple(v)
+        return v  # type: ignore[return-value]
+
+    def per_instance_summary(self) -> dict[str, int]:
+        """Return pass/fail counts from instance_results."""
+        passed = sum(1 for v in self.instance_results.values() if v)
+        failed = sum(1 for v in self.instance_results.values() if not v)
+        return {"passed": passed, "failed": failed, "total": len(self.instance_results)}
+
+
+class HyperparameterRecord(BaseModel):
+    """Per-generation evolutionary hyperparameters for Level 3 training data."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int
+    mutation_rate: float
+    population_size: int
+    tournament_size: int
+    designer_ratio: float
+    operator_weights: dict[str, float] = Field(default_factory=dict)
+    best_score: float = 0.0
+    mean_score: float = 0.0
+    diversity: float = 0.0
+    novel_count: int = 0
+
+
+class SwarmConfig(BaseModel):
+    """Configuration for the evolutionary swarm search."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    benchmark: str
+    budget: int
+    population_size: int = 4
+    tournament_size: int = 3
+    mutation_rate: float = 0.3
+    target_score: float | None = None
+    frozen_node_ids: list[str] = Field(default_factory=list)
+    mandatory_node_roles: list[str] = Field(default_factory=list)
+    feature_axes: list[str] = Field(
+        default_factory=lambda: ["depth", "fork_degree", "agent_count", "gate_count"]
+    )
+    mutation_strategy: str = "weighted_random"
+    designer_count: int = 2
+    training_instances: list[str] = Field(default_factory=list)
+    holdout_instances: list[str] = Field(default_factory=list)
+    training_size: int = 10
+    holdout_size: int = 5
+    difficulty_range: tuple[float, float] = (0.3, 0.7)
+    parallelism: int = 4
+
+    @field_validator("holdout_instances")
+    @classmethod
+    def _no_overlap_with_training(cls, v: list[str], info: object) -> list[str]:
+        data = getattr(info, "data", {})
+        training = data.get("training_instances", [])
+        overlap = set(v) & set(training)
+        if overlap:
+            raise ValueError(
+                f"holdout_instances must not overlap with training_instances: {overlap}"
+            )
+        return v
+
+
+class OuterLoopState(BaseModel):
+    """Checkpoint state for the outer loop evolution."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int = 0
+    total_evaluations: int = 0
+    best_score: float = 0.0
+    budget_remaining: int = 0
+    convergence_reason: str | None = None
+    score_trajectory: list[float] = Field(default_factory=list)
+    hyperparameter_history: list[HyperparameterRecord] = Field(default_factory=list)
+
+
+class GenerationSummary(BaseModel):
+    """Summary of a single generation of evolution."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generation: int
+    population_size: int
+    best_score: float
+    mean_score: float
+    diversity: float
+    mutations_applied: list[MutationRecord] = Field(default_factory=list)
+    novel_count: int = 0
+    rejected_duplicates: int = 0
+    holdout_score: float = 0.0
+    overfit_delta: float | None = None
+    hyperparameters: HyperparameterRecord | None = None
+
+
+class EvalResult(BaseModel):
+    """Result of evaluating a single workflow candidate."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    score: float
+    benchmark_score: float = 0.0
+    hygiene_score: float = 0.0
+    cost_usd: float = 0.0
+    complexity: float = 0.0
+    details: dict[str, object] = Field(default_factory=dict)
+
+
+class AuditResult(BaseModel):
+    """Result of overfit detection on the best evolved workflow."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    training_score: float
+    holdout_score: float
+    delta: float
+    overfit_flag: bool
+    details: str = ""
+
+
+class OuterLoopResult(BaseModel):
+    """Result of a complete outer loop evolutionary run."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    best_workflow_data: dict[str, object] = Field(default_factory=dict)
+    best_score: float = 0.0
+    holdout_score: float = 0.0
+    overfit_flag: bool = False
+    trajectory: list[GenerationSummary] = Field(default_factory=list)
+    total_cost_usd: float = 0.0
+    convergence_reason: str = ""
+    generations_completed: int = 0
+    total_evaluations: int = 0
+    archive_size: int = 0
+    pareto_front: list[Individual] = Field(default_factory=list)
+    hyperparameter_history: list[HyperparameterRecord] = Field(default_factory=list)

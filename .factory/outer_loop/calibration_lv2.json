@@ -1,0 +1,74 @@
+{
+  "instances": {
+    "astropy__astropy.b0db0daa.test_basic_rgb.067e927c.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 259.2
+    },
+    "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 267.7
+    },
+    "huggingface__transformers.e2e8dbed.test_modeling_pixtral.a620bb0b.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 692.2
+    },
+    "lightning-ai__pytorch-lightning.126fa6f1.test_fsdp_integration.61c07610.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 1888.0
+    },
+    "mlflow__mlflow.93dab383.test_config.c63d41b0.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 160.4
+    },
+    "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 401.3
+    },
+    "pandas-dev__pandas.82fa2715.test_col.a592871d.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 394.0
+    },
+    "pydata__xarray.97f3a746.test_coordinate_transform.6cacb660.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 548.0
+    },
+    "sympy__sympy.c1097516.test_puiseux.cd575f09.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 1444.3
+    },
+    "mesonbuild__meson.f5d81d07.cargotests.8e49c2d0.lv2": {
+      "score": 0.0,
+      "resolved": false,
+      "elapsed_seconds": 943.0
+    }
+  },
+  "total": 10,
+  "seed_score": 0.0,
+  "seed_name": "featurebench-builder-only",
+  "resolved_count": 0,
+  "total_elapsed_seconds": 6998.1,
+  "level": "lv2",
+  "training": [
+    "astropy__astropy.b0db0daa.test_basic_rgb.067e927c.lv2",
+    "fastapi__fastapi.02e108d1.test_compat.71e8518f.lv2",
+    "huggingface__transformers.e2e8dbed.test_modeling_pixtral.a620bb0b.lv2",
+    "lightning-ai__pytorch-lightning.126fa6f1.test_fsdp_integration.61c07610.lv2",
+    "mlflow__mlflow.93dab383.test_config.c63d41b0.lv2",
+    "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv2",
+    "pandas-dev__pandas.82fa2715.test_col.a592871d.lv2"
+  ],
+  "holdout": [
+    "pydata__xarray.97f3a746.test_coordinate_transform.6cacb660.lv2",
+    "sympy__sympy.c1097516.test_puiseux.cd575f09.lv2",
+    "mesonbuild__meson.f5d81d07.cargotests.8e49c2d0.lv2"
+  ]
+}
