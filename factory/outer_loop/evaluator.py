@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import subprocess
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -151,6 +155,57 @@ class SwarmEvaluator:
         self._cache.put(workflow, instances, composite, result.cost_usd)
         return result
 
+    @staticmethod
+    def _create_worktree(project_dir: str, label: str) -> Path:
+        """Create an isolated git worktree from the target project."""
+        src = Path(project_dir)
+        wt_base = src.parent / ".eval-worktrees"
+        wt_base.mkdir(parents=True, exist_ok=True)
+        wt_path = wt_base / f"wt-{label}-{uuid.uuid4().hex[:8]}"
+
+        result = subprocess.run(
+            ["git", "-C", str(src), "worktree", "add", "--detach", str(wt_path), "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"git worktree add failed: {result.stderr}")
+
+        for subdir in ["outer_loop/modes", "workflows"]:
+            src_dir = src / ".factory" / subdir
+            dst_dir = wt_path / ".factory" / subdir
+            if src_dir.exists():
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                for f in src_dir.iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, dst_dir / f.name)
+
+        log.info("worktree_created", path=str(wt_path), source=str(src))
+        return wt_path
+
+    @staticmethod
+    def _cleanup_worktree(project_dir: str, wt_path: Path) -> None:
+        """Remove a git worktree."""
+        try:
+            subprocess.run(
+                ["git", "-C", str(project_dir), "worktree", "remove", "--force", str(wt_path)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except Exception:
+            shutil.rmtree(wt_path, ignore_errors=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(project_dir), "worktree", "prune"],
+                    capture_output=True,
+                    timeout=30,
+                )
+            except Exception:
+                pass
+        log.info("worktree_cleaned", path=str(wt_path))
+
     def _evaluate_via_inner_loop(
         self,
         workflow: Workflow,
@@ -158,7 +213,7 @@ class SwarmEvaluator:
         instances: list[str],
         individual_id: str | None = None,
     ) -> EvalResult:
-        """Evaluate using InnerLoop.step() for rich CycleRecord exhaust."""
+        """Evaluate using InnerLoop.step() in an isolated worktree."""
         from factory.outer_loop.featurebench_inner_loop import FeatureBenchInnerLoop
 
         cached_record = self._cycle_cache.get(workflow)
@@ -170,19 +225,23 @@ class SwarmEvaluator:
                 self._cycle_records[individual_id] = cached_record
             return EvalResult(score=score, cost_usd=cost, benchmark_score=score)
 
+        wt_path: Path | None = None
         try:
             mode_name = self._inner_loop_factory(workflow) if callable(self._inner_loop_factory) else "evolve"
+
+            label = individual_id[:8] if individual_id else mode_name[:12]
+            wt_path = self._create_worktree(project_dir, label)
+
             loop = FeatureBenchInnerLoop(
-                project_dir=Path(project_dir),
+                project_dir=wt_path,
                 mode=mode_name,
                 workflow=workflow,
                 frozen_nodes=frozenset(self._config.frozen_node_ids),
+                test_command=self._config.test_command,
             )
             record = loop.step()
 
-            summary_score = self._read_cycle_summary_score(
-                loop.project_dir, loop.mode
-            )
+            summary_score = self._read_cycle_summary_score(wt_path, loop.mode)
             score = summary_score if summary_score is not None else (record.score_end or 0.0)
             cost = record.total_cost_usd
 
@@ -207,6 +266,7 @@ class SwarmEvaluator:
                     "kept": record.kept,
                     "reverted": record.reverted,
                     "parsimony_penalty": parsimony,
+                    "worktree": str(wt_path),
                 },
             )
         except Exception as exc:
@@ -215,6 +275,9 @@ class SwarmEvaluator:
                 score=0.0,
                 details={"error": str(exc), "evaluation_method": "inner_loop"},
             )
+        finally:
+            if wt_path is not None:
+                self._cleanup_worktree(project_dir, wt_path)
 
     def evaluate_batch(
         self,
@@ -223,7 +286,25 @@ class SwarmEvaluator:
         instances: list[str],
         parallelism: int = 1,
     ) -> list[EvalResult]:
-        return [self.evaluate(wf, project_dir, instances) for wf in workflows]
+        """Evaluate multiple workflows, optionally in parallel with worktree isolation."""
+        if parallelism <= 1 or len(workflows) <= 1:
+            return [self.evaluate(wf, project_dir, instances) for wf in workflows]
+
+        results: list[EvalResult | None] = [None] * len(workflows)
+        with ThreadPoolExecutor(max_workers=min(parallelism, len(workflows))) as pool:
+            futures = {
+                pool.submit(self.evaluate, wf, project_dir, instances): idx
+                for idx, wf in enumerate(workflows)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as exc:
+                    log.error("batch_eval_failed", index=idx, error=str(exc))
+                    results[idx] = EvalResult(score=0.0, details={"error": str(exc)})
+
+        return [r or EvalResult(score=0.0) for r in results]
 
     def _compute_composite(self, result: EvalResult) -> float:
         norm_cost = min(result.cost_usd / 10.0, 1.0) if result.cost_usd > 0 else 0.0

@@ -74,6 +74,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         population_size = getattr(args, "population_size", 4)
         designer_count = 0 if benchmark == "featurebench" else 2
         target_proj = getattr(args, "project_dir", None)
+        test_cmd = getattr(args, "test_command", "")
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -82,6 +83,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             training_instances=getattr(args, "training_instances", []),
             holdout_instances=getattr(args, "holdout_instances", []),
             target_project=str(Path(target_proj).resolve()) if target_proj else "",
+            test_command=test_cmd or "",
         )
 
     root = init_filesystem(project_path, config)
@@ -384,6 +386,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--project-dir",
         default=None,
         help="Target project dir for sub-CEO evaluation (defaults to project_path)",
+    )
+    cal.add_argument(
+        "--test-command",
+        default="",
+        help="Test command for scoring (e.g. 'pytest tests/test_outputs.py -v')",
     )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")

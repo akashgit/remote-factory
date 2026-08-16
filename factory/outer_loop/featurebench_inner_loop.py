@@ -33,6 +33,7 @@ class FeatureBenchInnerLoop:
         mode: str,
         workflow: Workflow | None = None,
         frozen_nodes: frozenset[str] = frozenset(),
+        test_command: str = "",
     ) -> None:
         self._evaluator = FeatureBenchEvaluator()
         self._inner_loop = InnerLoop(
@@ -41,6 +42,7 @@ class FeatureBenchInnerLoop:
             evaluator=self._evaluator,
             workflow=workflow,
             frozen_nodes=frozen_nodes,
+            test_command=test_command,
         )
 
     @property

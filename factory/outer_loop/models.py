@@ -101,6 +101,7 @@ class SwarmConfig(BaseModel):
     plateau_threshold: float = 0.01
     diversity_floor: float = 0.2
     target_project: str = ""
+    test_command: str = ""
     early_stop_unchanged: int = 3
 
     @field_validator("holdout_instances")

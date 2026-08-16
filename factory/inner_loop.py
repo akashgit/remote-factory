@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -115,6 +116,7 @@ class InnerLoop:
         evaluator: Evaluator | None = None,
         workflow: Workflow | None = None,
         frozen_nodes: frozenset[str] = frozenset(),
+        test_command: str = "",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -122,6 +124,7 @@ class InnerLoop:
         self.evaluator = evaluator
         self.workflow = workflow
         self.frozen_nodes = frozenset(frozen_nodes)
+        self.test_command = test_command
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._validate_frozen_nodes()
@@ -209,12 +212,16 @@ class InnerLoop:
             event_offset=event_offset, tsv_offset=tsv_offset,
         )
 
+        test_score, test_details = self._run_test_command() if self.test_command else (None, None)
+
         self._write_cycle_summary(
             returncode=result.returncode,
             event_offset=event_offset,
             duration_ms=duration_ms,
             builder_committed=builder_committed,
             experiments=len(record.experiments),
+            test_score=test_score,
+            test_details=test_details,
         )
 
         if result.returncode != 0:
@@ -309,6 +316,31 @@ class InnerLoop:
         except Exception:
             return None
 
+    def _run_test_command(self) -> tuple[float | None, dict[str, Any] | None]:
+        """Run the configured test command and return (pass_rate, details)."""
+        from factory.outer_loop.featurebench_evaluator import parse_pytest_stdout
+
+        try:
+            result = subprocess.run(
+                shlex.split(self.test_command),
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            metrics = parse_pytest_stdout(result.stdout)
+            pass_rate = metrics.get("pass_rate", 0.0)
+            return pass_rate, {
+                "tests_passed": metrics.get("tests_passed", 0.0),
+                "tests_total": metrics.get("tests_total", 0.0),
+                "pass_rate": pass_rate,
+                "test_returncode": result.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return 0.0, {"error": "test_command_timeout"}
+        except Exception as exc:
+            return None, {"error": str(exc)}
+
     def _write_cycle_summary(
         self,
         returncode: int,
@@ -316,6 +348,8 @@ class InnerLoop:
         duration_ms: int,
         builder_committed: bool,
         experiments: int,
+        test_score: float | None = None,
+        test_details: dict[str, Any] | None = None,
     ) -> Path:
         """Write a structured summary of observable outcomes from this cycle."""
         events_path = self.factory_dir / "events.jsonl"
@@ -345,25 +379,29 @@ class InnerLoop:
                 elif etype == "agent.failed":
                     agents_failed += 1
 
-        score = 0.0
+        heuristic_score = 0.0
         if agents_spawned > 0:
-            score += 0.2
+            heuristic_score += 0.2
         if builder_committed:
-            score += 0.2
+            heuristic_score += 0.2
         if returncode == 0:
-            score += 0.2
+            heuristic_score += 0.2
         if agents_failed == 0 and agents_spawned > 0:
-            score += 0.2
+            heuristic_score += 0.2
         if returncode == 0:
-            score += 0.2
+            heuristic_score += 0.2
+
+        score = test_score if test_score is not None else heuristic_score
 
         errors: list[str] = []
         if returncode != 0:
             errors.append(f"subprocess exited with code {returncode}")
 
-        summary = {
+        summary: dict[str, Any] = {
             "mode": self.mode,
-            "score": round(score, 2),
+            "score": round(score, 4),
+            "scoring_method": "pytest_pass_rate" if test_score is not None else "heuristic",
+            "heuristic_score": round(heuristic_score, 2),
             "cost_usd": round(total_cost, 2),
             "agents_spawned": agents_spawned,
             "agents_succeeded": agents_succeeded,
@@ -374,6 +412,8 @@ class InnerLoop:
             "duration_ms": duration_ms,
             "errors": errors,
         }
+        if test_details:
+            summary["test_details"] = test_details
 
         summary_dir = self.factory_dir / "outer_loop" / "runs" / self.mode
         summary_dir.mkdir(parents=True, exist_ok=True)
