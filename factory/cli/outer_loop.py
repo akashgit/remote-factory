@@ -5,7 +5,32 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.workflow.primitives import Workflow
+
+
+def _make_inner_loop_factory(
+    registry: EphemeralModeRegistry,
+) -> Callable[[Workflow], str]:
+    """Build a callable that registers a workflow as an ephemeral mode and returns its name.
+
+    This bridges SwarmEvaluator → FeatureBenchInnerLoop: without it,
+    _inner_loop_factory is None and evaluation returns a dummy score=0.0.
+    """
+
+    def _factory(workflow: Workflow) -> str:
+        from factory.outer_loop.similarity import structural_hash
+
+        wf_hash = structural_hash(workflow)
+        ind_id = f"eval-{wf_hash[:12]}"
+        return registry.register(ind_id, 0, workflow)
+
+    return _factory
 
 
 def cmd_outer_loop(args: argparse.Namespace) -> int:
@@ -68,7 +93,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         return 1
 
     registry = EphemeralModeRegistry(project_path)
-    evaluator = SwarmEvaluator(config)
+    evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     engine = SwarmEngine(
         config=config,
         evaluator=evaluator,
@@ -118,7 +143,7 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         print("Error: no ephemeral modes found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
         return 1
 
-    evaluator = SwarmEvaluator(config)
+    evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     results: dict[str, object] = {}
     for mode_name in modes:
         wf = registry.load(mode_name)
@@ -158,7 +183,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
         return 1
 
     registry = EphemeralModeRegistry(project_path)
-    evaluator = SwarmEvaluator(config)
+    evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     reflector = OuterLoopReflector(project_dir=project_path)
 
     records: list[tuple[str, float, object]] = []

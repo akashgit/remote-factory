@@ -226,6 +226,8 @@ class SwarmEngine:
                 self._novelty.add(wf)
                 ind = Population.make_individual(wf, generation=0)
                 pop.add(ind)
+                if self._mode_registry:
+                    self._mode_registry.register(ind.id, 0, wf)
 
     def evolve_generation(
         self,
