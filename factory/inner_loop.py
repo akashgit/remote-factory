@@ -157,17 +157,34 @@ class InnerLoop:
         """Return the set of frozen node IDs."""
         return set(self.frozen_nodes)
 
+    @staticmethod
+    def _count_lines(path: Path) -> int:
+        if not path.exists():
+            return 0
+        return len(path.read_text().splitlines())
+
+    @staticmethod
+    def _count_tsv_data_rows(path: Path) -> int:
+        if not path.exists():
+            return 0
+        lines = path.read_text().splitlines()
+        return max(0, len(lines) - 1)
+
     def step(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Run one inner-loop cycle and return structured results.
 
         1. Write directives (steering from outer loop) if provided
-        2. Run the factory mode via subprocess
-        3. CycleAnalyzer reads execution artifacts (agents, costs, verdicts)
-        4. Evaluator parses eval-specific artifacts (scores, metrics)
-        5. Return composed CycleRecord
+        2. Snapshot artifact offsets for isolation
+        3. Run the factory mode via subprocess
+        4. CycleAnalyzer reads only new execution artifacts (scoped by offset)
+        5. Evaluator parses eval-specific artifacts (scores, metrics)
+        6. Return composed CycleRecord
         """
         if directives:
             self._write_directives(directives)
+
+        event_offset = self._count_lines(self.factory_dir / "events.jsonl")
+        tsv_offset = self._count_tsv_data_rows(self.factory_dir / "results.tsv")
 
         result = subprocess.run(
             [sys.executable, "-m", "factory", "ceo", str(self.project_dir),
@@ -175,7 +192,9 @@ class InnerLoop:
             cwd=self.project_dir,
         )
 
-        record = self._collect_results()
+        record = self._collect_results(
+            event_offset=event_offset, tsv_offset=tsv_offset,
+        )
         if result.returncode != 0:
             record.errored = (record.errored or 0) + 1
         record.cycle_number = self._step_count + 1
@@ -202,9 +221,18 @@ class InnerLoop:
         """All cycle records from this session."""
         return list(self._history)
 
-    def _collect_results(self) -> CycleRecord:
+    def _collect_results(
+        self,
+        event_offset: int = 0,
+        tsv_offset: int = 0,
+    ) -> CycleRecord:
         """Read execution artifacts + eval artifacts, compose into CycleRecord."""
-        analyzer = CycleAnalyzer(self.factory_dir, workflow=self.workflow)
+        analyzer = CycleAnalyzer(
+            self.factory_dir,
+            workflow=self.workflow,
+            event_offset=event_offset,
+            tsv_offset=tsv_offset,
+        )
         record = analyzer.latest()
         if record is None:
             record = CycleRecord(

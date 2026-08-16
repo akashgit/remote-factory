@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from factory.outer_loop.evaluator import CycleRecord
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.workflow.primitives import Workflow
 
@@ -71,10 +72,12 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         benchmark = getattr(args, "benchmark", "featurebench")
         budget = getattr(args, "budget", 50)
         population_size = getattr(args, "population_size", 4)
+        designer_count = 0 if benchmark == "featurebench" else 2
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
             population_size=population_size,
+            designer_count=designer_count,
             training_instances=getattr(args, "training_instances", []),
             holdout_instances=getattr(args, "holdout_instances", []),
         )
@@ -82,21 +85,45 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     root = init_filesystem(project_path, config)
 
     benchmark = config.benchmark
-    try:
-        from factory.workflow.contributed.featurebench.workflow import (
-            workflow as featurebench_workflow,
-        )
+    if benchmark == "featurebench":
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
 
-        base_workflow = featurebench_workflow()
-    except ImportError:
-        print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
-        return 1
+        base_workflow = Workflow(
+            name="featurebench-seed",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    model="opus",
+                    timeout=7200,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+    else:
+        try:
+            from factory.workflow.contributed.featurebench.workflow import (
+                workflow as featurebench_workflow,
+            )
+
+            base_workflow = featurebench_workflow()
+        except ImportError:
+            print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
+            return 1
 
     registry = EphemeralModeRegistry(project_path)
     evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
+
+    from factory.outer_loop.similarity import NoveltyFilter
+
+    min_ged = 1 if len(base_workflow.nodes) <= 2 else 3
     engine = SwarmEngine(
         config=config,
         evaluator=evaluator,
+        novelty_filter=NoveltyFilter(min_edit_distance=min_ged),
         mode_registry=registry,
         project_dir=project_path,
     )
@@ -125,7 +152,12 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate the current generation's population."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
-    print(f"Evaluating generation {generation} at {project_path}")
+    eval_project_dir = getattr(args, "project_dir", None)
+    if eval_project_dir is not None:
+        eval_project_dir = str(Path(eval_project_dir).resolve())
+    else:
+        eval_project_dir = str(project_path)
+    print(f"Evaluating generation {generation} at {project_path} (target: {eval_project_dir})")
 
     from factory.outer_loop.evaluator import SwarmEvaluator
     from factory.outer_loop.filesystem import load_checkpoint, load_config, save_checkpoint
@@ -149,7 +181,7 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         wf = registry.load(mode_name)
         if wf is None:
             continue
-        ev = evaluator.evaluate(wf, str(project_path), config.training_instances)
+        ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
         results[mode_name] = {"score": ev.score, "cost_usd": ev.cost_usd}
         print(f"  {mode_name}: score={ev.score:.4f} cost=${ev.cost_usd:.4f}")
 
@@ -186,7 +218,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
     evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     reflector = OuterLoopReflector(project_dir=project_path)
 
-    records: list[tuple[str, float, object]] = []
+    records: list[tuple[str, float, CycleRecord | None]] = []
     for mode_name in registry.list_modes():
         wf = registry.load(mode_name)
         if wf is None:
@@ -343,10 +375,20 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
     cal.add_argument("--population-size", type=int, default=4)
     cal.add_argument("--training-instances", nargs="*", default=[])
     cal.add_argument("--holdout-instances", nargs="*", default=[])
+    cal.add_argument(
+        "--project-dir",
+        default=None,
+        help="Target project dir for sub-CEO evaluation (defaults to project_path)",
+    )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")
     ev.add_argument("project_path", nargs="?", default=".")
     ev.add_argument("--generation", type=int, default=0)
+    ev.add_argument(
+        "--project-dir",
+        default=None,
+        help="Target project dir for sub-CEO evaluation (defaults to project_path)",
+    )
 
     ref = outer_sub.add_parser("reflect", help="Run reflection on generation")
     ref.add_argument("project_path", nargs="?", default=".")
