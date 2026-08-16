@@ -2,7 +2,7 @@
 name = "lumen-runtime"
 version = "0.1.0"
 description = "LUMEN: Learning-based Universal Modeling and Evolution eNgine - RL training system for scientific discovery"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     # Scientific Computing
     "numpy>=2.0.0",
@@ -22,6 +22,7 @@ dependencies = [
     # Configuration & Utils
     "hydra-core",
     "packaging>=20.0",
+    "structlog",  # Required by factory/__init__.py
 
     # Math & Verification
     "math_verify",
@@ -38,4 +39,59 @@ dependencies = [
 
     # Build Tools (for VERL compilation)
     "pybind11",
+
+    # vLLM Runtime Dependencies (installed separately via wheels)
+    # These are needed by vLLM but we install vLLM with --no-deps to avoid CUDA version conflicts
+    "anthropic",
+    "apache-tvm-ffi",
+    "blake3",
+    "cachetools",
+    "cbor2",
+    "cloudpickle",
+    "compressed-tensors",
+    "depyf",
+    "diskcache",
+    "einops",
+    "fastapi",
+    "fastsafetensors",
+    "flashinfer-cubin",
+    "flashinfer-python",
+    "gguf",
+    "humming-kernels",
+    "ijson",
+    "lark",
+    "llguidance",
+    "lm-format-enforcer",
+    "mcp",
+    "mistral-common",
+    "model-hosting-container-standards",
+    "ninja",
+    "numba",
+    "openai",
+    "openai-harmony",
+    "opencv-python-headless",
+    "opentelemetry-api",
+    "opentelemetry-exporter-otlp",
+    "opentelemetry-sdk",
+    "opentelemetry-semantic-conventions-ai",
+    "outlines-core",
+    "partial-json-parser",
+    "pillow",
+    "prometheus-client",
+    "prometheus-fastapi-instrumentator",
+    "py-cpuinfo",
+    "pybase64",
+    "pydantic",
+    "python-json-logger",
+    "sentencepiece",
+    "setproctitle",
+    "tiktoken",
+    "tilelang",
+    "tokenspeed-mla",
+    "torch-c-dlpack-ext",
+    "truststore",
+    "uvicorn",
+    "uvloop",
+    "watchfiles",
+    "xgrammar",
 ]

@@ -8,7 +8,7 @@ Reinforcement learning training system for scientific discovery tasks, starting 
 
 ⚠️ **Install this environment BEFORE using the workflow.**
 
-### 1. Install Dependencies
+### 1. Install Base Dependencies
 
 ```bash
 cd factory/lumen
@@ -17,19 +17,48 @@ uv sync --no-install-project
 
 This creates `.venv/` in `factory/lumen/` and installs all base dependencies from `pyproject.toml`.
 
-### 2. Install PyTorch & vLLM
+### 2. Install PyTorch & vLLM (CUDA 12.9)
+
+⚠️ **Version Alignment with Discover**: We use the same versions as TTT-Discover for compatibility.
 
 ```bash
-uv pip install vllm
+# Install PyTorch 2.11.0+cu129 from direct wheel URLs
+uv pip install \
+  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
+  "https://download.pytorch.org/whl/cu129/torchvision-0.26.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
+  "https://download.pytorch.org/whl/cu129/torchaudio-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
+
+# Install vLLM 0.23.0+cu129 (--no-deps to avoid CUDA version conflicts)
+uv pip install --no-deps https://github.com/vllm-project/vllm/releases/download/v0.23.0/vllm-0.23.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl
 ```
 
-This installs the latest vLLM (which brings PyTorch as a dependency) from PyPI with CUDA support.
+**Why this way?**
+- PyTorch wheels: Must use direct URLs because `--extra-index-url` doesn't prioritize `+cu129` suffix
+- vLLM `--no-deps`: vLLM's dependencies don't specify CUDA version for PyTorch, would install wrong version
+- vLLM dependencies: Already included in `pyproject.toml` (installed in Step 1)
 
-**Note**: The installed versions are:
-- PyTorch 2.13.0+cu130
-- vLLM 0.27.1
+### 3. Install FlashInfer & Flash-Attention
 
-### 3. Install VERL Fork
+```bash
+# Install matching flashinfer versions (0.6.12)
+uv pip install flashinfer-python==0.6.12 flashinfer-cubin==0.6.12
+
+# Restore PyTorch cu129 (flashinfer may downgrade it)
+uv pip install --force-reinstall --no-deps \
+  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
+  "https://download.pytorch.org/whl/cu129/torchvision-0.26.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
+  "https://download.pytorch.org/whl/cu129/torchaudio-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
+
+# Restore nvidia-nccl-cu12
+uv pip install --force-reinstall nvidia-nccl-cu12==2.28.9
+
+# Compile flash-attn from source
+MAX_JOBS=8 uv pip install flash-attn --no-build-isolation --no-cache-dir
+```
+
+**Note**: Flash-attention compilation can take 20-25 minutes.
+
+### 4. Install VERL Fork
 
 ⚠️ **CRITICAL**: You MUST use the ash-ding fork, not official VERL.
 
@@ -45,7 +74,7 @@ uv pip install -e ~/verl
 
 Official VERL will fail with: `ConfigCompositionException: Could not find 'entropic_adaptive_beta'`
 
-### 4. Verify
+### 5. Verify
 
 ```bash
 .venv/bin/python env_specs/verify_env.py
@@ -53,8 +82,8 @@ Official VERL will fail with: `ConfigCompositionException: Could not find 'entro
 
 Expected output (CUDA check may fail if GPU drivers are outdated):
 ```
-✓ torch                2.13.0+cu130
-✓ vllm                 0.27.1
+✓ torch                2.6.0+cu129
+✓ vllm                 0.23.0
 ✓ verl                 0.9.0.dev
 ✓ numpy                2.3.5
 ...
@@ -97,9 +126,20 @@ Create `.factory/lumen/config.json` in your project:
   "num_gpus": 8,
   "rollout_tp": 4,
   "num_rollouts_per_prompt": 64,
+  "max_iterations": 3,
   "mock": false
 }
 ```
+
+**Configuration fields:**
+- `task_name`: Einstein Arena task name (required)
+- `task_dir`: Path to task directory (optional, defaults to `benchmarks/einsteinarena/{task_name}`)
+- `model_path`: HuggingFace model path (required)
+- `num_gpus`: Number of GPUs to use (auto-detected if not specified)
+- `rollout_tp`: Tensor parallelism for vLLM rollouts (default: 4)
+- `num_rollouts_per_prompt`: Number of rollouts per prompt (default: 64)
+- `max_iterations`: Maximum number of training iterations (default: 3)
+- `mock`: Enable mock mode for testing without GPUs (default: false)
 
 **Mock mode** (testing without GPUs):
 ```json
@@ -147,10 +187,11 @@ uv pip install -e ~/verl
 
 ## System Requirements
 
-- NVIDIA GPU with CUDA 12.9+ drivers
+- NVIDIA GPU with CUDA 12.9 toolkit + drivers (toolkit required for flash-attn compilation, drivers for PyTorch cu129 runtime)
 - Python 3.11 (installed in .venv)
-- ~5GB disk space
+- ~8GB disk space (flash-attn compilation requires extra space)
 - 16GB+ RAM recommended
+- 8+ GPUs recommended for distributed training
 
 ---
 
