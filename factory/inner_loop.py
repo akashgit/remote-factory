@@ -188,7 +188,7 @@ class InnerLoop:
 
         result = subprocess.run(
             [sys.executable, "-m", "factory", "ceo", str(self.project_dir),
-             "--mode", self.mode, "--no-worktree"],
+             "--mode", self.mode, "--headless", "--no-worktree"],
             cwd=self.project_dir,
         )
 
