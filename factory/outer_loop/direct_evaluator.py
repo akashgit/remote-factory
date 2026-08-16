@@ -213,9 +213,37 @@ class DirectFeatureBenchEvaluator:
                          "PATH": "/usr/bin:/bin:/usr/local/bin"},
                 )
 
-            # 4. Apply setup_patch (scramble the implementation)
+            # 4. Apply setup_patch (scramble the implementation) or wipe for lv2
             setup_patch = task_dir / "environment" / "setup_patch.diff"
-            if setup_patch.exists() and setup_patch.stat().st_size > 0:
+            if _is_lv2(task_dir):
+                # lv2: wipe testbed to empty dir (agent builds from scratch)
+                log.info("wiping_testbed_lv2", instance=instance_id)
+                for item in list(testbed.iterdir()):
+                    if item.name == ".git":
+                        continue
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                (testbed / "README.md").write_text("put all codes in this folder\n")
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=testbed,
+                    capture_output=True,
+                    timeout=30,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "wipe for lv2"],
+                    cwd=testbed,
+                    capture_output=True,
+                    timeout=30,
+                    env={
+                        "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test",
+                        "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test",
+                        "PATH": "/usr/bin:/bin:/usr/local/bin",
+                    },
+                )
+            elif setup_patch.exists() and setup_patch.stat().st_size > 0:
                 log.info("applying_setup_patch", instance=instance_id)
                 subprocess.run(
                     ["git", "apply", "--whitespace=nowarn", str(setup_patch.resolve())],
@@ -497,10 +525,13 @@ class DirectFeatureBenchEvaluator:
         """Verify lv2 instances using test.sh flow.
 
         lv2 flow: agent creates a standalone package from scratch.
-        Verification: pip install agent code → restore original from backup →
-        apply test_patch (rewrites imports to agent_code) → run tests.
+        The base image has /testbed with the original solution code.
+        We create a backup tar from /testbed, wipe it, add agent files,
+        then run test.sh which: pip installs agent code, restores
+        from backup, applies test_patch, runs tests.
         """
         test_sh = task_dir / "tests" / "test.sh"
+        test_patch = task_dir / "environment" / "test_patch.diff"
         if not test_sh.exists():
             log.error("test_sh_missing_lv2", task_dir=str(task_dir))
             return False
@@ -532,7 +563,44 @@ class DirectFeatureBenchEvaluator:
                 log.error("docker_start_lv2_failed", stderr=start_result.stderr)
                 return False
 
-            # Collect ALL files the agent created (everything except .git and .factory)
+            # 1. Create backup tar from the base image's /testbed (the solution)
+            #    and create baseline status files (test.sh guardrail needs them)
+            subprocess.run(
+                ["docker", "exec", cid, "bash", "-c",
+                 "cd /testbed && tar czf /tmp/.hb_solution.tar.gz --exclude='.git' . && "
+                 "git status --porcelain | awk '{print $2}' | sort -u > /tmp/image_baseline_status.txt && "
+                 "git diff | md5sum | awk '{print $1}' > /tmp/image_baseline_diff_hash.txt"],
+                capture_output=True,
+                timeout=120,
+            )
+
+            # 2. Wipe /testbed in container and set up empty workspace
+            subprocess.run(
+                ["docker", "exec", cid, "bash", "-c",
+                 "cd /testbed && rm -rf * .* 2>/dev/null; "
+                 "echo 'put all codes in this folder' > /testbed/README.md && "
+                 "cd /testbed && git init && "
+                 "git config user.email 'fb@bench.com' && "
+                 "git config user.name 'FeatureBench' && "
+                 "git add -A && git commit -m 'init' --allow-empty"],
+                capture_output=True,
+                timeout=30,
+            )
+
+            # 3. Copy test_patch.diff and empty setup_patch.diff into container
+            if test_patch.exists():
+                subprocess.run(
+                    ["docker", "cp", str(test_patch), f"{cid}:/tmp/test_patch.diff"],
+                    capture_output=True,
+                    timeout=30,
+                )
+            subprocess.run(
+                ["docker", "exec", cid, "bash", "-c", "touch /tmp/setup_patch.diff"],
+                capture_output=True,
+                timeout=10,
+            )
+
+            # 4. Copy agent's files into /testbed
             all_files: list[str] = []
             for f in testbed.rglob("*"):
                 if f.is_file():
@@ -557,24 +625,22 @@ class DirectFeatureBenchEvaluator:
                         timeout=10,
                     )
                     parents_ensured.add(parent)
-                cp_result = subprocess.run(
+                subprocess.run(
                     ["docker", "cp", str(src), f"{cid}:/testbed/{rel_path}"],
                     capture_output=True,
                     text=True,
                     timeout=30,
                 )
-                if cp_result.returncode != 0:
-                    log.warning("docker_cp_lv2_failed", file=rel_path, stderr=cp_result.stderr)
 
-            # Stage the agent's files so test.sh's guardrail detects changes
+            # 5. Stage agent's files so test.sh guardrail detects changes
             subprocess.run(
                 ["docker", "exec", cid, "bash", "-c",
-                 "cd /testbed && git add -A && git diff --cached --stat"],
+                 "cd /testbed && git add -A"],
                 capture_output=True,
                 timeout=30,
             )
 
-            # Copy test.sh and run it inside the container
+            # 6. Copy test.sh and run it
             subprocess.run(
                 ["docker", "cp", str(test_sh), f"{cid}:/tmp/test.sh"],
                 capture_output=True,
@@ -588,7 +654,6 @@ class DirectFeatureBenchEvaluator:
                 timeout=600,
             )
 
-            # Parse reward from output (test.sh writes "Reward: N")
             reward = 0
             for line in result.stdout.splitlines():
                 if line.startswith("Reward:"):
