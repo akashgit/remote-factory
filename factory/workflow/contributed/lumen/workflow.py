@@ -39,12 +39,34 @@ _STATE = ".factory/lumen/current_run/state.json"
 def _get_lumen_python() -> str:
     if "LUMEN_PYTHON" in os.environ:
         return os.environ["LUMEN_PYTHON"]
-    # Assume we're being called from remote-factory root
-    # workflow.py is in: remote-factory/factory/workflow/contributed/lumen/
-    # .venv is in:       remote-factory/factory/lumen/.venv/
-    return "factory/lumen/.venv/bin/python"
+    # This file is in: remote-factory/factory/workflow/contributed/lumen/workflow.py
+    # .venv is in:     remote-factory/factory/lumen/.venv/bin/python
+    import pathlib
+    # __file__ -> workflow.py
+    # .parent -> lumen/
+    # .parent.parent -> contributed/
+    # .parent.parent.parent -> workflow/
+    # .parent.parent.parent.parent -> factory/
+    # .parent.parent.parent.parent.parent -> remote-factory/
+    remote_factory_root = pathlib.Path(__file__).parent.parent.parent.parent.parent
+    return str(remote_factory_root / "factory" / "lumen" / ".venv" / "bin" / "python")
+
+def _get_lumen_root() -> str:
+    """Get the absolute path to the lumen directory."""
+    if "LUMEN_ROOT" in os.environ:
+        return os.environ["LUMEN_ROOT"]
+    # This file is in: remote-factory/factory/workflow/contributed/lumen/workflow.py
+    # Lumen root is:   remote-factory/factory/lumen/
+    import pathlib
+    remote_factory_root = pathlib.Path(__file__).parent.parent.parent.parent.parent
+    return str(remote_factory_root / "factory" / "lumen")
 
 _LUMEN_PYTHON = _get_lumen_python()
+_LUMEN_ROOT = _get_lumen_root()
+
+# Get remote-factory root for PYTHONPATH (parent of factory/)
+import pathlib
+_REMOTE_FACTORY_ROOT = str(pathlib.Path(_LUMEN_ROOT).parent.parent)
 
 
 def workflow() -> Workflow:
@@ -59,7 +81,7 @@ def workflow() -> Workflow:
         command=(
             "cd {project_path} && "
             # Preflight runs in refactory env (checks if lumen venv exists)
-            "python3 -m factory.lumen.preflight --project-path {project_path} && "
+            f"python3 {_LUMEN_ROOT}/preflight.py --project-path {{project_path}} && "
             # SOTA update runs in lumen env (may need numpy/scientific libs)
             f"TASK=$({_LUMEN_PYTHON} -c \""
             f"import json; print(json.load(open('{_CFG}'))['task_name'])"
@@ -105,7 +127,9 @@ def workflow() -> Workflow:
         id="rl_train",
         command=(
             "cd {project_path} && "
-            f"{_LUMEN_PYTHON} -m factory.lumen.train "
+            # Add remote-factory root to PYTHONPATH so factory.lumen imports work
+            f"PYTHONPATH={_REMOTE_FACTORY_ROOT}:$PYTHONPATH "
+            f"{_LUMEN_PYTHON} {_LUMEN_ROOT}/train.py "
             f"--config {_CFG}"
         ),
         reads={_CFG, _STATE, ".factory/lumen/current_run/iteration_*/prompts.json"},
@@ -120,37 +144,7 @@ def workflow() -> Workflow:
     nodes["check_gate"] = GateNode(
         id="check_gate",
         evaluator_type="fn",
-        evaluator_command=(
-            "cd {project_path} && "
-            "python3 -c \""
-            f"import json, re, pathlib;"
-            f"cfg = json.load(open('{_CFG}'));"
-            f"state = json.load(open('{_STATE}'));"
-            "task_name = cfg['task_name'];"
-            "it = state['iteration'];"
-            "results = json.load(open(f'.factory/lumen/current_run/iteration_{it}/evaluation_results.json'));"
-            "md = open(f'benchmarks/einsteinarena/{task_name}/instruction.md').read();"
-            "sota_match = re.search(r'Current best score.*?([0-9.eE+-]+)', md);"
-            "min_imp_match = re.search(r'Minimum improvement.*?([0-9.eE+-]+)', md);"
-            "dir_match = re.search(r'Scoring Direction.*?(MAXIMIZE|MINIMIZE)', md);"
-            "sota = float(sota_match.group(1)) if sota_match else None;"
-            "min_imp = float(min_imp_match.group(1)) if min_imp_match else 1e-10;"
-            "direction = dir_match.group(1) if dir_match else 'MAXIMIZE';"
-            "best = results['best_score'];"
-            "if sota is None:"
-            "  print('pass: No SOTA yet, any valid score is success');"
-            "else:"
-            "  success = (best > sota + min_imp) if direction == 'MAXIMIZE' else (best < sota - min_imp);"
-            "  if success:"
-            "    print('pass: Score improved beyond SOTA');"
-            "  elif it >= 2:"
-            "    print('halt: Max iterations reached without improvement');"
-            "  else:"
-            "    state['iteration'] = it + 1;"
-            f"    json.dump(state, open('{_STATE}', 'w'));"
-            "    print('reloop: Need more iterations');"
-            "\""
-        ),
+        evaluator_command=f"cd {{project_path}} && python3 {_LUMEN_ROOT}/check_gate.py",
         reads={_CFG, _STATE},
     )
 
