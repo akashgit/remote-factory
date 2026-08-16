@@ -96,6 +96,10 @@ class SwarmConfig(BaseModel):
     designer_count: int = 2
     training_instances: list[str] = Field(default_factory=list)
     holdout_instances: list[str] = Field(default_factory=list)
+    plateau_window: int = 3
+    plateau_threshold: float = 0.01
+    diversity_floor: float = 0.2
+    early_stop_unchanged: int = 3
 
     @field_validator("holdout_instances")
     @classmethod

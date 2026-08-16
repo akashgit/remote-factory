@@ -205,7 +205,7 @@ class TestSwarmEngineRun:
 
         result = engine.run(wf)
 
-        assert result.convergence_reason in ("budget_exhausted", "plateau")
+        assert result.convergence_reason in ("budget_exhausted", "plateau", "early_stop_unchanged")
         assert result.total_evaluations > 0
         assert result.generations_completed >= 1
         assert len(result.trajectory) > 0
@@ -290,8 +290,8 @@ class TestSwarmEnginePlateau:
         wf = _make_workflow()
 
         result = engine.run(wf)
-        # With flat scores, should eventually plateau
-        assert result.convergence_reason in ("plateau", "budget_exhausted")
+        # With flat scores, should converge via plateau, early stop, or budget
+        assert result.convergence_reason in ("plateau", "budget_exhausted", "early_stop_unchanged")
 
     def test_plateau_increases_mutation_rate(self) -> None:
         strategy = WeightedRandomStrategy(mutation_rate=0.3)

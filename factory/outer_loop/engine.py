@@ -114,6 +114,8 @@ class SwarmEngine:
         self._project_dir = project_dir
         self._reflector = OuterLoopReflector(project_dir=project_dir)
         self._last_reflection: ReflectionReport | None = None
+        self._initial_diversity: float = 0.0
+        self._top_ids_history: list[frozenset[str]] = []
 
     @property
     def archive(self) -> MAPElitesArchive:
@@ -303,12 +305,21 @@ class SwarmEngine:
             population.add(updated)
             self._archive.add(updated)
 
-        # Track best score
+        # Track best score and diversity
         best = population.best()
         best_score = best.score if best else 0.0
         mean_score = population.mean_score()
         diversity = self._archive.diversity_metric()
         self._score_trajectory.append(best_score)
+
+        if generation == 0:
+            self._initial_diversity = diversity if diversity > 0 else 1.0
+
+        top_3 = sorted(population.individuals, key=lambda i: i.score, reverse=True)[:3]
+        self._top_ids_history.append(frozenset(i.id for i in top_3))
+
+        self._log_event(generation, best_score, mean_score, diversity, self._archive.size)
+        self._log_costs(generation, population)
 
         hp_record = HyperparameterRecord(
             generation=generation,
@@ -355,12 +366,64 @@ class SwarmEngine:
         )
 
     def _detect_plateau(self) -> bool:
-        """Detect plateau: 3 consecutive non-improving generations."""
-        if len(self._score_trajectory) < PLATEAU_WINDOW + 1:
+        """Detect plateau: N consecutive generations with improvement < threshold."""
+        window = self._config.plateau_window
+        threshold = self._config.plateau_threshold
+        if len(self._score_trajectory) < window + 1:
             return False
-        recent = self._score_trajectory[-(PLATEAU_WINDOW + 1):]
+        recent = self._score_trajectory[-(window + 1):]
         baseline = recent[0]
-        return all(s <= baseline for s in recent[1:])
+        return all(abs(s - baseline) < threshold for s in recent[1:])
+
+    def _detect_diversity_collapse(self) -> bool:
+        """Detect diversity collapse: archive diversity below floor."""
+        if not self._initial_diversity:
+            return False
+        current = self._archive.diversity_metric()
+        return current < self._config.diversity_floor * self._initial_diversity
+
+    def _detect_early_stop(self) -> bool:
+        """Detect early stop: top 3 individuals unchanged for N generations."""
+        n = self._config.early_stop_unchanged
+        if len(self._top_ids_history) < n:
+            return False
+        recent = self._top_ids_history[-n:]
+        return all(s == recent[0] for s in recent[1:])
+
+    def _log_event(
+        self, generation: int, best_score: float, mean_score: float,
+        diversity: float, archive_size: int,
+    ) -> None:
+        if not self._project_dir:
+            return
+        import json
+        events_path = self._project_dir / ".factory" / "outer_loop" / "events.jsonl"
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "generation": generation,
+            "best_score": best_score,
+            "mean_score": mean_score,
+            "diversity": diversity,
+            "archive_size": archive_size,
+        }
+        with events_path.open("a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def _log_costs(self, generation: int, population: Population) -> None:
+        if not self._project_dir:
+            return
+        import json
+        costs_path = self._project_dir / ".factory" / "outer_loop" / "costs.jsonl"
+        costs_path.parent.mkdir(parents=True, exist_ok=True)
+        for ind in population.individuals:
+            entry = {
+                "generation": generation,
+                "individual_id": ind.id,
+                "score": ind.score,
+                "cost_usd": ind.cost_usd,
+            }
+            with costs_path.open("a") as f:
+                f.write(json.dumps(entry) + "\n")
 
     def run(
         self,
@@ -431,11 +494,16 @@ class SwarmEngine:
             if self._score_trajectory[-1] >= self._config.target_score:
                 return True
         if self._detect_plateau():
-            # Give one extra generation after plateau adaptation
-            if len(self._score_trajectory) >= PLATEAU_WINDOW + 2:
-                recent = self._score_trajectory[-(PLATEAU_WINDOW + 2):]
-                if all(s <= recent[0] for s in recent[1:]):
+            window = self._config.plateau_window
+            if len(self._score_trajectory) >= window + 2:
+                recent = self._score_trajectory[-(window + 2):]
+                threshold = self._config.plateau_threshold
+                if all(abs(s - recent[0]) < threshold for s in recent[1:]):
                     return True
+        if self._detect_diversity_collapse():
+            return True
+        if self._detect_early_stop():
+            return True
         return False
 
     def _get_convergence_reason(self, generation: int) -> str:
@@ -446,4 +514,8 @@ class SwarmEngine:
                 return "target_score_reached"
         if self._detect_plateau():
             return "plateau"
+        if self._detect_diversity_collapse():
+            return "diversity_collapse"
+        if self._detect_early_stop():
+            return "early_stop_unchanged"
         return "unknown"
