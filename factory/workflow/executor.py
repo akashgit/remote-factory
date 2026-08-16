@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -84,12 +86,18 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        context: dict[str, Any] | None = None,
+        pre_node_hook: Callable[[str, NodeType], Awaitable[None]] | None = None,
+        post_node_hook: Callable[[str, NodeType], Awaitable[None]] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        self.context: dict[str, Any] = context or {}
+        self.pre_node_hook = pre_node_hook
+        self.post_node_hook = post_node_hook
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -244,7 +252,11 @@ class WorkflowExecutor:
 
         start = time.monotonic()
         try:
+            if self.pre_node_hook:
+                await self.pre_node_hook(node_id, node)
             output = await self._run_node(node)
+            if self.post_node_hook:
+                await self.post_node_hook(node_id, node)
             elapsed = (time.monotonic() - start) * 1000
 
             self.result.node_outputs[node_id] = output
@@ -808,11 +820,31 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
+        if node.metadata.get("execution_context") == "container":
+            return await self._run_fn_in_container(node)
         cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
         return await self._run_shell(cmd)
 
+    async def _run_fn_in_container(self, node: FnNode) -> str:
+        """Run a FnNode's shell command inside a container via podman exec."""
+        container_name = self.context.get("container_name")
+        if not container_name:
+            raise RuntimeError(
+                f"node '{node.id}' has execution_context=container but no "
+                "container_name in executor context"
+            )
+        cmd = node.command.replace("{project_path}", "/testbed")
+        shell_cmd = (
+            f"podman exec --workdir /testbed {shlex.quote(container_name)} "
+            f"bash -c {shlex.quote(cmd)}"
+        )
+        return await self._run_shell(shell_cmd)
+
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
+        if node.metadata.get("execution_context") == "container":
+            return await self._run_agent_in_container(node)
+
         from factory.agents.runner import invoke_agent
 
         task = node.prompt_template.replace(
@@ -844,6 +876,69 @@ class WorkflowExecutor:
 
         if code != 0:
             raise RuntimeError(f"agent {node.role.value} exited with code {code}")
+
+        return stdout
+
+    async def _run_agent_in_container(self, node: AgentNode) -> str:
+        """Invoke an agent inside a container via podman exec."""
+        container_name = self.context.get("container_name")
+        if not container_name:
+            raise RuntimeError(
+                f"node '{node.id}' has execution_context=container but no "
+                "container_name in executor context"
+            )
+
+        task = node.prompt_template.replace("{project_path}", "/testbed")
+        node_ctx = self.node_context.get(node.id, "")
+        if node_ctx:
+            task = f"{task}\n\n{node_ctx}"
+
+        model = node.model
+        if not model:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                model = pool_entry.model
+
+        timeout = node.timeout
+        if timeout is None:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                timeout = pool_entry.timeout
+
+        cmd: list[str] = ["podman", "exec", "--workdir", "/testbed"]
+
+        for env_var in ("ANTHROPIC_API_KEY", "FACTORY_RUNNER", "CLAUDE_CODE_USE_VERTEX",
+                        "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"):
+            val = os.environ.get(env_var)
+            if val:
+                cmd.extend(["--env", f"{env_var}={val}"])
+
+        cmd.extend([
+            container_name,
+            "conda", "run", "--no-capture-output", "-n", "testbed",
+            "factory", "agent", node.role.value,
+            "--task", task,
+            "--project", "/testbed",
+        ])
+        if model:
+            cmd.extend(["--model", model])
+        if timeout is not None:
+            cmd.extend(["--timeout", str(timeout)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+        stdout = stdout_bytes.decode() if stdout_bytes else ""
+
+        if proc.returncode != 0:
+            stderr = stderr_bytes.decode() if stderr_bytes else ""
+            raise RuntimeError(
+                f"container agent {node.role.value} exited with code "
+                f"{proc.returncode}: {stderr[:500]}"
+            )
 
         return stdout
 

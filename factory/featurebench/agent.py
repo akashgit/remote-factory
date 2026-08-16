@@ -1,23 +1,24 @@
-"""FeatureBench agent adapter — runs the real factory workflow pipeline.
+"""FeatureBench agent adapter — hybrid host/container execution.
 
-Installs the full factory package inside the Docker container and invokes
-`factory workflow run featurebench /testbed` — the 10-node pipeline:
-  researcher → strategist → builder → code_reviewer → gate_review →
-    adversarial_tester → gate_qa → health_checker → gate_tests → archivist
+Orchestration agents (researcher, strategist, archivist) run on the HOST where
+Claude Code is already installed. Execution agents (builder, health_checker) run
+inside the FeatureBench container via podman exec, routed by the WorkflowExecutor
+based on node metadata.
 
-Each node spawns a separate `claude` subprocess via the workflow executor.
+File sync between host and container uses podman cp:
+  - Pre-workflow: extract problem_statement.md from container to host
+  - Pre-container-node: sync .factory/strategy/ and .factory/reviews/ into container
+  - Post-container-node: sync .factory/reviews/ back from container
+  - Post-workflow: extract git diff from container for patch generation
 """
 
-import json
-import shlex
+import subprocess
 from pathlib import Path
 
 from featurebench.infer.agents.base import BaseAgent
-from featurebench.infer.container import DOCKER_HOST_GATEWAY
 
 
 class FactoryAgent(BaseAgent):
-    # Path to the pre-built factory wheel (set before running)
     FACTORY_WHEEL: str | None = None
 
     @property
@@ -28,16 +29,6 @@ class FactoryAgent(BaseAgent):
     def install_script(self) -> str:
         return """
         set -euo pipefail
-
-        # Install NVM + Node.js (needed for Claude Code CLI)
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-        export NVM_DIR="$HOME/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-        nvm install 22
-        nvm use 22
-
-        # Install Claude Code CLI
-        npm install -g @anthropic-ai/claude-code
 
         # Install the factory package from the wheel copied by install()
         WHEEL=$(ls /installed-agent/remote_factory-*.whl 2>/dev/null | head -1)
@@ -52,35 +43,14 @@ class FactoryAgent(BaseAgent):
         # Verify factory CLI is available
         factory --help >/dev/null 2>&1 || { echo "ERROR: factory CLI not available after install"; exit 1; }
 
-        # Pre-configure Claude Code to allow all tools (needed since
-        # --dangerously-skip-permissions is rejected when running as root)
-        mkdir -p ~/.claude
-        cat > ~/.claude/settings.json << 'SETTINGS'
-        {
-          "permissions": {
-            "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "WebFetch(*)", "WebSearch(*)"],
-            "deny": []
-          }
-        }
-SETTINGS
-        cat > ~/.claude.json << 'STATE'
-        {
-          "hasCompletedOnboarding": true,
-          "hasTrustDialogAccepted": true,
-          "bypassPermissionsModeAccepted": true,
-          "projects": {
-            "/testbed": {
-              "hasTrustDialogAccepted": true
-            }
-          }
-        }
-STATE
+        # Create .factory directory structure inside container
+        mkdir -p /testbed/.factory/reviews /testbed/.factory/strategy /testbed/.factory/archive
 
-        echo "Factory agent installation complete"
+        echo "Factory agent installation complete (minimal container install)"
         """
 
     def install(self, container, log_file) -> bool:
-        """Override to copy factory wheel into container before install script runs."""
+        """Copy factory wheel into container before install script runs."""
         wheel_path = self._resolve_wheel()
         self.logger.info(f"Copying factory wheel to container: {wheel_path}")
         dest = f"/installed-agent/{wheel_path.name}"
@@ -94,7 +64,6 @@ STATE
             if p.exists():
                 return p
 
-        # Find the factory repo root via the 'factory' package location
         import factory as factory_pkg
         factory_root = Path(factory_pkg.__file__).resolve().parent.parent
         dist_dir = factory_root / "dist"
@@ -103,8 +72,6 @@ STATE
             if wheels:
                 return wheels[0]
 
-        # Build one
-        import subprocess
         self.logger.info("Building factory wheel...")
         subprocess.run(
             ["uv", "build", "--wheel"],
@@ -121,28 +88,19 @@ STATE
         lines = ["#!/bin/bash", ""]
 
         required_vars = {
-            "FORCE_AUTO_BACKGROUND_TASKS": "1",
-            "ENABLE_BACKGROUND_TASKS": "1",
             "DISABLE_TELEMETRY": "1",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         }
 
-        # API key auth (direct)
         api_key = self.env_vars.get('ANTHROPIC_API_KEY', '')
         if api_key:
             required_vars["ANTHROPIC_API_KEY"] = api_key
 
-        # Model routing — force all tiers to same model
         model = self._kwargs.get("model")
         if model:
             if "/" in model:
                 model = model.split("/")[-1]
             required_vars["ANTHROPIC_MODEL"] = model
-            required_vars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
-            required_vars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
-            required_vars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
 
-        # Vertex AI auth
         vertex = self.env_vars.get('CLAUDE_CODE_USE_VERTEX', '')
         if vertex:
             required_vars["CLAUDE_CODE_USE_VERTEX"] = vertex
@@ -153,23 +111,17 @@ STATE
                 "CLOUD_ML_REGION", "us-east5"
             )
 
-        # Merge any additional env vars
         for key, value in self.env_vars.items():
             if key not in required_vars and value:
                 required_vars[key] = value
 
         for key, value in required_vars.items():
             if value:
-                value_str = str(value)
-                if 'localhost' in value_str or '127.0.0.1' in value_str:
-                    value_str = value_str.replace('localhost', DOCKER_HOST_GATEWAY)
-                    value_str = value_str.replace('127.0.0.1', DOCKER_HOST_GATEWAY)
-                escaped_value = value_str.replace("'", "'\\''")
+                escaped_value = str(value).replace("'", "'\\''")
                 lines.append(f"export {key}='{escaped_value}'")
 
         lines.extend(self._get_proxy_unset_lines())
 
-        # Write ADC credentials file if JSON provided as env var
         if self.env_vars.get("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
             lines.extend([
                 "",
@@ -181,15 +133,13 @@ STATE
                 '"$HOME/.config/gcloud/application_default_credentials.json"',
             ])
 
-        lines.extend([
-            "",
-            "# Load NVM + tools",
-            'export PATH="$HOME/.cargo/bin:$PATH"',
-            'export NVM_DIR="$HOME/.nvm"',
-            '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',
-        ])
-
         return "\n".join(lines)
+
+    def get_run_command(self, instruction: str) -> str:
+        return (
+            "echo 'host-side workflow execution — container standing by for podman exec'; "
+            "sleep infinity"
+        )
 
     def prepare_run(self, container, instruction: str, log_file) -> bool:
         """Write problem_statement.md into the container before running the workflow."""
@@ -215,39 +165,67 @@ STATE
         self.logger.info("Wrote problem_statement.md to /testbed/")
         return True
 
-    def get_run_command(self, instruction: str) -> str:
-        return (
-            'export PATH="$HOME/.cargo/bin:$PATH"; '
-            "NVM_DIR=${NVM_DIR:-$HOME/.nvm}; "
-            '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true; '
-            "cd /testbed && "
-            "factory workflow run featurebench /testbed "
-            "2>&1 | tee /agent-logs/factory_stream_output.jsonl"
+    def _extract_problem_statement(self, container, host_project_path: Path, log_file) -> bool:
+        """Copy problem_statement.md from container to host project path."""
+        success = self.cm.copy_from_container(
+            container,
+            "/testbed/problem_statement.md",
+            host_project_path / "problem_statement.md",
         )
+        if not success:
+            self.logger.error("Failed to extract problem_statement.md from container")
+        return success
+
+    def _sync_to_container(self, container, host_project_path: Path, log_file) -> bool:
+        """Sync .factory/strategy/ and .factory/reviews/ from host into container."""
+        success = True
+        for subdir in ("strategy", "reviews"):
+            src = host_project_path / ".factory" / subdir
+            if src.exists():
+                for f in src.iterdir():
+                    if f.is_file():
+                        dest = f"/testbed/.factory/{subdir}/{f.name}"
+                        if not self.cm.copy_to_container(container, f, dest):
+                            self.logger.warning(f"Failed to sync {f.name} to container")
+                            success = False
+        return success
+
+    def _sync_from_container(self, container, host_project_path: Path, log_file) -> bool:
+        """Sync .factory/reviews/ from container back to host."""
+        reviews_dir = host_project_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+
+        exit_code, output = self.cm.exec_command(
+            container,
+            "ls /testbed/.factory/reviews/ 2>/dev/null",
+            log_file=log_file,
+        )
+        if exit_code != 0 or not output:
+            return True
+
+        success = True
+        for filename in output.strip().split("\n"):
+            filename = filename.strip()
+            if filename:
+                if not self.cm.copy_from_container(
+                    container,
+                    f"/testbed/.factory/reviews/{filename}",
+                    reviews_dir / filename,
+                ):
+                    self.logger.warning(f"Failed to sync {filename} from container")
+                    success = False
+        return success
 
     def pre_run_hook(self, container, log_file) -> bool:
         exit_code, _ = self.cm.exec_command(
             container,
-            "mkdir -p /agent-logs",
+            "mkdir -p /agent-logs /testbed/.factory/reviews "
+            "/testbed/.factory/strategy /testbed/.factory/archive",
             log_file=log_file,
         )
         return exit_code == 0
 
     def post_run_hook(self, container, log_file) -> bool:
-        log_dir = Path(log_file).parent
-
-        # Copy stream output
-        stream_copied = self.cm.copy_from_container(
-            container,
-            "/agent-logs/factory_stream_output.jsonl",
-            log_dir / "factory_stream_output.jsonl",
-        )
-
-        if not stream_copied:
-            self.logger.error("Failed to copy factory_stream_output.jsonl from container")
-            return False
-
-        # Auto-commit any uncommitted changes
         self.cm.exec_command(
             container,
             "cd /testbed && git add -A && "
@@ -256,7 +234,6 @@ STATE
             log_file=log_file,
         )
 
-        # Check if there's a meaningful commit
         exit_code, output = self.cm.exec_command(
             container,
             "cd /testbed && git diff --stat HEAD~1 HEAD 2>/dev/null "

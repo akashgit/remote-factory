@@ -114,6 +114,7 @@ class Node(BaseModel):
     reads: set[str] = Field(default_factory=set)
     writes: set[str] = Field(default_factory=set)
     blocking: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ArtifactCheck(BaseModel):
