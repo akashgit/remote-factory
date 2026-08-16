@@ -130,6 +130,25 @@ class TestSwarmConfig:
         assert cfg.mutation_rate == 0.3
         assert cfg.designer_count == 2
         assert cfg.mutation_strategy == "weighted_random"
+        assert cfg.target_project == ""
+
+    def test_target_project(self) -> None:
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=50,
+            target_project="/tmp/featurebench-cancel-async",
+        )
+        assert cfg.target_project == "/tmp/featurebench-cancel-async"
+
+    def test_target_project_round_trip(self) -> None:
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=50,
+            target_project="/tmp/test-project",
+        )
+        dumped = cfg.model_dump(mode="json")
+        restored = SwarmConfig.model_validate(dumped)
+        assert restored.target_project == "/tmp/test-project"
 
     def test_no_overlap(self) -> None:
         with pytest.raises(ValidationError, match="overlap"):

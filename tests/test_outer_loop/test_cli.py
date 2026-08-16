@@ -35,6 +35,17 @@ class TestOuterLoopCLIParsing:
         assert ns.budget == 50
         assert ns.population_size == 4
 
+    def test_calibrate_with_target_project(self) -> None:
+        ns = self._parse_outer_loop(
+            "calibrate", "/tmp/project",
+            "--project-dir", "/tmp/featurebench-instance",
+        )
+        assert ns.project_dir == "/tmp/featurebench-instance"
+
+    def test_calibrate_without_target_project(self) -> None:
+        ns = self._parse_outer_loop("calibrate", "/tmp/project")
+        assert ns.project_dir is None
+
     def test_evaluate_subcommand(self) -> None:
         ns = self._parse_outer_loop("evaluate", "/tmp/project", "--generation", "3")
         assert ns.outer_loop_command == "evaluate"
@@ -70,6 +81,41 @@ class TestOuterLoopCLIParsing:
             "--permanent-name", "my-evolved",
         )
         assert ns.permanent_name == "my-evolved"
+
+
+class TestEvaluateTargetProjectFallback:
+    def test_evaluate_uses_config_target_project(self, tmp_path: object) -> None:
+        """_cmd_evaluate falls back to config.target_project when --project-dir not passed."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path)) / "factory-project"
+        project.mkdir()
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=50,
+            target_project="/tmp/featurebench-instance",
+        )
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.load_checkpoint", return_value=None), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"):
+            from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+            with patch.object(EphemeralModeRegistry, "list_modes", return_value=[]):
+                from factory.cli.outer_loop import _cmd_evaluate
+
+                ns = argparse.Namespace(
+                    project_path=str(project),
+                    generation=0,
+                    project_dir=None,
+                )
+                rc = _cmd_evaluate(ns)
+                assert rc == 1  # no modes, but it should reach the "no modes" error
 
 
 class TestOuterLoopWorkflowGraph:

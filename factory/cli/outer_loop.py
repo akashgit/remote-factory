@@ -73,6 +73,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         budget = getattr(args, "budget", 50)
         population_size = getattr(args, "population_size", 4)
         designer_count = 0 if benchmark == "featurebench" else 2
+        target_proj = getattr(args, "project_dir", None)
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -80,6 +81,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             designer_count=designer_count,
             training_instances=getattr(args, "training_instances", []),
             holdout_instances=getattr(args, "holdout_instances", []),
+            target_project=str(Path(target_proj).resolve()) if target_proj else "",
         )
 
     root = init_filesystem(project_path, config)
@@ -152,13 +154,6 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate the current generation's population."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
-    eval_project_dir = getattr(args, "project_dir", None)
-    if eval_project_dir is not None:
-        eval_project_dir = str(Path(eval_project_dir).resolve())
-    else:
-        eval_project_dir = str(project_path)
-    print(f"Evaluating generation {generation} at {project_path} (target: {eval_project_dir})")
-
     from factory.outer_loop.evaluator import SwarmEvaluator
     from factory.outer_loop.filesystem import load_checkpoint, load_config, save_checkpoint
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
@@ -168,6 +163,15 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     if config is None:
         print("Error: no outer loop config found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
         return 1
+
+    eval_project_dir = getattr(args, "project_dir", None)
+    if eval_project_dir is not None:
+        eval_project_dir = str(Path(eval_project_dir).resolve())
+    elif config.target_project:
+        eval_project_dir = config.target_project
+    else:
+        eval_project_dir = str(project_path)
+    print(f"Evaluating generation {generation} at {project_path} (target: {eval_project_dir})")
 
     target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
