@@ -84,12 +84,14 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        context: dict[str, str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        self.context: dict[str, str] = context or {}
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -99,6 +101,13 @@ class WorkflowExecutor:
         self._edge_index: dict[str, list[Edge]] = {}
         for edge in workflow.edges:
             self._edge_index.setdefault(edge.source, []).append(edge)
+
+    def _expand_templates(self, text: str) -> str:
+        """Replace {project_path} and any context variables in template strings."""
+        result = text.replace("{project_path}", shlex.quote(str(self.project_path)))
+        for key, value in self.context.items():
+            result = result.replace(f"{{{key}}}", shlex.quote(value))
+        return result
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""
@@ -808,7 +817,7 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
-        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
+        cmd = self._expand_templates(node.command)
         return await self._run_shell(cmd)
 
     async def _run_agent(self, node: AgentNode) -> str:
@@ -887,9 +896,7 @@ class WorkflowExecutor:
 
         if node.evaluator_type == "fn":
             if node.evaluator_command:
-                cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
-                )
+                cmd = self._expand_templates(node.evaluator_command)
                 try:
                     output = await self._run_shell(cmd)
                     return self._parse_fn_verdict(output, node.id)
@@ -920,9 +927,7 @@ class WorkflowExecutor:
     def _build_gate_prompt(self, node: GateNode) -> str:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
-            return node.gate_prompt.replace(
-                "{project_path}", str(self.project_path),
-            )
+            return self._expand_templates(node.gate_prompt)
 
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
         context = self.node_context.get(node.id, "none")
@@ -995,8 +1000,12 @@ class WorkflowExecutor:
             pass
 
         first_line = text.split("\n")[0].strip().lower()
-        if first_line.startswith("pass"):
+        if first_line.startswith("pass") or first_line.startswith("proceed"):
             return Verdict.proceed()
+        if first_line.startswith("halt"):
+            raw_line = text.split("\n")[0].strip()
+            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+            return Verdict.halt(reason=after_prefix if after_prefix else "gate halted")
         if first_line.startswith("fail") or first_line.startswith("revert"):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
         if first_line.startswith("reloop"):

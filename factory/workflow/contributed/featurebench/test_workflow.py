@@ -62,15 +62,17 @@ class TestFeaturebenchWorkflow:
         assert "cross-file" in node.prompt_template.lower()
 
     def test_gate_verify_is_fn_evaluator(self) -> None:
-        """Gate uses fn evaluator (not agent) for speed and determinism."""
+        """Gate uses fn evaluator with deterministic pytest execution."""
         wf = workflow()
         node = wf.nodes["gate_verify"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "pass:" in node.evaluator_command
-        assert "reloop:" in node.evaluator_command
-        assert "fail:" in node.evaluator_command
+        assert "PROCEED" in node.evaluator_command
+        assert "RELOOP" in node.evaluator_command
+        assert "HALT" in node.evaluator_command
+        assert "pytest" in node.evaluator_command
+        assert "git diff" in node.evaluator_command
 
     def test_auto_merge_node(self) -> None:
         wf = workflow()
@@ -177,3 +179,45 @@ class TestFeaturebenchMeta:
 
     def test_meta_has_description(self) -> None:
         assert "featurebench" in meta["description"].lower() or "FeatureBench" in meta["description"]
+
+
+class TestGateVerifyDeterministic:
+    """Tests for the deterministic pytest-based gate_verify."""
+
+    def test_gate_no_resolved_grep(self) -> None:
+        """Gate does NOT grep for RESOLVED — uses pytest directly."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "RESOLVED" not in node.evaluator_command
+
+    def test_gate_runs_pytest_for_l1(self) -> None:
+        """Gate runs pytest when test files exist (L1 path)."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert node.evaluator_command is not None
+        assert "pytest" in node.evaluator_command
+        assert "test_*.py" in node.evaluator_command
+
+    def test_gate_accepts_commit_without_tests(self) -> None:
+        """Gate PROCEEDs when no test files found (L2 path)."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert node.evaluator_command is not None
+        assert "no test files found" in node.evaluator_command
+
+    def test_gate_halts_on_no_commits(self) -> None:
+        """Gate HALTs when builder didn't commit."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert node.evaluator_command is not None
+        assert "HALT" in node.evaluator_command
+        assert "did not commit" in node.evaluator_command
+
+    def test_gate_always_exits_zero(self) -> None:
+        """Gate command uses exit 0 (not non-zero) to avoid RuntimeError in executor."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert node.evaluator_command is not None
+        assert "exit 0" in node.evaluator_command

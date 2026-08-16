@@ -136,16 +136,15 @@ def workflow() -> Workflow:
             "cd {project_path} && "
             "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
             "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
-            "echo 'fail: builder did not commit any changes'; "
+            "echo 'HALT: builder did not commit any changes'; "
             "exit 0; fi && "
-            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then "
-            "echo 'pass: builder reports tests passing'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(fail|error|FAILED)'; then "
-            "echo 'reloop: builder needs to retry — tests did not pass'; "
+            "TEST_FILES=$(find . -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -1) && "
+            "if [ -n \"$TEST_FILES\" ]; then "
+            "conda run -n testbed pytest . -x --tb=short 2>&1 && "
+            "echo 'PROCEED' || "
+            "echo 'RELOOP: pytest failed'; "
             "else "
-            "echo 'pass: changes committed, no issues detected'; "
-            "fi"
+            "echo 'PROCEED: no test files found, accepting commit'; fi"
         ),
         reads={".factory/reviews/builder-latest.md"},
     )
