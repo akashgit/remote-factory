@@ -308,6 +308,62 @@ class Workflow(BaseModel):
         ]
         return Workflow(name=name, nodes=nodes, edges=edges, start_node=start_node)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the workflow to a JSON-safe dict."""
+        nodes_out: dict[str, Any] = {}
+        for nid, node in self.nodes.items():
+            d = node.model_dump(mode="json")
+            d["_type"] = type(node).__name__
+            nodes_out[nid] = d
+
+        edges_out = [e.model_dump(mode="json") for e in self.edges]
+
+        return {
+            "name": self.name,
+            "nodes": nodes_out,
+            "edges": edges_out,
+            "start_node": self.start_node,
+            "terminal": self.terminal,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Workflow:
+        """Reconstruct a Workflow from a dict produced by ``to_dict``."""
+        _NODE_TYPE_MAP: dict[str, type[Node]] = {
+            "AgentNode": AgentNode,
+            "FnNode": FnNode,
+            "GateNode": GateNode,
+            "ForkNode": ForkNode,
+            "JoinNode": JoinNode,
+            "SubgraphForkNode": SubgraphForkNode,
+            "SelectionNode": SelectionNode,
+            "Study": Study,
+            "LLMNode": LLMNode,
+        }
+        _SET_FIELDS = {"reads", "writes"}
+
+        nodes: dict[str, NodeType] = {}
+        for nid, node_data in data["nodes"].items():
+            node_data = dict(node_data)
+            type_name = node_data.pop("_type", "FnNode")
+            node_cls = _NODE_TYPE_MAP.get(type_name)
+            if node_cls is None:
+                raise ValueError(f"Unknown node type: {type_name}")
+            for fld in _SET_FIELDS:
+                if fld in node_data and isinstance(node_data[fld], list):
+                    node_data[fld] = set(node_data[fld])
+            nodes[nid] = node_cls.model_validate(node_data, strict=False)  # type: ignore[assignment]
+
+        edges = [Edge.model_validate(e, strict=False) for e in data["edges"]]
+
+        return cls(
+            name=data["name"],
+            nodes=nodes,
+            edges=edges,
+            start_node=data["start_node"],
+            terminal=data.get("terminal", False),
+        )
+
 
 # ── factory ──────────────────────────────────────────────────────
 
