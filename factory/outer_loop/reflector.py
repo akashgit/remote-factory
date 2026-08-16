@@ -209,8 +209,8 @@ class OuterLoopReflector:
                 ]
                 if parallel_nodes:
                     report.structural_recommendations.append(
-                        f"PARALLELIZE: Winners use parallel execution — "
-                        f"consider parallelizing independent agents"
+                        "PARALLELIZE: Winners use parallel execution — "
+                        "consider parallelizing independent agents"
                     )
                     break
 

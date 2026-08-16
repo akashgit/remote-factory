@@ -12,7 +12,7 @@ from pathlib import Path
 
 import structlog
 
-from factory.inner_loop import EvalResult, Evaluator
+from factory.inner_loop import EvalResult
 
 log = structlog.get_logger()
 
