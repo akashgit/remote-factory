@@ -826,16 +826,17 @@ class WorkflowExecutor:
         return await self._run_shell(cmd)
 
     async def _run_fn_in_container(self, node: FnNode) -> str:
-        """Run a FnNode's shell command inside a container via podman exec."""
+        """Run a FnNode's shell command inside a container via podman/docker exec."""
         container_name = self.context.get("container_name")
         if not container_name:
             raise RuntimeError(
                 f"node '{node.id}' has execution_context=container but no "
                 "container_name in executor context"
             )
+        runtime = self.context.get("container_runtime", "podman")
         cmd = node.command.replace("{project_path}", "/testbed")
         shell_cmd = (
-            f"podman exec --workdir /testbed {shlex.quote(container_name)} "
+            f"{runtime} exec --workdir /testbed {shlex.quote(container_name)} "
             f"bash -c {shlex.quote(cmd)}"
         )
         return await self._run_shell(shell_cmd)
@@ -880,13 +881,14 @@ class WorkflowExecutor:
         return stdout
 
     async def _run_agent_in_container(self, node: AgentNode) -> str:
-        """Invoke an agent inside a container via podman exec."""
+        """Invoke an agent inside a container via podman/docker exec."""
         container_name = self.context.get("container_name")
         if not container_name:
             raise RuntimeError(
                 f"node '{node.id}' has execution_context=container but no "
                 "container_name in executor context"
             )
+        runtime = self.context.get("container_runtime", "podman")
 
         task = node.prompt_template.replace("{project_path}", "/testbed")
         node_ctx = self.node_context.get(node.id, "")
@@ -905,25 +907,36 @@ class WorkflowExecutor:
             if pool_entry:
                 timeout = pool_entry.timeout
 
-        cmd: list[str] = ["podman", "exec", "--workdir", "/testbed"]
+        env_script = self.context.get("container_env_script", "")
+        conda_env = self.context.get("container_conda_env", "")
 
-        for env_var in ("ANTHROPIC_API_KEY", "FACTORY_RUNNER", "CLAUDE_CODE_USE_VERTEX",
-                        "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"):
-            val = os.environ.get(env_var)
-            if val:
-                cmd.extend(["--env", f"{env_var}={val}"])
-
-        cmd.extend([
-            container_name,
-            "conda", "run", "--no-capture-output", "-n", "testbed",
-            "factory", "agent", node.role.value,
-            "--task", task,
-            "--project", "/testbed",
-        ])
+        agent_cmd = f"factory agent {node.role.value}"
+        agent_cmd += f" --task {shlex.quote(task)} --project /testbed"
         if model:
-            cmd.extend(["--model", model])
+            agent_cmd += f" --model {shlex.quote(model)}"
         if timeout is not None:
-            cmd.extend(["--timeout", str(timeout)])
+            agent_cmd += f" --timeout {timeout}"
+
+        if env_script:
+            inner = f"source {shlex.quote(env_script)} 2>/dev/null; "
+        else:
+            inner = ""
+        if conda_env:
+            inner += f"conda run --no-capture-output -n {shlex.quote(conda_env)} {agent_cmd}"
+        else:
+            inner += agent_cmd
+
+        cmd: list[str] = [runtime, "exec", "--workdir", "/testbed"]
+
+        if not env_script:
+            for env_var in ("ANTHROPIC_API_KEY", "FACTORY_RUNNER",
+                            "CLAUDE_CODE_USE_VERTEX",
+                            "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"):
+                val = os.environ.get(env_var)
+                if val:
+                    cmd.extend(["--env", f"{env_var}={val}"])
+
+        cmd.extend([container_name, "bash", "-c", inner])
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

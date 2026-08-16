@@ -1,14 +1,21 @@
-"""FeatureBench agent adapter — runs the factory workflow pipeline.
+"""FeatureBench agent adapter — hybrid host/container workflow execution.
 
-Installs the full factory package inside the Docker container and invokes
-`factory workflow run featurebench /testbed` — the 6-node pipeline:
-  researcher → strategist → builder → health_checker → gate_tests → archivist
+Runs the factory workflow pipeline with host-side orchestration:
+  researcher (host) → strategist (host) → builder (container) →
+    health_checker (container) → gate_tests (host) → archivist (host)
 
-Each node spawns a separate `claude` subprocess via the workflow executor.
+Host nodes (researcher, strategist, archivist) run on the host machine where
+Claude Code is already installed. Container nodes (builder, health_checker)
+are routed into the FeatureBench Docker container via `docker exec` by the
+WorkflowExecutor's container routing (execution_context metadata).
+
+File sync between host workspace and container is handled via `docker cp`
+in pre/post node hooks.
 """
 
-import json
-import shlex
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from featurebench.infer.agents.base import BaseAgent
@@ -16,7 +23,6 @@ from featurebench.infer.container import DOCKER_HOST_GATEWAY
 
 
 class FactoryAgent(BaseAgent):
-    # Path to the pre-built factory wheel (set before running)
     FACTORY_WHEEL: str | None = None
 
     @property
@@ -28,7 +34,7 @@ class FactoryAgent(BaseAgent):
         return """
         set -euo pipefail
 
-        # Install NVM + Node.js (needed for Claude Code CLI)
+        # Install NVM + Node.js (needed for Claude Code CLI inside container)
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -51,8 +57,7 @@ class FactoryAgent(BaseAgent):
         # Verify factory CLI is available
         factory --help >/dev/null 2>&1 || { echo "ERROR: factory CLI not available after install"; exit 1; }
 
-        # Pre-configure Claude Code to allow all tools (needed since
-        # --dangerously-skip-permissions is rejected when running as root)
+        # Pre-configure Claude Code to allow all tools
         mkdir -p ~/.claude
         cat > ~/.claude/settings.json << 'SETTINGS'
         {
@@ -79,7 +84,7 @@ STATE
         """
 
     def install(self, container, log_file) -> bool:
-        """Override to copy factory wheel into container before install script runs."""
+        """Copy factory wheel into container before install script runs."""
         wheel_path = self._resolve_wheel()
         self.logger.info(f"Copying factory wheel to container: {wheel_path}")
         dest = f"/installed-agent/{wheel_path.name}"
@@ -87,13 +92,11 @@ STATE
         return super().install(container, log_file)
 
     def _resolve_wheel(self) -> Path:
-        """Find or build the factory wheel."""
         if self.FACTORY_WHEEL:
             p = Path(self.FACTORY_WHEEL)
             if p.exists():
                 return p
 
-        # Find the factory repo root via the 'factory' package location
         import factory as factory_pkg
         factory_root = Path(factory_pkg.__file__).resolve().parent.parent
         dist_dir = factory_root / "dist"
@@ -102,10 +105,9 @@ STATE
             if wheels:
                 return wheels[0]
 
-        # Build one
-        import subprocess
+        import subprocess as sp
         self.logger.info("Building factory wheel...")
-        subprocess.run(
+        sp.run(
             ["uv", "build", "--wheel"],
             cwd=str(factory_root),
             capture_output=True,
@@ -126,12 +128,10 @@ STATE
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         }
 
-        # API key auth (direct)
         api_key = self.env_vars.get('ANTHROPIC_API_KEY', '')
         if api_key:
             required_vars["ANTHROPIC_API_KEY"] = api_key
 
-        # Model routing — force all tiers to same model
         model = self._kwargs.get("model")
         if model:
             if "/" in model:
@@ -141,7 +141,6 @@ STATE
             required_vars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
             required_vars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
 
-        # Vertex AI auth
         vertex = self.env_vars.get('CLAUDE_CODE_USE_VERTEX', '')
         if vertex:
             required_vars["CLAUDE_CODE_USE_VERTEX"] = vertex
@@ -152,7 +151,6 @@ STATE
                 "CLOUD_ML_REGION", "us-east5"
             )
 
-        # Merge any additional env vars
         for key, value in self.env_vars.items():
             if key not in required_vars and value:
                 required_vars[key] = value
@@ -168,7 +166,6 @@ STATE
 
         lines.extend(self._get_proxy_unset_lines())
 
-        # Write ADC credentials file if JSON provided as env var
         if self.env_vars.get("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
             lines.extend([
                 "",
@@ -192,8 +189,6 @@ STATE
 
     def prepare_run(self, container, instruction: str, log_file) -> bool:
         """Write problem_statement.md into the container before running the workflow."""
-        import tempfile
-
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", delete=False
         ) as tmp:
@@ -215,13 +210,128 @@ STATE
         return True
 
     def get_run_command(self, instruction: str) -> str:
-        return (
-            'export PATH="$HOME/.cargo/bin:$PATH"; '
-            "NVM_DIR=${NVM_DIR:-$HOME/.nvm}; "
-            '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true; '
-            "cd /testbed && "
-            "PYTHONUNBUFFERED=1 factory workflow run featurebench /testbed "
-            "2>&1 | stdbuf -oL tee /agent-logs/factory_stream_output.jsonl"
+        # Not used — run() is overridden for host-side orchestration.
+        # Kept as fallback for any code that calls it directly.
+        return "echo 'ERROR: get_run_command should not be called in hybrid mode'; exit 1"
+
+    def run(self, container, instruction: str, log_file, timeout=None) -> bool:
+        """Run the workflow with host-side orchestration and container-side execution.
+
+        Host nodes (researcher, strategist, archivist) run on the host.
+        Container nodes (builder, health_checker) are routed into the
+        FeatureBench Docker container via docker exec.
+        """
+        self.pre_run_hook(container, log_file)
+        self.prepare_run(container, instruction, log_file)
+
+        container_id = container.id
+        container_name = container.name or container_id
+
+        host_workspace = Path(tempfile.mkdtemp(prefix="fb-factory-"))
+
+        try:
+            self.logger.info(f"Copying testbed to host workspace: {host_workspace}")
+            subprocess.run(
+                ["docker", "cp", f"{container_id}:/testbed/.", str(host_workspace)],
+                check=True,
+                timeout=120,
+            )
+
+            for subdir in ("reviews", "strategy", "archive"):
+                (host_workspace / ".factory" / subdir).mkdir(parents=True, exist_ok=True)
+
+            success = self._run_workflow_on_host(
+                host_workspace, container_id, container_name, log_file,
+            )
+
+            subprocess.run(
+                ["docker", "exec", container_id, "bash", "-c",
+                 "cd /testbed && git add -A && "
+                 "git diff --cached --quiet || "
+                 "git commit -m 'FeatureBench: implement feature'"],
+                check=False,
+                timeout=30,
+            )
+
+            success_post = self.post_run_hook(container, log_file)
+            return success and success_post
+
+        except Exception:
+            self.logger.exception("Host-side workflow execution failed")
+            self.failure_hook(container, log_file)
+            return False
+        finally:
+            shutil.rmtree(host_workspace, ignore_errors=True)
+
+    def _run_workflow_on_host(
+        self, host_workspace: Path, container_id: str, container_name: str, log_file,
+    ) -> bool:
+        """Execute the workflow graph on the host with container routing."""
+        import asyncio
+
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.registry import WorkflowRegistry
+
+        wf = WorkflowRegistry.get_workflow("featurebench", project_path=host_workspace)
+        if wf is None:
+            self.logger.error("Could not load featurebench workflow")
+            return False
+
+        async def pre_node_hook(node_id, node):
+            if getattr(node, 'metadata', {}).get('execution_context') == 'container':
+                self._sync_to_container(host_workspace, container_id)
+
+        async def post_node_hook(node_id, node):
+            if getattr(node, 'metadata', {}).get('execution_context') == 'container':
+                self._sync_from_container(host_workspace, container_id)
+
+        executor = WorkflowExecutor(
+            workflow=wf,
+            project_path=host_workspace,
+            context={
+                "container_name": container_name,
+                "container_runtime": "docker",
+                "container_env_script": "/installed-agent/setup-env.sh",
+                "container_conda_env": "testbed",
+            },
+            pre_node_hook=pre_node_hook,
+            post_node_hook=post_node_hook,
+        )
+
+        result = asyncio.run(executor.execute())
+
+        self.logger.info(
+            f"Workflow completed: success={result.success}, "
+            f"nodes={result.nodes_executed}, duration={result.duration_ms:.0f}ms"
+        )
+        if result.halted:
+            self.logger.warning(f"Workflow halted: {result.halt_reason}")
+
+        return result.success
+
+    def _sync_to_container(self, host_workspace: Path, container_id: str) -> None:
+        """Sync .factory/ from host workspace to container /testbed/.factory/."""
+        factory_dir = host_workspace / ".factory"
+        if not factory_dir.exists():
+            return
+        subprocess.run(
+            ["docker", "exec", container_id, "mkdir", "-p", "/testbed/.factory"],
+            check=False, timeout=10,
+        )
+        subprocess.run(
+            ["docker", "cp",
+             f"{factory_dir}/.", f"{container_id}:/testbed/.factory/"],
+            check=False, timeout=30,
+        )
+
+    def _sync_from_container(self, host_workspace: Path, container_id: str) -> None:
+        """Sync .factory/ from container /testbed/.factory/ to host workspace."""
+        factory_dir = host_workspace / ".factory"
+        factory_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["docker", "cp",
+             f"{container_id}:/testbed/.factory/.", str(factory_dir)],
+            check=False, timeout=30,
         )
 
     def pre_run_hook(self, container, log_file) -> bool:
@@ -235,7 +345,6 @@ STATE
     def post_run_hook(self, container, log_file) -> bool:
         log_dir = Path(log_file).parent
 
-        # Copy stream output
         stream_copied = self.cm.copy_from_container(
             container,
             "/agent-logs/factory_stream_output.jsonl",
@@ -243,10 +352,10 @@ STATE
         )
 
         if not stream_copied:
-            self.logger.error("Failed to copy factory_stream_output.jsonl from container")
-            return False
+            self.logger.warning(
+                "No factory_stream_output.jsonl (expected with host-side orchestration)"
+            )
 
-        # Auto-commit any uncommitted changes
         self.cm.exec_command(
             container,
             "cd /testbed && git add -A && "
@@ -255,7 +364,6 @@ STATE
             log_file=log_file,
         )
 
-        # Check if there's a meaningful commit
         exit_code, output = self.cm.exec_command(
             container,
             "cd /testbed && git diff --stat HEAD~1 HEAD 2>/dev/null "
