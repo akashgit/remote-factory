@@ -31,14 +31,18 @@ _RESOLVED_RE = re.compile(r"Result:\s*RESOLVED")
 _COST_RE = re.compile(r'"cost_usd":\s*([0-9.]+)')
 
 
-def create_seed_workflow() -> Workflow:
-    """Build a simple 4-node seed workflow for FeatureBench evolution.
+def create_seed_workflow(*, minimal: bool = False) -> Workflow:
+    """Build a seed workflow for FeatureBench evolution.
 
-    Structure: researcher → builder → health_checker → gate
+    When ``minimal=True``, returns a single builder node with no prior
+    codebase study — deliberately weak so evolution has room to improve.
 
-    The ``builder`` node ID matches the registered featurebench workflow
-    so its prompt_template override takes effect during Harbor evaluation.
+    When ``minimal=False`` (default), returns the full 4-node pipeline:
+    researcher → builder → health_checker → gate.
     """
+    if minimal:
+        return _create_builder_only_seed()
+
     nodes: dict[str, AgentNode | GateNode] = {
         "researcher": AgentNode(
             id="researcher",
@@ -110,6 +114,47 @@ def create_seed_workflow() -> Workflow:
         nodes=nodes,  # type: ignore[arg-type]
         edges=edges,
         start_node="researcher",
+    )
+
+
+def _create_builder_only_seed() -> Workflow:
+    """Single builder node — no researcher, no health_checker, no gate.
+
+    Deliberately weak: the builder gets the task description but no prior
+    codebase study. Expected ~40-60% pass rate, giving evolution room to
+    discover that adding nodes (researcher, verifier) helps.
+    """
+    nodes: dict[str, AgentNode | GateNode] = {
+        "builder": AgentNode(
+            id="builder",
+            role=AgentRole.BUILDER,
+            prompt_template=(
+                "You are implementing a new feature in a Python codebase.\n\n"
+                "1. Read the FULL task description at task-instruction.md in the project root.\n"
+                "2. Explore the repository to understand the codebase structure.\n"
+                "3. Read the actual source code for every function, class, "
+                "or module you plan to modify. Do NOT guess signatures or imports.\n"
+                "4. Implement the feature following interface specs EXACTLY.\n"
+                "5. Ensure all cross-file imports and references resolve correctly.\n"
+                "6. Run the project's test suite if possible.\n"
+                "7. Fix any test failures — trace errors to root cause.\n"
+                "8. Commit changes on the current branch.\n\n"
+                "Rules:\n"
+                "- Act AUTONOMOUSLY — do NOT ask for confirmation\n"
+                "- Follow interface specs EXACTLY\n"
+                "- Do NOT modify test files\n"
+                "- Do NOT create branches or PRs — commit on current branch\n"
+                "- Do NOT run factory commands"
+            ),
+            writes={".factory/reviews/builder-latest.md"},
+            timeout=600,
+        ),
+    }
+    return Workflow(
+        name="featurebench-builder-only",
+        nodes=nodes,  # type: ignore[arg-type]
+        edges=[],
+        start_node="builder",
     )
 
 
