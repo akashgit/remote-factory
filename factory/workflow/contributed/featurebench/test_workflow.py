@@ -69,7 +69,8 @@ class TestFeaturebenchWorkflow:
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
         assert node.timeout == 1200
-        assert node.metadata.get("execution_context") == "container"
+        # Contributed workflow runs entirely inside the container —
+        # no per-node execution_context needed (that's for the hybrid adapter)
 
     def test_health_checker_node(self) -> None:
         wf = workflow()
@@ -85,7 +86,8 @@ class TestFeaturebenchWorkflow:
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "RESOLVED" in node.evaluator_command
+        assert "PROCEED" in node.evaluator_command
+        assert "RELOOP" in node.evaluator_command
 
     def test_archivist_non_blocking(self) -> None:
         wf = workflow()
@@ -133,15 +135,15 @@ class TestFeaturebenchWorkflow:
                 assert node.evaluator_type != "user"
 
     def test_container_nodes_have_metadata(self) -> None:
-        """Builder and health_checker must have execution_context=container."""
+        """Health_checker must have execution_context=container (runs tests in container).
+        Builder runs on host in hybrid mode but contributed workflow runs all inside container."""
         wf = workflow()
-        for nid in ("builder", "health_checker"):
-            assert wf.nodes[nid].metadata["execution_context"] == "container"
+        assert wf.nodes["health_checker"].metadata.get("execution_context") == "container"
 
     def test_host_nodes_no_container_metadata(self) -> None:
-        """Host nodes must NOT have execution_context=container."""
+        """Gate and archivist do not need container context."""
         wf = workflow()
-        for nid in ("researcher", "strategist", "gate_tests", "archivist"):
+        for nid in ("gate_tests", "archivist"):
             assert wf.nodes[nid].metadata.get("execution_context") != "container"
 
 

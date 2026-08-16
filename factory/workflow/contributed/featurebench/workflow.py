@@ -186,26 +186,30 @@ def workflow() -> Workflow:
         timeout=600,
         metadata={"execution_context": "container"},
         prompt_template=(
-            "Run the test suite to verify the FeatureBench implementation.\n\n"
+            "Provide diagnostic feedback on the FeatureBench implementation.\n\n"
             "You are running inside a container at /testbed with conda env testbed.\n"
             "The working directory is {project_path}.\n\n"
-            "1. Run the project's test suite. Look for pytest or unittest configuration\n"
-            "   in the repo. Run ALL tests — both F2P (feature validation) and P2P\n"
-            "   (regression) tests. Use `conda run -n testbed pytest` or the project's\n"
-            "   configured test command.\n\n"
-            "2. Parse the test output and report:\n"
-            "   - F2P tests: X passed / Y total\n"
-            "   - P2P tests: X passed / Y total\n"
-            "   - Any error messages or stack traces from failures\n\n"
-            "3. Determine the verdict:\n"
-            "   - RESOLVED: ALL F2P pass AND ALL P2P pass -> write 'RESOLVED: true'\n"
-            "   - NOT RESOLVED: any test fails -> write 'RESOLVED: false'\n"
-            "   - Include the specific test names and failure reasons for any failures\n\n"
-            "4. If tests cannot be run (missing dependencies, import errors), report\n"
-            "   the setup issue clearly so the builder can fix it on reloop.\n\n"
-            "Write the full test report to .factory/reviews/health-check.md.\n\n"
-            "IMPORTANT: Include the marker line 'RESOLVED: true' or 'RESOLVED: false'\n"
-            "at the top of the report — the downstream gate parses this."
+            "DO NOT write RESOLVED: true or RESOLVED: false. The gate handles pass/fail "
+            "determination directly via pytest exit code (L1) or your spec-compliance "
+            "output (L2). Your job is diagnostic feedback, not verdicts.\n\n"
+            "First, check if test files exist:\n"
+            "  find /testbed -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -5\n\n"
+            "For L1 tasks (test files exist in the repo):\n"
+            "  Run: conda run -n testbed pytest /testbed --tb=long 2>&1\n"
+            "  Report: which tests failed, full stack traces, root cause analysis\n"
+            "  Suggest: specific fixes the builder should make on RELOOP\n"
+            "  Format each failure as:\n"
+            "    ## Failed: test_name\n"
+            "    Stack trace: ...\n"
+            "    Root cause: ...\n"
+            "    Suggested fix: ...\n\n"
+            "For L2 tasks (no test files — check with: find /testbed -name 'test_*.py'):\n"
+            "  Read problem_statement.md for interface specs\n"
+            "  Verify programmatically: modules importable, function signatures match, "
+            "classes have required methods, inheritance hierarchies correct\n"
+            "  Write: SPEC_COMPLIANCE: PASS or SPEC_COMPLIANCE: FAIL at the top of your report\n"
+            "  Detail: which interfaces pass/fail and why\n\n"
+            "Write the full diagnostic report to .factory/reviews/health-check.md."
         ),
         reads={".factory/reviews/builder-latest.md"},
         writes={".factory/reviews/health-check.md"},
@@ -214,15 +218,23 @@ def workflow() -> Workflow:
         ],
     )
 
-    # ── Test gate: all tests pass? ─────────────────────────────────
+    # ── Test gate: deterministic pytest / spec-compliance check ────
 
     nodes["gate_tests"] = GateNode(
         id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "if grep -q 'RESOLVED: true' "
-            "{project_path}/.factory/reviews/health-check.md; "
-            "then echo 'PROCEED'; else echo 'RELOOP'; fi"
+            "cd {project_path} && "
+            "TEST_FILES=$(find . -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -1) && "
+            "if [ -n \"$TEST_FILES\" ]; then "
+            "conda run -n testbed pytest . -x --tb=short 2>&1 && "
+            "echo 'PROCEED' || "
+            "echo 'RELOOP: pytest failed'; "
+            "else "
+            "if grep -q 'SPEC_COMPLIANCE: PASS' "
+            "{project_path}/.factory/reviews/health-check.md; then "
+            "echo 'PROCEED'; else "
+            "echo 'RELOOP: spec compliance check failed'; fi; fi"
         ),
         reads={".factory/reviews/health-check.md"},
     )
