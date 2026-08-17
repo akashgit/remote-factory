@@ -163,6 +163,283 @@ class TestEvaluateTargetProjectFallback:
                 assert rc == 1  # no modes, but it should reach the "no modes" error
 
 
+class TestInnerLoopFactoryReusesExistingModes:
+    """Bug #16: _make_inner_loop_factory should reuse existing modes, not create eval copies."""
+
+    def test_returns_existing_mode_by_structural_hash(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _make_inner_loop_factory
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        registry = EphemeralModeRegistry(project)
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+        registered_name = registry.register("abc12345", 0, wf)
+
+        factory_fn = _make_inner_loop_factory(registry)
+        result = factory_fn(wf)
+        assert result == registered_name
+        assert "eval" not in result
+
+    def test_does_not_create_eval_copy_modes(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _make_inner_loop_factory
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        registry = EphemeralModeRegistry(project)
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+        registry.register("seed0001", 0, wf)
+
+        factory_fn = _make_inner_loop_factory(registry)
+        factory_fn(wf)
+        factory_fn(wf)
+        factory_fn(wf)
+
+        modes = registry.list_modes()
+        eval_modes = [m for m in modes if "eval" in m]
+        assert eval_modes == [], f"Unexpected eval-copy modes: {eval_modes}"
+        assert len(modes) == 1
+
+    def test_caches_hash_lookups(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _make_inner_loop_factory
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        registry = EphemeralModeRegistry(project)
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+        registered_name = registry.register("abc12345", 0, wf)
+
+        factory_fn = _make_inner_loop_factory(registry)
+        r1 = factory_fn(wf)
+        r2 = factory_fn(wf)
+        assert r1 == r2 == registered_name
+
+    def test_fallback_registers_new_mode_for_unknown_workflow(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _make_inner_loop_factory
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        registry = EphemeralModeRegistry(project)
+
+        factory_fn = _make_inner_loop_factory(registry)
+
+        wf = Workflow(
+            name="new-wf",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+        result = factory_fn(wf)
+        assert result.startswith("evolve-gen0-")
+        assert "eval" not in result
+
+
+class TestReflectReadsCachedData:
+    """Bug #17: _cmd_reflect should read cached data instead of re-evaluating."""
+
+    def test_reflect_uses_saved_results_and_cycle_summary(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf1 = Workflow(
+            name="mode-a",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        wf2 = Workflow(
+            name="mode-b",
+            nodes={"b": AgentNode(id="b", role=AgentRole.RESEARCHER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        name_a = registry.register("aaa", 0, wf1)
+        name_b = registry.register("bbb", 0, wf2)
+
+        gen_results = {
+            name_a: {"score": 0.85, "cost_usd": 1.0},
+            name_b: {"score": 0.72, "cost_usd": 0.5},
+        }
+        (results_dir / "gen0.json").write_text(json.dumps(gen_results))
+
+        for name, score in [(name_a, 0.85), (name_b, 0.72)]:
+            runs_dir = project / ".factory" / "outer_loop" / "runs" / name
+            runs_dir.mkdir(parents=True)
+            summary = {"mode": name, "score": score, "cost_usd": 0.5, "kept": 2, "reverted": 1}
+            (runs_dir / "cycle_summary.json").write_text(json.dumps(summary))
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg):
+            from factory.cli.outer_loop import _cmd_reflect
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_reflect(ns)
+            assert rc == 0
+
+    def test_load_cycle_summary_returns_record(self, tmp_path: object) -> None:
+        import json
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _load_cycle_summary
+
+        project = Path(str(tmp_path))
+        runs_dir = project / ".factory" / "outer_loop" / "runs" / "evolve-gen0-abc"
+        runs_dir.mkdir(parents=True)
+        summary = {
+            "mode": "evolve-gen0-abc",
+            "score": 0.9,
+            "cost_usd": 1.5,
+            "kept": 3,
+            "reverted": 1,
+            "agents_failed": 0,
+            "duration_ms": 5000,
+        }
+        (runs_dir / "cycle_summary.json").write_text(json.dumps(summary))
+
+        rec = _load_cycle_summary(project, "evolve-gen0-abc")
+        assert rec is not None
+        assert rec.score_end == 0.9
+        assert rec.kept == 3
+        assert rec.reverted == 1
+        assert rec.total_cost_usd == 1.5
+        assert rec.duration_s == 5.0
+
+    def test_load_cycle_summary_returns_none_for_missing(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _load_cycle_summary
+
+        project = Path(str(tmp_path))
+        rec = _load_cycle_summary(project, "nonexistent-mode")
+        assert rec is None
+
+    def test_evaluate_persists_cycle_summary(self, tmp_path: object) -> None:
+        """_cmd_evaluate should write cycle_summary.json for each evaluated mode."""
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import EvalResult, SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        mode_name = registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+        mock_result = EvalResult(
+            score=0.75, benchmark_score=0.8, cost_usd=2.0,
+            details={"kept": 2, "reverted": 1},
+        )
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = mock_result
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.load_checkpoint", return_value=None), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator", return_value=mock_evaluator):
+            from factory.cli.outer_loop import _cmd_evaluate
+
+            ns = argparse.Namespace(
+                project_path=str(project), generation=0, project_dir=None,
+            )
+            rc = _cmd_evaluate(ns)
+            assert rc == 0
+
+        summary_path = (
+            project / ".factory" / "outer_loop" / "runs" / mode_name / "cycle_summary.json"
+        )
+        assert summary_path.exists()
+        data = json.loads(summary_path.read_text())
+        assert data["score"] == 0.75
+        assert data["kept"] == 2
+
+
 class TestOuterLoopWorkflowGraph:
     def test_workflow_validates(self) -> None:
         from factory.workflow.contributed.outer_loop.workflow import workflow

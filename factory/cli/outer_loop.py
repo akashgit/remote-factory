@@ -53,21 +53,33 @@ def _check_disk_space(project_path: Path, population_size: int) -> bool:
 def _make_inner_loop_factory(
     registry: EphemeralModeRegistry,
 ) -> Callable[[Workflow], str]:
-    """Build a callable that registers a workflow as an ephemeral mode and returns its name.
+    """Build a callable that finds the existing registered mode for a workflow.
 
+    Looks up by structural hash instead of creating eval-copy modes.
     This bridges SwarmEvaluator → FeatureBenchInnerLoop: without it,
     _inner_loop_factory is None and evaluation returns a dummy score=0.0.
     """
+    _hash_to_mode: dict[str, str] = {}
 
     def _factory(workflow: Workflow) -> str:
         from factory.outer_loop.similarity import structural_hash
 
         wf_hash = structural_hash(workflow)
-        ind_id = f"eval-{wf_hash[:12]}"
-        mode_name = f"evolve-gen0-{ind_id[:8]}"
-        if registry.load(mode_name) is not None:
-            return mode_name
-        return registry.register(ind_id, 0, workflow)
+        if wf_hash in _hash_to_mode:
+            return _hash_to_mode[wf_hash]
+
+        for mode_name in registry.list_modes():
+            existing_wf = registry.load(mode_name)
+            if existing_wf is not None:
+                existing_hash = structural_hash(existing_wf)
+                _hash_to_mode[existing_hash] = mode_name
+                if existing_hash == wf_hash:
+                    return mode_name
+
+        ind_id = wf_hash[:12]
+        name = registry.register(ind_id, 0, workflow)
+        _hash_to_mode[wf_hash] = name
+        return name
 
     return _factory
 
@@ -231,7 +243,7 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         return 1
 
     evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
-    results: dict[str, object] = {}
+    results: dict[str, dict[str, float]] = {}
     for mode_name in modes:
         wf = registry.load(mode_name)
         if wf is None:
@@ -239,6 +251,18 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
         results[mode_name] = {"score": ev.score, "cost_usd": ev.cost_usd}
         print(f"  {mode_name}: score={ev.score:.4f} cost=${ev.cost_usd:.4f}")
+
+        runs_dir = project_path / ".factory" / "outer_loop" / "runs" / mode_name
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        summary: dict[str, object] = {
+            "mode": mode_name,
+            "score": ev.score,
+            "cost_usd": ev.cost_usd,
+            "benchmark_score": ev.benchmark_score,
+        }
+        if ev.details:
+            summary.update(ev.details)
+        (runs_dir / "cycle_summary.json").write_text(json.dumps(summary, indent=2))
 
     results_dir = project_path / ".factory" / "outer_loop" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -259,13 +283,40 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_cycle_summary(project_path: Path, mode_name: str) -> CycleRecord | None:
+    """Load a CycleRecord from a persisted cycle_summary.json."""
+    from factory.cycle_analyzer import CycleRecord as CR
+
+    summary_path = project_path / ".factory" / "outer_loop" / "runs" / mode_name / "cycle_summary.json"
+    if not summary_path.exists():
+        return None
+    try:
+        data = json.loads(summary_path.read_text())
+        duration_ms = data.get("duration_ms", 0)
+        return CR(
+            cycle_number=0,
+            mode=mode_name,
+            started_at=None,
+            ended_at=None,
+            duration_s=duration_ms / 1000.0 if duration_ms else 0.0,
+            score_start=None,
+            score_end=data.get("score"),
+            score_delta=None,
+            kept=data.get("kept", 0),
+            reverted=data.get("reverted", 0),
+            errored=data.get("agents_failed", 0),
+            total_cost_usd=data.get("cost_usd", 0.0),
+        )
+    except (json.JSONDecodeError, OSError, ValueError, TypeError):
+        return None
+
+
 def _cmd_reflect(args: argparse.Namespace) -> int:
     """Run contrastive reflection on the current generation."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
     generation = getattr(args, "generation", 0)
     print(f"Reflecting on generation {generation} at {project_path}")
 
-    from factory.outer_loop.evaluator import SwarmEvaluator
     from factory.outer_loop.filesystem import load_config
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.reflector import OuterLoopReflector
@@ -283,17 +334,44 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
 
     target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
-    evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     reflector = OuterLoopReflector(project_dir=project_path)
 
+    results_path = project_path / ".factory" / "outer_loop" / "results" / f"gen{generation}.json"
+    saved_results: dict[str, dict[str, float]] = {}
+    if results_path.exists():
+        try:
+            saved_results = json.loads(results_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
     records: list[tuple[str, float, CycleRecord | None]] = []
+    needs_eval: list[tuple[str, Workflow]] = []
+
     for mode_name in registry.list_modes():
-        wf = registry.load(mode_name)
-        if wf is None:
+        saved = saved_results.get(mode_name)
+        if saved is not None:
+            score = float(saved.get("score", 0.0))
+            cycle_rec = _load_cycle_summary(project_path, mode_name)
+            records.append((mode_name, score, cycle_rec))
             continue
-        ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
-        cycle_rec = evaluator.get_cycle_record(mode_name)
-        records.append((mode_name, ev.score, cycle_rec))
+        cycle_rec = _load_cycle_summary(project_path, mode_name)
+        if cycle_rec is not None and cycle_rec.score_end is not None:
+            records.append((mode_name, cycle_rec.score_end, cycle_rec))
+            continue
+        wf = registry.load(mode_name)
+        if wf is not None:
+            needs_eval.append((mode_name, wf))
+
+    if needs_eval:
+        from factory.outer_loop.evaluator import SwarmEvaluator
+
+        evaluator = SwarmEvaluator(
+            config, inner_loop_factory=_make_inner_loop_factory(registry),
+        )
+        for mode_name, wf in needs_eval:
+            ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
+            cycle_rec = evaluator.get_cycle_record(mode_name)
+            records.append((mode_name, ev.score, cycle_rec))
 
     if len(records) < 2:
         print("Not enough candidates for reflection (need >= 2).", file=sys.stderr)
