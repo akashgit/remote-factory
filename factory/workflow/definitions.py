@@ -53,6 +53,7 @@ __all__ = [
     "refine_workflow",
     "create_workflow",
     "skill_refine_workflow",
+    "doc_drift_workflow",
     "doc_generate_workflow",
     "doc_update_workflow",
     "spec_generate_workflow",
@@ -1868,6 +1869,154 @@ def skill_refine_workflow() -> Workflow:
 # ── W₁₁: Doc Generate ───────────────────────────────────────────
 
 
+def doc_drift_workflow() -> Workflow:
+    """W₁₅: Doc Drift — detect documentation drift from recently merged PRs.
+
+    scan_prs (FnNode) → classify (AgentNode/researcher) → gate_drift (GateNode) →
+    builder (AgentNode) → gate_review (GateNode) → archivist (AgentNode, non-blocking)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["scan_prs"] = FnNode(
+        id="scan_prs",
+        command=(
+            'python3 -c "'
+            "import subprocess, json, sys; "
+            "from pathlib import Path; "
+            "from datetime import datetime, timedelta, timezone; "
+            "project = Path('{project_path}'); "
+            "out_dir = project / '.factory' / 'doc_drift'; "
+            "out_dir.mkdir(parents=True, exist_ok=True); "
+            "open_check = subprocess.run("
+            "['gh', 'pr', 'list', '--state', 'open', '--label', 'doc-drift', "
+            "'--json', 'number'], capture_output=True, text=True); "
+            "open_prs = json.loads(open_check.stdout) if open_check.returncode == 0 else []; "
+            "has_open = len(open_prs) > 0; "
+            "result = subprocess.run("
+            "['gh', 'pr', 'list', '--state', 'merged', '--base', 'main', "
+            "'--json', 'number,title,files,author,mergedAt,url', '--limit', '100'], "
+            "capture_output=True, text=True); "
+            "prs = json.loads(result.stdout) if result.returncode == 0 else []; "
+            "days = int('{days}') if '{days}' else 7; "
+            "cutoff = datetime.now(timezone.utc) - timedelta(days=days); "
+            "recent = [p for p in prs "
+            "if datetime.fromisoformat(p['mergedAt'].replace('Z', '+00:00')) > cutoff]; "
+            "(project / '.factory' / 'doc_drift' / 'merged_prs.json').write_text("
+            "json.dumps(recent, indent=2)); "
+            "msg = 'HALT: open doc-drift PR exists' if has_open "
+            "else ('HALT: no PRs merged in window' if not recent "
+            "else f'PROCEED: {{len(recent)}} PRs found'); "
+            "print(msg)"
+            '"'
+        ),
+        notes=(
+            "Scan merged PRs from the last N days via gh CLI. "
+            "Checks for existing open doc-drift PRs first — halts if one exists. "
+            "Writes .factory/doc_drift/merged_prs.json."
+        ),
+        writes={".factory/doc_drift/merged_prs.json"},
+    )
+
+    nodes["classify"] = AgentNode(
+        id="classify",
+        role=AgentRole.RESEARCHER,
+        model="haiku",
+        prompt_template=(
+            "Read the merged PR list at .factory/doc_drift/merged_prs.json. "
+            "Also read README.md and any website/ content files. "
+            "Classify each PR as doc-worthy or internal-only. "
+            "Doc-worthy signals: new CLI commands, new modes/features, changed behavior, "
+            "new config options, breaking changes, new runner support, "
+            "files touching CLI parsers (argparse, cmd_*), config changes. "
+            "Internal-only signals: test-only changes, refactors, plumbing, "
+            "CI fixes, dependency updates, internal architecture changes. "
+            "Write a drift report to .factory/doc_drift/drift_report.md listing: "
+            "each doc-worthy PR with title, number, URL, and which doc sections are stale."
+        ),
+        reads={".factory/doc_drift/merged_prs.json"},
+        writes={".factory/doc_drift/drift_report.md"},
+    )
+
+    nodes["gate_drift"] = GateNode(
+        id="gate_drift",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "report = Path('{project_path}/.factory/doc_drift/drift_report.md'); "
+            "text = report.read_text() if report.exists() else ''; "
+            "has_drift = bool(text.strip()) and 'no doc-worthy' not in text.lower(); "
+            "print('PROCEED' if has_drift else 'HALT: no drift detected')"
+            '"'
+        ),
+        gate_prompt="",
+        reads={".factory/doc_drift/drift_report.md"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Read the drift report at .factory/doc_drift/drift_report.md. "
+            "Only modify sections that directly correspond to code changes listed in the report. "
+            "Do not invent features, flags, or behaviors not present in the current codebase. "
+            "When unsure, flag the section for human review rather than guessing. "
+            "Create a feature branch, update the specific doc sections flagged as stale "
+            "in README.md and website/ content. "
+            "Commit changes and open a draft PR labeled 'doc-drift' and 'documentation'. "
+            "PR body must include: which PRs triggered the update, which doc sections changed, "
+            "and an 'AI-generated — review carefully' notice."
+        ),
+        reads={".factory/doc_drift/drift_report.md"},
+        writes={"README.md", "website/"},
+    )
+
+    nodes["gate_review"] = GateNode(
+        id="gate_review",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review the builder's PR diff against the drift report. "
+            "Check: no hallucinated content, changes match flagged sections, "
+            "no scope creep, AI-generated notice present. "
+            "PROCEED to archive. RELOOP to builder if issues found."
+        ),
+        reads={".factory/doc_drift/drift_report.md"},
+    )
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        model="haiku",
+        blocking=False,
+        prompt_template=(
+            "Record drift patterns to .factory/archive/doc-drift/. "
+            "Note which PRs triggered doc updates, what types of changes "
+            "cause drift most often, and any recurring patterns."
+        ),
+        reads={".factory/doc_drift/drift_report.md"},
+        writes={".factory/archive/doc-drift/"},
+    )
+
+    edges = [
+        Edge(source="scan_prs", target="classify"),
+        Edge(source="classify", target="gate_drift"),
+        Edge(source="gate_drift", target="builder", condition=VerdictType.PROCEED),
+        Edge(source="builder", target="gate_review"),
+        Edge(source="gate_review", target="archivist", condition=VerdictType.PROCEED),
+        Edge(source="gate_review", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="doc-drift",
+        nodes=nodes,
+        edges=edges,
+        start_node="scan_prs",
+        trigger=None,
+    )
+
+
 def doc_generate_workflow() -> Workflow:
     """W₁₁: Doc Generate — scan codebase and generate documentation from scratch.
 
@@ -2598,6 +2747,7 @@ def register_all() -> dict[str, Workflow]:
         "refine": refine_workflow(),
         "create": create_workflow(),
         "skill-refine": skill_refine_workflow(),
+        "doc-drift": doc_drift_workflow(),
         "doc-generate": doc_generate_workflow(),
         "doc-update": doc_update_workflow(),
         "spec-generate": spec_generate_workflow(),

@@ -79,6 +79,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "clean-pr",
             "spec",
             "adversarial-state",
+            "doc-drift",
         ],
     ),
     (
@@ -334,6 +335,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
     p.add_argument(
         "--reset", action="store_true", default=False, help="Reset adversarial state to defaults"
+    )
+
+    # doc-drift
+    p = sub.add_parser(
+        "doc-drift", help="Detect documentation drift from recently merged PRs"
+    )
+    p.add_argument("path", help="Path to the project")
+    p.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days to look back for merged PRs (default: 7)",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Classify drift only — do not open a PR",
     )
 
     # backfill-citations
@@ -1186,6 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
         "leakage-check": _cli.cmd_leakage_check,
         "validate-research": _cli.cmd_validate_research,
         "adversarial-state": _cli.cmd_adversarial_state,
+        "doc-drift": _cli.cmd_doc_drift,
         "refine-status": _cli.cmd_refine_status,
         "refine-begin": _cli.cmd_refine_begin,
         "refine-complete": _cli.cmd_refine_complete,

@@ -44,6 +44,9 @@ from factory.cli.backlog import (
     cmd_backlog_list as cmd_backlog_list,
     cmd_backlog_remove as cmd_backlog_remove,
 )
+from factory.cli.doc import (
+    cmd_doc_drift as cmd_doc_drift,
+)
 from factory.cli.ceo import (
     _auto_detect_mode as _auto_detect_mode,
     _build_ceo_task as _build_ceo_task,
