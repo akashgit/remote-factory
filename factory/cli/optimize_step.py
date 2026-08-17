@@ -263,7 +263,7 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
             return 0
         else:
             print("HALT: baseline score is 0")
-            return 1
+            return 0
 
     state = _read_state(project)
     history = state.get("history", [])
@@ -273,7 +273,7 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
 
     if not history:
         print("HALT: no history")
-        return 1
+        return 0
 
     latest = history[-1]
     gate = evaluate_gate(

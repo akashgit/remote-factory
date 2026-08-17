@@ -80,7 +80,7 @@ class HarborBenchmark:
             src = source_dir / tid
             dst = split_dir / tid
             if src.is_dir():
-                dst.symlink_to(src)
+                dst.symlink_to(src.resolve())
         return split_dir
 
     def execute(
