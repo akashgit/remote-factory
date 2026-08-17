@@ -385,6 +385,28 @@ FACTORY_RUNNER = "bob"
 BOBSHELL_API_KEY = "..."
 ```
 
+### Custom Endpoints via Profiles
+
+Profiles can do more than switch runners — they can reroute the default `claude` runner to any API-compatible endpoint by setting and unsetting environment variables. This lets you point at a custom model endpoint (e.g. a LiteLLM proxy) without writing a new runner class.
+
+Example profile for a LiteLLM proxy:
+
+```toml
+[credentials.glm]
+ANTHROPIC_BASE_URL = "https://your-litellm-proxy.example.com"
+ANTHROPIC_API_KEY = "your-litellm-key"
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+
+[credentials.glm.unset]
+vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK"]
+```
+
+```bash
+factory ceo /path/to/project --profile glm
+```
+
+Profile keys **override** existing shell env vars (the profile is authoritative when you opt in with `--profile`). The `[credentials.<name>.unset]` sub-table removes vars that would conflict — here, clearing Vertex/Bedrock flags so the runner hits the proxy instead. For security, system-critical vars (`PATH`, `HOME`, `LD_PRELOAD`, `PYTHONPATH`, etc.) cannot be set or unset via profiles.
+
 Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](setup.md) for full details.
 
 ---
