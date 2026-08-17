@@ -10,14 +10,57 @@ Usage:
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 
 
+def cleanup_gpu_processes():
+    """Clean up any lingering Ray/vLLM processes from previous runs."""
+    import os
+    import signal
+
+    try:
+        # Find Ray and vLLM processes owned by current user
+        result = subprocess.run(
+            ["pgrep", "-u", str(os.getuid()), "-f", "ray::"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        # Clean up vLLM processes
+        result = subprocess.run(
+            ["pgrep", "-u", str(os.getuid()), "-f", "VLLM"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        print("✓ GPU processes cleaned")
+    except Exception as e:
+        print(f"Warning: GPU cleanup failed: {e}")
+
+
 def main() -> None:
     """Main entry point for RL training."""
+    # Clean up any lingering GPU processes from previous runs
+    cleanup_gpu_processes()
+
     parser = argparse.ArgumentParser(description="Einstein Arena RL Training (MVP)")
     parser.add_argument("--config", required=True, help="Path to resolved run config.json")
     args = parser.parse_args()
@@ -186,6 +229,13 @@ def main() -> None:
     print(f"  - Best score: {results['best_score']:.6f}")
     print(f"  - Mean score: {results['mean_score']:.6f}")
 
+    # Clean up GPU processes after successful completion
+    cleanup_gpu_processes()
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        # Ensure cleanup even on failure
+        cleanup_gpu_processes()

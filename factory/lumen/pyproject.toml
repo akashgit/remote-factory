@@ -63,7 +63,7 @@ dependencies = [
     "llguidance",
     "lm-format-enforcer",
     "mcp",
-    "mistral-common",
+    "mistral-common>=1.11.7",  # vLLM 0.23.0 requires NamedToolChoice
     "model-hosting-container-standards",
     "ninja",
     "numba",

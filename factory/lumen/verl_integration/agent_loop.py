@@ -28,6 +28,7 @@ from verl.experimental.agent_loop import (
     get_trajectory_info,
 )
 from verl.experimental.agent_loop.agent_loop import AgentLoopMetrics
+from verl.utils.ray_utils import auto_await
 from verl.utils.tensordict_utils import list_of_dict_to_tensordict
 
 logger = logging.getLogger(__name__)
@@ -375,15 +376,25 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
 class LumenAgentLoopManagerTQ(AgentLoopManager):
     """Lumen agent loop manager — distributes prompts to workers."""
 
-    def __init__(self, config, workers, **kwargs):
-        super().__init__(config, workers, **kwargs)
+    # Use custom worker class with two-phase completion (already decorated with @ray.remote)
+    agent_loop_workers_class = LumenAgentLoopWorkerTQ
+
+    def __init__(
+        self,
+        config,
+        llm_client,
+        teacher_client=None,
+        reward_loop_worker_handles=None,
+    ):
+        super().__init__(config, llm_client, teacher_client, reward_loop_worker_handles)
         self._lumen_config = {}
 
     def set_lumen_config(self, lumen_config: dict):
         self._lumen_config = lumen_config
-        for worker in self.workers:
+        for worker in self.agent_loop_workers:
             ray.get(worker.set_lumen_config.remote(lumen_config))
 
+    @auto_await
     async def generate_sequences(self, prompts: TensorDict) -> list[TensorDict]:
         """Assign prompts directly to workers (no PUCT sampling)."""
         # Prompts come from parquet data source — just pass through to workers

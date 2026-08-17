@@ -24,10 +24,47 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def cleanup_gpu_processes():
+    """Clean up any lingering Ray/vLLM processes from previous runs."""
+    try:
+        # Find Ray and vLLM processes owned by current user
+        result = subprocess.run(
+            ["pgrep", "-u", str(os.getuid()), "-f", "ray::"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        # Clean up vLLM processes
+        result = subprocess.run(
+            ["pgrep", "-u", str(os.getuid()), "-f", "VLLM"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        print("[OK] GPU processes cleaned")
+    except Exception as e:
+        print(f"[WARN] GPU cleanup failed: {e}")
 
 
 def check_uv_env(python_path: str | None = None) -> tuple[bool, str]:
@@ -53,24 +90,21 @@ def check_uv_env(python_path: str | None = None) -> tuple[bool, str]:
     if not python_exe.is_file():
         return False, f"{python_exe} is not a file"
 
-    # Check critical packages
-    check_cmd = [
-        str(python_exe), "-c",
-        "import sys; "
-        "missing = []; "
-        "try: import torch\n"
-        "except ImportError: missing.append('torch')\n"
-        "try: import vllm\n"
-        "except ImportError: missing.append('vllm')\n"
-        "try: import verl\n"
-        "except ImportError: missing.append('verl')\n"
-        "try: import numpy\n"
-        "except ImportError: missing.append('numpy')\n"
-        "try: import pandas\n"
-        "except ImportError: missing.append('pandas')\n"
-        "if missing: print(f'MISSING:{','.join(missing)}'); sys.exit(1)\n"
-        "else: print('OK')"
-    ]
+    # Check critical packages using importlib
+    check_code = """
+import sys
+import importlib.util
+missing = []
+for pkg in ['torch', 'vllm', 'verl', 'numpy', 'pandas']:
+    if importlib.util.find_spec(pkg) is None:
+        missing.append(pkg)
+if missing:
+    print('MISSING:' + ','.join(missing))
+    sys.exit(1)
+else:
+    print('OK')
+"""
+    check_cmd = [str(python_exe), "-c", check_code]
     result = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
 
     if result.returncode != 0:
@@ -133,6 +167,9 @@ def main() -> None:
     args = parser.parse_args()
 
     project_path = Path(args.project_path).resolve()
+
+    # Clean up any lingering GPU processes from previous runs
+    cleanup_gpu_processes()
 
     # Resolve task_dir: CLI arg > .factory/lumen/config.json
     lumen_dir = project_path / ".factory" / "lumen"
@@ -232,8 +269,13 @@ def main() -> None:
 
     # 7. Update "current_run" symlink
     current_link = lumen_dir / "current_run"
-    if current_link.is_symlink() or current_link.exists():
-        current_link.unlink()
+    if current_link.exists():
+        if current_link.is_dir() and not current_link.is_symlink():
+            # Left over from previous workflow run - remove directory
+            import shutil
+            shutil.rmtree(current_link)
+        else:
+            current_link.unlink()
     current_link.symlink_to(f"run-{run_tag}")
 
     print()
