@@ -118,10 +118,19 @@ def main() -> None:
 
         all_rollouts = generate_mock_rollouts(prompts, num_rollouts_per_prompt)
     else:
+        import os
         import subprocess
-        # CRITICAL: Use current Python (should be from lumen conda env)
-        # This script should be invoked via: conda run -n lumen python -m factory.lumen.train
+
+        # CRITICAL: Use current Python (should be from lumen venv)
+        # Set PYTHONPATH so subprocess can import factory.lumen modules
         python_exe = sys.executable
+
+        # Add remote-factory root to PYTHONPATH for factory.lumen imports
+        factory_root = Path(__file__).resolve().parents[2]  # factory/lumen/train.py → remote-factory/
+        env = os.environ.copy()
+        current_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{factory_root}:{current_pythonpath}" if current_pythonpath else str(factory_root)
+
         cmd = [
             python_exe, "-m", "factory.lumen.run_verl",
             "--prompts", str(prompts_file),
@@ -141,7 +150,7 @@ def main() -> None:
             "--eval-timeout", str(cfg.get("eval_timeout", 530)),
             "--groups-per-batch", str(cfg.get("groups_per_batch", 8)),
         ]
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, env=env, check=False)
         if result.returncode != 0:
             print(f"VERL training failed with exit code {result.returncode}")
             sys.exit(result.returncode)

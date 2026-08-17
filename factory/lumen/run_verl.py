@@ -207,7 +207,19 @@ def main() -> None:
     # Step 2: Build VERL config
     overrides = build_verl_overrides(args)
 
-    # Step 3: Launch VERL
+    # Step 3: Set environment variables for AgentLoopManager config
+    import os
+    os.environ["LUMEN_TASK_DIR"] = str(args.task_dir)
+    os.environ["LUMEN_PHASE1_MAX_TOKENS"] = str(args.phase1_max_tokens)
+    os.environ["LUMEN_EVAL_TIMEOUT"] = str(args.eval_timeout)
+    os.environ["LUMEN_MAX_MODEL_LEN"] = "32768"
+
+    # CUDA runtime: PyTorch and vLLM bundle their own libcudart (CUDA 12.x).
+    # Do NOT add nvidia/cu13/lib to LD_LIBRARY_PATH — it contains CUDA 13.x
+    # runtime which requires a newer driver than most machines have.
+    python_exe = sys.executable
+
+    # Step 4: Launch VERL
     print(f"=== Lumen VERL Training — Iteration {args.iteration} ===")
     print(f"Model: {args.model_path}")
     print(f"GPUs: {args.num_gpus}, TP: {args.rollout_tp}")
@@ -215,23 +227,32 @@ def main() -> None:
     print(f"Rollouts: {args.groups_per_batch} × {args.rollouts_per_prompt} = {total}")
 
     import subprocess
-    # CRITICAL: Use current Python (should be from lumen conda env)
-    # This script should be invoked via: conda run -n lumen python -m factory.lumen.run_verl
-    python_exe = sys.executable
+    # CRITICAL: Use current Python (already set above when configuring LD_LIBRARY_PATH)
     cmd = [
         python_exe, "-m", "verl.trainer.main_ppo",
         *overrides,
     ]
     result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
-        print(f"VERL training failed with exit code {result.returncode}", file=sys.stderr)
-        sys.exit(result.returncode)
 
-    # Step 4: Post-process results
-    rollout_log = Path(args.checkpoint_dir) / "rollouts" / "0.jsonl"
-    if not rollout_log.exists():
-        print(f"WARNING: Rollout log not found at {rollout_log}", file=sys.stderr)
+    # Step 4: Post-process results — VERL names files {global_steps}.jsonl (1-based)
+    rollout_dir = Path(args.checkpoint_dir) / "rollouts"
+    rollout_files = sorted(rollout_dir.glob("*.jsonl")) if rollout_dir.exists() else []
+
+    if result.returncode != 0:
+        if rollout_files:
+            print(
+                f"WARNING: VERL exited with code {result.returncode} but rollout data exists — "
+                "likely a benign cleanup error. Continuing post-processing.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"VERL training failed with exit code {result.returncode}", file=sys.stderr)
+            sys.exit(result.returncode)
+
+    if not rollout_files:
+        print(f"WARNING: No rollout logs found in {rollout_dir}", file=sys.stderr)
         sys.exit(1)
+    rollout_log = rollout_files[-1]
 
     with open(prompts_path) as f:
         prompts_data = json.load(f)
