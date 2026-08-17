@@ -410,21 +410,10 @@ class WorkflowExecutor:
             count = self.iteration_counts.get(key, 0) + 1
             self.iteration_counts[key] = count
 
-            max_iter = verdict.max_iterations
-            target_node = self.workflow.nodes.get(target)
-            if isinstance(target_node, AgentNode) and target_node.max_iterations > 0:
-                max_iter = target_node.max_iterations
-            elif isinstance(target_node, FnNode):
-                next_after_fn = self._next_unconditional(target)
-                if next_after_fn:
-                    chained_node = self.workflow.nodes.get(next_after_fn)
-                    if isinstance(chained_node, AgentNode) and chained_node.max_iterations > 0:
-                        max_iter = chained_node.max_iterations
-
-            if count > max_iter:
+            if count > verdict.max_iterations:
                 self.result.halted = True
                 self.result.halt_reason = (
-                    f"max iterations ({max_iter}) exhausted "
+                    f"max iterations ({verdict.max_iterations}) exhausted "
                     f"for gate '{node_id}' -> '{target}'"
                 )
                 return
