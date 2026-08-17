@@ -22,10 +22,12 @@ class TestFeaturebenchWorkflow:
         assert wf.name == "featurebench"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 4 nodes: study, builder, gate_verify, auto_merge."""
+        """Workflow has exactly 5 nodes: study, builder, gate_tests, health_checker, auto_merge."""
         wf = workflow()
-        assert len(wf.nodes) == 4
-        assert set(wf.nodes.keys()) == {"study", "builder", "gate_verify", "auto_merge"}
+        assert len(wf.nodes) == 5
+        assert set(wf.nodes.keys()) == {
+            "study", "builder", "gate_tests", "health_checker", "auto_merge",
+        }
 
     def test_start_node(self) -> None:
         wf = workflow()
@@ -38,9 +40,10 @@ class TestFeaturebenchWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """4 edges: study->builder, builder->gate, gate->merge, gate->builder RELOOP."""
+        """5 edges: study->builder, builder->gate_tests, gate_tests->merge,
+        gate_tests->health_checker RELOOP, health_checker->builder."""
         wf = workflow()
-        assert len(wf.edges) == 4
+        assert len(wf.edges) == 5
 
     def test_study_node_is_fn(self) -> None:
         wf = workflow()
@@ -61,13 +64,15 @@ class TestFeaturebenchWorkflow:
         assert "nameerror" in node.prompt_template.lower()
         assert "cross-file" in node.prompt_template.lower()
 
-    def test_gate_verify_is_fn_evaluator(self) -> None:
+    def test_gate_tests_is_fn_evaluator(self) -> None:
         """Gate uses fn evaluator (not agent) for speed and determinism."""
         wf = workflow()
-        node = wf.nodes["gate_verify"]
+        node = wf.nodes["gate_tests"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
+        assert "pytest" in node.evaluator_command
+        assert "gate-pytest-output.txt" in node.evaluator_command
         assert "pass:" in node.evaluator_command
         assert "reloop:" in node.evaluator_command
         assert "fail:" in node.evaluator_command
@@ -79,26 +84,71 @@ class TestFeaturebenchWorkflow:
         assert "git update-ref" in node.command
 
     def test_proceed_edge_to_merge(self) -> None:
-        """gate_verify has a PROCEED edge to auto_merge."""
+        """gate_tests has a PROCEED edge to auto_merge."""
         wf = workflow()
         proceed_edges = [
             e for e in wf.edges
-            if e.source == "gate_verify"
+            if e.source == "gate_tests"
             and e.target == "auto_merge"
             and e.condition == VerdictType.PROCEED
         ]
         assert len(proceed_edges) == 1
 
     def test_reloop_edge_exists(self) -> None:
-        """gate_verify has a RELOOP edge back to builder."""
+        """gate_tests has a RELOOP edge to health_checker."""
         wf = workflow()
         reloop_edges = [
             e for e in wf.edges
-            if e.source == "gate_verify"
-            and e.target == "builder"
+            if e.source == "gate_tests"
+            and e.target == "health_checker"
             and e.condition == VerdictType.RELOOP
         ]
         assert len(reloop_edges) == 1
+
+    def test_health_checker_node(self) -> None:
+        """health_checker is an AgentNode (NOT FnNode) with diagnostic prompt."""
+        wf = workflow()
+        node = wf.nodes["health_checker"]
+        assert isinstance(node, AgentNode)
+        assert not isinstance(node, FnNode)
+        assert node.role == AgentRole.HEALTH_CHECKER
+        assert "diagnostic" in node.prompt_template.lower()
+        assert "do not run pytest" in node.prompt_template.lower()
+
+    def test_health_checker_to_builder_edge(self) -> None:
+        """health_checker has an unconditional edge to builder."""
+        wf = workflow()
+        edges = [
+            e for e in wf.edges
+            if e.source == "health_checker"
+            and e.target == "builder"
+            and e.condition is None
+        ]
+        assert len(edges) == 1
+
+    def test_gate_saves_pytest_output(self) -> None:
+        """gate_tests saves pytest stdout to gate-pytest-output.txt."""
+        wf = workflow()
+        node = wf.nodes["gate_tests"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "gate-pytest-output.txt" in node.evaluator_command
+
+    def test_gate_tracks_regression(self) -> None:
+        """gate_tests tracks failure counts and detects regressions."""
+        wf = workflow()
+        node = wf.nodes["gate_tests"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "gate-prev-fail-count.txt" in node.evaluator_command
+        assert "fail:" in node.evaluator_command
+
+    def test_builder_reads_health_check(self) -> None:
+        """Builder prompt instructs reading health-check.md for RELOOP feedback."""
+        wf = workflow()
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert "health-check.md" in node.prompt_template
 
     def test_no_eval_infrastructure(self) -> None:
         """No factory eval nodes (begin, finalize, precheck, study)."""

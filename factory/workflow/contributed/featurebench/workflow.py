@@ -1,7 +1,11 @@
 """FeatureBench benchmark workflow — feature implementation pipeline for containerized evaluation.
 
-4-node pipeline: study → builder → gate_verify → auto_merge
-RELOOP from gate_verify back to builder (max 3 iterations) on test failure.
+5-node pipeline: study → builder → gate_tests → auto_merge
+RELOOP from gate_tests through health_checker (agent diagnostic) back to builder.
+
+    study → builder → gate_tests --PROCEED--> auto_merge
+                           |
+                           +--RELOOP--> health_checker (agent) → builder
 
 Designed for Harbor containers where:
 - Task instruction is at /tmp/task-instruction.md (detailed problem statement with
@@ -29,9 +33,10 @@ from factory.workflow.primitives import (
 meta = {
     "name": "featurebench",
     "description": (
-        "FeatureBench benchmark mode — 4-node pipeline for implementing "
+        "FeatureBench benchmark mode — 5-node pipeline for implementing "
         "new features in Python codebases with explicit interface specs. "
-        "study → builder → gate_verify → auto_merge with RELOOP on test failure."
+        "study → builder → gate_tests → auto_merge with RELOOP through "
+        "health_checker (agent diagnostic) back to builder on test failure."
     ),
 }
 
@@ -104,10 +109,15 @@ def workflow() -> Workflow:
             "your implementation. Look specifically for NameError, ImportError, "
             "and TypeError in test output — these are signals of missing cross-file "
             "connections or interface mismatches.\n\n"
-            "7. **Iterate on test failures** — If tests fail, trace the error "
+            "7. **Read diagnostic feedback** — If the file "
+            ".factory/reviews/health-check.md exists, read it carefully. It "
+            "contains parsed test failure analysis from the health checker agent "
+            "on a previous iteration: stack traces, root causes, and suggested "
+            "fixes. Use this feedback to guide your changes.\n\n"
+            "8. **Iterate on test failures** — If tests fail, trace the error "
             "to its root cause. Fix missing dependencies, correct interface "
             "mismatches, and re-run until tests pass.\n\n"
-            "8. **Commit your changes** — Commit directly on the current branch "
+            "9. **Commit your changes** — Commit directly on the current branch "
             "with a descriptive message. Do NOT create a new branch. Do NOT "
             "create a PR.\n\n"
             "## Rules\n\n"
@@ -128,29 +138,86 @@ def workflow() -> Workflow:
         writes={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Node 3: Gate Verify ────────────────────────────────────────
-    nodes["gate_verify"] = GateNode(
-        id="gate_verify",
+    # ── Node 3: Gate Tests ───────────────────────────────────────
+    nodes["gate_tests"] = GateNode(
+        id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
             "cd {project_path} && "
-            "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
-            "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
-            "echo 'fail: builder did not commit any changes'; "
-            "exit 0; fi && "
-            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then "
-            "echo 'pass: builder reports tests passing'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(fail|error|FAILED)'; then "
-            "echo 'reloop: builder needs to retry — tests did not pass'; "
+            "mkdir -p .factory/reviews && "
+            "TEST_FILES=$(find . -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -1) && "
+            "if [ -n \"$TEST_FILES\" ]; then "
+            "conda run -n testbed pytest /testbed -x --tb=short "
+            "> .factory/reviews/gate-pytest-output.txt 2>&1; "
+            "RC=$?; "
+            "FAIL_COUNT=$(grep -cE '^FAILED ' .factory/reviews/gate-pytest-output.txt "
+            "2>/dev/null || echo 0); "
+            "PREV_COUNT=$(cat .factory/reviews/gate-prev-fail-count.txt 2>/dev/null "
+            "|| echo -1); "
+            "echo \"$FAIL_COUNT\" > .factory/reviews/gate-prev-fail-count.txt; "
+            "if [ $RC -eq 0 ]; then "
+            "echo 'pass: all tests passed'; "
+            "elif [ \"$PREV_COUNT\" != \"-1\" ] && [ \"$FAIL_COUNT\" -gt \"$PREV_COUNT\" ]; then "
+            "echo 'fail: regression detected — iteration has more failures than previous "
+            "('\"$FAIL_COUNT\"' > '\"$PREV_COUNT\"')'; "
             "else "
-            "echo 'pass: changes committed, no issues detected'; "
+            "echo 'reloop: pytest failed ('\"$FAIL_COUNT\"' failures) — "
+            "see .factory/reviews/gate-pytest-output.txt'; "
+            "fi; "
+            "else "
+            "echo 'pass: no test files found'; "
             "fi"
         ),
         reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/gate-pytest-output.txt"},
     )
 
-    # ── Node 4: Auto Merge ─────────────────────────────────────────
+    # ── Node 4: Health Checker (RELOOP diagnostic) ────────────────
+    nodes["health_checker"] = AgentNode(
+        id="health_checker",
+        role=AgentRole.HEALTH_CHECKER,
+        model="opus",
+        timeout=600,
+        max_iterations=3,
+        prompt_template=(
+            "You are a diagnostic analyst for the FeatureBench benchmark.\n\n"
+            "## Your Task\n\n"
+            "The test gate has detected failures. Your job is to analyze the "
+            "pytest output and provide actionable diagnostic feedback for the "
+            "builder agent.\n\n"
+            "1. **Read the pytest output** at .factory/reviews/gate-pytest-output.txt. "
+            "If this file does not exist, this is an L2 task with no tests. In that "
+            "case, read the task instruction at /tmp/task-instruction.md and the "
+            "builder output at .factory/reviews/builder-latest.md, perform spec "
+            "compliance checks, and write 'SPEC_COMPLIANCE: PASS' or "
+            "'SPEC_COMPLIANCE: FAIL' at the top of your output.\n\n"
+            "2. **Parse every failure** — For each FAILED test, extract:\n"
+            "   - The full test name\n"
+            "   - The stack trace\n"
+            "   - The error type (NameError, ImportError, TypeError, etc.)\n\n"
+            "3. **Root cause analysis** — For each failure, determine:\n"
+            "   - What went wrong (missing import, wrong signature, etc.)\n"
+            "   - Which source file and line caused the error\n"
+            "   - The specific fix needed\n\n"
+            "4. **Write diagnostic report** — Write a structured report to "
+            ".factory/reviews/health-check.md with:\n"
+            "   - Summary of failure count and error types\n"
+            "   - Per-failure analysis with root cause and suggested fix\n"
+            "   - Priority order: fix the failures most likely to unblock others first\n\n"
+            "## Rules\n\n"
+            "- DO NOT run pytest yourself. The gate already ran it.\n"
+            "- DO NOT modify any source files\n"
+            "- DO NOT attempt to fix the code — only diagnose\n"
+            "- Act AUTONOMOUSLY — do NOT ask for confirmation\n"
+        ),
+        reads={
+            ".factory/reviews/gate-pytest-output.txt",
+            ".factory/reviews/builder-latest.md",
+        },
+        writes={".factory/reviews/health-check.md"},
+    )
+
+    # ── Node 5: Auto Merge ─────────────────────────────────────────
     nodes["auto_merge"] = FnNode(
         id="auto_merge",
         command=(
@@ -178,9 +245,10 @@ def workflow() -> Workflow:
 
     edges = [
         Edge(source="study", target="builder"),
-        Edge(source="builder", target="gate_verify"),
-        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
-        Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="builder", target="gate_tests"),
+        Edge(source="gate_tests", target="auto_merge", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="health_checker", condition=VerdictType.RELOOP),
+        Edge(source="health_checker", target="builder"),
     ]
 
     # ── Trigger ────────────────────────────────────────────────────
