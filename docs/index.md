@@ -5,7 +5,7 @@
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](/LICENSE)
 [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
@@ -155,7 +155,7 @@ factory ceo "SWE-bench solver agent" --mode research
 factory ceo ~/my-research-project --mode research
 ```
 
-For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. See [Getting Started](getting-started.md#research-mode-in-detail) for the full picture.
+For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. See [Getting Started](/docs/getting-started.md#research-mode-in-detail) for the full picture.
 
 ### Outer Loop — evolve workflow topologies
 
@@ -210,7 +210,7 @@ factory ceo "my idea" --mode design
 factory ceo /path/to/project --mode design --focus "issue # or area to improve"
 ```
 
-See the [full setup guide](setup.md) for authentication, environment variables, and justification for why we install globally.
+See the [full setup guide](/docs/setup.md) for authentication, environment variables, and justification for why we install globally.
 
 ---
 
@@ -246,7 +246,7 @@ Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence cou
 factory ceo ~/my-project --mode meta
 ```
 
-See [Self-Improvement Loop](self-improvement.md) for the full picture. See [ACE Playbook Evolution](ace.md) for the playbook mechanics.
+See [Self-Improvement Loop](/docs/self-improvement.md) for the full picture. See [ACE Playbook Evolution](/docs/ace.md) for the playbook mechanics.
 
 ---
 
@@ -281,7 +281,7 @@ re:factory is a three-layer system:
 
 **Layer 3 — Specialist Agents** (`factory/agents/`): Eight independent Claude Code subprocesses — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst. Each has a focused prompt, receives context from the CEO, and returns structured output.
 
-See [Architecture](architecture.md) for the full deep-dive.
+See [Architecture](/docs/architecture.md) for the full deep-dive.
 
 ---
 
@@ -319,7 +319,7 @@ graph LR
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
-On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](eval.md) for scoring details, weights, and guards.
+On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](/docs/eval.md) for scoring details, weights, and guards.
 
 ---
 
@@ -385,7 +385,7 @@ FACTORY_RUNNER = "bob"
 BOBSHELL_API_KEY = "..."
 ```
 
-Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](setup.md) for full details.
+Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](/docs/setup.md) for full details.
 
 ---
 
@@ -393,14 +393,14 @@ Run `factory config show` to see resolved config, or `factory config edit` to op
 
 | Doc | What's in it |
 |-----|-------------|
-| [Setup Guide](setup.md) | Installation, authentication, environment variables |
-| [Getting Started](getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
-| [Architecture](architecture.md) | Three-layer system, agent roles, state machine, data flow |
-| [Eval System](eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
-| [Configuration](configuration.md) | `factory.md` reference — all sections and options |
-| [ACE Self-Improvement](ace.md) | How re:factory evolves its own agent playbooks |
-| [Contributing](contributing.md) | Dev setup, code style, testing, PR workflow |
-| [Contributing Benchmarks](contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
+| [Setup Guide](/docs/setup.md) | Installation, authentication, environment variables |
+| [Getting Started](/docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
+| [Architecture](/docs/architecture.md) | Three-layer system, agent roles, state machine, data flow |
+| [Eval System](/docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
+| [Configuration](/docs/configuration.md) | `factory.md` reference — all sections and options |
+| [ACE Self-Improvement](/docs/ace.md) | How re:factory evolves its own agent playbooks |
+| [Contributing](/docs/contributing.md) | Dev setup, code style, testing, PR workflow |
+| [Contributing Benchmarks](/docs/contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
 
 ## Development
 
