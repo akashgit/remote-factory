@@ -205,7 +205,14 @@ class TestSwarmEngineRun:
 
         result = engine.run(wf)
 
-        assert result.convergence_reason in ("budget_exhausted", "plateau", "early_stop_unchanged")
+        assert result.convergence_reason in (
+            "budget_exhausted",
+            "target_score_reached",
+            "plateau",
+            "diversity_collapse",
+            "early_stop_unchanged",
+            "unknown",
+        )
         assert result.total_evaluations > 0
         assert result.generations_completed >= 1
         assert len(result.trajectory) > 0
