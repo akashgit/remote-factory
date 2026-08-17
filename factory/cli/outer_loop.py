@@ -29,6 +29,9 @@ def _make_inner_loop_factory(
 
         wf_hash = structural_hash(workflow)
         ind_id = f"eval-{wf_hash[:12]}"
+        mode_name = f"evolve-gen0-{ind_id[:8]}"
+        if registry.load(mode_name) is not None:
+            return mode_name
         return registry.register(ind_id, 0, workflow)
 
     return _factory
@@ -177,7 +180,10 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
     target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
-    modes = registry.list_modes()
+    all_modes = registry.list_modes()
+    gen_prefix = f"evolve-gen{generation}-"
+    eval_prefix = f"evolve-gen{generation}-eval-"
+    modes = [m for m in all_modes if m.startswith(gen_prefix) and not m.startswith(eval_prefix)]
     if not modes:
         print("Error: no ephemeral modes found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
         return 1
@@ -221,7 +227,14 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
         print("Error: no outer loop config found.", file=sys.stderr)
         return 1
 
-    registry = EphemeralModeRegistry(project_path)
+    eval_project_dir: str
+    if config.target_project:
+        eval_project_dir = config.target_project
+    else:
+        eval_project_dir = str(project_path)
+
+    target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
+    registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
     evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
     reflector = OuterLoopReflector(project_dir=project_path)
 
@@ -230,7 +243,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
         wf = registry.load(mode_name)
         if wf is None:
             continue
-        ev = evaluator.evaluate(wf, str(project_path), config.training_instances)
+        ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
         cycle_rec = evaluator.get_cycle_record(mode_name)
         records.append((mode_name, ev.score, cycle_rec))
 
