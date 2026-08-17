@@ -9,6 +9,9 @@ import pytest
 from factory.models import ProjectState
 from factory.workflow.definitions import (
     DOC_FRESHNESS_GATE_PROMPT,
+    _GRAPH_EXPLORER_PROMPT,  # noqa: F401
+    _graph_explorer_prompt,  # noqa: F401
+    _study_subgraph,  # noqa: F401
     build_workflow,
     create_workflow,
     design_workflow,
@@ -1070,3 +1073,30 @@ class TestFounderWorkflow:
         issues = validate_skill(skill_md)
         assert issues == [], f"founder skill has issues: {issues}"
         assert "workflow-founder" in skill_md
+
+
+# ── _study_subgraph focus threading ─────────────────────────────
+
+
+class TestStudySubgraphFocus:
+    def test_focus_sets_study_node(self) -> None:
+        nodes, _ = _study_subgraph(focus="auth")
+        assert nodes["study"].focus == "auth"
+
+    def test_focus_sets_graph_explorer_prompt(self) -> None:
+        nodes, _ = _study_subgraph(focus="auth")
+        assert "auth" in nodes["graph_explorer"].prompt_template
+
+    def test_no_focus_backward_compatible(self) -> None:
+        nodes, _ = _study_subgraph()
+        assert nodes["study"].focus is None
+        assert nodes["graph_explorer"].prompt_template == _GRAPH_EXPLORER_PROMPT
+
+    def test_graph_explorer_prompt_with_focus(self) -> None:
+        prompt = _graph_explorer_prompt("auth flow")
+        assert "Focus your exploration on: auth flow" in prompt
+        assert 'factory graph query "auth flow"' in prompt
+
+    def test_graph_explorer_prompt_without_focus(self) -> None:
+        assert _graph_explorer_prompt() == _GRAPH_EXPLORER_PROMPT
+        assert _graph_explorer_prompt(None) == _GRAPH_EXPLORER_PROMPT

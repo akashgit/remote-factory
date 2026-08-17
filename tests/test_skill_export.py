@@ -22,6 +22,7 @@ from factory.workflow.skill_export import (
     _fn_to_instruction,
     _fork_to_instruction,
     _gate_to_checkpoint,
+    _study_to_instruction,  # noqa: F401
     export_all_skills,
     validate_skill,
     workflow_to_skill_md,
@@ -151,7 +152,9 @@ class TestFnToInstruction:
         assert "<!-- node: FnNode id=fn_eval" in result
 
     def test_template_placeholder_gets_slot(self) -> None:
-        fn = FnNode(id="fn_finalize", command="factory review --verdict $VERDICT --project {project_path}")
+        fn = FnNode(
+            id="fn_finalize", command="factory review --verdict $VERDICT --project {project_path}"
+        )
         wf = _minimal_workflow(nodes={"fn_finalize": fn}, start="fn_finalize")
         result = _fn_to_instruction(fn, wf)
         assert "{{finalize_command_fn_finalize::" in result
@@ -175,7 +178,8 @@ class TestFnToInstruction:
         result = _fn_to_instruction(fn, wf)
         lines_before_bash = result.split("```bash")[0]
         non_annotation_lines = [
-            line for line in lines_before_bash.strip().split("\n")
+            line
+            for line in lines_before_bash.strip().split("\n")
             if line.strip() and not line.strip().startswith("<!--")
         ]
         assert non_annotation_lines == [], "Empty notes should produce no prose before bash block"
@@ -420,8 +424,12 @@ class TestWorkflowToSkillMd:
         lines = result.split("\n")
         phase_lines = [line for line in lines if line.startswith("## Phase")]
         phase_titles = [line.lower() for line in phase_lines]
-        researcher_standalone = [t for t in phase_titles if "researcher" in t and "parallel" not in t]
-        assert len(researcher_standalone) == 0, "Fork targets should not appear as standalone phases"
+        researcher_standalone = [
+            t for t in phase_titles if "researcher" in t and "parallel" not in t
+        ]
+        assert len(researcher_standalone) == 0, (
+            "Fork targets should not appear as standalone phases"
+        )
 
     def test_study_node_generates_observe_phase(self) -> None:
         study = Study(
@@ -471,10 +479,10 @@ class TestExportAllSkills:
 class TestValidateSkill:
     def test_valid_skill_no_issues(self) -> None:
         content = (
-            '---\nname: workflow-build\n'
+            "---\nname: workflow-build\n"
             'description: "Build things."\n'
-            'disable-model-invocation: true\n'
-            '---\n\n# Build\nDo stuff.\n'
+            "disable-model-invocation: true\n"
+            "---\n\n# Build\nDo stuff.\n"
         )
         assert validate_skill(content) == []
 
@@ -575,13 +583,9 @@ def _workflows_with_builder() -> list[str]:
         if wf.terminal:
             continue
         has_builder = any(
-            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
-            for n in wf.nodes.values()
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER for n in wf.nodes.values()
         )
-        has_subgraph_fork = any(
-            isinstance(n, SubgraphForkNode)
-            for n in wf.nodes.values()
-        )
+        has_subgraph_fork = any(isinstance(n, SubgraphForkNode) for n in wf.nodes.values())
         if has_builder and not has_subgraph_fork:
             names.append(name)
     return sorted(names)
@@ -602,3 +606,29 @@ class TestSkillQaEnforcement:
             f"workflow-{workflow_name} SKILL.md is missing any QA agent invocation "
             f"(health_checker, code_reviewer, or adversarial_tester)"
         )
+
+
+# ── _study_to_instruction focus threading ──────────────────────
+
+
+class TestStudyToInstructionFocus:
+    def test_with_focus(self) -> None:
+        study = Study(
+            id="study",
+            command="factory study {project_path}",
+            focus="auth",
+        )
+        wf = _minimal_workflow(nodes={"study": study}, start="study")
+        result = _study_to_instruction(study, wf)
+        assert '--focus "auth"' in result
+
+    def test_without_focus_has_ceo_hint(self) -> None:
+        study = Study(
+            id="study",
+            command="factory study {project_path}",
+        )
+        wf = _minimal_workflow(nodes={"study": study}, start="study")
+        result = _study_to_instruction(study, wf)
+        assert '--focus "auth"' not in result
+        assert "focus directive" in result
+        assert '--focus "<your focus topic>"' in result

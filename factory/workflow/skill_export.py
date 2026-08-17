@@ -538,11 +538,20 @@ def _study_to_instruction(node: Study, workflow: Workflow) -> str:
         f"<!-- edges: {edges_str} -->",
     ]
 
+    focus_hint = ""
+    if not node.focus:
+        focus_hint = (
+            "\n\nIf your task includes a focus directive or focus topic, "
+            "pass it to the study command:\n"
+            '`factory study $PROJECT_PATH --focus "<your focus topic>"`'
+        )
+
     return (
         "\n".join(annotations) + "\n\n"
         f"Run local study to gather observations:\n\n"
         f"```bash\n{cmd}{focus}\n```\n\n"
         f"Writes observations to `.factory/strategy/observations.md`."
+        f"{focus_hint}"
     )
 
 

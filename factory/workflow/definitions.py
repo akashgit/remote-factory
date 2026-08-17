@@ -45,6 +45,7 @@ __all__ = [
     "DOC_FRESHNESS_GATE_PROMPT",
     "ResearcherConfig",
     "_GRAPH_EXPLORER_PROMPT",
+    "_graph_explorer_prompt",
     "_research_subgraph",
     "_study_subgraph",
     "build_workflow",
@@ -115,7 +116,34 @@ _GRAPH_EXPLORER_PROMPT = (
 )
 
 
-def _study_subgraph() -> tuple[dict[str, Any], list[Edge]]:
+def _graph_explorer_prompt(focus: str | None = None) -> str:
+    """Return the graph_explorer prompt, optionally scoped to *focus*."""
+    if not focus:
+        return _GRAPH_EXPLORER_PROMPT
+    return (
+        f"Focus your exploration on: {focus}\n\n"
+        "Explore the project's code knowledge graph targeting the area above. "
+        "Read .factory/strategy/observations.md for additional context.\n\n"
+        "If graphify is installed and graph.json exists:\n"
+        f'1. Run `factory graph query "{focus}" --depth 2` to find relevant nodes\n'
+        '2. Run `factory graph explain "<key node>"` on the most important nodes to understand '
+        "their connections and dependencies\n"
+        '3. Run `factory graph path "<A>" "<B>"` to trace dependency paths between key components\n'
+        "4. Write structured findings to .factory/strategy/graph-context.md covering: "
+        "key modules and their relationships, dependency paths, architectural layers, "
+        "entry points and hotspots\n\n"
+        "If graphify is NOT installed or graph.json is missing, fall back to direct file exploration:\n"
+        "1. Use `find . -name '*.py' | head -50` to discover source files\n"
+        "2. Use `grep -rn 'class \\|def ' --include='*.py' | head -100` to map functions and classes\n"
+        "3. Use `grep -rn 'import ' --include='*.py' | head -100` to trace dependencies\n"
+        "4. Write the same structured findings to .factory/strategy/graph-context.md"
+    )
+
+
+def _study_subgraph(
+    *,
+    focus: str | None = None,
+) -> tuple[dict[str, Any], list[Edge]]:
     """Return (nodes, internal_edges) for the graph-powered study chain.
 
     Four nodes run sequentially:
@@ -138,12 +166,13 @@ def _study_subgraph() -> tuple[dict[str, Any], list[Edge]]:
         id="study",
         command="factory study {project_path}",
         writes={".factory/strategy/observations.md"},
+        focus=focus,
     )
 
     nodes["graph_explorer"] = AgentNode(
         id="graph_explorer",
         role=AgentRole.RESEARCHER,
-        prompt_template=_GRAPH_EXPLORER_PROMPT,
+        prompt_template=_graph_explorer_prompt(focus),
         reads={".factory/strategy/observations.md"},
         writes={".factory/strategy/graph-context.md"},
     )
@@ -4393,9 +4422,7 @@ def parallel_improve_workflow() -> Workflow:
         [
             Edge(source="exp_begin", target="exp_builder"),
             Edge(source="exp_builder", target="exp_gate_build"),
-            Edge(
-                source="exp_gate_build", target="exp_fork_qa", condition=VerdictType.PROCEED
-            ),
+            Edge(source="exp_gate_build", target="exp_fork_qa", condition=VerdictType.PROCEED),
             Edge(source="exp_gate_build", target="exp_builder", condition=VerdictType.RELOOP),
             *exp_dq_edges,
             Edge(source="exp_join_qa", target="exp_gate_qa"),
