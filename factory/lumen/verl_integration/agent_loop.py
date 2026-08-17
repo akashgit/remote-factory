@@ -28,6 +28,7 @@ from verl.experimental.agent_loop import (
     get_trajectory_info,
 )
 from verl.experimental.agent_loop.agent_loop import AgentLoopMetrics
+from verl.protocol import DataProto
 from verl.utils.ray_utils import auto_await
 from verl.utils.tensordict_utils import list_of_dict_to_tensordict
 
@@ -395,8 +396,14 @@ class LumenAgentLoopManagerTQ(AgentLoopManager):
             ray.get(worker.set_lumen_config.remote(lumen_config))
 
     @auto_await
-    async def generate_sequences(self, prompts: TensorDict) -> list[TensorDict]:
+    async def generate_sequences(self, prompts):
         """Assign prompts directly to workers (no PUCT sampling)."""
         # Prompts come from parquet data source — just pass through to workers
         # The raw_prompt field is already set from the parquet's prompt column
+
+        # Ensure prompts is a DataProto (base class expects it)
+        if isinstance(prompts, TensorDict) and not isinstance(prompts, DataProto):
+            # Convert TensorDict to DataProto
+            prompts = DataProto(batch=prompts, non_tensor_batch={})
+
         return await super().generate_sequences(prompts)
