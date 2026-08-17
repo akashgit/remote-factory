@@ -65,6 +65,29 @@ The same graph definition produces two execution formats:
 - **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
 - **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
+### Layer 2b: Outer Loop — Evolutionary Workflow Search (`factory/outer_loop/`)
+
+The outer loop evolves workflow *topologies* via MAP-Elites quality-diversity search. Given a base workflow (e.g. the single-builder FeatureBench seed), it produces a population of structurally diverse candidates, evaluates each via an inner loop (one full CEO cycle per candidate), and uses contrastive reflection to guide mutations toward higher fitness.
+
+**Pipeline:** `calibrate → evolve → reflect → evaluate` (repeats until budget exhaustion, plateau, or target score).
+
+**Key modules:**
+- `engine.py` — `SwarmEngine` orchestrates the evolutionary loop: seeding, tournament selection, mutation, evaluation, convergence detection (plateau, diversity collapse, early stop)
+- `evaluator.py` — `SwarmEvaluator` with `FitnessCache` (structural-hash dedup) and `CycleRecordCache` (content-hash dedup). Supports both `EvaluatorFn` protocol and `FeatureBenchInnerLoop` evaluation with git worktree isolation
+- `mutations.py` — 7 structured graph mutation operators (`NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`) with `WeightedRandomStrategy` and reflection-guided selection
+- `population.py` — `Population` (collection management) and `MAPElitesArchive` (4D grid: depth × fork_degree × agent_count × gate_count)
+- `similarity.py` — `structural_hash`, `graph_edit_distance`, `compute_features`, `NoveltyFilter`
+- `reflector.py` — `OuterLoopReflector` performs two-stage contrastive reflection (top-K vs bottom-K) to identify failure/success patterns and generate mutation suggestions
+- `mode_registry.py` — `EphemeralModeRegistry` registers candidate workflows as temporary modes (`evolve-gen{N}-{id[:8]}`) with content-hash integrity checking, target-dir mirroring, and promotion to permanent modes
+- `designer.py` — `DesignerAgent` generates from-scratch workflow designs (minimal, thorough, custom variants)
+- `models.py` — Pydantic models: `SwarmConfig`, `Individual`, `EvalResult`, `GenerationSummary`, `OuterLoopResult`, `HyperparameterRecord`, `MutationRecord`, `OuterLoopState`, `AuditResult`
+- `overfit.py` — `OverfitDetector` compares training vs holdout scores to flag overfitting
+- `subset.py` — `SubsetSelector` protocol and `FixedSubsetSelector` for training instance selection
+- `filesystem.py` — Outer loop directory initialization, config/checkpoint persistence
+- `featurebench_inner_loop.py` — Bridges outer loop evaluation to a full CEO cycle on a FeatureBench instance
+
+**E2E finding:** On simple FeatureBench tasks, a single-builder topology (1 AgentNode, no fork/join) wins on parsimony + cost. The outer loop's value emerges on harder multi-agent problems where topology diversity matters.
+
 ### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
 
 The CEO prompt is split into two parts:
@@ -108,6 +131,18 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 │   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
 ├── adversarial_state.json    # Adversarial loop state (phase, streaks, history)
+├── outer_loop/               # Evolutionary workflow search state
+│   ├── config.json           # SwarmConfig for the current run
+│   ├── checkpoint.json       # OuterLoopState for crash recovery
+│   ├── population/           # Serialized Population (population.json)
+│   ├── archive/              # Serialized MAPElitesArchive (grid.json)
+│   ├── modes/                # Ephemeral mode JSONs (evolve-gen{N}-{id}.json)
+│   ├── results/              # Per-generation eval results (gen{N}.json)
+│   ├── reflections/          # Contrastive reflection reports (gen{N}.json, gen{N}.md)
+│   ├── events.jsonl          # Per-generation best/mean/diversity metrics
+│   ├── costs.jsonl           # Per-individual cost tracking
+│   └── trajectory.jsonl      # Score trajectory over generations
+├── workflows/                # Ephemeral .py wrappers for WorkflowRegistry discovery
 ├── archive/                  # Long-term knowledge store (Archivist notes)
 │   ├── experiments/          # Per-experiment learnings and decision rationale
 │   ├── patterns/             # Recurring patterns and anti-patterns
@@ -118,6 +153,8 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ### Models
 
 All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
+
+Outer loop models live in `factory/outer_loop/models.py`: `SwarmConfig` (evolutionary search configuration — benchmark, budget, population_size, mutation_rate, frozen_node_ids, training/holdout instances, convergence thresholds), `Individual` (candidate with workflow_data, score, features, lineage), `EvalResult` (benchmark_score + hygiene_score + cost + complexity), `GenerationSummary` (per-generation stats), `OuterLoopResult` (final run result with trajectory, pareto front, hyperparameter history), `HyperparameterRecord` (per-generation mutation_rate, operator_weights, diversity), `MutationRecord` (operator + target_node + before/after), `MutationType` (enum: 7 mutation operators), `OuterLoopState` (checkpoint for crash recovery), `AuditResult` (overfit detection).
 
 ## Environment
 
@@ -265,6 +302,18 @@ factory backlog-remove /path "item text"        # Remove a completed backlog ite
 # Adversarial eval loops
 factory adversarial-state /path/to/project           # Inspect adversarial loop state
 factory adversarial-state /path/to/project --reset   # Reset to defaults
+
+# Outer loop — evolutionary workflow search
+factory outer-loop calibrate /path --benchmark featurebench --budget 50 --population-size 4
+factory outer-loop calibrate /path --training-instances t1 t2 --holdout-instances h1
+factory outer-loop calibrate /path --project-dir /path/to/target  # Evaluate on a different project
+factory outer-loop evaluate /path --generation 0                  # Evaluate current generation
+factory outer-loop evaluate /path --generation 0 --project-dir /path/to/target
+factory outer-loop reflect /path --generation 0                   # Contrastive reflection
+factory outer-loop evolve /path --generation 0                    # Produce next generation
+factory outer-loop status /path                                   # Show progress and metrics
+factory outer-loop status /path --check-converge                  # Exit 0 if converged, 1 if not
+factory outer-loop promote /path --mode-name evolve-gen5-abc12345 --permanent-name best-evolved
 
 # Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
