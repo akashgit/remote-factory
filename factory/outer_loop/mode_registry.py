@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import structlog
@@ -210,6 +211,30 @@ class EphemeralModeRegistry:
 
         log.info("ephemeral_mode_promoted", source=mode_name, dest=str(dest))
         return dest
+
+    def prune_stale_modes(self, older_than_hours: int = 24) -> list[str]:
+        """Remove ephemeral modes older than the given threshold.
+
+        Returns list of pruned mode names.
+        """
+        if not self._modes_dir.exists():
+            return []
+
+        cutoff = time.time() - older_than_hours * 3600
+        pruned: list[str] = []
+
+        for mode_file in self._modes_dir.glob("evolve-gen*.json"):
+            if mode_file.stat().st_mtime < cutoff:
+                mode_name = mode_file.stem
+                mode_file.unlink()
+                self._remove_workflow_wrapper(mode_name)
+                self._remove_target_artifacts(mode_name)
+                self._registered.pop(mode_name, None)
+                pruned.append(mode_name)
+
+        if pruned:
+            log.info("stale_modes_pruned", count=len(pruned), threshold_hours=older_than_hours)
+        return pruned
 
     def list_modes(self) -> list[str]:
         """List all registered ephemeral mode names."""

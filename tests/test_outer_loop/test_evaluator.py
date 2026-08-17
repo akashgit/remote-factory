@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from factory.outer_loop.evaluator import FitnessCache, SwarmEvaluator
+import json
+from pathlib import Path
+
+from factory.cycle_analyzer import CycleRecord
+from factory.outer_loop.evaluator import CycleRecordCache, FitnessCache, SwarmEvaluator
 from factory.outer_loop.models import EvalResult, SwarmConfig
 from factory.workflow.primitives import (
     AgentNode,
@@ -182,3 +186,116 @@ class TestSwarmEvaluator:
         wf = _make_simple_workflow()
         result = evaluator.evaluate(wf, "/tmp/test", ["t1"])
         assert result.details.get("note") == "no_evaluator_fn_configured"
+
+    def test_loads_cache_from_disk(self, tmp_path: Path) -> None:
+        config = _make_config()
+        wf = _make_simple_workflow()
+        wf_hash = CycleRecordCache.workflow_hash(wf)
+
+        cache_path = tmp_path / ".factory" / "outer_loop" / "eval_cache.jsonl"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {"workflow_hash": wf_hash, "score": 0.9, "cost": 1.5, "kept": 2, "reverted": 0}
+        cache_path.write_text(json.dumps(entry) + "\n")
+
+        evaluator = SwarmEvaluator(config, project_dir=tmp_path)
+        assert evaluator.cycle_cache.size == 1
+
+        cached = evaluator.cycle_cache.get(wf)
+        assert cached is not None
+        assert cached.score_end == 0.9
+
+
+class TestCycleRecordCache:
+    def _make_record(self, score: float = 0.8, cost: float = 1.0) -> CycleRecord:
+        return CycleRecord(
+            cycle_number=1,
+            mode="test",
+            started_at="2026-01-01T00:00:00",
+            ended_at="2026-01-01T00:10:00",
+            duration_s=600.0,
+            score_start=0.0,
+            score_end=score,
+            score_delta=score,
+            kept=3,
+            reverted=1,
+            total_cost_usd=cost,
+        )
+
+    def test_save_and_load_round_trip(self, tmp_path: Path) -> None:
+        cache = CycleRecordCache()
+        wf = _make_simple_workflow()
+        record = self._make_record(0.85, 2.0)
+        cache.put(wf, record)
+
+        path = tmp_path / "cache.jsonl"
+        cache.save_cache(path)
+        assert path.exists()
+
+        cache2 = CycleRecordCache()
+        loaded = cache2.load_cache(path)
+        assert loaded == 1
+        assert cache2.size == 1
+
+        restored = cache2.get(wf)
+        assert restored is not None
+        assert restored.score_end == 0.85
+        assert restored.total_cost_usd == 2.0
+
+    def test_save_is_append_only(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.jsonl"
+        wf1 = _make_simple_workflow("wf1")
+        wf2 = _make_simple_workflow("wf2")
+
+        cache1 = CycleRecordCache()
+        cache1.put(wf1, self._make_record(0.7))
+        cache1.save_cache(path)
+
+        cache2 = CycleRecordCache()
+        cache2.put(wf2, self._make_record(0.9))
+        cache2.save_cache(path)
+
+        lines = path.read_text().strip().splitlines()
+        assert len(lines) == 2
+
+    def test_save_deduplicates(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.jsonl"
+        wf = _make_simple_workflow()
+
+        cache = CycleRecordCache()
+        cache.put(wf, self._make_record())
+        cache.save_cache(path)
+        cache.save_cache(path)
+
+        lines = path.read_text().strip().splitlines()
+        assert len(lines) == 1
+
+    def test_load_skips_corrupt_lines(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.jsonl"
+        valid = json.dumps({"workflow_hash": "abc123", "score": 0.5, "cost": 1.0})
+        path.write_text(f"not-json\n{valid}\n\n")
+
+        cache = CycleRecordCache()
+        loaded = cache.load_cache(path)
+        assert loaded == 1
+
+    def test_load_nonexistent_file(self, tmp_path: Path) -> None:
+        cache = CycleRecordCache()
+        loaded = cache.load_cache(tmp_path / "missing.jsonl")
+        assert loaded == 0
+        assert cache.size == 0
+
+    def test_checkpoint_cache(self, tmp_path: Path) -> None:
+        config = _make_config()
+        evaluator = SwarmEvaluator(config, project_dir=tmp_path)
+        wf = _make_simple_workflow()
+        record = self._make_record(0.75)
+        evaluator.cycle_cache.put(wf, record)
+
+        evaluator.checkpoint_cache()
+
+        cache_path = tmp_path / ".factory" / "outer_loop" / "eval_cache.jsonl"
+        assert cache_path.exists()
+        lines = cache_path.read_text().strip().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["score"] == 0.75

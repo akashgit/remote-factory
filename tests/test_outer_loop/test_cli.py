@@ -2,6 +2,51 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+
+class TestDiskSpaceCheck:
+    def test_sufficient_space_passes(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _check_disk_space
+
+        assert _check_disk_space(Path(str(tmp_path)), population_size=4) is True
+
+    def test_insufficient_space_fails(self, tmp_path: object) -> None:
+        from collections import namedtuple
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _check_disk_space
+
+        DiskUsage = namedtuple("usage", ["total", "used", "free"])
+        tiny = DiskUsage(total=100 * 1024**3, used=99 * 1024**3, free=1 * 1024**3)
+        with patch("factory.cli.outer_loop.shutil.disk_usage", return_value=tiny):
+            assert _check_disk_space(Path(str(tmp_path)), population_size=4) is False
+
+    def test_required_space_formula(self) -> None:
+        from collections import namedtuple
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _check_disk_space
+
+        DiskUsage = namedtuple("usage", ["total", "used", "free"])
+
+        exactly_enough = DiskUsage(
+            total=100 * 1024**3,
+            used=80 * 1024**3,
+            free=int(20.1 * 1024**3),
+        )
+        with patch("factory.cli.outer_loop.shutil.disk_usage", return_value=exactly_enough):
+            assert _check_disk_space(Path("/tmp"), population_size=50) is True
+
+        not_enough = DiskUsage(
+            total=100 * 1024**3,
+            used=81 * 1024**3,
+            free=int(19.9 * 1024**3),
+        )
+        with patch("factory.cli.outer_loop.shutil.disk_usage", return_value=not_enough):
+            assert _check_disk_space(Path("/tmp"), population_size=50) is False
 
 
 class TestOuterLoopModeRegistration:

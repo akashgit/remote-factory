@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+import time
 from pathlib import Path
 
 
@@ -286,3 +288,68 @@ class TestEphemeralModeRegistryTargetDir:
         wf = _make_workflow()
         mode_name = registry.register("abc12345", 0, wf)
         assert (tmp_path / ".factory" / "workflows" / f"{mode_name}.py").exists()
+
+
+class TestPruneStaleModes:
+    def test_prune_removes_old_modes(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+        mode_name = registry.register("old_mode", 0, wf)
+
+        mode_file = tmp_path / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json"
+        old_time = time.time() - 25 * 3600
+        os.utime(mode_file, (old_time, old_time))
+
+        pruned = registry.prune_stale_modes(older_than_hours=24)
+        assert mode_name in pruned
+        assert not mode_file.exists()
+        wrapper = tmp_path / ".factory" / "workflows" / f"{mode_name}.py"
+        assert not wrapper.exists()
+
+    def test_prune_keeps_recent_modes(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+        registry.register("new_mode", 0, wf)
+
+        pruned = registry.prune_stale_modes(older_than_hours=24)
+        assert len(pruned) == 0
+        assert registry.count == 1
+
+    def test_prune_mixed_old_and_new(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        wf = _make_workflow()
+        old_name = registry.register("old_one", 0, wf)
+        new_name = registry.register("new_one", 1, wf)
+
+        old_file = tmp_path / ".factory" / "outer_loop" / "modes" / f"{old_name}.json"
+        old_time = time.time() - 48 * 3600
+        os.utime(old_file, (old_time, old_time))
+
+        pruned = registry.prune_stale_modes(older_than_hours=24)
+        assert old_name in pruned
+        assert new_name not in pruned
+        assert registry.count == 1
+
+    def test_prune_empty_modes_dir(self, tmp_path: Path) -> None:
+        registry = EphemeralModeRegistry(tmp_path)
+        pruned = registry.prune_stale_modes()
+        assert pruned == []
+
+    def test_prune_removes_target_artifacts(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        target = tmp_path / "target"
+        outer.mkdir()
+        target.mkdir()
+
+        registry = EphemeralModeRegistry(outer, target_dir=target)
+        wf = _make_workflow()
+        mode_name = registry.register("old_tgt", 0, wf)
+
+        mode_file = outer / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json"
+        old_time = time.time() - 25 * 3600
+        os.utime(mode_file, (old_time, old_time))
+
+        pruned = registry.prune_stale_modes(older_than_hours=24)
+        assert mode_name in pruned
+        assert not (target / ".factory" / "workflows" / f"{mode_name}.py").exists()
+        assert not (target / ".factory" / "outer_loop" / "modes" / f"{mode_name}.json").exists()

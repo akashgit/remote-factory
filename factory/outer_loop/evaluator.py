@@ -54,6 +54,7 @@ class CycleRecordCache:
     """Cache CycleRecords keyed by workflow content hash.
 
     Content-addressable via sha256(workflow.to_dict()).
+    Supports JSONL persistence for crash-resilient resume.
     """
 
     def __init__(self) -> None:
@@ -75,6 +76,81 @@ class CycleRecordCache:
     @property
     def size(self) -> int:
         return len(self._cache)
+
+    def save_cache(self, path: Path) -> None:
+        """Append all cached entries to a JSONL file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing_hashes: set[str] = set()
+        if path.exists():
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    existing_hashes.add(entry.get("workflow_hash", ""))
+                except json.JSONDecodeError:
+                    continue
+
+        new_entries: list[str] = []
+        for wf_hash, record in self._cache.items():
+            if wf_hash in existing_hashes:
+                continue
+            entry = {
+                "workflow_hash": wf_hash,
+                "score": record.score_end,
+                "cost": record.total_cost_usd,
+                "kept": record.kept,
+                "reverted": record.reverted,
+                "timestamp": record.ended_at or record.started_at,
+            }
+            new_entries.append(json.dumps(entry, separators=(",", ":")))
+
+        if new_entries:
+            with path.open("a") as f:
+                for line in new_entries:
+                    f.write(line + "\n")
+            log.info("cycle_cache_saved", path=str(path), new_entries=len(new_entries))
+
+    def load_cache(self, path: Path) -> int:
+        """Load cached entries from a JSONL file. Returns number of entries loaded."""
+        if not path.exists():
+            return 0
+
+        loaded = 0
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                log.warning("cycle_cache_corrupt_line", line=line[:80])
+                continue
+
+            wf_hash = entry.get("workflow_hash")
+            if not wf_hash or wf_hash in self._cache:
+                continue
+
+            record = CycleRecord(
+                cycle_number=0,
+                mode=None,
+                started_at=entry.get("timestamp"),
+                ended_at=entry.get("timestamp"),
+                duration_s=0.0,
+                score_start=None,
+                score_end=entry.get("score"),
+                score_delta=None,
+                kept=entry.get("kept", 0),
+                reverted=entry.get("reverted", 0),
+                total_cost_usd=entry.get("cost", 0.0),
+            )
+            self._cache[wf_hash] = record
+            loaded += 1
+
+        if loaded:
+            log.info("cycle_cache_loaded", path=str(path), entries=loaded)
+        return loaded
 
 
 @runtime_checkable
@@ -98,6 +174,7 @@ class SwarmEvaluator:
         config: SwarmConfig,
         evaluator_fn: EvaluatorFn | None = None,
         inner_loop_factory: Any | None = None,
+        project_dir: Path | None = None,
     ) -> None:
         self._config = config
         self._evaluator_fn = evaluator_fn
@@ -105,6 +182,16 @@ class SwarmEvaluator:
         self._cache = FitnessCache()
         self._cycle_cache = CycleRecordCache()
         self._cycle_records: dict[str, CycleRecord] = {}
+        self._cache_path: Path | None = None
+
+        if project_dir is not None:
+            self._cache_path = Path(project_dir) / ".factory" / "outer_loop" / "eval_cache.jsonl"
+            self._cycle_cache.load_cache(self._cache_path)
+
+    def checkpoint_cache(self) -> None:
+        """Persist the cycle record cache to disk."""
+        if self._cache_path is not None:
+            self._cycle_cache.save_cache(self._cache_path)
 
     @property
     def cache(self) -> FitnessCache:

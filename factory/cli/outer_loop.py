@@ -4,15 +4,50 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from factory.outer_loop.evaluator import CycleRecord
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.workflow.primitives import Workflow
+
+_log = structlog.get_logger()
+
+
+def _check_disk_space(project_path: Path, population_size: int) -> bool:
+    """Check that enough disk space is available for the outer loop.
+
+    Requires population_size * 0.2 + 10 GB free.
+    Returns True if sufficient, False otherwise (prints error to stderr).
+    """
+    required_gb = population_size * 0.2 + 10
+    free_bytes = shutil.disk_usage(project_path).free
+    available_gb = free_bytes / (1024**3)
+
+    if available_gb < required_gb:
+        print(
+            f"Insufficient disk: need {required_gb:.1f}GB, have {available_gb:.1f}GB",
+            file=sys.stderr,
+        )
+        _log.error(
+            "disk_space_insufficient",
+            required_gb=required_gb,
+            available_gb=round(available_gb, 1),
+            population_size=population_size,
+        )
+        return False
+    _log.info(
+        "disk_space_ok",
+        required_gb=required_gb,
+        available_gb=round(available_gb, 1),
+    )
+    return True
 
 
 def _make_inner_loop_factory(
@@ -70,6 +105,10 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.models import OuterLoopState, SwarmConfig
 
+    population_size = getattr(args, "population_size", 4)
+    if not _check_disk_space(project_path, population_size):
+        return 1
+
     config = load_config(project_path)
     if config is None:
         benchmark = getattr(args, "benchmark", "featurebench")
@@ -122,7 +161,10 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             return 1
 
     registry = EphemeralModeRegistry(project_path)
-    evaluator = SwarmEvaluator(config, inner_loop_factory=_make_inner_loop_factory(registry))
+    registry.prune_stale_modes()
+    evaluator = SwarmEvaluator(
+        config, inner_loop_factory=_make_inner_loop_factory(registry), project_dir=project_path,
+    )
 
     from factory.outer_loop.similarity import NoveltyFilter
 
@@ -273,7 +315,11 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         print("Error: no outer loop config found.", file=sys.stderr)
         return 1
 
+    if not _check_disk_space(project_path, config.population_size):
+        return 1
+
     registry = EphemeralModeRegistry(project_path)
+    registry.prune_stale_modes()
     modes = registry.list_modes()
     if not modes:
         print("Error: no ephemeral modes to evolve.", file=sys.stderr)
