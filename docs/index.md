@@ -157,6 +157,20 @@ factory ceo ~/my-research-project --mode research
 
 For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. See [Getting Started](getting-started.md#research-mode-in-detail) for the full picture.
 
+### Outer Loop — evolve workflow topologies
+
+```bash
+factory outer-loop calibrate ~/my-factory \
+  --benchmark featurebench \
+  --population-size 3 \
+  --project-dir /path/to/benchmark-instance \
+  --test-command "pytest tests/ -v"
+
+factory ceo ~/my-factory --mode outer-loop --headless
+```
+
+The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](outer-loop.md) for full architecture and CLI reference.
+
 ### Headless & continuous loop
 
 ```bash
