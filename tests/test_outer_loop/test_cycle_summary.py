@@ -188,30 +188,33 @@ class TestHeuristicScoreWeights:
         assert score == 0.2  # returncode contributes exactly once
 
 
-class TestReadCycleSummaryScore:
+class TestReadCycleSummary:
     def test_reads_existing_summary(self, tmp_path: Path) -> None:
         summary_dir = tmp_path / ".factory" / "outer_loop" / "runs" / "evolve-x"
         summary_dir.mkdir(parents=True)
         (summary_dir / "cycle_summary.json").write_text(
-            json.dumps({"score": 0.8})
+            json.dumps({"score": 0.8, "scoring_method": "pytest_pass_rate"})
         )
-        result = SwarmEvaluator._read_cycle_summary_score(tmp_path, "evolve-x")
-        assert result == 0.8
+        result = SwarmEvaluator._read_cycle_summary(tmp_path, "evolve-x")
+        assert result is not None
+        assert result["score"] == 0.8
+        assert result["scoring_method"] == "pytest_pass_rate"
 
     def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
-        result = SwarmEvaluator._read_cycle_summary_score(tmp_path, "missing")
+        result = SwarmEvaluator._read_cycle_summary(tmp_path, "missing")
         assert result is None
 
     def test_returns_none_for_invalid_json(self, tmp_path: Path) -> None:
         summary_dir = tmp_path / ".factory" / "outer_loop" / "runs" / "bad"
         summary_dir.mkdir(parents=True)
         (summary_dir / "cycle_summary.json").write_text("not json")
-        result = SwarmEvaluator._read_cycle_summary_score(tmp_path, "bad")
+        result = SwarmEvaluator._read_cycle_summary(tmp_path, "bad")
         assert result is None
 
-    def test_returns_zero_for_missing_score_key(self, tmp_path: Path) -> None:
+    def test_returns_dict_for_missing_score_key(self, tmp_path: Path) -> None:
         summary_dir = tmp_path / ".factory" / "outer_loop" / "runs" / "no-score"
         summary_dir.mkdir(parents=True)
         (summary_dir / "cycle_summary.json").write_text(json.dumps({"mode": "x"}))
-        result = SwarmEvaluator._read_cycle_summary_score(tmp_path, "no-score")
-        assert result == 0.0
+        result = SwarmEvaluator._read_cycle_summary(tmp_path, "no-score")
+        assert result is not None
+        assert result.get("score", 0.0) == 0.0

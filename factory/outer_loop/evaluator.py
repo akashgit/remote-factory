@@ -328,7 +328,8 @@ class SwarmEvaluator:
             )
             record = loop.step()
 
-            summary_score = self._read_cycle_summary_score(wt_path, loop.mode)
+            summary_data = self._read_cycle_summary(wt_path, loop.mode)
+            summary_score = float(summary_data.get("score", 0.0)) if summary_data else None
             score = summary_score if summary_score is not None else (record.score_end or 0.0)
             cost = record.total_cost_usd
 
@@ -342,19 +343,24 @@ class SwarmEvaluator:
 
             self._cache.put(workflow, instances, composite, cost)
 
+            details: dict[str, object] = {
+                "experiments": len(record.experiments),
+                "steps": len(record.steps),
+                "kept": record.kept,
+                "reverted": record.reverted,
+                "parsimony_penalty": parsimony,
+            }
+            if summary_data:
+                details["scoring_method"] = summary_data.get("scoring_method", "unknown")
+                if "test_details" in summary_data:
+                    details["test_details"] = summary_data["test_details"]
+
             return EvalResult(
                 score=composite,
                 benchmark_score=score,
                 cost_usd=cost,
                 complexity=float(num_nodes),
-                details={
-                    "experiments": len(record.experiments),
-                    "steps": len(record.steps),
-                    "kept": record.kept,
-                    "reverted": record.reverted,
-                    "parsimony_penalty": parsimony,
-                    "worktree": str(wt_path),
-                },
+                details=details,
             )
         except Exception as exc:
             log.error("inner_loop_eval_failed", error=str(exc), exc_info=True)
@@ -404,16 +410,15 @@ class SwarmEvaluator:
         )
 
     @staticmethod
-    def _read_cycle_summary_score(project_dir: Path, mode: str) -> float | None:
+    def _read_cycle_summary(project_dir: Path, mode: str) -> dict | None:
         summary_path = (
             project_dir / ".factory" / "outer_loop" / "runs" / mode / "cycle_summary.json"
         )
         if not summary_path.exists():
             return None
         try:
-            data = json.loads(summary_path.read_text())
-            return float(data.get("score", 0.0))
-        except (json.JSONDecodeError, OSError, ValueError, TypeError):
+            return json.loads(summary_path.read_text())
+        except (json.JSONDecodeError, OSError):
             return None
 
     def _check_mandatory_components(self, workflow: Workflow) -> bool:
