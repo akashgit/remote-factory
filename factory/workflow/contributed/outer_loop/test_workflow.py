@@ -22,7 +22,7 @@ class TestOuterLoopWorkflow:
 
     def test_node_count(self) -> None:
         wf = workflow()
-        assert len(wf.nodes) == 5
+        assert len(wf.nodes) == 6
 
     def test_required_nodes_present(self) -> None:
         wf = workflow()
