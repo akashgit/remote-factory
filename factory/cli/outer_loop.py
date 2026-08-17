@@ -172,7 +172,8 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
             return 1
 
-    registry = EphemeralModeRegistry(project_path)
+    target_dir = Path(config.target_project) if config.target_project else None
+    registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
     registry.prune_stale_modes()
     evaluator = SwarmEvaluator(
         config, inner_loop_factory=_make_inner_loop_factory(registry), project_dir=project_path,
@@ -402,7 +403,8 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     if not _check_disk_space(project_path, config.population_size):
         return 1
 
-    registry = EphemeralModeRegistry(project_path)
+    target_dir = Path(config.target_project) if config.target_project else None
+    registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
     registry.prune_stale_modes()
     modes = registry.list_modes()
     if not modes:
