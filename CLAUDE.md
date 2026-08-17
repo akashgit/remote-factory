@@ -133,7 +133,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ├── adversarial_state.json    # Adversarial loop state (phase, streaks, history)
 ├── outer_loop/               # Evolutionary workflow search state
 │   ├── config.json           # SwarmConfig for the current run
-│   ├── checkpoint.json       # OuterLoopState for crash recovery
+│   ├── state.json            # OuterLoopState for crash recovery
 │   ├── population/           # Serialized Population (population.json)
 │   ├── archive/              # Serialized MAPElitesArchive (grid.json)
 │   ├── modes/                # Ephemeral mode JSONs (evolve-gen{N}-{id}.json)

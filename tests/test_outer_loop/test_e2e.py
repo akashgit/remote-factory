@@ -368,14 +368,14 @@ class TestE2EFilesystem:
         )
         save_generation(tmp_path, 0, summary, pop)
 
-        gen_dir = tmp_path / ".factory" / "outer-loop" / "archive" / "generation-000"
+        gen_dir = tmp_path / ".factory" / "outer_loop" / "archive" / "generation-000"
         assert gen_dir.exists()
         assert (gen_dir / "summary.json").exists()
         assert (gen_dir / "hyperparameters.json").exists()
         assert (gen_dir / "variant-00" / "workflow.json").exists()
         assert (gen_dir / "variant-00" / "scores.json").exists()
 
-        traj = tmp_path / ".factory" / "outer-loop" / "trajectory.jsonl"
+        traj = tmp_path / ".factory" / "outer_loop" / "trajectory.jsonl"
         lines = traj.read_text().strip().splitlines()
         assert len(lines) == 1
         entry = json.loads(lines[0])
@@ -429,9 +429,9 @@ class TestE2EFullPipeline:
         )
 
         assert export_path.exists()
-        assert (tmp_path / ".factory" / "outer-loop" / "state.json").exists()
-        assert (tmp_path / ".factory" / "outer-loop" / "best" / "workflow.json").exists()
-        assert (tmp_path / ".factory" / "outer-loop" / "map-elites" / "grid.json").exists()
+        assert (tmp_path / ".factory" / "outer_loop" / "state.json").exists()
+        assert (tmp_path / ".factory" / "outer_loop" / "best" / "workflow.json").exists()
+        assert (tmp_path / ".factory" / "outer_loop" / "map-elites" / "grid.json").exists()
 
         loaded = load_checkpoint(tmp_path)
         assert loaded is not None

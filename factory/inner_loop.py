@@ -388,7 +388,7 @@ class InnerLoop:
             heuristic_score += 0.2
         if agents_failed == 0 and agents_spawned > 0:
             heuristic_score += 0.2
-        if returncode == 0:
+        if experiments > 0:
             heuristic_score += 0.2
 
         score = test_score if test_score is not None else heuristic_score

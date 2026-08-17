@@ -135,6 +135,59 @@ class TestWriteCycleSummary:
         assert data["cost_usd"] == 2.0
 
 
+class TestHeuristicScoreWeights:
+    """Verify each heuristic signal contributes exactly 0.2, no double-counting."""
+
+    def _score(self, loop: InnerLoop, factory_dir: Path, **kwargs: object) -> float:
+        defaults: dict[str, object] = {
+            "returncode": 1, "event_offset": 0, "duration_ms": 100,
+            "builder_committed": False, "experiments": 0,
+        }
+        defaults.update(kwargs)
+        loop._write_cycle_summary(**defaults)  # type: ignore[arg-type]
+        summary_path = (
+            factory_dir / "outer_loop" / "runs" / "evolve-test" / "cycle_summary.json"
+        )
+        return json.loads(summary_path.read_text())["heuristic_score"]
+
+    def test_signal_agents_spawned(self, loop: InnerLoop, factory_dir: Path) -> None:
+        _write_events(factory_dir, [
+            {"type": "agent.started", "agent": "x"},
+            {"type": "agent.failed", "agent": "x", "data": {}},
+        ])
+        assert self._score(loop, factory_dir) == 0.2
+
+    def test_signal_builder_committed(self, loop: InnerLoop, factory_dir: Path) -> None:
+        assert self._score(loop, factory_dir, builder_committed=True) == 0.2
+
+    def test_signal_returncode_zero(self, loop: InnerLoop, factory_dir: Path) -> None:
+        assert self._score(loop, factory_dir, returncode=0) == 0.2
+
+    def test_signal_no_failures(self, loop: InnerLoop, factory_dir: Path) -> None:
+        _write_events(factory_dir, [
+            {"type": "agent.started", "agent": "x"},
+            {"type": "agent.completed", "agent": "x", "data": {"total_cost_usd": 0}},
+        ])
+        assert self._score(loop, factory_dir) == 0.4  # agents_spawned + no_failures
+
+    def test_signal_experiments_recorded(self, loop: InnerLoop, factory_dir: Path) -> None:
+        assert self._score(loop, factory_dir, experiments=1) == 0.2
+
+    def test_all_signals_sum_to_one(self, loop: InnerLoop, factory_dir: Path) -> None:
+        _write_events(factory_dir, [
+            {"type": "agent.started", "agent": "b"},
+            {"type": "agent.completed", "agent": "b", "data": {"total_cost_usd": 0}},
+        ])
+        score = self._score(
+            loop, factory_dir, returncode=0, builder_committed=True, experiments=1,
+        )
+        assert score == 1.0
+
+    def test_no_double_counting_returncode(self, loop: InnerLoop, factory_dir: Path) -> None:
+        score = self._score(loop, factory_dir, returncode=0, experiments=0)
+        assert score == 0.2  # returncode contributes exactly once
+
+
 class TestReadCycleSummaryScore:
     def test_reads_existing_summary(self, tmp_path: Path) -> None:
         summary_dir = tmp_path / ".factory" / "outer_loop" / "runs" / "evolve-x"

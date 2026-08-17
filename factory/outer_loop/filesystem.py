@@ -20,11 +20,11 @@ log = structlog.get_logger()
 
 
 def init_filesystem(project_path: Path, config: SwarmConfig) -> Path:
-    """Create the .factory/outer-loop/ directory structure.
+    """Create the .factory/outer_loop/ directory structure.
 
-    Returns the outer-loop root directory.
+    Returns the outer_loop root directory.
     """
-    root = project_path / ".factory" / "outer-loop"
+    root = project_path / ".factory" / "outer_loop"
     root.mkdir(parents=True, exist_ok=True)
 
     (root / "archive").mkdir(exist_ok=True)
@@ -60,8 +60,8 @@ def save_generation(
     summary: GenerationSummary,
     population: Population,
 ) -> None:
-    """Save generation artifacts to .factory/outer-loop/archive/generation-NNN/."""
-    root = project_path / ".factory" / "outer-loop"
+    """Save generation artifacts to .factory/outer_loop/archive/generation-NNN/."""
+    root = project_path / ".factory" / "outer_loop"
     gen_dir = root / "archive" / f"generation-{generation:03d}"
     gen_dir.mkdir(parents=True, exist_ok=True)
 
@@ -106,8 +106,8 @@ def save_checkpoint(
     project_path: Path,
     state: OuterLoopState,
 ) -> None:
-    """Write OuterLoopState to .factory/outer-loop/state.json."""
-    state_path = project_path / ".factory" / "outer-loop" / "state.json"
+    """Write OuterLoopState to .factory/outer_loop/state.json."""
+    state_path = project_path / ".factory" / "outer_loop" / "state.json"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         json.dumps(state.model_dump(mode="json"), indent=2)
@@ -116,8 +116,8 @@ def save_checkpoint(
 
 
 def load_checkpoint(project_path: Path) -> OuterLoopState | None:
-    """Load OuterLoopState from .factory/outer-loop/state.json if it exists."""
-    state_path = project_path / ".factory" / "outer-loop" / "state.json"
+    """Load OuterLoopState from .factory/outer_loop/state.json if it exists."""
+    state_path = project_path / ".factory" / "outer_loop" / "state.json"
     if not state_path.exists():
         return None
     try:
@@ -129,8 +129,8 @@ def load_checkpoint(project_path: Path) -> OuterLoopState | None:
 
 
 def load_config(project_path: Path) -> SwarmConfig | None:
-    """Load SwarmConfig from .factory/outer-loop/config.json if it exists."""
-    config_path = project_path / ".factory" / "outer-loop" / "config.json"
+    """Load SwarmConfig from .factory/outer_loop/config.json if it exists."""
+    config_path = project_path / ".factory" / "outer_loop" / "config.json"
     if not config_path.exists():
         return None
     try:
@@ -142,8 +142,8 @@ def load_config(project_path: Path) -> SwarmConfig | None:
 
 
 def save_map_elites(project_path: Path, archive: MAPElitesArchive) -> None:
-    """Persist the MAP-Elites grid to .factory/outer-loop/map-elites/grid.json."""
-    grid_path = project_path / ".factory" / "outer-loop" / "map-elites" / "grid.json"
+    """Persist the MAP-Elites grid to .factory/outer_loop/map-elites/grid.json."""
+    grid_path = project_path / ".factory" / "outer_loop" / "map-elites" / "grid.json"
     grid_path.parent.mkdir(parents=True, exist_ok=True)
 
     grid_data: dict[str, object] = {}
@@ -157,8 +157,8 @@ def save_best(
     project_path: Path,
     result: OuterLoopResult,
 ) -> None:
-    """Write the best workflow and audit results to .factory/outer-loop/best/."""
-    best_dir = project_path / ".factory" / "outer-loop" / "best"
+    """Write the best workflow and audit results to .factory/outer_loop/best/."""
+    best_dir = project_path / ".factory" / "outer_loop" / "best"
     best_dir.mkdir(parents=True, exist_ok=True)
 
     (best_dir / "workflow.json").write_text(
@@ -221,7 +221,7 @@ def export_best_workflow(
 
     export_path.write_text(content)
 
-    also_best = project_path / ".factory" / "outer-loop" / "best" / "workflow.py"
+    also_best = project_path / ".factory" / "outer_loop" / "best" / "workflow.py"
     also_best.parent.mkdir(parents=True, exist_ok=True)
     also_best.write_text(export_path.read_text())
 
