@@ -194,7 +194,7 @@ def cmd_optimize_step_run_test(args: argparse.Namespace) -> int:
 
 
 def cmd_optimize_step_apply_patch(args: argparse.Namespace) -> int:
-    """Read mutation.json, append rules to current_skill.md."""
+    """Read mutation.json, replace ## Learned Rules in current_skill.md."""
     project = Path(args.project).resolve()
     mutation_path = _opt_dir(project) / "mutation.json"
 
@@ -204,7 +204,6 @@ def cmd_optimize_step_apply_patch(args: argparse.Namespace) -> int:
 
     raw = mutation_path.read_text().strip()
 
-    # Parse JSON — with regex fallback for markdown-wrapped JSON
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -227,12 +226,19 @@ def cmd_optimize_step_apply_patch(args: argparse.Namespace) -> int:
     skill_path = _opt_dir(project) / "current_skill.md"
     skill_text = skill_path.read_text() if skill_path.exists() else ""
 
-    new_rules = "\n## Learned Rules\n\n"
-    for rule in rules:
-        new_rules += f"- {rule}\n"
+    # Save snapshot before mutation for revert on RELOOP
+    snapshot_path = _opt_dir(project) / "skill_snapshot.md"
+    snapshot_path.write_text(skill_text)
 
-    skill_text += new_rules
-    skill_path.write_text(skill_text)
+    # Strip all existing ## Learned Rules blocks, then add one clean block
+    base = re.split(r"\n## Learned Rules\b", skill_text)[0].rstrip()
+    new_rules = "\n\n## Learned Rules\n\n"
+    for rule in rules:
+        if isinstance(rule, str) and rule.strip():
+            new_rules += f"- {rule.strip()}\n"
+
+    skill_path.write_text(base + new_rules)
+    skill_path.touch()
 
     log.info("optimize_step.apply_patch", n_rules=len(rules))
     print(json.dumps({"rules_applied": len(rules)}))
@@ -287,5 +293,13 @@ def cmd_optimize_step_check_gate(args: argparse.Namespace) -> int:
         print(f"PROCEED: {gate.reason}")
         return 0
     else:
+        # Revert skill to pre-mutation snapshot
+        snapshot_path = _opt_dir(project) / "skill_snapshot.md"
+        skill_path = _opt_dir(project) / "current_skill.md"
+        if snapshot_path.exists():
+            import shutil
+            shutil.copy2(snapshot_path, skill_path)
+            skill_path.touch()
+            log.info("optimize_step.revert", reason="gate rejected, restored snapshot")
         print(f"RELOOP: {gate.reason}")
         return 0

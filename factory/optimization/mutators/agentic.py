@@ -130,10 +130,11 @@ class AgenticMutator:
         # New format: {"rules": ["rule1", "rule2"], "reasoning": "..."}
         rules = parsed.get("rules", [])
         if rules and isinstance(rules, list):
-            rules_block = "\n## Learned Rules\n" + "\n".join(
+            rules_block = "\n\n## Learned Rules\n\n" + "\n".join(
                 f"- {r}" for r in rules if isinstance(r, str) and r.strip()
             ) + "\n"
-            new_skill = current_skill.rstrip() + "\n" + rules_block
+            base = re.split(r"\n## Learned Rules\b", current_skill)[0].rstrip()
+            new_skill = base + rules_block
             slot_edits = [SlotEdit(slot_name="skill", old_value=current_skill, new_value=new_skill)]
             log.info("mutator.agentic.parsed", num_rules=len(rules), reasoning=reasoning[:80])
             return Patch(prompt_edits=slot_edits, reasoning=reasoning)
