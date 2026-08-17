@@ -384,6 +384,29 @@ class WorkflowExecutor:
                 return
 
             key = (node_id, target)
+
+            target_node = self.workflow.nodes.get(target)
+            if isinstance(target_node, AgentNode) and target_node.max_iterations > 0:
+                verdict = Verdict(
+                    type=verdict.type,
+                    target=verdict.target,
+                    feedback=verdict.feedback,
+                    max_iterations=target_node.max_iterations,
+                    reason=verdict.reason,
+                )
+            elif isinstance(target_node, FnNode):
+                next_after_fn = self._next_unconditional(target)
+                if next_after_fn:
+                    chained = self.workflow.nodes.get(next_after_fn)
+                    if isinstance(chained, AgentNode) and chained.max_iterations > 0:
+                        verdict = Verdict(
+                            type=verdict.type,
+                            target=verdict.target,
+                            feedback=verdict.feedback,
+                            max_iterations=chained.max_iterations,
+                            reason=verdict.reason,
+                        )
+
             count = self.iteration_counts.get(key, 0) + 1
             self.iteration_counts[key] = count
 

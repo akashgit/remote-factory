@@ -8,6 +8,8 @@ import pytest
 
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
     Edge,
     FnNode,
     ForkNode,
@@ -479,3 +481,99 @@ class TestAutoApprove:
         assert result.success
         auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
         assert len(auto_approved) == 0
+
+
+# ── AgentNode.max_iterations override ──────────────────────────
+
+
+class TestAgentNodeMaxIterations:
+    async def test_agent_max_iterations_overrides_verdict_default(
+        self, tmp_project: Path
+    ) -> None:
+        """AgentNode.max_iterations controls reloop limit, not the Verdict default."""
+        call_count = 0
+
+        async def mock_evaluate_gate(node: GateNode) -> Verdict:
+            nonlocal call_count
+            call_count += 1
+            return Verdict.reloop("builder", f"try again #{call_count}")
+
+        wf = Workflow(
+            name="agent_max_iter",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                    max_iterations=2,
+                    writes={"build.txt"},
+                ),
+                "gate": GateNode(
+                    id="gate",
+                    evaluator_type="fn",
+                    reads={"build.txt"},
+                ),
+            },
+            edges=[
+                Edge(source="builder", target="gate"),
+                Edge(source="gate", target="builder", condition=VerdictType.RELOOP),
+            ],
+            start_node="builder",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor._evaluate_gate = mock_evaluate_gate  # type: ignore[assignment]
+        result = await executor.execute()
+
+        assert result.halted
+        assert "max iterations (2)" in result.halt_reason
+        assert call_count == 3
+
+    async def test_fnnode_chain_reads_agent_max_iterations(
+        self, tmp_project: Path
+    ) -> None:
+        """When RELOOP targets a FnNode that chains to an AgentNode,
+        the AgentNode's max_iterations is used."""
+        call_count = 0
+
+        async def mock_evaluate_gate(node: GateNode) -> Verdict:
+            nonlocal call_count
+            call_count += 1
+            return Verdict.reloop("diagnostics", f"try again #{call_count}")
+
+        wf = Workflow(
+            name="fn_chain_max_iter",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                    max_iterations=2,
+                    writes={"build.txt"},
+                ),
+                "gate": GateNode(
+                    id="gate",
+                    evaluator_type="fn",
+                    reads={"build.txt"},
+                ),
+                "diagnostics": FnNode(
+                    id="diagnostics",
+                    command="echo diag",
+                    writes={"diag.txt"},
+                ),
+            },
+            edges=[
+                Edge(source="builder", target="gate"),
+                Edge(source="gate", target="diagnostics", condition=VerdictType.RELOOP),
+                Edge(source="diagnostics", target="builder"),
+            ],
+            start_node="builder",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor._evaluate_gate = mock_evaluate_gate  # type: ignore[assignment]
+        result = await executor.execute()
+
+        assert result.halted
+        assert "max iterations (2)" in result.halt_reason
+        assert call_count == 3

@@ -1,7 +1,6 @@
 """FeatureBench benchmark workflow — feature implementation pipeline for containerized evaluation.
 
-4-node pipeline: study → builder → gate_verify → auto_merge
-RELOOP from gate_verify back to builder (max 3 iterations) on test failure.
+5-node pipeline: study → builder → gate_tests → auto_merge (PROCEED) / diagnostics → builder (RELOOP)
 
 Designed for Harbor containers where:
 - Task instruction is at /tmp/task-instruction.md (detailed problem statement with
@@ -29,9 +28,11 @@ from factory.workflow.primitives import (
 meta = {
     "name": "featurebench",
     "description": (
-        "FeatureBench benchmark mode — 4-node pipeline for implementing "
+        "FeatureBench benchmark mode — 5-node pipeline for implementing "
         "new features in Python codebases with explicit interface specs. "
-        "study → builder → gate_verify → auto_merge with RELOOP on test failure."
+        "study → builder → gate_tests → auto_merge (PROCEED) / "
+        "diagnostics → builder (RELOOP). Gate runs pytest directly; "
+        "diagnostics is a FnNode shell script (no LLM cost)."
     ),
 }
 
@@ -84,7 +85,9 @@ def workflow() -> Workflow:
             "2. **Understand the existing codebase** — Explore the repository "
             "structure thoroughly. Read related source files, understand module "
             "layout, imports, and existing patterns. Check the study output at "
-            ".factory/reviews/study-output.md for a structural overview.\n\n"
+            ".factory/reviews/study-output.md for a structural overview. "
+            "**Identify the most relevant source files for the feature and read "
+            "them before writing any code.**\n\n"
             "3. **CRITICAL: Read before you write** — Before implementing ANY "
             "function, navigate to and READ the actual source code for every "
             "function, class, or module you reference. DO NOT guess function "
@@ -104,10 +107,15 @@ def workflow() -> Workflow:
             "your implementation. Look specifically for NameError, ImportError, "
             "and TypeError in test output — these are signals of missing cross-file "
             "connections or interface mismatches.\n\n"
-            "7. **Iterate on test failures** — If tests fail, trace the error "
+            "7. **Read diagnostic feedback** — If the file "
+            ".factory/reviews/diagnostics.md exists, read it carefully. It contains "
+            "parsed test failure summaries from a previous iteration. Use the error "
+            "type summary and root cause hints to guide your fixes. Focus on the "
+            "specific test failures listed — do not make unrelated changes.\n\n"
+            "8. **Iterate on test failures** — If tests fail, trace the error "
             "to its root cause. Fix missing dependencies, correct interface "
             "mismatches, and re-run until tests pass.\n\n"
-            "8. **Commit your changes** — Commit directly on the current branch "
+            "9. **Commit your changes** — Commit directly on the current branch "
             "with a descriptive message. Do NOT create a new branch. Do NOT "
             "create a PR.\n\n"
             "## Rules\n\n"
@@ -128,29 +136,94 @@ def workflow() -> Workflow:
         writes={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Node 3: Gate Verify ────────────────────────────────────────
-    nodes["gate_verify"] = GateNode(
-        id="gate_verify",
+    # ── Node 3: Gate Tests ─────────────────────────────────────────
+    nodes["gate_tests"] = GateNode(
+        id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
             "cd {project_path} && "
-            "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
-            "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
-            "echo 'fail: builder did not commit any changes'; "
-            "exit 0; fi && "
-            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then "
-            "echo 'pass: builder reports tests passing'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(fail|error|FAILED)'; then "
-            "echo 'reloop: builder needs to retry — tests did not pass'; "
+            "mkdir -p .factory/reviews && "
+            "TEST_FILES=$(find . -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -1) && "
+            "if [ -n \"$TEST_FILES\" ]; then "
+            "conda run -n testbed pytest /testbed -x --tb=short "
+            "> .factory/reviews/gate-pytest-output.txt 2>&1; "
+            "RC=$?; "
+            "FAIL_COUNT=$(grep -cE '^FAILED ' .factory/reviews/gate-pytest-output.txt "
+            "2>/dev/null || echo 0); "
+            "PREV_COUNT=$(cat .factory/reviews/gate-prev-fail-count.txt 2>/dev/null "
+            "|| echo -1); "
+            "echo \"$FAIL_COUNT\" > .factory/reviews/gate-prev-fail-count.txt; "
+            "if [ $RC -eq 0 ]; then "
+            "echo 'pass: all tests passed'; "
+            "elif [ \"$PREV_COUNT\" != \"-1\" ] && [ \"$FAIL_COUNT\" -gt \"$PREV_COUNT\" ]; then "
+            "echo 'fail: regression detected — iteration has more failures than previous "
+            "('\"$FAIL_COUNT\"' > '\"$PREV_COUNT\"')'; "
             "else "
-            "echo 'pass: changes committed, no issues detected'; "
+            "echo 'reloop: pytest failed ('\"$FAIL_COUNT\"' failures) — "
+            "see .factory/reviews/gate-pytest-output.txt'; "
+            "fi; "
+            "else "
+            "echo 'pass: no test files found — L2 task, proceeding'; "
             "fi"
         ),
         reads={".factory/reviews/builder-latest.md"},
+        writes={
+            ".factory/reviews/gate-pytest-output.txt",
+            ".factory/reviews/gate-prev-fail-count.txt",
+        },
     )
 
-    # ── Node 4: Auto Merge ─────────────────────────────────────────
+    # ── Node 4: Diagnostics (FnNode — no LLM cost) ────────────────
+    nodes["diagnostics"] = FnNode(
+        id="diagnostics",
+        command=(
+            "cd {project_path} && "
+            "PYTEST_OUT=.factory/reviews/gate-pytest-output.txt && "
+            "DIAG_OUT=.factory/reviews/diagnostics.md && "
+            "if [ ! -f \"$PYTEST_OUT\" ]; then "
+            "echo '# Diagnostics\n\nNo pytest output found.' > \"$DIAG_OUT\"; "
+            "exit 0; fi && "
+            "("
+            "echo '# Diagnostic Summary' && "
+            "echo '' && "
+            "echo '## Failed Tests' && "
+            "echo '' && "
+            "grep -E '^FAILED ' \"$PYTEST_OUT\" | while read -r line; do "
+            "TEST_NAME=$(echo \"$line\" | sed 's/^FAILED //; s/ -.*//'); "
+            "echo \"### $TEST_NAME\" && "
+            "echo '```' && "
+            "awk \"/$TEST_NAME/,/^(FAILED|PASSED|ERROR|=)/{print}\" \"$PYTEST_OUT\" "
+            "| head -30 && "
+            "echo '```' && "
+            "echo ''; "
+            "done && "
+            "echo '## Error Type Summary' && "
+            "echo '' && "
+            "grep -oE '(NameError|ImportError|TypeError|AttributeError|ValueError"
+            "|KeyError|ModuleNotFoundError)[^:]*' \"$PYTEST_OUT\" | "
+            "sort | uniq -c | sort -rn | head -10 && "
+            "echo '' && "
+            "echo '## Root Cause Hints' && "
+            "echo '' && "
+            "grep -c 'NameError' \"$PYTEST_OUT\" > /dev/null 2>&1 && "
+            "echo '- NameError: missing cross-file references — check imports "
+            "and function definitions' || true && "
+            "grep -c 'ImportError' \"$PYTEST_OUT\" > /dev/null 2>&1 && "
+            "echo '- ImportError: module not found — verify package structure "
+            "and __init__.py' || true && "
+            "grep -c 'TypeError' \"$PYTEST_OUT\" > /dev/null 2>&1 && "
+            "echo '- TypeError: signature mismatch — check function parameter "
+            "types and counts' || true && "
+            "grep -c 'AttributeError' \"$PYTEST_OUT\" > /dev/null 2>&1 && "
+            "echo '- AttributeError: missing method/property — read the class "
+            "definition before referencing' || true"
+            ") > \"$DIAG_OUT\" 2>&1 || true"
+        ),
+        reads={".factory/reviews/gate-pytest-output.txt"},
+        writes={".factory/reviews/diagnostics.md"},
+    )
+
+    # ── Node 5: Auto Merge ─────────────────────────────────────────
     nodes["auto_merge"] = FnNode(
         id="auto_merge",
         command=(
@@ -178,9 +251,10 @@ def workflow() -> Workflow:
 
     edges = [
         Edge(source="study", target="builder"),
-        Edge(source="builder", target="gate_verify"),
-        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
-        Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="builder", target="gate_tests"),
+        Edge(source="gate_tests", target="auto_merge", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="diagnostics", condition=VerdictType.RELOOP),
+        Edge(source="diagnostics", target="builder"),
     ]
 
     # ── Trigger ────────────────────────────────────────────────────
