@@ -394,7 +394,9 @@ class TestStudyWorkflow:
         wf = study_standalone_workflow()
         node = wf.nodes["graph_explorer"]
         prompt = node.prompt_template
-        assert 'factory graph status' in prompt, "prompt must include explicit graph detection step"
+        assert "test -f graph.json" in prompt, (
+            "smoke check must use relative path (CWD is project root)"
+        )
         assert 'factory graph query "{project_path}"' in prompt, (
             "graph query command must use {project_path} template"
         )
