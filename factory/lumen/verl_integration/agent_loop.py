@@ -28,7 +28,6 @@ from verl.experimental.agent_loop import (
     get_trajectory_info,
 )
 from verl.experimental.agent_loop.agent_loop import AgentLoopMetrics
-from verl.protocol import DataProto
 from verl.utils.ray_utils import auto_await
 from verl.utils.tensordict_utils import list_of_dict_to_tensordict
 
@@ -121,8 +120,12 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
             prompt_ids = self._tokenizer.apply_chat_template(
                 messages, tokenize=True, add_generation_prompt=True
             )
+            if hasattr(prompt_ids, "input_ids"):
+                prompt_ids = prompt_ids["input_ids"]
             if isinstance(prompt_ids, torch.Tensor):
                 prompt_ids = prompt_ids.tolist()
+            elif not isinstance(prompt_ids, list):
+                prompt_ids = list(prompt_ids)
 
             prompt["_prompt_ids"] = prompt_ids
 
@@ -332,9 +335,7 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
         field["data_source"] = self._lumen_config.get("data_source", "lumen")
         field["num_turns"] = 1
         field.pop("multi_modal_data", None)
-        field["fine_grained_mask"] = field["response_mask"]
-        field["response_mask"] = [1] * len(output.response_ids)
-        field["loss_mask"] = field["fine_grained_mask"]
+        field["loss_mask"] = field["response_mask"]
         field["input_ids"] = input_ids
         field["position_ids"] = position_ids
         field["attention_mask"] = attention_mask
@@ -388,22 +389,45 @@ class LumenAgentLoopManagerTQ(AgentLoopManager):
         reward_loop_worker_handles=None,
     ):
         super().__init__(config, llm_client, teacher_client, reward_loop_worker_handles)
-        self._lumen_config = {}
+
+        # Read config from environment variables (set by run_verl.py)
+        import os
+        self._lumen_config = {
+            "task_dir": os.environ.get("LUMEN_TASK_DIR", ""),
+            "phase1_max_tokens": int(os.environ.get("LUMEN_PHASE1_MAX_TOKENS", "26000")),
+            "eval_timeout": int(os.environ.get("LUMEN_EVAL_TIMEOUT", "530")),
+            "max_model_len": int(os.environ.get("LUMEN_MAX_MODEL_LEN", "32768")),
+        }
+
+    @classmethod
+    @auto_await
+    async def create(cls, *args, **kwargs):
+        """Factory method to create and initialize Manager with Workers."""
+        instance = cls(*args, **kwargs)
+        await instance._init_agent_loop_workers()
+
+        # Configure all workers with Lumen config
+        ray.get([
+            worker.set_lumen_config.remote(instance._lumen_config)
+            for worker in instance.agent_loop_workers
+        ])
+
+        return instance
 
     def set_lumen_config(self, lumen_config: dict):
         self._lumen_config = lumen_config
         for worker in self.agent_loop_workers:
             ray.get(worker.set_lumen_config.remote(lumen_config))
 
-    @auto_await
-    async def generate_sequences(self, prompts):
+    def generate_sequences(self, prompts: TensorDict) -> None:
         """Assign prompts directly to workers (no PUCT sampling)."""
         # Prompts come from parquet data source — just pass through to workers
         # The raw_prompt field is already set from the parquet's prompt column
 
-        # Ensure prompts is a DataProto (base class expects it)
-        if isinstance(prompts, TensorDict) and not isinstance(prompts, DataProto):
-            # Convert TensorDict to DataProto
-            prompts = DataProto(batch=prompts, non_tensor_batch={})
-
-        return await super().generate_sequences(prompts)
+        # Split batch and dispatch to workers (same as Discover's implementation)
+        # Don't call super() - we keep TensorDict type for workers
+        chunks = prompts.chunk(len(self.agent_loop_workers))
+        ray.get([
+            worker.generate_sequences.remote(chunk)
+            for worker, chunk in zip(self.agent_loop_workers, chunks, strict=False)
+        ])
