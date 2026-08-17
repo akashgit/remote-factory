@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse
 
-from factory.cli._helpers import CEO_MODES, RUN_MODES
+BUILTIN_AGENT_ROLES: frozenset[str] = frozenset({
+    "researcher", "strategist", "builder",
+    "health_checker", "code_reviewer", "adversarial_tester",
+    "archivist", "ceo", "failure_analyst", "refiner",
+})
 
 
 def add_project_setup_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -335,11 +339,8 @@ def add_validation_recovery_parsers(sub: argparse._SubParsersAction) -> None:  #
 
 def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder",
-                                     "health_checker", "code_reviewer", "adversarial_tester",
-                                     "archivist", "ceo",
-                                     "failure_analyst", "refiner"],
-                    help="Agent role to invoke")
+    p.add_argument("role",
+                    help="Agent role to invoke (built-in or plugin-registered)")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
     p.add_argument("--timeout", type=float, default=600.0,
@@ -372,11 +373,11 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     )
     p.add_argument(
         "--mode",
-        choices=CEO_MODES,
+        metavar="MODE",
         default="auto",
-        help="Operating mode. Only 'create' and 'design' are actively supported; "
-             "other modes (build, improve, research, meta, discover, review, refine, "
-             "parallel-improve, interactive) are deprecated — use --mode design instead",
+        help="Operating mode. Built-in: auto, design, create, improve, research, "
+             "build, discover, founder, meta, plan, evolve. "
+             "Project-local: project:<name> (loads from .factory/workflows/<name>.py)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -444,6 +445,19 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--overwrite", default=None, metavar="TEXT",
                     help="Natural-language directive to mutate the workflow for this session "
                          "(e.g. 'skip adversarial testing', 'add a lint step after build')")
+    p.add_argument("--auto-approve", action="store_true", default=False,
+                    help="Auto-approve user gates in design mode (skip interactive strategy review)")
+    p.add_argument("--from-plan", default=None, metavar="PLAN_SOURCE", dest="from_plan",
+                    help="Load an existing plan into design mode instead of running research. "
+                         "Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string. "
+                         "Requires --mode design; mutually exclusive with --focus and --prompt")
+    p.add_argument("--just-plan", action="store_true", default=False, dest="just_plan",
+                    help="Plan-only mode: research + strategy + GitHub publishing, NO implementation. "
+                         "Requires --mode design. Mutually exclusive with --from-plan and --prompt.")
+    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
+                    help="Execution engine: skill (CEO follows SKILL.md, default), "
+                         "tool (CEO drives via factory workflow tool commands), "
+                         "deterministic (headless WorkflowExecutor, no CEO)")
 
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
@@ -454,11 +468,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     )
     p.add_argument(
         "--mode",
-        choices=RUN_MODES,
+        metavar="MODE",
         default="auto",
-        help="Operating mode. Only 'create' and 'design' are actively supported; "
-             "other modes (build, improve, research, meta, discover, parallel-improve) "
-             "are deprecated — use --mode design instead",
+        help="Operating mode. Built-in: auto, improve, research, build, discover, "
+             "founder, meta. Project-local: project:<name>",
     )
     p.add_argument(
         "--focus", default=None,
@@ -517,15 +530,21 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--no-worktree", action="store_true", default=False, dest="no_worktree",
                     help="Run directly in the project directory without creating a worktree "
                          "(useful for testing in-flight branch changes)")
+    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
+                    help="Execution engine: skill (CEO follows SKILL.md, default), "
+                         "tool (CEO drives via factory workflow tool commands), "
+                         "deterministic (headless WorkflowExecutor, no CEO)")
     p.add_argument("--overwrite", default=None, metavar="TEXT",
                     help="Natural-language directive to mutate the workflow for this session")
+    p.add_argument("--auto-approve", action="store_true", default=False,
+                    help="Auto-approve user gates in design mode (skip interactive strategy review)")
 
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=CEO_MODES,
+        metavar="MODE",
         default="auto",
         help="Run mode (default: auto, respects in-flight cycle)",
     )
@@ -575,6 +594,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
+                    help="Execution engine: skill (CEO follows SKILL.md, default), "
+                         "tool (CEO drives via factory workflow tool commands), "
+                         "deterministic (headless WorkflowExecutor, no CEO)")
     p.add_argument("--overwrite", default=None, metavar="TEXT",
                     help="Natural-language directive to mutate the workflow for this session")
 
@@ -604,6 +627,9 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
                     help="Claude model override")
     p.add_argument("--loop", action="store_true", default=False,
                     help="Enable workflow-tune loop: adds /workflow-tune skill for iterative tuning")
+
+    from factory.cli.contained import build_contained_parser
+    build_contained_parser(sub)
 
     from factory.workflow.cli import add_workflow_parser
     add_workflow_parser(sub)  # type: ignore[arg-type]

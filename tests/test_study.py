@@ -109,10 +109,12 @@ class TestExtractMessages:
     def test_extracts_error_mentions(self, tmp_path):
         log_file = tmp_path / "test.jsonl"
         lines = [
-            json.dumps({
-                "type": "assistant",
-                "message": {"content": "I found an error in the config.\nThe import failed."},
-            }),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": "I found an error in the config.\nThe import failed."},
+                }
+            ),
         ]
         log_file.write_text("\n".join(lines))
 
@@ -125,15 +127,17 @@ class TestExtractMessages:
     def test_handles_content_blocks(self, tmp_path):
         log_file = tmp_path / "test.jsonl"
         lines = [
-            json.dumps({
-                "type": "user",
-                "message": {
-                    "content": [
-                        {"type": "text", "text": "Hello "},
-                        {"type": "text", "text": "world"},
-                    ],
-                },
-            }),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "Hello "},
+                            {"type": "text", "text": "world"},
+                        ],
+                    },
+                }
+            ),
         ]
         log_file.write_text("\n".join(lines))
 
@@ -161,14 +165,18 @@ class TestExtractMessages:
     def test_skips_system_prompts(self, tmp_path):
         log_file = tmp_path / "test.jsonl"
         lines = [
-            json.dumps({
-                "type": "user",
-                "message": {"content": "Base directory: /foo/bar"},
-            }),
-            json.dumps({
-                "type": "user",
-                "message": {"content": "<task-notification>something</task-notification>"},
-            }),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"content": "Base directory: /foo/bar"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"content": "<task-notification>something</task-notification>"},
+                }
+            ),
         ]
         log_file.write_text("\n".join(lines))
 
@@ -207,10 +215,12 @@ class TestStudyProjectLocal:
 
         lines = [
             json.dumps({"type": "user", "message": {"content": "Add tests"}}),
-            json.dumps({
-                "type": "assistant",
-                "message": {"content": "The build failed due to a missing import."},
-            }),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": "The build failed due to a missing import."},
+                }
+            ),
         ]
         (log_dir / "conv.jsonl").write_text("\n".join(lines))
 
@@ -414,8 +424,7 @@ class TestExtractKeywords:
         project = tmp_path / "myapp"
         project.mkdir()
         (project / "pyproject.toml").write_text(
-            '[project]\nname = "data-pipeline"\n'
-            'description = "Stream processing toolkit"\n'
+            '[project]\nname = "data-pipeline"\ndescription = "Stream processing toolkit"\n'
         )
         keywords = _extract_keywords(project)
         assert "data" in keywords
@@ -431,9 +440,7 @@ class TestExtractKeywords:
     def test_filters_stop_words(self, tmp_path):
         project = tmp_path / "myapp"
         project.mkdir()
-        (project / "README.md").write_text(
-            "# The Project\nThis is a tool for the web.\n"
-        )
+        (project / "README.md").write_text("# The Project\nThis is a tool for the web.\n")
         keywords = _extract_keywords(project)
         assert "the" not in keywords
         assert "this" not in keywords
@@ -442,9 +449,7 @@ class TestExtractKeywords:
     def test_returns_max_five(self, tmp_path):
         project = tmp_path / "myapp"
         project.mkdir()
-        (project / "README.md").write_text(
-            "# Alpha Beta Gamma Delta Epsilon Zeta Eta Theta\n"
-        )
+        (project / "README.md").write_text("# Alpha Beta Gamma Delta Epsilon Zeta Eta Theta\n")
         keywords = _extract_keywords(project)
         assert len(keywords) <= 5
 
@@ -462,20 +467,22 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Task Runner\nRun tasks efficiently.\n")
 
-        gh_output = json.dumps([
-            {
-                "fullName": "org/task-runner",
-                "url": "https://github.com/org/task-runner",
-                "description": "A fast task runner",
-                "stargazersCount": 100,
-            },
-            {
-                "fullName": "user/runner2",
-                "url": "https://github.com/user/runner2",
-                "description": None,
-                "stargazersCount": 50,
-            },
-        ])
+        gh_output = json.dumps(
+            [
+                {
+                    "fullName": "org/task-runner",
+                    "url": "https://github.com/org/task-runner",
+                    "description": "A fast task runner",
+                    "stargazersCount": 100,
+                },
+                {
+                    "fullName": "user/runner2",
+                    "url": "https://github.com/user/runner2",
+                    "description": None,
+                    "stargazersCount": 50,
+                },
+            ]
+        )
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=gh_output, stderr=""
         )
@@ -494,9 +501,7 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Some Project\n")
 
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
-        ):
+        with patch("factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")):
             results = _search_similar_projects(project)
         assert results == []
 
@@ -561,37 +566,35 @@ class TestGetGithubUser:
             assert _get_github_user() is None
 
     def test_returns_none_on_missing_gh(self):
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
-        ):
+        with patch("factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")):
             assert _get_github_user() is None
 
     def test_returns_none_on_empty_output(self):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
+        mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with patch("factory.study.subprocess.run", return_value=mock_result):
             assert _get_github_user() is None
 
 
 class TestFetchOpenIssues:
     def test_success(self, tmp_path):
-        gh_output = json.dumps([
-            {
-                "number": 42,
-                "title": "Fix login bug",
-                "labels": [{"name": "bug"}, {"name": "priority"}],
-                "body": "Login fails when password contains special chars.",
-                "author": {"login": "owner"},
-            },
-            {
-                "number": 7,
-                "title": "Add dark mode",
-                "labels": [],
-                "body": None,
-                "author": {"login": "contributor"},
-            },
-        ])
+        gh_output = json.dumps(
+            [
+                {
+                    "number": 42,
+                    "title": "Fix login bug",
+                    "labels": [{"name": "bug"}, {"name": "priority"}],
+                    "body": "Login fails when password contains special chars.",
+                    "author": {"login": "owner"},
+                },
+                {
+                    "number": 7,
+                    "title": "Add dark mode",
+                    "labels": [],
+                    "body": None,
+                    "author": {"login": "contributor"},
+                },
+            ]
+        )
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=gh_output, stderr=""
         )
@@ -608,9 +611,7 @@ class TestFetchOpenIssues:
         assert issues[1]["author"] == "contributor"
 
     def test_gh_not_found(self, tmp_path):
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
-        ):
+        with patch("factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")):
             assert _fetch_open_issues(tmp_path) == []
 
     def test_gh_timeout(self, tmp_path):
@@ -636,11 +637,17 @@ class TestFetchOpenIssues:
 
     def test_body_truncated_to_300(self, tmp_path):
         long_body = "x" * 500
-        gh_output = json.dumps([{
-            "number": 1, "title": "Long issue",
-            "labels": [], "body": long_body,
-            "author": {"login": "someone"},
-        }])
+        gh_output = json.dumps(
+            [
+                {
+                    "number": 1,
+                    "title": "Long issue",
+                    "labels": [],
+                    "body": long_body,
+                    "author": {"login": "someone"},
+                }
+            ]
+        )
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=gh_output, stderr=""
         )
@@ -948,18 +955,11 @@ class TestExtractDeferredBullets:
         assert _extract_backlog_bullets(content) == ["Rate limiting"]
 
     def test_stops_at_next_heading(self):
-        content = (
-            "## Deferred\n- Item one\n- Item two\n"
-            "## Next Section\n- Not deferred\n"
-        )
+        content = "## Deferred\n- Item one\n- Item two\n## Next Section\n- Not deferred\n"
         assert _extract_backlog_bullets(content) == ["Item one", "Item two"]
 
     def test_handles_multiple_deferred_sections(self):
-        content = (
-            "## Deferred\n- First\n"
-            "## Other\n- Skip\n"
-            "### Backlog\n- Second\n"
-        )
+        content = "## Deferred\n- First\n## Other\n- Skip\n### Backlog\n- Second\n"
         assert _extract_backlog_bullets(content) == ["First", "Second"]
 
     def test_skips_empty_bullets(self):
@@ -980,9 +980,7 @@ class TestExtractDeferredBullets:
 
     def test_preserves_bold_in_items(self):
         content = "## Deferred\n- **Docker-Wyze-Bridge** camera integration\n"
-        assert _extract_backlog_bullets(content) == [
-            "**Docker-Wyze-Bridge** camera integration"
-        ]
+        assert _extract_backlog_bullets(content) == ["**Docker-Wyze-Bridge** camera integration"]
 
     def test_ignores_non_bullet_lines(self):
         content = "## Deferred\nSome paragraph text.\n- Actual item\n\nMore text.\n"
@@ -995,14 +993,13 @@ class TestExtractDeferredBullets:
             "- Docker-Wyze-Bridge\n- RSS feed\n- Deployment\n\n"
         )
         assert _extract_backlog_bullets(content) == [
-            "Docker-Wyze-Bridge", "RSS feed", "Deployment",
+            "Docker-Wyze-Bridge",
+            "RSS feed",
+            "Deployment",
         ]
 
     def test_bold_heading_stops_at_next_bold_heading(self):
-        content = (
-            "**Deferred:**\n- Item one\n- Item two\n"
-            "**Other section:**\n- Not deferred\n"
-        )
+        content = "**Deferred:**\n- Item one\n- Item two\n**Other section:**\n- Not deferred\n"
         assert _extract_backlog_bullets(content) == ["Item one", "Item two"]
 
     def test_bold_heading_stops_at_markdown_heading(self):
@@ -1056,9 +1053,7 @@ class TestParseBacklogItems:
         strategy_dir = tmp_path / ".factory" / "strategy"
         strategy_dir.mkdir(parents=True)
         (strategy_dir / "backlog.md").write_text("- Camera feed\n- OAuth login\n")
-        (strategy_dir / "current.md").write_text(
-            "## Deferred\n- Camera feed\n- Genre expansion\n"
-        )
+        (strategy_dir / "current.md").write_text("## Deferred\n- Camera feed\n- Genre expansion\n")
         result = _parse_backlog_items(tmp_path)
         assert result == ["Camera feed", "OAuth login", "Genre expansion"]
 
@@ -1142,9 +1137,7 @@ class TestStudyBacklogIntegration:
         project_path.mkdir()
         strategy_dir = project_path / ".factory" / "strategy"
         strategy_dir.mkdir(parents=True)
-        (strategy_dir / "current.md").write_text(
-            "## Deferred\n- Item 1\n- Item 2\n- Item 3\n"
-        )
+        (strategy_dir / "current.md").write_text("## Deferred\n- Item 1\n- Item 2\n- Item 3\n")
         with patch("factory.study._search_similar_projects", return_value=[]):
             result = study_project_local(project_path)
         assert "**Backlog items: 3**" in result
@@ -1376,7 +1369,7 @@ class TestStudyTargetedMode:
         assert "TARGETED MODE" in result
         assert "Add caching" in result
         # Other backlog items should NOT appear in the backlog section
-        backlog_section = result[result.index("## Backlog"):]
+        backlog_section = result[result.index("## Backlog") :]
         budget_start = backlog_section.index("## Hypothesis Budget")
         backlog_only = backlog_section[:budget_start]
         assert "Fix login bug" not in backlog_only
@@ -1395,9 +1388,7 @@ class TestStudyTargetedMode:
         assert "**New items: at most 0**" in result
         assert "**Growth minimum: 0**" in result
 
-    def test_focus_without_backlog_match_still_shows_target(
-        self, tmp_path, monkeypatch
-    ):
+    def test_focus_without_backlog_match_still_shows_target(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         project_path = tmp_path / "myapp"
         project_path.mkdir()
@@ -1459,8 +1450,18 @@ class TestFocusMutualExclusion:
 
         prompt_path = tmp_path / "spec.md"
         prompt_path.write_text("Build a thing")
-        result = main(["ceo", str(tmp_path), "--focus", "fix bug",
-                       "--prompt", str(prompt_path), "--mode", "improve"])
+        result = main(
+            [
+                "ceo",
+                str(tmp_path),
+                "--focus",
+                "fix bug",
+                "--prompt",
+                str(prompt_path),
+                "--mode",
+                "improve",
+            ]
+        )
         assert result == 1
 
     def test_focus_and_prompt_rejected_run(self, tmp_path):
@@ -1468,8 +1469,18 @@ class TestFocusMutualExclusion:
 
         prompt_path = tmp_path / "spec.md"
         prompt_path.write_text("Build a thing")
-        result = main(["run", str(tmp_path), "--focus", "fix bug",
-                       "--prompt", str(prompt_path), "--mode", "improve"])
+        result = main(
+            [
+                "run",
+                str(tmp_path),
+                "--focus",
+                "fix bug",
+                "--prompt",
+                str(prompt_path),
+                "--mode",
+                "improve",
+            ]
+        )
         assert result == 1
 
     def test_focus_rejected_in_build_mode(self):
@@ -1505,3 +1516,24 @@ class TestStudyParserFocus:
         parser = build_parser()
         args = parser.parse_args(["study", "/tmp/test"])
         assert args.focus is None
+
+
+class TestBuildSpecSection:
+    def test_full_spec_included(self, tmp_path):
+        from factory.study import _build_spec_section
+
+        spec_lines = [f"## Section {i}\nDetail for section {i}." for i in range(10)]
+        spec_content = "# My Spec\n" + "\n".join(spec_lines)
+        (tmp_path / "SPEC.md").write_text(spec_content)
+
+        result = _build_spec_section(tmp_path)
+        body = "\n".join(result)
+
+        for i in range(10):
+            assert f"Detail for section {i}." in body
+
+    def test_no_spec(self, tmp_path):
+        from factory.study import _build_spec_section
+
+        result = _build_spec_section(tmp_path)
+        assert any("No SPEC.md found" in line for line in result)

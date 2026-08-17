@@ -25,6 +25,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    LLMNode,
     SelectionNode,
     Study,
     SubgraphForkNode,
@@ -51,11 +52,14 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "design": {
         "description": (
-            "Interactive design mode — identical to build but with a user approval "
-            "gate at strategy. Use when the user says 'design X', 'plan X', "
-            "'let's discuss what to build', or wants to review the strategy before building."
+            "Interactive design mode — build with a user approval gate at strategy, "
+            "plus conditional study for existing projects. Use when the user says "
+            "'design X', 'plan X', 'let's discuss what to build', or wants to review "
+            "the strategy before building. Works for both new and existing projects. "
+            "Supports --from-plan to load an existing plan and skip research. "
+            "With --just-plan, runs plan-only (research + strategy + GitHub publish, NO implementation)."
         ),
-        "argument_hint": "<project_path> [idea or spec]",
+        "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>] [--just-plan]",
     },
     "improve": {
         "description": (
@@ -135,12 +139,24 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         "description": (
             "Create mode — meta-mode for creating new factory modes or updating existing ones. "
             "For new modes: takes a description and produces a fully working workflow definition, "
-            "SKILL.md, CLI wiring, and tests. For updates: use --focus \"mode_name: change description\" "
-            "to modify an existing registered mode (e.g. --focus \"improve: add plateau detection\"). "
+            'SKILL.md, CLI wiring, and tests. For updates: use --focus "mode_name: change description" '
+            'to modify an existing registered mode (e.g. --focus "improve: add plateau detection"). '
             "Use when the user says 'create a mode for X', 'update the improve mode', "
             "'add a new workflow', or wants to extend/modify factory pipelines."
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
+    },
+    "plan": {
+        "description": (
+            "Plan-only workflow — truncated design workflow (triggered via --mode design --just-plan). "
+            "Prior plan check + research + strategy + single approval gate, "
+            "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
+            "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "
+            "Single approval gate: 'Keep this plan?' — approval auto-publishes to GitHub and seeds backlog. "
+            "RELOOP re-runs Strategist with feedback. HALT exits without publishing. "
+            "Terminal — does not chain to build or improve."
+        ),
+        "argument_hint": "<project_path> --mode design --just-plan [--focus <topic>]",
     },
     "founder": {
         "description": (
@@ -170,6 +186,95 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "frontend-design": {
+        "description": (
+            "Feature-to-UI pipeline that enforces a design system on every new "
+            "feature. If a design system already exists on disk (from a prior "
+            "discover run), skips the research phase and goes straight to spec "
+            "writing with a lightweight staleness check. If no design system "
+            "exists, runs the full 5-researcher pipeline first. Produces a UI "
+            "spec constrained by the baseline, gets user approval, builds with "
+            "discovered design rules enforced, then runs design-specific QA with "
+            "a two-tier gate (hard failures auto-revert, soft warnings surface "
+            "for review). Works on any frontend project with a defined "
+            "token/component system. Use when the user says 'frontend-design', "
+            "'design UI for X', or wants design-consistent frontend implementation."
+        ),
+        "argument_hint": "<project_path> --focus <feature description>",
+    },
+    "frontend-design-discover": {
+        "description": (
+            "Design system extraction — discovers the project's design system "
+            "and produces human-readable, editable artifacts. Runs 5 parallel "
+            "researchers (tokens, components, patterns, UX, infrastructure) then "
+            "synthesizes into design-baseline.json and rules.md. Run this once "
+            "to establish the design system, review and edit the output, then "
+            "use frontend-design (build) mode for each new feature without "
+            "re-running researchers. Supports external design system URLs via "
+            "--focus for cross-referencing (e.g., 'https://ux.redhat.com/'). "
+            "Use when the user says 'discover design system', 'extract design "
+            "system', or wants to establish design rules before building features."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "frontend-design-scan": {
+        "description": (
+            "Continuous design health monitoring — scans the entire codebase for "
+            "design system drift without building anything. Researches tokens, "
+            "components, patterns, and UX quality, then runs all design check "
+            "scripts against every source file. Produces a structured health "
+            "report with per-dimension scores and trend data. Designed for use "
+            "with --loop for hourly continuous scanning. Use when the user says "
+            "'scan for design drift', 'check design health', or wants passive "
+            "design consistency monitoring."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "evolve": {
+        "description": (
+            "Evolve mode — iterative code evolution via external MCP evaluation. "
+            "Optimizes a single scalar metric by mutating code within EVOLVE-BLOCK "
+            "boundaries and evaluating via an MCP server. Use when the project has "
+            "an MCP evaluator configured and the user says 'evolve', 'optimize', "
+            "or wants evolutionary code search on a benchmark."
+        ),
+        "argument_hint": "<project_path> --mode evolve",
+        "preamble": (
+            "**MCP Evaluation Mode:** This workflow evaluates code via an external MCP server, "
+            "NOT via local tests/lint/types. The CEO must have access to the MCP tools "
+            "`get_benchmark_info()` and `evaluate_solution()`. All code modifications "
+            "MUST stay within EVOLVE-BLOCK-START/END markers."
+        ),
+    },
+    "deep-research": {
+        "description": (
+            "Deep research mode — decompose-then-research with built-in "
+            "faithfulness checking and coverage evaluation. A decomposer generates "
+            "3-5 research directions; the researcher executes them with multiple "
+            "rounds of WebSearch/WebFetch, following an inside-out protocol: "
+            "internal project state first, then external search shaped by internal "
+            "findings. Includes structural faithfulness checks (relevance, grounding, "
+            "drift detection) every iteration. "
+            "Runs study → decomposer → deep_researcher → CEO coverage gate. "
+            "The coverage gate checks per-direction coverage. "
+            "Outputs research-combined.md only. "
+            "Use when the user says 'deep research X', 'research X thoroughly', or wants "
+            "comprehensive, faithful research with iterative deepening. "
+            "Terminal mode — does not chain to build or improve."
+        ),
+        "argument_hint": "<project_path> [--focus <research topic>]",
+    },
+    "study": {
+        "description": (
+            "Codebase structure and dependency graph analysis. "
+            "Updates the code knowledge graph, runs factory study for observations, "
+            "then explores the graph for structural insights via an agent. "
+            "Terminal mode — does not chain to other modes. "
+            "Use when the user says 'study', 'analyze codebase', or wants a structural "
+            "understanding of the project before planning work."
+        ),
+        "argument_hint": "<project_path>",
+    },
 }
 
 
@@ -193,6 +298,20 @@ def _topological_sort(workflow: Workflow) -> list[str]:
             continue
         adj[edge.source].append(edge.target)
         in_degree[edge.target] = in_degree.get(edge.target, 0) + 1
+
+    # Add implicit edges for fork/join semantics so fork targets sort
+    # after the fork node and join sources sort before the join node.
+    for nid, node in workflow.nodes.items():
+        if type(node).__name__ == "ForkNode":
+            for t in node.targets:  # type: ignore[union-attr]
+                if t in workflow.nodes:
+                    adj[nid].append(t)
+                    in_degree[t] = in_degree.get(t, 0) + 1
+        if type(node).__name__ == "JoinNode":
+            for s in node.sources:  # type: ignore[union-attr]
+                if s in workflow.nodes:
+                    adj[s].append(nid)
+                    in_degree[nid] = in_degree.get(nid, 0) + 1
 
     queue: deque[str] = deque()
     for nid in workflow.nodes:
@@ -309,6 +428,41 @@ def _agent_to_instruction(
     return "\n".join(lines)
 
 
+def _llm_to_instruction(node: LLMNode, workflow: Workflow) -> str:
+    """Convert an LLMNode to a direct API call instruction with template slots."""
+    nid = node.id
+    out_edges = _outgoing_edges(workflow, node.id)
+    tools_str = ", ".join(t.name for t in node.tools) or "none"
+
+    system = emit(f"system_prompt_{nid}", node.system_prompt)
+    instance = emit(f"instance_prompt_{nid}", node.instance_prompt)
+
+    lines = [
+        f"<!-- node: LLMNode id={nid} model={node.model} provider={node.provider}"
+        f" tools=[{tools_str}] max_turns={node.max_turns} timeout={node.timeout} -->",
+        f"<!-- edges: {_format_edges(out_edges)} -->",
+        "",
+        f"**Model:** {node.model} | **Provider:** {node.provider}"
+        f" | **Tools:** {tools_str}"
+        f" | **Max turns:** {emit(f'max_turns_{nid}', str(node.max_turns))}"
+        f" | **Timeout:** {emit(f'timeout_{nid}', str(node.timeout))}s",
+        "",
+        "**System prompt:**",
+        system,
+        "",
+        "**Instance prompt:**",
+        instance,
+    ]
+
+    if node.reads:
+        lines.append("")
+        lines.append(f"**Reads:** {', '.join(sorted(node.reads))}")
+    if node.writes:
+        lines.append(f"**Writes:** {', '.join(sorted(node.writes))}")
+
+    return "\n".join(lines)
+
+
 def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
     """Convert an FnNode to a CLI command instruction with template slots."""
     cmd = node.command.replace("{project_path}", "$PROJECT_PATH")
@@ -342,8 +496,15 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
 
 def _has_template_placeholders(text: str) -> bool:
     """Check if a command has $VARIABLE placeholders that need CEO substitution."""
-    placeholders = {"$EXP_ID", "$VERDICT", "$HYPOTHESIS", "$REQUEST",
-                     "$PR_NUMBER", "$SCORE_BEFORE", "$SCORE_AFTER"}
+    placeholders = {
+        "$EXP_ID",
+        "$VERDICT",
+        "$HYPOTHESIS",
+        "$REQUEST",
+        "$PR_NUMBER",
+        "$SCORE_BEFORE",
+        "$SCORE_AFTER",
+    }
     return any(p in text for p in placeholders)
 
 
@@ -400,9 +561,27 @@ def _gate_to_checkpoint(
         lines.append("")
         lines.append(f"### Steering Point — {gate_name} (User Approval)")
         lines.append("")
-        lines.append("Present findings to the user. Wait for approval or feedback.")
-        lines.append("- **Approve** → proceed to next step")
-        lines.append("- **Feedback** → re-run the previous step with corrections")
+        lines.append(
+            "**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**"
+        )
+        lines.append("")
+        lines.append(
+            "Present the strategy/findings to the user by summarizing key points in your output."
+        )
+        lines.append(
+            'Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"'
+        )
+        lines.append("")
+        lines.append("**You MUST wait for the user's response before proceeding.**")
+        lines.append(
+            '- The user says "approve", "yes", "looks good", or similar → proceed to next step'
+        )
+        lines.append(
+            "- The user provides feedback or corrections → re-run the previous step incorporating their feedback"
+        )
+        lines.append(
+            "- Do NOT write a verdict file and auto-proceed — this gate requires human input"
+        )
     elif node.evaluator_type == "fn":
         evaluator_cmd = ""
         if node.evaluator_command:
@@ -429,11 +608,20 @@ def _gate_to_checkpoint(
 
         if proceed_edges:
             proceed_target = proceed_edges[0].target
-            lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
             lines.append(
-                f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
-                "Skip to the next CEO review gate or finalize as error."
+                f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`"
             )
+            if halt_edges:
+                halt_target = halt_edges[0].target
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → "
+                    f"continue to `{halt_target}` instead."
+                )
+            else:
+                lines.append(
+                    f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
+                    "Skip to the next CEO review gate or finalize as error."
+                )
         elif halt_edges:
             halt_target = halt_edges[0].target
             lines.append(
@@ -509,6 +697,17 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
         if isinstance(workflow.nodes.get(tid), AgentNode)
     ]
     if agent_nodes:
+        # Calculate the maximum timeout among all parallel agents
+        max_timeout = max((node.timeout or 600 for node in agent_nodes), default=600)
+
+        # Add timeout guidance if max_timeout exceeds Bash tool's default (120s)
+        if max_timeout > 120:
+            lines.append("")
+            lines.append(
+                f"\n**Important:** Run ALL commands above in a **single** Bash tool call "
+                f"with timeout set to at least {max_timeout} seconds.\n"
+            )
+
         from factory.workflow.verification import compile_fork_verification
 
         verify_script = compile_fork_verification(agent_nodes)
@@ -657,7 +856,10 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             fork_targets.update(node.targets)
         elif isinstance(node, SubgraphForkNode):
             from factory.workflow.executor import _collect_subgraph_nodes
-            subgraph_nodes |= _collect_subgraph_nodes(workflow, node.subgraph_entry, node.subgraph_exit)
+
+            subgraph_nodes |= _collect_subgraph_nodes(
+                workflow, node.subgraph_entry, node.subgraph_exit
+            )
 
     sections: list[str] = []
     phase_num = 1
@@ -691,9 +893,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_join_to_instruction(node, workflow))
 
         elif isinstance(node, GateNode):
-            sections.append(
-                _gate_to_checkpoint(node, reloop_map.get(nid, []), workflow)
-            )
+            sections.append(_gate_to_checkpoint(node, reloop_map.get(nid, []), workflow))
 
         elif isinstance(node, Study):
             node_title = "Observe"
@@ -712,6 +912,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_agent_to_instruction(node, workflow))
             phase_num += 1
 
+        elif isinstance(node, LLMNode):
+            node_title = nid.replace("_", " ").title()
+            sections.append(f"## Phase {phase_num}: {node_title} (LLM API)\n")
+            sections.append(_llm_to_instruction(node, workflow))
+            phase_num += 1
+
         elif isinstance(node, FnNode):
             node_title = nid.replace("_", " ").title()
             sections.append(f"## Step: {node_title}\n")
@@ -722,12 +928,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
     result = f"{frontmatter}\n\n{header}\n\n{body}\n"
 
     line_count = result.count("\n") + 1
-    if line_count > 500:
+    if line_count > 600:
         log.warning(
             "skill_export.oversized",
             workflow=name,
             lines=line_count,
-            limit=500,
+            limit=600,
         )
 
     return result
@@ -750,6 +956,7 @@ def export_all_skills(
 
     if workflows is None:
         from factory.workflow.definitions import register_all
+
         workflows = register_all()
 
     generated: list[Path] = []
@@ -809,7 +1016,7 @@ def validate_skill(content: str) -> list[str]:
             issues.append(f"Description exceeds 1024 chars ({len(desc_val)})")
 
     line_count = content.count("\n") + 1
-    if line_count > 500:
-        issues.append(f"Body exceeds 500 lines ({line_count})")
+    if line_count > 600:
+        issues.append(f"Body exceeds 600 lines ({line_count})")
 
     return issues

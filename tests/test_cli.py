@@ -28,7 +28,6 @@ from factory.cli._path_resolver import (
     _resolve_input,
 )
 from factory.cli._helpers import _is_github_url
-from factory.cli._wizard import _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -139,6 +138,14 @@ class TestParser:
         assert args.score_before == 0.80
         assert args.score_after == 0.85
 
+    def test_version_flag_exits_zero(self, capsys):
+        with pytest.raises(SystemExit, match="0"):
+            main(["--version"])
+        out = capsys.readouterr().out
+        assert out.startswith("remote-factory ")
+        version_str = out.strip().split(" ", 1)[1]
+        assert version_str[0].isdigit()
+
     def test_no_command_returns_1(self):
         assert main([]) == 1
 
@@ -170,6 +177,16 @@ class TestParser:
         args = parser.parse_args(["ceo", "distributed eval runner", "--mode", "interactive"])
         assert args.mode == "interactive"
         assert args.path == "distributed eval runner"
+
+    def test_ceo_mode_project_prefix(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/proj", "--mode", "project:greet"])
+        assert args.mode == "project:greet"
+
+    def test_ceo_mode_unknown_accepted_by_parser(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/proj", "--mode", "my-custom-mode"])
+        assert args.mode == "my-custom-mode"
 
     def test_ceo_path_optional(self):
         parser = build_parser()
@@ -410,6 +427,140 @@ class TestCmdCeoDesign:
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Plan Loop (Interactive)" in task
+
+    def test_auto_approve_rejected_without_design_mode(self, capsys):
+        """--auto-approve without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+    def test_auto_approve_accepted_with_design_mode(self, tmp_path):
+        """--auto-approve with --mode design succeeds and runs headless."""
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+        assert result == 0
+
+    def test_auto_approve_forces_headless(self):
+        """--auto-approve with --mode design forces headless=True in the validation tuple."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="an idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=True,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        (
+            _mode,
+            headless,
+            _bg,
+            _bg_agents,
+            _prompt,
+            _focus,
+            _dir,
+            _refine,
+            auto_approve,
+            _from_plan,
+            _just_plan,
+        ) = validated
+        assert headless is True
+        assert auto_approve is True
+
+    def test_auto_approve_false_by_default(self):
+        """auto_approve defaults to False when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        auto_approve = validated[8]
+        assert auto_approve is False
+
+
+class TestRunAutoApprove:
+    def test_run_auto_approve_rejected_without_design(self, capsys):
+        """cmd_run rejects --auto-approve when mode is not design."""
+        result = main(["run", "/some/path", "--mode", "improve", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+    def test_run_auto_approve_rejected_default_mode(self, capsys):
+        """cmd_run rejects --auto-approve when mode is the default (auto)."""
+        result = main(["run", "/some/path", "--auto-approve"])
+        assert result == 1
+        assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
+
+
+class TestAutoApproveEvent:
+    def test_execute_ceo_emits_auto_approve_event(self, tmp_path):
+        """_execute_ceo calls _emit_cli_event with 'auto_approve.enabled' when flag is set."""
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._emit_cli_event") as mock_emit,
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design", "--auto-approve"])
+        assert result == 0
+        mock_emit.assert_any_call(tmp_path, "auto_approve.enabled", {"mode": "design"})
+
+    def test_execute_ceo_no_event_without_flag(self, tmp_path):
+        """_execute_ceo does not emit auto_approve.enabled when --auto-approve is absent."""
+        with (
+            _mock_foreground(),
+            patch("factory.cli._ceo_helpers._emit_cli_event") as mock_emit,
+        ):
+            result = main(["ceo", str(tmp_path), "--mode", "design"])
+        assert result == 0
+        auto_approve_calls = [
+            c
+            for c in mock_emit.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "auto_approve.enabled"
+        ]
+        assert len(auto_approve_calls) == 0
 
 
 def _make_config(*, research_target: dict | None = None) -> dict:
@@ -831,7 +982,9 @@ class TestCmdArchive:
             notes="",
         )
         asyncio.run(store.finalize(exp_id, record))
-        asyncio.run(store.write_strategy("Focus on reliability."))
+        strategy_path = store.factory_dir / "strategy" / "current.md"
+        strategy_path.parent.mkdir(parents=True, exist_ok=True)
+        strategy_path.write_text("Focus on reliability.")
 
         with (
             patch("factory.obsidian.notes.write_experiment_note") as mock_exp,
@@ -2373,148 +2526,6 @@ class TestRefinerPromptExists:
         )
 
 
-class TestWizardLongInputRedirect:
-    """Tests for wizard long-input redirect to ~/.factory/wizard_input.md."""
-
-    def _make_input_fn(self, first_response):
-        """Return an input() replacement that returns first_response then raises EOFError."""
-        call_count = 0
-
-        def _input(prompt=""):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return first_response
-            raise EOFError
-
-        return _input
-
-    def test_long_input_triggers_file_write(self, tmp_path, monkeypatch):
-        """Input >200 chars is written to ~/.factory/wizard_input.md with matching content."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_input = "a" * 250
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
-
-        _welcome_wizard()
-
-        assert wizard_file.exists()
-        assert wizard_file.read_text() == long_input
-
-    def test_short_input_no_file_written(self, tmp_path, monkeypatch):
-        """Input <=200 chars does NOT write a file."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        short_input = "Build a weather CLI"
-        monkeypatch.setattr("builtins.input", self._make_input_fn(short_input))
-
-        with patch(
-            "factory.cli._wizard._classify_with_llm",
-            return_value=(
-                [],
-                [
-                    {
-                        "label": "Build",
-                        "explanation": "Build it.",
-                        "command": "factory ceo 'Build a weather CLI' --mode build",
-                    },
-                ],
-            ),
-        ):
-            _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_long_path_not_redirected(self, tmp_path, monkeypatch):
-        """A long string that is an existing directory is NOT redirected."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_dir = tmp_path / ("a" * 210)
-        long_dir.mkdir()
-
-        monkeypatch.setattr("builtins.input", self._make_input_fn(str(long_dir)))
-
-        _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_long_url_not_redirected(self, tmp_path, monkeypatch):
-        """A long GitHub URL is NOT redirected."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-
-        long_url = "https://github.com/user/" + "r" * 200
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_url))
-
-        _welcome_wizard()
-
-        assert not wizard_file.exists()
-
-    def test_wizard_file_inside_factory_dir(self, tmp_path, monkeypatch):
-        """The written file is inside ~/.factory/."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-
-        long_input = "x" * 250
-        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
-
-        _welcome_wizard()
-
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        assert wizard_file.exists()
-        assert wizard_file.parent == fake_home / ".factory"
-
-
-class TestQuickClassifyWizardFile:
-    """Tests for _quick_classify returning None for wizard-generated files (LLM fallthrough)."""
-
-    def test_wizard_file_returns_none(self, tmp_path, monkeypatch):
-        """_quick_classify returns None for wizard_input.md so LLM classifies the content."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        wizard_file.parent.mkdir(parents=True)
-        wizard_file.write_text("some long idea text")
-
-        result = _quick_classify(str(wizard_file))
-        assert result is None
-
-    def test_regular_file_returns_one_option(self, tmp_path):
-        """_quick_classify returns one option for a regular spec file."""
-        spec_file = tmp_path / "spec.md"
-        spec_file.write_text("# My project spec")
-
-        result = _quick_classify(str(spec_file))
-        assert result is not None
-        assert len(result) == 1
-        assert result[0]["label"] == "Build from this spec file"
-
-    def test_wizard_file_with_tilde_path_returns_none(self, tmp_path, monkeypatch):
-        """_quick_classify returns None for ~/.factory/wizard_input.md with tilde expansion."""
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-        wizard_file = fake_home / ".factory" / "wizard_input.md"
-        wizard_file.parent.mkdir(parents=True)
-        wizard_file.write_text("idea content")
-
-        result = _quick_classify("~/.factory/wizard_input.md")
-        assert result is None
-
-
 class TestMaterializeProject:
     """Tests for _materialize_project — deferred directory creation."""
 
@@ -2632,3 +2643,497 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+class TestFromPlanFlag:
+    """Tests for --from-plan flag on design mode."""
+
+    def test_from_plan_requires_design_mode(self, capsys):
+        """--from-plan without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--from-plan", "plan.md"])
+        assert result == 1
+        assert "--from-plan requires --mode design" in capsys.readouterr().err
+
+    def test_from_plan_mutually_exclusive_with_focus(self, capsys):
+        """--from-plan and --focus cannot be used together."""
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--from-plan", "plan.md", "--focus", "auth"]
+        )
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_from_plan_mutually_exclusive_with_prompt(self, capsys):
+        """--from-plan and --prompt cannot be used together."""
+        result = main(
+            [
+                "ceo",
+                "/some/path",
+                "--mode",
+                "design",
+                "--from-plan",
+                "plan.md",
+                "--prompt",
+                "spec.md",
+            ]
+        )
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_from_plan_default_is_none(self):
+        """from_plan defaults to None when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        *_, from_plan, _just_plan = validated
+        assert from_plan is None
+
+    def test_from_plan_validation_passes_with_design_mode(self):
+        """--from-plan with --mode design passes validation."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan="plan.md",
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        *_, from_plan, _just_plan = validated
+        assert from_plan == "plan.md"
+
+
+class TestResolvePlanSource:
+    """Tests for _resolve_plan_source()."""
+
+    def test_resolve_plan_source_local_file(self, tmp_path):
+        """Local file path returns PlanSource with plan content and no feedback."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        plan_file = tmp_path / "my-plan.md"
+        plan_file.write_text("## Phase 1\nBuild the scaffold")
+        result = _resolve_plan_source(str(plan_file), tmp_path)
+        assert "## Phase 1" in result.plan
+        assert "Build the scaffold" in result.plan
+        assert result.feedback == []
+        assert result.source == "my-plan.md"
+
+    def test_resolve_plan_source_relative_file(self, tmp_path):
+        """Relative file path is resolved relative to project_path."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        plan_file = tmp_path / "plan.md"
+        plan_file.write_text("## Phase 1\nDo things")
+        result = _resolve_plan_source("plan.md", tmp_path)
+        assert "## Phase 1" in result.plan
+
+    def test_resolve_plan_source_issue_number(self, tmp_path):
+        """Issue number triggers fetch_issue path and returns PlanSource."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        (tmp_path / ".git").mkdir()
+        subprocess.run(
+            ["git", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:owner/repo.git",
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        from factory.issue import IssueSpec
+
+        mock_issue = IssueSpec(number=42, title="Plan", body="plan body", url="", forge="github")
+        with (
+            patch("factory.issue.fetch_issue", return_value=mock_issue),
+            patch("factory.issue.parse_issue_ref", return_value=("github", "owner/repo", 42)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout=json.dumps(["comment body 1", "comment body 2"]),
+                returncode=0,
+            )
+            result = _resolve_plan_source("42", tmp_path)
+        assert result.plan == "plan body"
+        assert result.feedback == ["comment body 1", "comment body 2"]
+
+    def test_resolve_plan_source_fuzzy_search(self, tmp_path):
+        """Non-file, non-issue string triggers fuzzy search and returns PlanSource."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        (tmp_path / ".git").mkdir()
+        subprocess.run(
+            ["git", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:owner/repo.git",
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        from factory.issue import IssueSpec
+
+        mock_issue = IssueSpec(
+            number=99, title="My Plan", body="fuzzy plan body", url="", forge="github"
+        )
+        search_result = json.dumps([{"number": 99, "title": "My Plan"}])
+
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.issue.fetch_issue", return_value=mock_issue),
+            patch("factory.issue.parse_issue_ref", return_value=("github", "owner/repo", 99)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = [
+                MagicMock(stdout=search_result, returncode=0),
+                MagicMock(stdout="[]", returncode=0),
+            ]
+            result = _resolve_plan_source("my cool plan", tmp_path)
+        assert result.plan == "fuzzy plan body"
+
+    def test_resolve_plan_source_includes_comments(self, tmp_path):
+        """Issue fetch separates body (plan) from comments (feedback)."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        from factory.issue import IssueSpec
+
+        mock_issue = IssueSpec(number=10, title="Plan", body="issue body", url="", forge="github")
+        with (
+            patch("factory.issue.fetch_issue", return_value=mock_issue),
+            patch("factory.issue.parse_issue_ref", return_value=("github", "owner/repo", 10)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout=json.dumps(["first comment", "second comment"]),
+                returncode=0,
+            )
+            result = _resolve_plan_source("10", tmp_path)
+        assert result.plan == "issue body"
+        assert result.feedback == ["first comment", "second comment"]
+        assert result.source == "issue #10"
+
+    def test_resolve_plan_source_multiline_comments(self, tmp_path):
+        """Multi-line comments are preserved as single entries, not split on newlines."""
+        from factory.cli._path_resolver import _resolve_plan_source
+
+        from factory.issue import IssueSpec
+
+        multiline_comment = "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good."
+        mock_issue = IssueSpec(number=10, title="Plan", body="issue body", url="", forge="github")
+        with (
+            patch("factory.issue.fetch_issue", return_value=mock_issue),
+            patch("factory.issue.parse_issue_ref", return_value=("github", "owner/repo", 10)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout=json.dumps([multiline_comment, "short comment"]),
+                returncode=0,
+            )
+            result = _resolve_plan_source("10", tmp_path)
+        assert len(result.feedback) == 2
+        assert (
+            "Phase 1 feedback:\n- Add auth\n- Add caching\n\nPhase 2 looks good."
+            in result.feedback[0]
+        )
+        assert result.feedback[1] == "short comment"
+
+
+class TestBuildCeoTaskFromPlan:
+    """Tests for _build_ceo_task with from_plan parameter."""
+
+    def test_build_ceo_task_from_plan_directive(self, tmp_path):
+        """from_plan parameter emits the Plan Loop (From Existing Plan) section."""
+        task = _build_ceo_task(tmp_path, "design", from_plan="## Phase 1\nBuild it")
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "Skip the Research phase" in task
+
+    def test_build_ceo_task_no_from_plan(self, tmp_path):
+        """Without from_plan, the section is not emitted."""
+        task = _build_ceo_task(tmp_path, "design")
+        assert "## Plan Loop (From Existing Plan)" not in task
+
+    def test_build_ceo_task_from_plan_none(self, tmp_path):
+        """from_plan=None does not emit the section."""
+        task = _build_ceo_task(tmp_path, "design", from_plan=None)
+        assert "## Plan Loop (From Existing Plan)" not in task
+
+    def test_build_ceo_task_from_plan_with_feedback_includes_reconciliation(self, tmp_path):
+        """from_plan with feedback includes Strategist reconciliation instructions."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=["Please add auth", "Also need caching"],
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "thread-feedback.md" in task
+        assert "Reconcile" in task
+        assert "Strategist" in task
+        assert "RECONCILED" in task
+
+    def test_build_ceo_task_from_plan_without_feedback_skips_strategist(self, tmp_path):
+        """from_plan without feedback skips the Strategist step."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=[],
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "No thread feedback exists" in task
+        assert "no Strategist needed" in task
+        assert "RECONCILED" not in task
+
+    def test_build_ceo_task_from_plan_feedback_none_skips_strategist(self, tmp_path):
+        """from_plan with feedback=None behaves like no feedback."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            from_plan="## Phase 1\nBuild it",
+            from_plan_feedback=None,
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "No thread feedback exists" in task
+
+    def test_build_ceo_task_from_plan_excludes_design_existing(self, tmp_path):
+        """from_plan takes precedence over design_existing — no contradictory directives."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            from_plan="## Phase 1\nBuild it",
+            design_existing=True,
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "## Plan Loop (Interactive)" not in task
+
+    def test_build_ceo_task_from_plan_excludes_design_idea(self, tmp_path):
+        """from_plan takes precedence over design_idea — no contradictory directives."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            from_plan="## Phase 1\nBuild it",
+            design_idea="Build a weather CLI",
+        )
+        assert "## Plan Loop (From Existing Plan)" in task
+        assert "## Plan Loop (Interactive)" not in task
+        assert "Raw idea from user" not in task
+
+
+class TestFromPlanFeedbackWritesFile:
+    """Tests for thread feedback file writing in _execute_ceo."""
+
+    def test_from_plan_with_feedback_writes_thread_feedback_file(self, tmp_path):
+        """When plan source has feedback, thread-feedback.md is written."""
+        from factory.cli._path_resolver import PlanSource
+
+        plan_source = PlanSource(
+            plan="## Phase 1\nBuild it",
+            feedback=["Add auth flow", "Need caching layer"],
+            source="issue #42",
+        )
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
+        ):
+            result = main(
+                ["ceo", str(tmp_path), "--mode", "design", "--from-plan", "42", "--auto-approve"]
+            )
+        assert result == 0
+        feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
+        assert feedback_file.exists()
+        content = feedback_file.read_text()
+        assert "Add auth flow" in content
+        assert "Need caching layer" in content
+
+    def test_from_plan_without_feedback_no_thread_feedback_file(self, tmp_path):
+        """When plan source has no feedback, thread-feedback.md is not written."""
+        from factory.cli._path_resolver import PlanSource
+
+        plan_source = PlanSource(
+            plan="## Phase 1\nBuild it",
+            feedback=[],
+            source="my-plan.md",
+        )
+        mock_invoke = _mock_invoke_agent_ok()
+        with (
+            patch("factory.agents.runner.invoke_agent", mock_invoke),
+            patch(
+                "factory.worktree.create_worktree",
+                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+            ),
+            patch("factory.worktree.remove_worktree"),
+            patch("factory.worktree.prune_stale", return_value=[]),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+            patch("factory.cli._helpers._ensure_dashboard"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+            patch("factory.cli._ceo_helpers._resolve_plan_source", return_value=plan_source),
+        ):
+            result = main(
+                [
+                    "ceo",
+                    str(tmp_path),
+                    "--mode",
+                    "design",
+                    "--from-plan",
+                    "plan.md",
+                    "--auto-approve",
+                ]
+            )
+        assert result == 0
+        feedback_file = tmp_path / ".factory" / "strategy" / "thread-feedback.md"
+        assert not feedback_file.exists()
+
+
+class TestJustPlanFlag:
+    """Tests for --just-plan flag on design mode."""
+
+    def test_just_plan_requires_design_mode(self, capsys):
+        """--just-plan without --mode design is rejected."""
+        result = main(["ceo", "/some/path", "--mode", "improve", "--just-plan"])
+        assert result == 1
+        assert "--just-plan requires --mode design" in capsys.readouterr().err
+
+    def test_just_plan_mutually_exclusive_with_from_plan(self, capsys):
+        """--just-plan and --from-plan cannot be used together."""
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--just-plan", "--from-plan", "plan.md"]
+        )
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_just_plan_mutually_exclusive_with_prompt(self, capsys):
+        """--just-plan and --prompt cannot be used together."""
+        result = main(
+            ["ceo", "/some/path", "--mode", "design", "--just-plan", "--prompt", "spec.md"]
+        )
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_just_plan_with_focus_allowed(self):
+        """--just-plan and --focus are allowed together."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="/some/path",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus="auth",
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+            just_plan=True,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int), f"Expected tuple, got error code {validated}"
+        *_, just_plan = validated
+        assert just_plan is True
+
+    def test_mode_plan_no_longer_valid(self, capsys):
+        """--mode plan is rejected at runtime (not a valid built-in or project mode)."""
+        result = main(["ceo", "/some/path", "--mode", "plan"])
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "unknown mode" in captured.err
+
+    def test_just_plan_default_is_false(self):
+        """just_plan defaults to False when flag is omitted."""
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        args = argparse.Namespace(
+            path="some idea",
+            mode="design",
+            bg=False,
+            bg_agents=False,
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            auto_approve=False,
+            from_plan=None,
+            just_plan=False,
+        )
+        validated = _validate_ceo_flags(args)
+        assert not isinstance(validated, int)
+        *_, just_plan = validated
+        assert just_plan is False
+
+    def test_task_builder_just_plan_directive(self, tmp_path):
+        """_build_ceo_task generates the plan directive for just_plan=True."""
+        task = _build_ceo_task(tmp_path, "design", just_plan=True)
+        assert "## Plan Loop (Just Plan)" in task
+        assert "just_plan: true" in task
+        assert "Terminal mode" in task
+        assert "### Post-Approval: GitHub Publish (MANDATORY)" in task
+        assert "gh label create plan" in task
+        assert "gh issue comment" in task
+        assert "gh issue create" in task
+        assert "Do NOT skip this step" in task
+
+    def test_task_builder_no_just_plan_directive(self, tmp_path):
+        """_build_ceo_task omits the plan directive when just_plan=False."""
+        task = _build_ceo_task(tmp_path, "design", just_plan=False)
+        assert "## Plan Loop (Just Plan)" not in task

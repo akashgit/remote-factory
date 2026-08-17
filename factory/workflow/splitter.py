@@ -22,7 +22,10 @@ _SLOT_PREFIXES = (
     "timeout_",
     "task_prompt_",
     "gate_prompt_",
+    "system_prompt_",
+    "instance_prompt_",
     "max_iterations_",
+    "max_turns_",
     "failure_action_",
     "finalize_command_",
 )

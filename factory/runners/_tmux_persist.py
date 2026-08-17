@@ -186,25 +186,25 @@ async def run_in_tmux(
 
     sentinel_q = shlex.quote(str(sentinel_file))
     exitcode_q = shlex.quote(str(exitcode_file))
+    project_path_q = shlex.quote(str(cwd.resolve()))
     wrapper_script.write_text(
         "#!/bin/bash\n"
+        f"export PROJECT_PATH={project_path_q}\n"
         f"cleanup() {{ local rc=$?; echo $rc > {exitcode_q}; touch {sentinel_q}; }}\n"
         "trap cleanup EXIT\n"
         f"{script_line}"
     )
     wrapper_script.chmod(0o755)
 
-    has_session = _session_exists(session)
-    if has_session:
+    result = subprocess.run(
+        ["tmux", "new-session", "-d", "-s", session, "-n", window,
+         "-x", "200", "-y", "50", str(wrapper_script)],
+        cwd=cwd,
+        capture_output=True,
+    )
+    if result.returncode != 0:
         result = subprocess.run(
             ["tmux", "new-window", "-t", session, "-n", window, str(wrapper_script)],
-            cwd=cwd,
-            capture_output=True,
-        )
-    else:
-        result = subprocess.run(
-            ["tmux", "new-session", "-d", "-s", session, "-n", window,
-             "-x", "200", "-y", "50", str(wrapper_script)],
             cwd=cwd,
             capture_output=True,
         )

@@ -17,10 +17,10 @@ from factory.workflow.definitions import (
     founder_workflow,
     improve_workflow,
     meta_workflow,
-
     refine_workflow,
     register_all,
     research_workflow,
+    study_standalone_workflow,  # noqa: F401
 )
 from factory.workflow.primitives import (
     AgentNode,
@@ -29,6 +29,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    Study,
     VerdictType,
 )
 
@@ -80,7 +81,9 @@ class TestTriggers:
         assert wf.trigger(ProjectState.NO_REPO, {"interactive": True})
         assert not wf.trigger(ProjectState.NO_REPO, {"interactive": False})
         assert not wf.trigger(ProjectState.NO_REPO, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"interactive": True})
+        # HAS_FACTORY now fires for design mode
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"interactive": True})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"interactive": False})
 
     def test_improve_trigger(self) -> None:
         wf = improve_workflow()
@@ -120,18 +123,98 @@ class TestDesignIsBuiltWithUserGate:
         assert gate_w2.evaluator_type == "user"
 
     def test_design_shares_other_nodes(self) -> None:
-        """W₂ shares all other node IDs with W₁."""
+        """W₂ shares all build node IDs with W₁, plus gate_has_factory, discover, and study subgraph."""
         w1 = build_workflow()
         w2 = design_workflow()
 
         w1_ids = set(w1.nodes.keys())
         w2_ids = set(w2.nodes.keys())
 
-        assert w1_ids == w2_ids
+        # Design has extra nodes: gate_has_factory, discover, and study subgraph
+        assert w2_ids == w1_ids | {
+            "gate_has_factory",
+            "discover",
+            "graph_update",
+            "study",
+            "graph_explorer",
+            "concat_study",
+        }
 
     def test_design_name(self) -> None:
         wf = design_workflow()
         assert wf.name == "design"
+
+
+# ── Design study node tests ──────────────────────────────────────
+
+
+class TestDesignStudyNode:
+    """Verify design mode's conditional study path for existing projects."""
+
+    def test_design_has_study_node(self) -> None:
+        """Design workflow must contain a study node."""
+        wf = design_workflow()
+        assert "study" in wf.nodes
+        assert isinstance(wf.nodes["study"], Study)
+
+    def test_design_has_gate_has_factory(self) -> None:
+        """Design workflow must contain the gate_has_factory conditional gate."""
+        wf = design_workflow()
+        assert "gate_has_factory" in wf.nodes
+        gate = wf.nodes["gate_has_factory"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_design_study_writes_observations(self) -> None:
+        """Study node must write observations.md."""
+        wf = design_workflow()
+        study = wf.nodes["study"]
+        assert ".factory/strategy/observations.md" in study.writes
+
+    def test_design_concat_study_to_fork_research_edge(self) -> None:
+        """There must be an unconditional edge from concat_study to fork_research."""
+        wf = design_workflow()
+        assert any(
+            e.source == "concat_study" and e.target == "fork_research" and e.condition is None
+            for e in wf.edges
+        )
+
+    def test_design_gate_routes_to_graph_update(self) -> None:
+        """gate_has_factory PROCEED must route to graph_update."""
+        wf = design_workflow()
+        assert any(
+            e.source == "gate_has_factory"
+            and e.target == "graph_update"
+            and e.condition == VerdictType.PROCEED
+            for e in wf.edges
+        )
+
+    def test_design_gate_routes_to_discover(self) -> None:
+        """gate_has_factory HALT must route to discover (not fork_research)."""
+        wf = design_workflow()
+        assert any(
+            e.source == "gate_has_factory"
+            and e.target == "discover"
+            and e.condition == VerdictType.HALT
+            for e in wf.edges
+        )
+
+    def test_design_has_discover_node(self) -> None:
+        """Design workflow must contain a discover FnNode."""
+        wf = design_workflow()
+        assert "discover" in wf.nodes
+        node = wf.nodes["discover"]
+        assert isinstance(node, FnNode)
+        assert node.command == "factory discover {project_path}"
+        assert ".factory/eval_profile.json" in node.writes
+
+    def test_design_discover_to_graph_update_edge(self) -> None:
+        """There must be an unconditional edge from discover to graph_update."""
+        wf = design_workflow()
+        assert any(
+            e.source == "discover" and e.target == "graph_update" and e.condition is None
+            for e in wf.edges
+        )
 
 
 # ── W₄ structural delta from W₃ ─────────────────────────────────
@@ -241,6 +324,7 @@ class TestRegisterAll:
             "design",
             "improve",
             "deep-qa",
+            "deep-research",
             "research",
             "meta",
             "discover",
@@ -251,6 +335,7 @@ class TestRegisterAll:
             "spec-generate",
             "spec-update",
             "founder",
+            "study",
         }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -259,6 +344,88 @@ class TestRegisterAll:
         for name, wf in all_wf.items():
             issues = wf.validate_graph()
             assert issues == [], f"{name} has validation issues: {issues}"
+
+
+# ── Study Mode structure ────────────────────────────────────────
+
+
+class TestStudyWorkflow:
+    def test_node_ids(self) -> None:
+        wf = study_standalone_workflow()
+        assert set(wf.nodes.keys()) == {
+            "graph_update",
+            "study",
+            "graph_explorer",
+            "concat_study",
+        }
+
+    def test_start_node(self) -> None:
+        wf = study_standalone_workflow()
+        assert wf.start_node == "graph_update"
+
+    def test_trigger(self) -> None:
+        wf = study_standalone_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "study"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.NO_REPO, {"mode": "study"})
+
+    def test_terminal(self) -> None:
+        wf = study_standalone_workflow()
+        assert wf.terminal is True
+
+    def test_valid(self) -> None:
+        wf = study_standalone_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"study workflow has issues: {issues}"
+
+    def test_study_writes_observations(self) -> None:
+        wf = study_standalone_workflow()
+        node = wf.nodes["study"]
+        assert ".factory/strategy/observations.md" in node.writes
+
+    def test_graph_explorer_is_researcher(self) -> None:
+        wf = study_standalone_workflow()
+        node = wf.nodes["graph_explorer"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+
+    def test_concat_study_writes_combined(self) -> None:
+        wf = study_standalone_workflow()
+        node = wf.nodes["concat_study"]
+        assert ".factory/strategy/study-combined.md" in node.writes
+
+
+class TestDesignStudySubgraph:
+    def test_graph_nodes_exist(self) -> None:
+        wf = design_workflow()
+        assert "graph_update" in wf.nodes
+        assert "study" in wf.nodes
+        assert "graph_explorer" in wf.nodes
+        assert "concat_study" in wf.nodes
+
+    def test_edge_wiring(self) -> None:
+        wf = design_workflow()
+        assert any(e.source == "graph_update" and e.target == "study" for e in wf.edges)
+        assert any(e.source == "study" and e.target == "graph_explorer" for e in wf.edges)
+        assert any(e.source == "graph_explorer" and e.target == "concat_study" for e in wf.edges)
+        assert any(e.source == "concat_study" and e.target == "fork_research" for e in wf.edges)
+
+    def test_graph_update_is_fn_node(self) -> None:
+        wf = design_workflow()
+        node = wf.nodes["graph_update"]
+        assert isinstance(node, FnNode)
+        assert "factory graph update" in node.command
+
+    def test_graph_explorer_writes_context(self) -> None:
+        wf = design_workflow()
+        node = wf.nodes["graph_explorer"]
+        assert ".factory/strategy/graph-context.md" in node.writes
+
+    def test_concat_study_writes_combined(self) -> None:
+        wf = design_workflow()
+        node = wf.nodes["concat_study"]
+        assert ".factory/strategy/study-combined.md" in node.writes
 
 
 # ── W₉ Create structure ────────────────────────────────────────
@@ -381,21 +548,23 @@ class TestDocFreshnessGate:
         wf = workflow_fn()
         edges = wf.edges
         assert any(
-            e.source == "gate_qa" and e.target == "gate_doc_freshness"
+            e.source == "gate_qa"
+            and e.target == "gate_doc_freshness"
             and e.condition == VerdictType.PROCEED
             for e in edges
         ), "missing gate_qa -> gate_doc_freshness PROCEED edge"
         assert any(
-            e.source == "gate_doc_freshness" and e.target == "gate_precheck"
+            e.source == "gate_doc_freshness"
+            and e.target == "gate_precheck"
             and e.condition == VerdictType.PROCEED
             for e in edges
         ), "missing gate_doc_freshness -> gate_precheck PROCEED edge"
         assert any(
-            e.source == "gate_doc_freshness" and e.target == "builder"
+            e.source == "gate_doc_freshness"
+            and e.target == "builder"
             and e.condition == VerdictType.RELOOP
             for e in edges
         ), "missing gate_doc_freshness -> builder RELOOP edge"
-
 
 
 # ── Builder → QA reachability audit ────────────────────────────
@@ -416,11 +585,15 @@ def _workflows_with_builder() -> list[str]:
 
 
 def _is_reachable(workflow_name: str, source_id: str, target_id: str) -> bool:
-    """Check if target_id is reachable from source_id via forward edges."""
+    """Check if target_id is reachable from source_id via forward edges + fork targets."""
     wf = register_all()[workflow_name]
     adj: dict[str, list[str]] = defaultdict(list)
     for edge in wf.edges:
         adj[edge.source].append(edge.target)
+    # Include ForkNode targets as implicit edges for reachability
+    for nid, node in wf.nodes.items():
+        if isinstance(node, ForkNode):
+            adj[nid].extend(node.targets)
 
     visited: set[str] = set()
     queue: deque[str] = deque([source_id])
@@ -478,10 +651,11 @@ class TestBuilderQaReachability:
 
 
 DEEP_QA_NODE_IDS = {
+    "fork_qa",
     "health_checker",
     "code_reviewer",
-    "gate_review",
     "adversarial_tester",
+    "join_qa",
 }
 
 DEEP_QA_WORKFLOWS = ["build", "improve", "research", "refine", "create"]
@@ -498,7 +672,7 @@ def _get_workflow(name: str):
 
 
 class TestDeepQaSubgraph:
-    """Verify the deep-QA subgraph is correctly wired in all 5 core workflows."""
+    """Verify the parallel deep-QA subgraph is correctly wired in all 5 core workflows."""
 
     @pytest.mark.parametrize("wf_name", DEEP_QA_WORKFLOWS)
     def test_deep_qa_present_in_all_workflows(self, wf_name: str) -> None:
@@ -510,9 +684,7 @@ class TestDeepQaSubgraph:
     def test_deep_qa_internal_edges(self, wf_name: str) -> None:
         wf = _get_workflow(wf_name)
         expected_edges = [
-            ("health_checker", "code_reviewer", None),
-            ("code_reviewer", "gate_review", None),
-            ("gate_review", "adversarial_tester", VerdictType.PROCEED),
+            ("fork_qa", "join_qa", None),
         ]
         edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
         for src, tgt, cond in expected_edges:
@@ -521,12 +693,11 @@ class TestDeepQaSubgraph:
             )
 
     @pytest.mark.parametrize("wf_name", DEEP_QA_WORKFLOWS)
-    def test_deep_qa_gate_review_is_fn(self, wf_name: str) -> None:
+    def test_deep_qa_fork_targets(self, wf_name: str) -> None:
         wf = _get_workflow(wf_name)
-        gate = wf.nodes["gate_review"]
-        assert isinstance(gate, GateNode)
-        assert gate.evaluator_type == "fn"
-        assert "CRITICAL_FOUND" in gate.evaluator_command
+        fork = wf.nodes["fork_qa"]
+        assert isinstance(fork, ForkNode)
+        assert set(fork.targets) == {"health_checker", "code_reviewer", "adversarial_tester"}
 
     @pytest.mark.parametrize("wf_name", DEEP_QA_WORKFLOWS)
     def test_deep_qa_no_redundant_nodes(self, wf_name: str) -> None:
@@ -588,8 +759,8 @@ class TestTerminalFlagDefaults:
     def test_meta_not_terminal(self) -> None:
         assert meta_workflow().terminal is False
 
-    def test_design_not_terminal(self) -> None:
-        assert design_workflow().terminal is False
+    def test_design_is_terminal(self) -> None:
+        assert design_workflow().terminal is True
 
 
 # ── W₁₆: Founder structure ──────────────────────────────────────
@@ -633,6 +804,7 @@ class TestFounderStructure:
 
     def test_founder_skill_export(self) -> None:
         from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
+
         wf = founder_workflow()
         skill_md = workflow_to_skill_md(wf)
         issues = validate_skill(skill_md)
@@ -861,8 +1033,10 @@ class TestFounderWorkflow:
     def test_founder_reloop_to_builder(self) -> None:
         wf = founder_workflow()
         reloop_edges = [
-            e for e in wf.edges
-            if e.source == "gate_tests" and e.target == "builder"
+            e
+            for e in wf.edges
+            if e.source == "gate_tests"
+            and e.target == "builder"
             and e.condition == VerdictType.RELOOP
         ]
         assert len(reloop_edges) == 1

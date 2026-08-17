@@ -555,6 +555,7 @@ def test_create_worktree_cleans_existing_factory_dir(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
     _setup_factory_dir(project)
+    (project / ".factory" / "config.json").write_text("{}")
 
     def fake_subprocess_run(cmd, **kwargs):
         if cmd[0] == "git" and "worktree" in cmd and "add" in cmd:
@@ -569,8 +570,10 @@ def test_create_worktree_cleans_existing_factory_dir(tmp_path: Path) -> None:
         wt_path, branch = create_worktree(project, "main")
 
     wt_factory = wt_path / ".factory"
-    assert wt_factory.is_symlink()
-    assert wt_factory.resolve() == (project / ".factory").resolve()
+    assert wt_factory.is_dir() and not wt_factory.is_symlink()
+    assert (wt_factory / "config.json").is_symlink()
+    assert (wt_factory / "strategy").is_dir()
+    assert not (wt_factory / "dummy.txt").exists()
 
 
 @pytest.mark.real_worktree
@@ -579,6 +582,7 @@ def test_create_worktree_cleans_existing_factory_symlink(tmp_path: Path) -> None
     project = tmp_path / "proj"
     project.mkdir()
     _setup_factory_dir(project)
+    (project / ".factory" / "config.json").write_text("{}")
 
     def fake_subprocess_run(cmd, **kwargs):
         if cmd[0] == "git" and "worktree" in cmd and "add" in cmd:
@@ -594,8 +598,9 @@ def test_create_worktree_cleans_existing_factory_symlink(tmp_path: Path) -> None
         wt_path, branch = create_worktree(project, "main")
 
     wt_factory = wt_path / ".factory"
-    assert wt_factory.is_symlink()
-    assert wt_factory.resolve() == (project / ".factory").resolve()
+    assert wt_factory.is_dir() and not wt_factory.is_symlink()
+    assert (wt_factory / "config.json").is_symlink()
+    assert (wt_factory / "strategy").is_dir()
 
 
 @pytest.mark.real_worktree

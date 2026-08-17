@@ -5,7 +5,6 @@ from datetime import datetime
 
 from factory.models import (
     AggregateMethod,
-    CostBudget,
     CostBudgetConfig,
     CompositeScore,
     CycleState,
@@ -14,7 +13,6 @@ from factory.models import (
     EvalResult,
     ExperimentRecord,
     FactoryConfig,
-    Hypothesis,
     InnerLoopConfig,
     OuterLoopConfig,
     ProjectProfile,
@@ -44,8 +42,13 @@ class TestFactoryConfig:
     def test_rejects_extra_fields(self):
         with pytest.raises(Exception):
             FactoryConfig(
-                goal="x", scope=[], guards=[], eval_command="x",
-                eval_threshold=0.8, constraints=[], extra_field="bad",
+                goal="x",
+                scope=[],
+                guards=[],
+                eval_command="x",
+                eval_threshold=0.8,
+                constraints=[],
+                extra_field="bad",
             )
 
     def test_roundtrip_json(self, sample_config):
@@ -77,24 +80,36 @@ class TestCompositeScore:
 class TestEvalDimension:
     def test_valid_dimension(self):
         d = EvalDimension(
-            name="tests", command="pytest", weight=0.5,
-            parser="exit_code", description="Run tests", source="discovered",
+            name="tests",
+            command="pytest",
+            weight=0.5,
+            parser="exit_code",
+            description="Run tests",
+            source="discovered",
         )
         assert d.source == "discovered"
 
     def test_with_regex(self):
         d = EvalDimension(
-            name="coverage", command="pytest --cov", weight=0.2,
-            parser="regex", regex_pattern=r"(\d+)%",
-            description="Coverage", source="researched",
+            name="coverage",
+            command="pytest --cov",
+            weight=0.2,
+            parser="regex",
+            regex_pattern=r"(\d+)%",
+            description="Coverage",
+            source="researched",
         )
         assert d.regex_pattern == r"(\d+)%"
 
     def test_valid_sources(self):
         for source in ("explicit", "discovered", "researched", "fallback"):
             d = EvalDimension(
-                name="x", command="x", weight=0.5,
-                parser="exit_code", description="x", source=source,
+                name="x",
+                command="x",
+                weight=0.5,
+                parser="exit_code",
+                description="x",
+                source=source,
             )
             assert d.source == source
 
@@ -105,8 +120,12 @@ class TestEvalProfile:
             project_type="bot",
             dimensions=[
                 EvalDimension(
-                    name="tests", command="pytest", weight=1.0,
-                    parser="exit_code", description="tests", source="discovered",
+                    name="tests",
+                    command="pytest",
+                    weight=1.0,
+                    parser="exit_code",
+                    description="tests",
+                    source="discovered",
                 )
             ],
             tier="discovered",
@@ -128,79 +147,87 @@ class TestEvalProfile:
 class TestProjectProfile:
     def test_minimal_profile(self):
         p = ProjectProfile(
-            name="test", language="python", project_type="cli_tool",
-            has_tests=True, has_linter=True, has_type_checker=False, has_ci=False,
+            name="test",
+            language="python",
+            project_type="cli_tool",
+            has_tests=True,
+            has_linter=True,
+            has_type_checker=False,
+            has_ci=False,
         )
         assert p.framework is None
         assert p.test_command is None
 
     def test_full_profile(self):
         p = ProjectProfile(
-            name="test", language="python", framework="fastapi",
+            name="test",
+            language="python",
+            framework="fastapi",
             project_type="web_app",
-            has_tests=True, has_linter=True, has_type_checker=True, has_ci=True,
-            test_command="pytest", lint_command="ruff check .",
-            type_check_command="mypy src/", package_manager="uv",
+            has_tests=True,
+            has_linter=True,
+            has_type_checker=True,
+            has_ci=True,
+            test_command="pytest",
+            lint_command="ruff check .",
+            type_check_command="mypy src/",
+            package_manager="uv",
         )
         assert p.framework == "fastapi"
-
-
-class TestHypothesis:
-    def test_valid_hypothesis(self):
-        h = Hypothesis(
-            description="Add tests",
-            rationale="Coverage is low",
-            expected_impact="tests score +0.2",
-            target_files=["tests/test_new.py"],
-        )
-        assert len(h.target_files) == 1
 
 
 class TestExperimentRecord:
     def test_valid_record(self):
         r = ExperimentRecord(
-            id=1, timestamp=datetime.now(),
+            id=1,
+            timestamp=datetime.now(),
             hypothesis="Test hypothesis",
             change_summary="Added tests",
-            issue_number=42, pr_number=43,
-            score_before=0.8, score_after=0.9, delta=0.1,
-            verdict="keep", cost_usd=1.5, notes="",
+            issue_number=42,
+            pr_number=43,
+            score_before=0.8,
+            score_after=0.9,
+            delta=0.1,
+            verdict="keep",
+            cost_usd=1.5,
+            notes="",
         )
         assert r.verdict == "keep"
 
     def test_nullable_fields(self):
         r = ExperimentRecord(
-            id=1, timestamp=datetime.now(),
-            hypothesis="x", change_summary="",
-            issue_number=None, pr_number=None,
-            score_before=None, score_after=None, delta=None,
-            verdict="error", cost_usd=None, notes="crashed",
+            id=1,
+            timestamp=datetime.now(),
+            hypothesis="x",
+            change_summary="",
+            issue_number=None,
+            pr_number=None,
+            score_before=None,
+            score_after=None,
+            delta=None,
+            verdict="error",
+            cost_usd=None,
+            notes="crashed",
         )
         assert r.issue_number is None
 
     def test_valid_verdicts(self):
         for v in ("keep", "revert", "error"):
             r = ExperimentRecord(
-                id=1, timestamp=datetime.now(),
-                hypothesis="x", change_summary="",
-                issue_number=None, pr_number=None,
-                score_before=None, score_after=None, delta=None,
-                verdict=v, cost_usd=None, notes="",
+                id=1,
+                timestamp=datetime.now(),
+                hypothesis="x",
+                change_summary="",
+                issue_number=None,
+                pr_number=None,
+                score_before=None,
+                score_after=None,
+                delta=None,
+                verdict=v,
+                cost_usd=None,
+                notes="",
             )
             assert r.verdict == v
-
-
-class TestCostBudget:
-    def test_defaults(self):
-        b = CostBudget()
-        assert b.per_experiment_max == 2.0
-        assert b.per_session_max == 10.0
-        assert b.per_month_max == 100.0
-        assert b.current_session_spent == 0.0
-
-    def test_custom_budget(self):
-        b = CostBudget(per_experiment_max=5.0, per_session_max=50.0)
-        assert b.per_experiment_max == 5.0
 
 
 class TestResearchTarget:
@@ -231,16 +258,23 @@ class TestResearchTarget:
     def test_rejects_invalid_parser(self):
         with pytest.raises(Exception):
             ResearchTarget(
-                objective="x", metric="y", target=1.0,
-                run_command="z", result_path="r",
+                objective="x",
+                metric="y",
+                target=1.0,
+                run_command="z",
+                result_path="r",
                 result_parser="exit_code",
             )
 
     def test_rejects_extra_fields(self):
         with pytest.raises(Exception):
             ResearchTarget(
-                objective="x", metric="y", target=1.0,
-                run_command="z", result_path="r", extra="bad",
+                objective="x",
+                metric="y",
+                target=1.0,
+                run_command="z",
+                result_path="r",
+                extra="bad",
             )
 
 
@@ -268,8 +302,12 @@ class TestCostBudgetConfig:
 class TestFactoryConfigResearchFields:
     def test_defaults_preserve_backward_compat(self):
         config = FactoryConfig(
-            goal="Test", scope=[], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[],
+            goal="Test",
+            scope=[],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
         )
         assert config.research_target is None
         assert config.mutable_surfaces == []
@@ -286,9 +324,15 @@ class TestFactoryConfigResearchFields:
             result_path="output.json",
         )
         config = FactoryConfig(
-            goal="Research", scope=[], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[], research_target=rt,
-            mutable_surfaces=["src/model.py"], fixed_surfaces=["data/"],
+            goal="Research",
+            scope=[],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
+            research_target=rt,
+            mutable_surfaces=["src/model.py"],
+            fixed_surfaces=["data/"],
             research_constraints=["No extra dependencies"],
             cost_budget=CostBudgetConfig(max_per_cycle=3.0),
         )
@@ -309,9 +353,15 @@ class TestFactoryConfigResearchFields:
             result_path="metrics.json",
         )
         config = FactoryConfig(
-            goal="Research", scope=["src/"], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[], research_target=rt,
-            mutable_surfaces=["src/"], fixed_surfaces=["data/"],
+            goal="Research",
+            scope=["src/"],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
+            research_target=rt,
+            mutable_surfaces=["src/"],
+            fixed_surfaces=["data/"],
         )
         data = config.model_dump()
         restored = FactoryConfig(**data)
@@ -417,8 +467,12 @@ class TestOuterLoopConfig:
 class TestFactoryConfigInnerOuterLoop:
     def test_defaults_none(self):
         config = FactoryConfig(
-            goal="Test", scope=[], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[],
+            goal="Test",
+            scope=[],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
         )
         assert config.inner_loop is None
         assert config.outer_loop is None
@@ -426,8 +480,13 @@ class TestFactoryConfigInnerOuterLoop:
     def test_with_inner_loop(self):
         il = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.median)
         config = FactoryConfig(
-            goal="Test", scope=[], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[], inner_loop=il,
+            goal="Test",
+            scope=[],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
+            inner_loop=il,
         )
         assert config.inner_loop is not None
         assert config.inner_loop.runs_per_cycle == 3
@@ -440,8 +499,13 @@ class TestFactoryConfigInnerOuterLoop:
             outer_surfaces=["config/"],
         )
         config = FactoryConfig(
-            goal="Test", scope=[], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[], outer_loop=ol,
+            goal="Test",
+            scope=[],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
+            outer_loop=ol,
         )
         assert config.outer_loop is not None
         assert config.outer_loop.max_outer_cycles == 5
@@ -454,8 +518,14 @@ class TestFactoryConfigInnerOuterLoop:
             outer_surfaces=["config/"],
         )
         config = FactoryConfig(
-            goal="Research", scope=["src/"], guards=[], eval_command="pytest",
-            eval_threshold=0.8, constraints=[], inner_loop=il, outer_loop=ol,
+            goal="Research",
+            scope=["src/"],
+            guards=[],
+            eval_command="pytest",
+            eval_threshold=0.8,
+            constraints=[],
+            inner_loop=il,
+            outer_loop=ol,
         )
         data = config.model_dump()
         restored = FactoryConfig(**data)

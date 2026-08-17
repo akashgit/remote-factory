@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from factory.models import ProjectState
 from factory.workflow.primitives import FnNode, Workflow
+from factory.workflow.registry import WorkflowRegistry
 
 
 def _terminal_workflow() -> Workflow:
@@ -34,11 +35,9 @@ class TestChainModesTerminal:
         """_chain_modes exits immediately when completed_mode is terminal."""
         from factory.cli.run import _chain_modes
 
-        registry = {
-            "swebench": _terminal_workflow(),
-            "improve": _non_terminal_workflow(),
-        }
-        with patch("factory.workflow.definitions.register_all", return_value=registry):
+        with patch.object(
+            WorkflowRegistry, "get_workflow", return_value=_terminal_workflow()
+        ):
             result = _chain_modes(tmp_path, completed_mode="swebench")
         assert result == 0
 
@@ -46,9 +45,9 @@ class TestChainModesTerminal:
         """Terminal mode prevents any further cycle execution."""
         from factory.cli.run import _chain_modes
 
-        registry = {"swebench": _terminal_workflow()}
-        with patch("factory.workflow.definitions.register_all", return_value=registry), \
-             patch("factory.cli.run._run_single_cycle") as mock_run:
+        with patch.object(
+            WorkflowRegistry, "get_workflow", return_value=_terminal_workflow()
+        ), patch("factory.cli.run._run_single_cycle") as mock_run:
             _chain_modes(tmp_path, completed_mode="swebench")
         mock_run.assert_not_called()
 
@@ -56,8 +55,9 @@ class TestChainModesTerminal:
         """Non-terminal completed_mode does not short-circuit."""
         from factory.cli.run import _chain_modes
 
-        registry = {"improve": _non_terminal_workflow()}
-        with patch("factory.workflow.definitions.register_all", return_value=registry), \
+        with patch.object(
+            WorkflowRegistry, "get_workflow", return_value=_non_terminal_workflow()
+        ), \
              patch("factory.state.detect_state", return_value=ProjectState.HAS_FACTORY), \
              patch("factory.cli.run._auto_detect_mode", return_value="improve"), \
              patch("factory.cli.run._run_single_cycle", return_value=0):
@@ -74,4 +74,21 @@ class TestChainModesTerminal:
              patch("factory.cli.run._auto_detect_mode", return_value="improve"), \
              patch("factory.cli.run._run_single_cycle", return_value=0):
             result = _chain_modes(tmp_path, already_improved=True)
+        assert result == 0
+
+    def test_project_local_terminal_workflow(self, tmp_path: Path) -> None:
+        """_chain_modes recognizes terminal project-local workflows."""
+        from factory.cli.run import _chain_modes
+
+        local_terminal = Workflow(
+            name="custom_bench",
+            nodes={"start": FnNode(id="start", command="true")},
+            edges=[],
+            start_node="start",
+            terminal=True,
+        )
+        with patch.object(
+            WorkflowRegistry, "get_workflow", return_value=local_terminal
+        ):
+            result = _chain_modes(tmp_path, completed_mode="custom_bench")
         assert result == 0

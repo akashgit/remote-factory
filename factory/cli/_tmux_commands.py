@@ -102,6 +102,9 @@ def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: st
         parts.append("--use-profile")
     if getattr(args, "overwrite", None):
         parts.append(f"--overwrite {shlex.quote(args.overwrite)}")
+    engine = getattr(args, "engine", "skill")
+    if engine != "skill":
+        parts.append(f"--engine {engine}")
     return " ".join(parts)
 
 

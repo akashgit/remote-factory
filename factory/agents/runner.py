@@ -2,31 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Literal
 
 from factory.ace.injector import inject_playbook, load_playbook
 from factory.runners import get_runner
 
 logger = logging.getLogger(__name__)
 
-AgentRole = Literal[
-    "researcher",
-    "strategist",
-    "builder",
-    "health_checker",
-    "code_reviewer",
-    "adversarial_tester",
-    "archivist",
-    "ceo",
-    "failure_analyst",
-    "refiner",
-    "profiler",
-    "refactory",
-]
+AgentRole = str
 
 # Consecutive failure tracking
 _consecutive_failures: int = 0
@@ -51,12 +36,6 @@ class ConsecutiveAgentFailureError(Exception):
         )
 
 
-def reset_failure_counter() -> None:
-    """Reset the consecutive failure counter. Call at start of a cycle."""
-    global _consecutive_failures
-    _consecutive_failures = 0
-
-
 IDENTITY_REANCHOR = """\
 
 ---
@@ -69,6 +48,7 @@ IDENTITY_REANCHOR = """\
 
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+_USER_PROMPTS_DIR = Path.home() / ".factory" / "agents" / "prompts"
 
 
 def resolve_prompt(
@@ -82,7 +62,8 @@ def resolve_prompt(
 
     Resolution order:
     1. Project-specific override: <project>/.factory/agents/<role>.md
-    2. Factory default: factory/agents/prompts/<role>.md
+    2. User-global: ~/.factory/agents/prompts/<role>.md
+    3. Factory default: factory/agents/prompts/<role>.md
 
     When *use_profile* is True, loads ~/.factory/profile.md and appends it
     after the ACE playbook injection.
@@ -110,6 +91,21 @@ def resolve_prompt(
                 prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
             return prompt
 
+    # Check user-global prompts (~/.factory/agents/prompts/)
+    user_path = _USER_PROMPTS_DIR / f"{role}.md"
+    if user_path.exists():
+        logger.info("Using user-global prompt for %s: %s", role, user_path)
+        prompt = user_path.read_text()
+        playbook = load_playbook(role)
+        if playbook:
+            prompt = inject_playbook(prompt, playbook)
+            logger.info("Injected playbook for %s (user-global)", role)
+        if use_profile:
+            prompt = _maybe_inject_profile(prompt, role)
+        if role == "ceo" and workflow_mode and project_path is not None:
+            prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
+        return prompt
+
     # Fall back to factory default
     default_path = _PROMPTS_DIR / f"{role}.md"
     if not default_path.exists():
@@ -117,7 +113,8 @@ def resolve_prompt(
             f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
         )
         raise FileNotFoundError(
-            f"No prompt found for agent role '{role}'. Expected at {default_path}{override_hint}"
+            f"No prompt found for agent role '{role}'. "
+            f"Expected at {default_path}, {_USER_PROMPTS_DIR / f'{role}.md'}{override_hint}"
         )
 
     prompt = default_path.read_text()
@@ -180,6 +177,7 @@ async def invoke_agent(
     review_tag: str | None = None,
     workflow_mode: str | None = None,
     settings_file: str | None = None,
+    prompt_override: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -191,9 +189,12 @@ async def invoke_agent(
     """
     global _consecutive_failures
 
-    prompt = resolve_prompt(
-        role, project_path, use_profile=use_profile, workflow_mode=workflow_mode
-    )
+    if prompt_override:
+        prompt = prompt_override
+    else:
+        prompt = resolve_prompt(
+            role, project_path, use_profile=use_profile, workflow_mode=workflow_mode
+        )
 
     if os.environ.get("FACTORY_NO_GITHUB") == "1":
         prompt += (
@@ -530,82 +531,3 @@ def complete_cycle_session(
         flush()
     except Exception:
         logger.debug("Failed to complete cycle trace", exc_info=True)
-
-
-async def invoke_agents_parallel(
-    tasks: list[tuple[AgentRole, str]],
-    project_path: Path,
-    *,
-    timeout: float = 600.0,
-    dangerously_skip_permissions: bool = True,
-    model: str | None = None,
-    runner_name: str | None = None,
-    tmux_persist: bool = False,
-    background: bool = False,
-    review_tags: list[str | None] | None = None,
-) -> list[tuple[str, int]]:
-    """Invoke multiple agents concurrently. Returns list of (output, return_code).
-
-    Args:
-        review_tags: Optional list of review tags, one per task. When not
-            provided, auto-generates numeric tags (0, 1, 2, …) for any role
-            that appears more than once in *tasks* so their review files don't
-            clobber each other.
-
-    Raises:
-        ConsecutiveAgentFailureError: If all agents in the batch fail, indicating
-            infrastructure problems (e.g., API key not propagating to subprocesses).
-    """
-    # Auto-generate tags for duplicate roles when none are provided
-    if review_tags is None:
-        from collections import Counter
-
-        role_counts = Counter(role for role, _ in tasks)
-        duplicated_roles = {role for role, count in role_counts.items() if count > 1}
-        if duplicated_roles:
-            role_idx: dict[str, int] = {}
-            review_tags = []
-            for role, _ in tasks:
-                if role in duplicated_roles:
-                    idx = role_idx.get(role, 0)
-                    review_tags.append(str(idx))
-                    role_idx[role] = idx + 1
-                else:
-                    review_tags.append(None)
-        else:
-            review_tags = [None] * len(tasks)
-
-    coros = [
-        invoke_agent(
-            role,
-            task,
-            project_path,
-            timeout=timeout,
-            dangerously_skip_permissions=dangerously_skip_permissions,
-            model=model,
-            runner_name=runner_name,
-            _track_failures=False,  # Avoid race condition; track locally below
-            tmux_persist=tmux_persist,
-            background=background,
-            review_tag=tag,
-        )
-        for (role, task), tag in zip(tasks, review_tags)
-    ]
-    results = list(await asyncio.gather(*coros))
-
-    # Track failures locally to avoid race condition with global counter
-    failure_count = sum(1 for _, code in results if code != 0)
-    if failure_count >= _FAILURE_ABORT_THRESHOLD and failure_count == len(results):
-        # All agents failed — likely infrastructure issue
-        _emit_safe(
-            project_path,
-            "cycle.aborted",
-            data={
-                "reason": "consecutive_agent_failures",
-                "failure_count": failure_count,
-                "last_agent": "parallel_batch",
-            },
-        )
-        raise ConsecutiveAgentFailureError(failure_count, "parallel_batch")
-
-    return results

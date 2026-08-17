@@ -30,6 +30,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    LLMNode,
     NodeType,
     SelectionNode,
     Study,
@@ -82,11 +83,13 @@ class WorkflowExecutor:
         agent_pool: dict[str, AgentConfig] | None = None,
         *,
         dry_run: bool = False,
+        auto_approve: bool = False,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
+        self.auto_approve = auto_approve
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -130,6 +133,27 @@ class WorkflowExecutor:
         elapsed = (time.monotonic() - start_time) * 1000
         self.result.duration_ms = elapsed
         self.result.completed_files = set(self.completed_files)
+
+        # Timing summary: extract per-node durations from completed events
+        node_timings: list[dict[str, Any]] = []
+        for ev in self.result.events:
+            if ev.get("type") == "node.completed" and "duration_ms" in ev:
+                node_timings.append({
+                    "id": ev.get("node_id", ""),
+                    "type": ev.get("node_type", ""),
+                    "duration_ms": round(ev["duration_ms"], 1),
+                })
+        node_timings.sort(key=lambda n: n["duration_ms"], reverse=True)
+        node_total_ms = sum(n["duration_ms"] for n in node_timings)
+        log.info(
+            "workflow.timing_summary",
+            workflow=self.workflow.name,
+            run_id=self.run_id,
+            total_ms=round(elapsed, 1),
+            node_count=len(node_timings),
+            nodes=node_timings,
+            overhead_ms=round(elapsed - node_total_ms, 1),
+        )
 
         if self.result.halted:
             self._emit(
@@ -768,6 +792,9 @@ class WorkflowExecutor:
         if isinstance(node, AgentNode):
             return await self._run_agent(node)
 
+        if isinstance(node, LLMNode):
+            return await self._run_llm(node)
+
         return f"[unknown node type] {type(node).__name__}"
 
     async def _run_study(self, node: Study) -> str:
@@ -818,12 +845,44 @@ class WorkflowExecutor:
 
         return stdout
 
+    async def _run_llm(self, node: LLMNode) -> str:
+        """Run an LLMNode via direct API tool-use loop."""
+        from factory.workflow.llm_loop import run_llm_loop
+
+        context_parts: list[str] = []
+        for read_path in sorted(node.reads):
+            full_path = self.project_path / read_path
+            if full_path.exists():
+                context_parts.append(full_path.read_text())
+        gate_context = self.node_context.get(node.id, "")
+        if gate_context:
+            context_parts.append(gate_context)
+
+        output = await asyncio.wait_for(
+            run_llm_loop(
+                node, self.project_path,
+                instance_context="\n\n".join(context_parts),
+            ),
+            timeout=float(node.timeout),
+        )
+
+        output_path = self.project_path / ".factory" / "reviews" / "builder-latest.md"
+        if node.writes:
+            first_write = next(iter(node.writes))
+            output_path = self.project_path / first_write
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output)
+
+        return output
+
     async def _evaluate_gate(self, node: GateNode) -> Verdict:
         """Evaluate a gate and return a verdict."""
         if self.dry_run:
             return Verdict.proceed()
 
         if node.evaluator_type == "user":
+            if self.auto_approve:
+                log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
             return Verdict.proceed()
 
         if node.evaluator_type == "fn":

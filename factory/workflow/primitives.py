@@ -43,7 +43,9 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=1200),
     "health_checker": AgentConfig(role=AgentRole.HEALTH_CHECKER, model="opus", timeout=600),
     "code_reviewer": AgentConfig(role=AgentRole.CODE_REVIEWER, model="opus", timeout=900),
-    "adversarial_tester": AgentConfig(role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800),
+    "adversarial_tester": AgentConfig(
+        role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800
+    ),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
@@ -207,6 +209,39 @@ class Study(FnNode):
     focus: str | None = None
 
 
+class ToolDef(BaseModel):
+    """A tool available to the LLM during a tool-use loop."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    description: str = ""
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    executor: Literal["bash", "file_read", "file_write", "file_edit"] = "bash"
+
+
+class LLMNode(Node):
+    """Node that makes direct LLM API calls with a configurable tool-use loop.
+
+    Unlike AgentNode (full CLI subprocess), this runs the API loop in-process
+    with a minimal, configurable tool set.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    system_prompt: str = ""
+    instance_prompt: str = ""
+    model: str = "sonnet"
+    provider: Literal["anthropic", "vertex", "litellm"] = "anthropic"
+    max_tokens: int = 8192
+    max_turns: int = 50
+    temperature: float = 0.0
+    stop_sequences: list[str] = Field(default_factory=list)
+    tools: list[ToolDef] = Field(default_factory=list)
+    tool_choice: Literal["auto", "any", "none"] = "auto"
+    timeout: int = 600
+
+
 # ── edges ────────────────────────────────────────────────────────
 
 
@@ -223,7 +258,9 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
+NodeType = (
+    AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study | LLMNode
+)
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]
@@ -244,6 +281,7 @@ class Workflow(BaseModel):
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""
         from factory.workflow.validation import validate_workflow
+
         return validate_workflow(self)
 
     def subgraph(
@@ -282,12 +320,3 @@ class Factory(BaseModel):
     agent_pool: dict[str, AgentConfig]
     workflows: dict[str, Workflow]
     config: FactoryConfig | None = None
-
-    def select_workflow(
-        self, state: ProjectState, context: dict[str, Any] | None = None,
-    ) -> Workflow | None:
-        ctx = context or {}
-        for wf in self.workflows.values():
-            if wf.trigger and wf.trigger(state, ctx):
-                return wf
-        return None

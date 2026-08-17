@@ -10,7 +10,6 @@ from factory.research_index import (
     build_citation_index,
     citation_coverage,
     extract_citations,
-    uncited_experiments,
 )
 
 
@@ -21,9 +20,19 @@ def _write_results_tsv(project_path: Path, rows: list[dict]) -> None:
     tsv_path = factory_dir / "results.tsv"
 
     fieldnames = [
-        "id", "timestamp", "hypothesis", "change_summary", "issue_number",
-        "pr_number", "score_before", "score_after", "delta", "verdict",
-        "cost_usd", "notes", "research_citations",
+        "id",
+        "timestamp",
+        "hypothesis",
+        "change_summary",
+        "issue_number",
+        "pr_number",
+        "score_before",
+        "score_after",
+        "delta",
+        "verdict",
+        "cost_usd",
+        "notes",
+        "research_citations",
     ]
     buf = StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames, dialect="excel-tab")
@@ -85,10 +94,13 @@ class TestBackfillCitations:
         assert index == {}
 
     def test_extracts_from_hypothesis(self, tmp_path: Path) -> None:
-        _write_results_tsv(tmp_path, [
-            _make_row(1, hypothesis="Fix issue #115 based on https://example.com"),
-            _make_row(2, hypothesis="Just a plain hypothesis"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, hypothesis="Fix issue #115 based on https://example.com"),
+                _make_row(2, hypothesis="Just a plain hypothesis"),
+            ],
+        )
         index = backfill_citations(tmp_path)
         assert "1" in index
         assert "#115" in index["1"]
@@ -96,20 +108,26 @@ class TestBackfillCitations:
         assert "2" not in index
 
     def test_writes_citations_json(self, tmp_path: Path) -> None:
-        _write_results_tsv(tmp_path, [
-            _make_row(1, hypothesis="See #42"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, hypothesis="See #42"),
+            ],
+        )
         backfill_citations(tmp_path)
         citations_file = tmp_path / ".factory" / "citations.json"
         assert citations_file.exists()
 
     def test_coverage_uses_backfill(self, tmp_path: Path) -> None:
         """citation_coverage should read from backfilled citations.json."""
-        _write_results_tsv(tmp_path, [
-            _make_row(1, hypothesis="Fix issue #115"),
-            _make_row(2, hypothesis="Fix issue #42"),
-            _make_row(3, hypothesis="Plain hypothesis"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, hypothesis="Fix issue #115"),
+                _make_row(2, hypothesis="Fix issue #42"),
+                _make_row(3, hypothesis="Plain hypothesis"),
+            ],
+        )
         assert citation_coverage(tmp_path) == 0.0
         backfill_citations(tmp_path)
         coverage = citation_coverage(tmp_path)
@@ -124,20 +142,26 @@ class TestBuildCitationIndex:
 
     def test_no_citations(self, tmp_path: Path) -> None:
         """Experiments without citations produce empty index."""
-        _write_results_tsv(tmp_path, [
-            _make_row(1),
-            _make_row(2),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1),
+                _make_row(2),
+            ],
+        )
         index = build_citation_index(tmp_path)
         assert index == {}
 
     def test_with_citations(self, tmp_path: Path) -> None:
         """Experiments with citations appear in the index."""
-        _write_results_tsv(tmp_path, [
-            _make_row(1, citations="https://arxiv.org/abs/1234|#42"),
-            _make_row(2),
-            _make_row(3, citations="Ideas/Research.md"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, citations="https://arxiv.org/abs/1234|#42"),
+                _make_row(2),
+                _make_row(3, citations="Ideas/Research.md"),
+            ],
+        )
         index = build_citation_index(tmp_path)
         assert 1 in index
         assert index[1] == ["https://arxiv.org/abs/1234", "#42"]
@@ -147,9 +171,12 @@ class TestBuildCitationIndex:
 
     def test_single_citation(self, tmp_path: Path) -> None:
         """Single citation (no pipe separator) works correctly."""
-        _write_results_tsv(tmp_path, [
-            _make_row(1, citations="https://example.com"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, citations="https://example.com"),
+            ],
+        )
         index = build_citation_index(tmp_path)
         assert index[1] == ["https://example.com"]
 
@@ -168,21 +195,22 @@ class TestCitationCoverage:
 
     def test_partial_coverage(self, tmp_path: Path) -> None:
         """Some cited experiments return correct fraction."""
-        _write_results_tsv(tmp_path, [
-            _make_row(1, citations="https://example.com"),
-            _make_row(2),
-            _make_row(3, citations="#55"),
-            _make_row(4),
-            _make_row(5),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(1, citations="https://example.com"),
+                _make_row(2),
+                _make_row(3, citations="#55"),
+                _make_row(4),
+                _make_row(5),
+            ],
+        )
         coverage = citation_coverage(tmp_path)
         assert coverage == 2 / 5
 
     def test_full_coverage(self, tmp_path: Path) -> None:
         """All cited experiments return 1.0 coverage."""
-        _write_results_tsv(tmp_path, [
-            _make_row(i, citations=f"ref-{i}") for i in range(1, 4)
-        ])
+        _write_results_tsv(tmp_path, [_make_row(i, citations=f"ref-{i}") for i in range(1, 4)])
         coverage = citation_coverage(tmp_path)
         assert coverage == 1.0
 
@@ -193,38 +221,6 @@ class TestCitationCoverage:
         _write_results_tsv(tmp_path, rows)
         coverage = citation_coverage(tmp_path)
         assert coverage == 1 / 10  # 1 cited in last 10
-
-
-class TestUncitedExperiments:
-    def test_empty_project(self, tmp_path: Path) -> None:
-        uncited = uncited_experiments(tmp_path)
-        assert uncited == []
-
-    def test_all_cited(self, tmp_path: Path) -> None:
-        _write_results_tsv(tmp_path, [
-            _make_row(1, citations="ref-1"),
-            _make_row(2, citations="ref-2"),
-        ])
-        uncited = uncited_experiments(tmp_path)
-        assert uncited == []
-
-    def test_some_uncited(self, tmp_path: Path) -> None:
-        _write_results_tsv(tmp_path, [
-            _make_row(1, citations="ref-1"),
-            _make_row(2),
-            _make_row(3, citations="ref-3"),
-            _make_row(4),
-        ])
-        uncited = uncited_experiments(tmp_path)
-        assert uncited == [2, 4]
-
-    def test_uses_last_10(self, tmp_path: Path) -> None:
-        """Only last 10 experiments are considered."""
-        rows = [_make_row(i, citations=f"ref-{i}") for i in range(1, 13)]  # 12 cited
-        rows[-1]["research_citations"] = ""  # last one uncited
-        _write_results_tsv(tmp_path, rows)
-        uncited = uncited_experiments(tmp_path)
-        assert uncited == [12]
 
 
 class TestCmdResearch:
@@ -240,10 +236,15 @@ class TestCmdResearch:
     def test_output_format(self, tmp_path: Path, capsys) -> None:
         import argparse
 
-        _write_results_tsv(tmp_path, [
-            _make_row(1, hypothesis="Add structured logging", citations="https://example.com|#42"),
-            _make_row(2, hypothesis="Fix crash in parser"),
-        ])
+        _write_results_tsv(
+            tmp_path,
+            [
+                _make_row(
+                    1, hypothesis="Add structured logging", citations="https://example.com|#42"
+                ),
+                _make_row(2, hypothesis="Fix crash in parser"),
+            ],
+        )
         args = argparse.Namespace(path=str(tmp_path))
         ret = cmd_research(args)
         assert ret == 0

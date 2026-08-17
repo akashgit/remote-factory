@@ -28,7 +28,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed}")
+        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed,tool}")
         return 1
 
     handlers = {
@@ -38,6 +38,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
         "validate": _cmd_validate,
         "export-skills": _cmd_export_skills,
         "lint-contributed": _cmd_lint_contributed,
+        "tool": _cmd_tool,
     }
 
     handler = handlers.get(sub)
@@ -50,15 +51,34 @@ def cmd_workflow(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run a named workflow on a project."""
+    import base64
+    import os
+    import tempfile
+
     name = args.name
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
+    from_yaml = getattr(args, "from_yaml", None)
 
-    wf = WorkflowRegistry.get_workflow(name, project_path)
-    if not wf:
-        print(f"Unknown workflow: {name}")
-        print(f"Available: {', '.join(WorkflowRegistry._entries)}")
-        return 1
+    yaml_b64 = os.environ.get("FACTORY_WORKFLOW_YAML_B64")
+    if yaml_b64 and not from_yaml:
+        tmp = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w")
+        tmp.write(base64.b64decode(yaml_b64).decode())
+        tmp.close()
+        from_yaml = tmp.name
+        log.info("loaded workflow YAML from FACTORY_WORKFLOW_YAML_B64 env var")
+
+    if from_yaml:
+        from factory.skillopt.yaml_surface import yaml_to_workflow
+        wf = yaml_to_workflow(from_yaml, name)
+        log.info("workflow loaded from YAML override", path=from_yaml, name=name)
+    else:
+        resolved = WorkflowRegistry.get_workflow(name, project_path)
+        if not resolved:
+            print(f"Unknown workflow: {name}")
+            print(f"Available: {', '.join(WorkflowRegistry._entries)}")
+            return 1
+        wf = resolved
 
     executor = WorkflowExecutor(
         wf,
@@ -167,12 +187,32 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Validate a workflow using NetworkX."""
-    name = args.name
-    project_path = Path(getattr(args, "project_path", None) or ".").resolve()
-    wf = WorkflowRegistry.get_workflow(name, project_path)
-    if not wf:
-        print(f"Unknown workflow: {name}")
-        return 1
+    file_path = getattr(args, "file", None)
+
+    if file_path:
+        from factory.workflow.registry import _load_workflow_file
+
+        path = Path(file_path).resolve()
+        if not path.exists():
+            print(f"File not found: {path}")
+            return 1
+        try:
+            meta, workflow_fn = _load_workflow_file(path)
+        except ValueError as exc:
+            print(f"Failed to load workflow file: {exc}")
+            return 1
+        wf = workflow_fn()
+        name = meta["name"]
+    else:
+        name = args.name
+        if not name:
+            print("Error: provide a workflow name or --file <path>")
+            return 1
+        project_path = Path(getattr(args, "project_path", None) or ".").resolve()
+        wf = WorkflowRegistry.get_workflow(name, project_path)
+        if not wf:
+            print(f"Unknown workflow: {name}")
+            return 1
 
     issues = wf.validate_graph()
 
@@ -244,6 +284,58 @@ def _cmd_lint_contributed(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_tool(args: argparse.Namespace) -> int:
+    """Dispatch tool subcommands for step-by-step workflow execution."""
+    import sys
+
+    from factory.workflow.tool import (
+        tool_curr,
+        tool_finalize,
+        tool_init,
+        tool_next,
+        tool_overview,
+        tool_status,
+        tool_submit,
+    )
+
+    sub = getattr(args, "tool_command", None)
+    if not sub:
+        print("Usage: factory workflow tool {init,next,submit,status,finalize,overview,curr}")
+        return 1
+
+    project_path = Path(args.project_path).resolve()
+
+    if sub == "init":
+        session_dir = tool_init(args.name, project_path)
+        print(session_dir)
+        return 0
+    elif sub == "next":
+        dry_run = getattr(args, "dry_run", False)
+        print(tool_next(project_path, dry_run=dry_run))
+        return 0
+    elif sub == "submit":
+        output = sys.stdin.read().strip()
+        result = tool_submit(project_path, args.node, output)
+        print(result)
+        return 0
+    elif sub == "status":
+        fmt = getattr(args, "format", "linear")
+        print(tool_status(project_path, fmt=fmt))
+        return 0
+    elif sub == "finalize":
+        print(tool_finalize(project_path))
+        return 0
+    elif sub == "overview":
+        fmt = getattr(args, "format", "linear")
+        print(tool_overview(project_path, fmt=fmt))
+        return 0
+    elif sub == "curr":
+        print(tool_curr(project_path))
+        return 0
+
+    return 1
+
+
 def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the 'workflow' subcommand with its subcommands."""
     wf_parser = sub.add_parser("workflow", help="Workflow graph engine commands")
@@ -254,6 +346,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
+    p.add_argument(
+        "--from-yaml", default=None, metavar="PATH",
+        help="Load workflow from YAML annotations file (overrides slot values on base workflow)",
+    )
 
     # list
     p = wf_sub.add_parser("list", help="List all registered workflows")
@@ -266,7 +362,8 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
 
     # validate
     p = wf_sub.add_parser("validate", help="Validate workflow graph structure")
-    p.add_argument("name", help="Workflow name")
+    p.add_argument("name", nargs="?", default=None, help="Workflow name")
+    p.add_argument("--file", default=None, help="Path to a standalone workflow .py file to validate")
     p.add_argument("--project-path", default=None, help="Project path for local workflow discovery")
 
     # export-skills
@@ -282,3 +379,42 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument(
         "--path", default=None, help="Base directory to scan (default: factory/workflow/contributed/)"
     )
+
+    # tool
+    p_tool = wf_sub.add_parser("tool", help="Tool-based workflow execution")
+    tool_sub = p_tool.add_subparsers(dest="tool_command")
+
+    p_tool_init = tool_sub.add_parser("init", help="Initialize a tool session")
+    p_tool_init.add_argument("name", help="Workflow name")
+    p_tool_init.add_argument("project_path", help="Project path")
+
+    p_tool_next = tool_sub.add_parser("next", help="Get next node task")
+    p_tool_next.add_argument("project_path", help="Project path")
+    p_tool_next.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="Preview without advancing",
+    )
+
+    p_tool_submit = tool_sub.add_parser("submit", help="Submit node output")
+    p_tool_submit.add_argument("project_path", help="Project path")
+    p_tool_submit.add_argument("--node", required=True, help="Node ID")
+
+    p_tool_status = tool_sub.add_parser("status", help="Show session status")
+    p_tool_status.add_argument("project_path", help="Project path")
+    p_tool_status.add_argument(
+        "--format", choices=["linear", "phased"], default="linear",
+        help="Output format (default: linear)",
+    )
+
+    p_tool_finalize = tool_sub.add_parser("finalize", help="Finalize session — mark remaining nodes complete")
+    p_tool_finalize.add_argument("project_path", help="Project path")
+
+    p_tool_overview = tool_sub.add_parser("overview", help="Show full workflow map")
+    p_tool_overview.add_argument("project_path", help="Project path")
+    p_tool_overview.add_argument(
+        "--format", choices=["linear", "phased"], default="linear",
+        help="Output format (default: linear)",
+    )
+
+    p_tool_curr = tool_sub.add_parser("curr", help="Show current node (no advance)")
+    p_tool_curr.add_argument("project_path", help="Project path")

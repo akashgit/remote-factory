@@ -6,7 +6,6 @@ from factory.registry import (
     _load_registry,
     get_project_paths,
     list_projects,
-    populate_from_directory,
     register_project,
     update_project_stats,
 )
@@ -44,7 +43,9 @@ def test_update_project_stats(tmp_path: Path) -> None:
 
     register_project(project, registry_path=registry_path)
     update_project_stats(
-        project, experiment_count=5, latest_score=0.85,
+        project,
+        experiment_count=5,
+        latest_score=0.85,
         registry_path=registry_path,
     )
 
@@ -61,7 +62,8 @@ def test_update_project_stats_not_found(tmp_path: Path) -> None:
 
     # Should not raise — just logs a warning
     update_project_stats(
-        project, experiment_count=5,
+        project,
+        experiment_count=5,
         registry_path=registry_path,
     )
 
@@ -109,41 +111,3 @@ def test_load_registry_corrupt(tmp_path: Path) -> None:
     registry_path.write_text("not json")
     registry = _load_registry(registry_path)
     assert registry.projects == []
-
-
-def test_populate_from_directory(tmp_path: Path) -> None:
-    registry_path = tmp_path / "registry.json"
-
-    # Create a project with .factory/results.tsv
-    project = tmp_path / "projects" / "proj1"
-    factory_dir = project / ".factory"
-    factory_dir.mkdir(parents=True)
-    (factory_dir / "results.tsv").write_text("id\ttimestamp\thypothesis\n")
-
-    added = populate_from_directory(
-        tmp_path / "projects", registry_path=registry_path,
-    )
-    assert added == 1
-
-    entries = list_projects(registry_path=registry_path)
-    assert len(entries) == 1
-    assert entries[0].name == "proj1"
-
-
-def test_populate_from_directory_idempotent(tmp_path: Path) -> None:
-    registry_path = tmp_path / "registry.json"
-
-    project = tmp_path / "projects" / "proj1"
-    factory_dir = project / ".factory"
-    factory_dir.mkdir(parents=True)
-    (factory_dir / "results.tsv").write_text("id\ttimestamp\thypothesis\n")
-
-    added1 = populate_from_directory(
-        tmp_path / "projects", registry_path=registry_path,
-    )
-    added2 = populate_from_directory(
-        tmp_path / "projects", registry_path=registry_path,
-    )
-
-    assert added1 == 1
-    assert added2 == 0

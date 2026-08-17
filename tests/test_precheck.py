@@ -572,7 +572,7 @@ class TestPostReview:
     def test_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
         assert post_review(42, "body", "KEEP") is True
-        call_args = mock_run.call_args[0][0]
+        call_args = mock_run.call_args_list[0][0][0]
         assert "--approve" in call_args
         assert "42" in call_args
 
@@ -596,9 +596,10 @@ class TestPostReview:
         mock_run.side_effect = [
             MagicMock(returncode=1, stderr="auth error"),
             MagicMock(returncode=0),
+            MagicMock(returncode=0),
         ]
         assert post_review(42, "body", "KEEP") is True
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
         fallback_cmd = mock_run.call_args_list[1][0][0]
         assert fallback_cmd[:3] == ["gh", "pr", "comment"]
 

@@ -38,6 +38,10 @@ from factory.cli._tmux_commands import (
     cmd_tmux_ls as cmd_tmux_ls,
     cmd_tmux_stop as cmd_tmux_stop,
 )
+from factory.cli.mempalace import cmd_mempalace as cmd_mempalace
+from factory.cli.contained import (
+    cmd_contained as cmd_contained,
+)
 from factory.cli.ceo import (
     cmd_ceo as cmd_ceo,
     cmd_refactory as cmd_refactory,
@@ -46,7 +50,10 @@ from factory.cli.run import (
     cmd_run as cmd_run,
 )
 from factory.cli.graph import (
+    cmd_graph_explain as cmd_graph_explain,
     cmd_graph_extract as cmd_graph_extract,
+    cmd_graph_path as cmd_graph_path,
+    cmd_graph_query as cmd_graph_query,
     cmd_graph_status as cmd_graph_status,
     cmd_graph_update as cmd_graph_update,
 )

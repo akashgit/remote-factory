@@ -56,7 +56,10 @@ class TestClaudeRunner:
         with patch(
             "factory.runners._subprocess.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
-            mock_stream.return_value = (b'{"result":"output","usage":{},"cost_usd":0,"duration_ms":0,"num_turns":1,"model":"claude-opus-4-7"}', b"")
+            mock_stream.return_value = (
+                b'{"result":"output","usage":{},"cost_usd":0,"duration_ms":0,"num_turns":1,"model":"claude-opus-4-7"}',
+                b"",
+            )
 
             with patch(
                 "factory.runners._subprocess.asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -65,13 +68,15 @@ class TestClaudeRunner:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                result = await runner.headless(AgentRunRequest(
-                    prompt="You are a test agent.",
-                    task="Say hello",
-                    cwd=tmp_path,
-                    timeout=60.0,
-                    model="claude-opus-4-7",
-                ))
+                result = await runner.headless(
+                    AgentRunRequest(
+                        prompt="You are a test agent.",
+                        task="Say hello",
+                        cwd=tmp_path,
+                        timeout=60.0,
+                        model="claude-opus-4-7",
+                    )
+                )
 
                 assert result.return_code == 0
                 assert result.stdout == "output"
@@ -106,11 +111,13 @@ class TestClaudeRunner:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                await runner.headless(AgentRunRequest(
-                    prompt="You are the CEO.",
-                    task="Run the experiment",
-                    cwd=tmp_path,
-                ))
+                await runner.headless(
+                    AgentRunRequest(
+                        prompt="You are the CEO.",
+                        task="Run the experiment",
+                        cwd=tmp_path,
+                    )
+                )
 
                 cmd = list(mock_exec.call_args[0])
                 assert "--append-system-prompt-file" in cmd
@@ -123,24 +130,32 @@ class TestClaudeRunner:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = type("Result", (), {"returncode": 0})()
-            runner.interactive_run(AgentRunRequest(
-                prompt="You are the CEO.",
-                task="Start session",
-                cwd=tmp_path,
-            ))
+            runner.interactive_run(
+                AgentRunRequest(
+                    prompt="You are the CEO.",
+                    task="Start session",
+                    cwd=tmp_path,
+                )
+            )
 
             cmd = mock_run.call_args[0][0]
             assert "--append-system-prompt-file" in cmd
-            assert "--append-system-prompt" not in [c for c in cmd if c != "--append-system-prompt-file"]
+            assert "--append-system-prompt" not in [
+                c for c in cmd if c != "--append-system-prompt-file"
+            ]
 
 
 class TestTelemetryPlatformSuppression:
     def test_headless_sets_telemetry_platform_empty(self, tmp_path: Path) -> None:
         """ClaudeRunner.headless() sets TELEMETRY_PLATFORM='' to suppress native tracing."""
         runner = ClaudeRunner()
-        _, env, temp_files = runner.build_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, env, temp_files = runner.build_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
         env["TELEMETRY_PLATFORM"] = ""
         assert env["TELEMETRY_PLATFORM"] == ""
         for f in temp_files:
@@ -152,9 +167,13 @@ class TestTelemetryPlatformSuppression:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = type("Result", (), {"returncode": 0})()
-            runner.interactive_run(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-            ))
+            runner.interactive_run(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                )
+            )
 
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs["env"]["TELEMETRY_PLATFORM"] == ""
@@ -175,9 +194,13 @@ class TestTelemetryPlatformSuppression:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                await runner.headless(AgentRunRequest(
-                    prompt="Test", task="Test", cwd=tmp_path,
-                ))
+                await runner.headless(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                    )
+                )
 
                 call_kwargs = mock_exec.call_args.kwargs
                 assert call_kwargs["env"]["TELEMETRY_PLATFORM"] == ""
@@ -201,46 +224,47 @@ class TestBobRunner:
 
         runner = BobRunner()
 
-        code = runner.interactive_run(AgentRunRequest(
-            prompt="Test prompt",
-            task="Test task",
-            cwd=tmp_path,
-            role="ceo",
-        ))
+        code = runner.interactive_run(
+            AgentRunRequest(
+                prompt="Test prompt",
+                task="Test task",
+                cwd=tmp_path,
+                role="ceo",
+            )
+        )
 
         assert code == 0
         captured = capsys.readouterr()
         assert "[DRY-RUN]" in captured.out
 
-    async def test_headless_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_headless_timeout(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """BobRunner.headless() handles timeout gracefully."""
         monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         (tmp_path / ".factory").mkdir()
 
         # Mock run_subprocess to return an inactivity timeout result
-        with patch(
-            "factory.runners.bob.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
+        with patch("factory.runners.bob.run_subprocess", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = AgentRunResult(
                 stdout="Agent killed after 0.1s of inactivity",
                 return_code=1,
             )
 
             runner = BobRunner()
-            result = await runner.headless(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="researcher",
-                timeout=0.1,
-            ))
+            result = await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                    timeout=0.1,
+                )
+            )
 
         assert result.return_code == 1
         assert "inactivity" in result.stdout.lower()
@@ -260,12 +284,30 @@ class TestBobRunner:
 
         log_path = get_usage_log_path(tmp_path)
         entries = [
-            {"timestamp": old_time.isoformat(), "role": "a", "cwd": str(tmp_path),
-             "duration_seconds": 1.0, "exit_code": 0, "dry_run": False},
-            {"timestamp": now.isoformat(), "role": "b", "cwd": str(tmp_path),
-             "duration_seconds": 1.0, "exit_code": 0, "dry_run": False},
-            {"timestamp": now.isoformat(), "role": "c", "cwd": str(tmp_path),
-             "duration_seconds": 1.0, "exit_code": 0, "dry_run": True},
+            {
+                "timestamp": old_time.isoformat(),
+                "role": "a",
+                "cwd": str(tmp_path),
+                "duration_seconds": 1.0,
+                "exit_code": 0,
+                "dry_run": False,
+            },
+            {
+                "timestamp": now.isoformat(),
+                "role": "b",
+                "cwd": str(tmp_path),
+                "duration_seconds": 1.0,
+                "exit_code": 0,
+                "dry_run": False,
+            },
+            {
+                "timestamp": now.isoformat(),
+                "role": "c",
+                "cwd": str(tmp_path),
+                "duration_seconds": 1.0,
+                "exit_code": 0,
+                "dry_run": True,
+            },
         ]
 
         with open(log_path, "w") as f:
@@ -287,6 +329,7 @@ class TestBobRunner:
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "1")
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         (tmp_path / ".factory").mkdir()
@@ -298,50 +341,60 @@ class TestBobRunner:
         # Log entry AFTER cycle_start so it counts
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
 
-        result = await runner.headless(AgentRunRequest(
-            prompt="Test",
-            task="Test",
-            cwd=tmp_path,
-            role="researcher",
-        ))
+        result = await runner.headless(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                role="researcher",
+            )
+        )
 
         assert result.return_code == 1
         assert "ceiling" in result.stdout.lower() or "exceeded" in result.stdout.lower()
         assert result.usage is None
         bob_module._auth_checked = False
 
-    async def test_dry_run_returns_stub(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_dry_run_returns_stub(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
 
         # Create .factory directory for usage log
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
-        result = await runner.headless(AgentRunRequest(
-            prompt="You are a test agent.",
-            task="Say hello",
-            cwd=tmp_path,
-            role="researcher",
-        ))
+        result = await runner.headless(
+            AgentRunRequest(
+                prompt="You are a test agent.",
+                task="Say hello",
+                cwd=tmp_path,
+                role="researcher",
+            )
+        )
 
         assert result.return_code == 0
         assert "[DRY-RUN]" in result.stdout
         assert "researcher" in result.stdout
         assert result.usage is None
 
-    async def test_dry_run_logs_usage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_dry_run_logs_usage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
 
         # Create .factory directory
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
-        await runner.headless(AgentRunRequest(
-            prompt="Test prompt",
-            task="Test task",
-            cwd=tmp_path,
-            role="builder",
-        ))
+        await runner.headless(
+            AgentRunRequest(
+                prompt="Test prompt",
+                task="Test task",
+                cwd=tmp_path,
+                role="builder",
+            )
+        )
 
         log_path = get_usage_log_path(tmp_path)
         assert log_path.exists()
@@ -507,6 +560,7 @@ class TestBobAuthPreflight:
 
         # Reset the auth check state
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Redirect home so native auth at ~/.bob/settings.json isn't found
@@ -519,12 +573,14 @@ class TestBobAuthPreflight:
         from factory.runners.bob import BobAuthError
 
         with pytest.raises(BobAuthError):
-            await runner.headless(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="researcher",
-            ))
+            await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                )
+            )
 
     async def test_auth_check_passes_with_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -534,26 +590,27 @@ class TestBobAuthPreflight:
 
         # Reset the auth check state
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         (tmp_path / ".factory").mkdir()
 
         # Mock run_subprocess to avoid actual bob invocation
-        with patch(
-            "factory.runners.bob.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
+        with patch("factory.runners.bob.run_subprocess", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = AgentRunResult(
                 stdout="output",
                 return_code=0,
             )
 
             runner = BobRunner()
-            result = await runner.headless(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="researcher",
-            ))
+            result = await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                )
+            )
 
             assert result.return_code == 0
             assert result.usage is None
@@ -604,6 +661,7 @@ class TestKeyPersistence:
         monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Create the auth file
@@ -631,6 +689,7 @@ class TestKeyPersistence:
         monkeypatch.setenv("BOBSHELL_API_KEY", "env-key")
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Create the auth file with a different key
@@ -655,6 +714,7 @@ class TestKeyPersistence:
         monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Redirect home so native auth at ~/.bob/settings.json isn't found
@@ -679,6 +739,7 @@ class TestKeyPersistence:
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Create the auth file
@@ -701,12 +762,14 @@ class TestKeyPersistence:
                 mock_exec.return_value = mock_proc
 
                 runner = BobRunner()
-                result = await runner.headless(AgentRunRequest(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
-                    role="researcher",
-                ))
+                result = await runner.headless(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                        role="researcher",
+                    )
+                )
 
                 # Verify the subprocess was called with env containing the key
                 call_kwargs = mock_exec.call_args.kwargs
@@ -721,9 +784,7 @@ class TestKeyPersistence:
 class TestStreamingOutput:
     """Tests for streaming subprocess output to terminal."""
 
-    def test_should_stream_defaults_true_with_tty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_should_stream_defaults_true_with_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """should_stream() returns True when stdout is a TTY and QUIET not set."""
         monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
 
@@ -733,9 +794,7 @@ class TestStreamingOutput:
         with patch("sys.stdout.isatty", return_value=True):
             assert should_stream() is True
 
-    def test_should_stream_false_when_quiet(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_should_stream_false_when_quiet(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """should_stream() returns False when FACTORY_RUNNER_QUIET=1."""
         monkeypatch.setenv("FACTORY_RUNNER_QUIET", "1")
 
@@ -744,9 +803,7 @@ class TestStreamingOutput:
         with patch("sys.stdout.isatty", return_value=True):
             assert should_stream() is False
 
-    def test_should_stream_false_when_not_tty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_should_stream_false_when_not_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """should_stream() returns False when stdout is not a TTY."""
         monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
 
@@ -883,18 +940,21 @@ class TestStreamingOutput:
                 mock_stream.return_value = (b'{"result":"output"}', b"")
 
                 with patch(
-                    "factory.runners._subprocess.asyncio.create_subprocess_exec", new_callable=AsyncMock
+                    "factory.runners._subprocess.asyncio.create_subprocess_exec",
+                    new_callable=AsyncMock,
                 ) as mock_exec:
                     mock_proc = AsyncMock()
                     mock_proc.returncode = 0
                     mock_exec.return_value = mock_proc
 
-                    await runner.headless(AgentRunRequest(
-                        prompt="Test",
-                        task="Test",
-                        cwd=tmp_path,
-                        role="researcher",
-                    ))
+                    await runner.headless(
+                        AgentRunRequest(
+                            prompt="Test",
+                            task="Test",
+                            cwd=tmp_path,
+                            role="researcher",
+                        )
+                    )
 
                     # Verify stream_subprocess was called with streaming enabled
                     mock_stream.assert_called_once()
@@ -918,6 +978,7 @@ class TestStreamingOutput:
         monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         with patch("factory.runners._subprocess.should_stream", return_value=True):
@@ -927,18 +988,21 @@ class TestStreamingOutput:
                 mock_stream.return_value = (b"output\n", b"")
 
                 with patch(
-                    "factory.runners._subprocess.asyncio.create_subprocess_exec", new_callable=AsyncMock
+                    "factory.runners._subprocess.asyncio.create_subprocess_exec",
+                    new_callable=AsyncMock,
                 ) as mock_exec:
                     mock_proc = AsyncMock()
                     mock_proc.returncode = 0
                     mock_exec.return_value = mock_proc
 
-                    result = await runner.headless(AgentRunRequest(
-                        prompt="Test",
-                        task="Test",
-                        cwd=tmp_path,
-                        role="builder",
-                    ))
+                    result = await runner.headless(
+                        AgentRunRequest(
+                            prompt="Test",
+                            task="Test",
+                            cwd=tmp_path,
+                            role="builder",
+                        )
+                    )
 
                     # Verify stream_subprocess was called with streaming enabled
                     mock_stream.assert_called_once()
@@ -969,12 +1033,14 @@ class TestStreamingOutput:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                await runner.headless(AgentRunRequest(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
-                    role="researcher",
-                ))
+                await runner.headless(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                        role="researcher",
+                    )
+                )
 
                 # Verify stream_subprocess was called with streaming disabled
                 mock_stream.assert_called_once()
@@ -992,7 +1058,9 @@ class TestStreamingOutput:
         # Import invoke_agent which saves the review
         from factory.agents.runner import invoke_agent
 
-        json_output = json.dumps({"result": "Line 1\nLine 2\nLine 3\n", "usage": {}, "cost_usd": 0.01})
+        json_output = json.dumps(
+            {"result": "Line 1\nLine 2\nLine 3\n", "usage": {}, "cost_usd": 0.01}
+        )
 
         with patch(
             "factory.runners._subprocess.stream_subprocess", new_callable=AsyncMock
@@ -1072,11 +1140,12 @@ class TestAnsiSanitization:
         assert strip_ansi(b"\x1bMup") == b"up"  # RI (reverse line feed)
 
     def test_strip_ansi_preserves_plaintext_and_newlines(self) -> None:
-        r"""Plain text, \r, \n and UTF-8 multibyte content are left intact."""
+        r"""Plain text, \n and UTF-8 multibyte content are left intact. Bare \r is stripped."""
         from factory.runners._stream import strip_ansi
 
         assert strip_ansi(b"plain text\n") == b"plain text\n"
-        assert strip_ansi(b"a\rb\n") == b"a\rb\n"
+        assert strip_ansi(b"a\rb\n") == b"ab\n"
+        assert strip_ansi(b"a\r\nb\r\n") == b"a\nb\n"
         # UTF-8 multibyte must not be clipped (guards the \x9C omission)
         utf8 = "café — 日本語".encode()
         assert strip_ansi(utf8) == utf8
@@ -1219,9 +1288,7 @@ class TestAnsiSanitization:
 
         proc = MockProc()
 
-        with patch(
-            "factory.runners._stream.tee_stream", new_callable=AsyncMock
-        ) as mock_tee:
+        with patch("factory.runners._stream.tee_stream", new_callable=AsyncMock) as mock_tee:
             await stream_subprocess(proc, stream=False, sanitize=True)  # type: ignore[arg-type]
 
             assert mock_tee.call_count == 2
@@ -1244,53 +1311,51 @@ class TestAnsiSanitization:
 
         runner = BobRunner()
 
-        with patch(
-            "factory.runners.bob.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
+        with patch("factory.runners.bob.run_subprocess", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = AgentRunResult(
                 stdout="output\n",
                 return_code=0,
             )
 
-            await runner.headless(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="builder",
-            ))
+            await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="builder",
+                )
+            )
 
             mock_run.assert_called_once()
             assert mock_run.call_args.kwargs["sanitize"] is True
 
         bob_module._auth_checked = False
 
-
-
-    async def test_claude_runner_does_not_sanitize(
+    async def test_claude_runner_sanitizes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ClaudeRunner.headless() does not sanitize (default False)."""
+        """ClaudeRunner.headless() passes sanitize=True to run_subprocess."""
         monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
 
         runner = ClaudeRunner()
 
-        with patch(
-            "factory.runners.claude.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
+        with patch("factory.runners.claude.run_subprocess", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = AgentRunResult(
                 stdout='{"result":"output"}',
                 return_code=0,
             )
 
-            await runner.headless(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="researcher",
-            ))
+            await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                )
+            )
 
             mock_run.assert_called_once()
-            assert mock_run.call_args.kwargs.get("sanitize", False) is False
+            assert mock_run.call_args.kwargs.get("sanitize", False) is True
 
 
 class TestInactivityTimeout:
@@ -1299,7 +1364,8 @@ class TestInactivityTimeout:
     async def test_inactivity_timeout_kills_silent_process(self) -> None:
         """A subprocess that stops producing output is killed after the inactivity timeout."""
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-c",
+            "python3",
+            "-c",
             "import time; print('hello', flush=True); time.sleep(60)",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -1307,7 +1373,9 @@ class TestInactivityTimeout:
         from factory.runners._stream import stream_subprocess
 
         stdout, stderr = await stream_subprocess(
-            proc, stream=False, inactivity_timeout=0.5,
+            proc,
+            stream=False,
+            inactivity_timeout=0.5,
         )
 
         assert proc.returncode == -9
@@ -1316,7 +1384,8 @@ class TestInactivityTimeout:
     async def test_active_output_prevents_timeout(self) -> None:
         """A subprocess that keeps producing output is NOT killed even past old wall-clock limit."""
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-c",
+            "python3",
+            "-c",
             "import time\nfor i in range(6):\n    print(f'tick {i}', flush=True)\n    time.sleep(0.2)\n",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -1324,7 +1393,9 @@ class TestInactivityTimeout:
         from factory.runners._stream import stream_subprocess
 
         stdout, stderr = await stream_subprocess(
-            proc, stream=False, inactivity_timeout=0.8,
+            proc,
+            stream=False,
+            inactivity_timeout=0.8,
         )
 
         assert proc.returncode == 0
@@ -1335,8 +1406,11 @@ class TestInactivityTimeout:
         from factory.runners._subprocess import run_subprocess
 
         result = await run_subprocess(
-            ["python3", "-c",
-             "import time\nwhile True:\n    print('.', flush=True)\n    time.sleep(0.1)\n"],
+            [
+                "python3",
+                "-c",
+                "import time\nwhile True:\n    print('.', flush=True)\n    time.sleep(0.1)\n",
+            ],
             cwd=".",
             env=dict(os.environ),
             timeout=999.0,
@@ -1376,6 +1450,7 @@ class TestCeilingAccumulationAcrossInvocations:
 
         # Reset auth check state
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         # Create project structure
@@ -1392,9 +1467,7 @@ class TestCeilingAccumulationAcrossInvocations:
         (prompts_dir / "researcher.md").write_text("You are a researcher.")
 
         # Mock run_subprocess to avoid actually calling bob
-        with patch(
-            "factory.runners.bob.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
+        with patch("factory.runners.bob.run_subprocess", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = AgentRunResult(
                 stdout="output",
                 return_code=0,
@@ -1454,7 +1527,9 @@ class TestCeilingAccumulationAcrossInvocations:
         # Runner's cycle_start should match the persisted state's started_at
         # (allowing for small time differences in serialization)
         time_diff = abs((runner.cycle_start - cycle_state.started_at).total_seconds())
-        assert time_diff < 1.0, f"cycle_start mismatch: {runner.cycle_start} vs {cycle_state.started_at}"
+        assert time_diff < 1.0, (
+            f"cycle_start mismatch: {runner.cycle_start} vs {cycle_state.started_at}"
+        )
 
     async def test_bobrunner_falls_back_to_now_without_cycle_json(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1483,17 +1558,20 @@ class TestCeilingAccumulationAcrossInvocations:
 class TestRunnerBgWarnings:
     """Tests for background warning messages from non-claude runners."""
 
-    async def test_opencode_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """OpenCodeRunner logs a warning when extras['background']=True."""
-        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
-
+    async def test_opencode_bg_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenCodeRunner returns error when extras['background']=True."""
         runner = OpenCodeRunner()
-        with patch("factory.runners.opencode.log") as mock_log:
-            await runner.headless(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-                role="researcher", extras={"background": True},
-            ))
-            mock_log.warning.assert_any_call("opencode_bg_not_supported", hint="--bg is a claude-only feature")
+        result = await runner.headless(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                role="researcher",
+                extras={"background": True},
+            )
+        )
+        assert result.return_code == 1
+        assert "--bg is not supported" in result.stdout
 
     async def test_bob_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """BobRunner logs a warning when extras['background']=True."""
@@ -1502,71 +1580,91 @@ class TestRunnerBgWarnings:
 
         runner = BobRunner()
         with patch("factory.runners.bob.log") as mock_log:
-            await runner.headless(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-                role="researcher", extras={"background": True},
-            ))
-            mock_log.warning.assert_any_call("bob_bg_not_supported", hint="--bg is a claude-only feature")
+            await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                    extras={"background": True},
+                )
+            )
+            mock_log.warning.assert_any_call(
+                "bob_bg_not_supported", hint="--bg is a claude-only feature"
+            )
 
     async def test_codex_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CodexRunner logs a warning when extras['background']=True."""
         monkeypatch.setenv("FACTORY_CODEX_DRY_RUN", "1")
 
         from factory.runners.codex import CodexRunner
+
         runner = CodexRunner()
         with patch("factory.runners.codex.log") as mock_log:
-            await runner.headless(AgentRunRequest(
-                prompt="Test", task="Test", cwd=tmp_path,
-                role="researcher", extras={"background": True},
-            ))
-            mock_log.warning.assert_any_call("codex_bg_not_supported", hint="--bg is a claude-only feature")
+            await runner.headless(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                    extras={"background": True},
+                )
+            )
+            mock_log.warning.assert_any_call(
+                "codex_bg_not_supported", hint="--bg is a claude-only feature"
+            )
 
 
 class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
-    def test_interactive_run_passes_prompt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -p with the prompt to OpenCode."""
+    def test_interactive_run_passes_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """interactive_run() writes prompt to AGENTS.md and passes task via --prompt."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
 
         with patch("factory.runners.opencode.subprocess.run") as mock_run:
             mock_run.return_value = type("Result", (), {"returncode": 0})()
-            code = runner.interactive_run(AgentRunRequest(
-                prompt="You are the CEO.",
-                task="Start session",
-                cwd=tmp_path,
-            ))
+            code = runner.interactive_run(
+                AgentRunRequest(
+                    prompt="You are the CEO.",
+                    task="Start session",
+                    cwd=tmp_path,
+                )
+            )
 
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            assert "-p" in cmd
-            p_idx = cmd.index("-p")
-            full_prompt = cmd[p_idx + 1]
-            assert "You are the CEO." in full_prompt
-            assert "Start session" in full_prompt
-            assert "## Current Task" in full_prompt
+            assert "--prompt" in cmd
+            prompt_idx = cmd.index("--prompt")
+            assert cmd[prompt_idx + 1] == "Start session"
+            assert not (tmp_path / "AGENTS.md").exists()
 
-    def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -c with the cwd."""
+    def test_interactive_run_passes_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """interactive_run() passes --dir with the cwd."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
 
         with patch("factory.runners.opencode.subprocess.run") as mock_run:
             mock_run.return_value = type("Result", (), {"returncode": 0})()
-            runner.interactive_run(AgentRunRequest(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-            ))
+            runner.interactive_run(
+                AgentRunRequest(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                )
+            )
 
             cmd = mock_run.call_args[0][0]
-            assert "-c" in cmd
-            c_idx = cmd.index("-c")
-            assert cmd[c_idx + 1] == str(tmp_path)
+            assert "--dir" not in cmd
+            assert cmd[-1] == str(tmp_path)
 
     def test_interactive_run_dry_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -1575,11 +1673,13 @@ class TestOpenCodeInteractive:
         monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
         runner = OpenCodeRunner()
 
-        code = runner.interactive_run(AgentRunRequest(
-            prompt="Test prompt",
-            task="Test task",
-            cwd=tmp_path,
-        ))
+        code = runner.interactive_run(
+            AgentRunRequest(
+                prompt="Test prompt",
+                task="Test task",
+                cwd=tmp_path,
+            )
+        )
 
         assert code == 0
         captured = capsys.readouterr()
@@ -1597,6 +1697,7 @@ class TestBobInteractivePrompt:
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
 
         import factory.runners.bob as bob_module
+
         bob_module._auth_checked = False
 
         (tmp_path / ".factory").mkdir()
@@ -1604,11 +1705,13 @@ class TestBobInteractivePrompt:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = type("Result", (), {"returncode": 0})()
-            code = runner.interactive_run(AgentRunRequest(
-                prompt="You are the CEO.",
-                task="Start session",
-                cwd=tmp_path,
-            ))
+            code = runner.interactive_run(
+                AgentRunRequest(
+                    prompt="You are the CEO.",
+                    task="Start session",
+                    cwd=tmp_path,
+                )
+            )
 
             assert code == 0
             cmd = mock_run.call_args[0][0]
@@ -1683,8 +1786,11 @@ class TestRunnerMetaCustomAuthCheck:
         from factory.runners.protocol import RunnerMeta
 
         meta = RunnerMeta(
-            name="test", display_name="Test", binary="test",
-            install_hint="test", custom_auth_check=lambda: True,
+            name="test",
+            display_name="Test",
+            binary="test",
+            install_hint="test",
+            custom_auth_check=lambda: True,
         )
         assert meta.check_auth() is True
 
@@ -1695,8 +1801,11 @@ class TestRunnerMetaCustomAuthCheck:
 
         monkeypatch.delenv("SOME_KEY", raising=False)
         meta = RunnerMeta(
-            name="test", display_name="Test", binary="test",
-            install_hint="test", required_env_vars=["SOME_KEY"],
+            name="test",
+            display_name="Test",
+            binary="test",
+            install_hint="test",
+            required_env_vars=["SOME_KEY"],
         )
         assert meta.check_auth() is False
 
@@ -1728,40 +1837,19 @@ class TestSaveReview:
         content = (reviews / "researcher-latest.md").read_text()
         assert "output text" in content
 
-    async def test_invoke_agents_parallel_auto_tags(self, tmp_path: Path) -> None:
-        from factory.agents.runner import invoke_agents_parallel
-
-        project = tmp_path / "proj"
-        (project / ".factory" / "reviews").mkdir(parents=True)
-
-        with patch(
-            "factory.agents.runner.invoke_agent", new_callable=AsyncMock
-        ) as mock_invoke:
-            mock_invoke.return_value = ("agent output", 0)
-
-            tasks: list[tuple[str, str]] = [
-                ("researcher", "task A"),
-                ("researcher", "task B"),
-                ("researcher", "task C"),
-            ]
-            results = await invoke_agents_parallel(tasks, project)
-
-            assert len(results) == 3
-            assert mock_invoke.call_count == 3
-            tags = [call.kwargs["review_tag"] for call in mock_invoke.call_args_list]
-            assert tags == ["0", "1", "2"]
-
 
 class TestClaudeBuildInteractiveCommand:
     """Tests for ClaudeRunner.build_interactive_command()."""
 
     def test_base_command_structure(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="You are the CEO.",
-            task="Start session",
-            cwd=tmp_path,
-        ))
+        cmd, env, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            )
+        )
 
         assert cmd[0] == "claude"
         assert "--append-system-prompt-file" in cmd
@@ -1774,9 +1862,14 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_permission_flag(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=True,
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                skip_permissions=True,
+            )
+        )
 
         assert "--dangerously-skip-permissions" in cmd
 
@@ -1785,9 +1878,14 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_no_permission_flag_when_not_skipped(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                skip_permissions=False,
+            )
+        )
 
         assert "--dangerously-skip-permissions" not in cmd
 
@@ -1796,9 +1894,14 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_model_flag_and_env(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, model="claude-opus-4-7",
-        ))
+        cmd, env, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                model="claude-opus-4-7",
+            )
+        )
 
         assert "--model" in cmd
         assert "claude-opus-4-7" in cmd
@@ -1809,9 +1912,14 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_session_name_flag(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, session_name="my-session",
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                session_name="my-session",
+            )
+        )
 
         assert "--name" in cmd
         assert "my-session" in cmd
@@ -1822,9 +1930,13 @@ class TestClaudeBuildInteractiveCommand:
     def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
         runner = ClaudeRunner()
-        _, env, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, env, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "VIRTUAL_ENV" not in env
 
@@ -1833,9 +1945,13 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_temp_files_include_prompt_and_claude_md_and_settings(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test prompt content", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test prompt content",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert len(temp_files) == 3
         prompt_file = temp_files[0]
@@ -1853,9 +1969,13 @@ class TestClaudeBuildInteractiveCommand:
     def test_writes_claude_md_with_prompt(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
         prompt = "You are the CEO.\n\n## Instructions\nDo great things."
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt=prompt, task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt=prompt,
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         claude_md = tmp_path / ".claude" / "CLAUDE.md"
         assert claude_md.exists()
@@ -1868,9 +1988,13 @@ class TestClaudeBuildInteractiveCommand:
         assert not (tmp_path / ".claude").exists()
 
         runner = ClaudeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert (tmp_path / ".claude").is_dir()
 
@@ -1879,9 +2003,13 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_writes_settings_local_json(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         settings_path = tmp_path / ".claude" / "settings.local.json"
         assert settings_path.exists()
@@ -1895,12 +2023,18 @@ class TestClaudeBuildInteractiveCommand:
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         settings_path = claude_dir / "settings.local.json"
-        settings_path.write_text(json.dumps({"existingKey": "value", "disallowedTools": ["OldTool"]}))
+        settings_path.write_text(
+            json.dumps({"existingKey": "value", "disallowedTools": ["OldTool"]})
+        )
 
         runner = ClaudeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         settings = json.loads(settings_path.read_text())
         assert settings["existingKey"] == "value"
@@ -1915,9 +2049,13 @@ class TestClaudeBuildInteractiveCommand:
         (claude_dir / "settings.local.json").write_text("not valid json{{{")
 
         runner = ClaudeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         settings = json.loads((claude_dir / "settings.local.json").read_text())
         assert settings["disallowedTools"] == ["Agent"]
@@ -1927,9 +2065,13 @@ class TestClaudeBuildInteractiveCommand:
 
     def test_no_disallowed_tools_in_cmd(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "--disallowedTools" not in cmd
 
@@ -1942,9 +2084,13 @@ class TestDisallowedAgentTool:
 
     def test_build_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        cmd, _, temp_files = runner.build_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "--disallowedTools" in cmd
         dt_idx = cmd.index("--disallowedTools")
@@ -1955,9 +2101,13 @@ class TestDisallowedAgentTool:
 
     def test_build_interactive_command_uses_settings_not_cli_flag(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
-        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "--disallowedTools" not in cmd
 
@@ -1984,9 +2134,13 @@ class TestDisallowedAgentTool:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                await runner.headless(AgentRunRequest(
-                    prompt="Test", task="Test", cwd=tmp_path,
-                ))
+                await runner.headless(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                    )
+                )
 
                 all_args = list(mock_exec.call_args[0])
                 assert "--disallowedTools" in all_args
@@ -2000,10 +2154,15 @@ class TestDisallowedAgentTool:
             patch("factory.runners._background.subprocess.run") as mock_run,
             patch("factory.runners._background.asyncio.sleep", new_callable=AsyncMock),
         ):
-            mock_run.return_value = type("R", (), {"stdout": "backgrounded · abc123", "stderr": "", "returncode": 0})()
+            mock_run.return_value = type(
+                "R", (), {"stdout": "backgrounded · abc123", "stderr": "", "returncode": 0}
+            )()
 
             await run_in_background(
-                prompt="Test", task="Test", cwd=tmp_path, role="test",
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                role="test",
                 timeout=0.1,
             )
 
@@ -2027,8 +2186,12 @@ class TestDisallowedAgentTool:
             mock_run.return_value = type("R", (), {"stdout": "", "stderr": "", "returncode": 0})()
 
             await run_in_tmux(
-                prompt="Test", task="Test", cwd=tmp_path, role="test",
-                project_path=tmp_path, timeout=0.1,
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                role="test",
+                project_path=tmp_path,
+                timeout=0.1,
             )
 
             first_call_args = mock_run.call_args_list[0][0][0]
@@ -2043,11 +2206,13 @@ class TestBobBuildInteractiveCommand:
 
     def test_base_command_structure(self, tmp_path: Path) -> None:
         runner = BobRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="You are the CEO.",
-            task="Start session",
-            cwd=tmp_path,
-        ))
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            )
+        )
 
         assert cmd[0] == "bob"
         assert "--chat-mode=code" in cmd
@@ -2060,34 +2225,52 @@ class TestBobBuildInteractiveCommand:
 
     def test_yolo_flag(self, tmp_path: Path) -> None:
         runner = BobRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=True,
-        ))
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                skip_permissions=True,
+            )
+        )
 
         assert "--yolo" in cmd
 
     def test_no_yolo_without_skip(self, tmp_path: Path) -> None:
         runner = BobRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
-        ))
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+                skip_permissions=False,
+            )
+        )
 
         assert "--yolo" not in cmd
 
     def test_env_uses_dict(self, tmp_path: Path) -> None:
         runner = BobRunner()
-        _, env, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, env, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert isinstance(env, dict)
         assert "PATH" in env
 
     def test_uses_i_flag_not_p(self, tmp_path: Path) -> None:
         runner = BobRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "-i" in cmd
         assert "-p" not in cmd
@@ -2098,47 +2281,64 @@ class TestOpenCodeBuildInteractiveCommand:
 
     def test_base_command_structure(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="You are the CEO.",
-            task="Start session",
-            cwd=tmp_path,
-        ))
+        cmd, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            )
+        )
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        p_idx = cmd.index("-p")
-        full_prompt = cmd[p_idx + 1]
-        assert "You are the CEO." in full_prompt
-        assert "Start session" in full_prompt
-        assert "-c" in cmd
-        c_idx = cmd.index("-c")
-        assert cmd[c_idx + 1] == str(tmp_path)
+        assert "--prompt" in cmd
+        prompt_idx = cmd.index("--prompt")
+        assert cmd[prompt_idx + 1] == "Start session"
+        assert "--dir" not in cmd
+        assert cmd[-1] == str(tmp_path)
         assert "-q" not in cmd
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md in temp_files
+        assert agents_md.exists()
+        assert agents_md.read_text() == "You are the CEO."
 
     def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
         runner = OpenCodeRunner()
-        _, env, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, env, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "VIRTUAL_ENV" not in env
 
     def test_no_quiet_flag(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        cmd, _, _ = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
         assert "-q" not in cmd
 
-    def test_empty_temp_files(self, tmp_path: Path) -> None:
+    def test_temp_files_contains_agents_md(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
-        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
+        _, _, temp_files = runner.build_interactive_command(
+            AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+        )
 
-        assert temp_files == []
+        assert len(temp_files) == 1
+        assert temp_files[0] == tmp_path / "AGENTS.md"
 
 
 class TestGetRunnerChoices:
@@ -2149,6 +2349,7 @@ class TestGetRunnerChoices:
 
         # Reset entrypoints loaded flag to ensure clean state
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         choices = get_runner_choices()
@@ -2164,6 +2365,7 @@ class TestGetRunnerChoices:
         from factory.runners import get_runner_choices
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         choices = get_runner_choices()
@@ -2178,6 +2380,7 @@ class TestGetAllRunnerMeta:
         from factory.runners.protocol import RunnerMeta
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         metas = get_all_runner_meta()
@@ -2189,6 +2392,7 @@ class TestGetAllRunnerMeta:
         from factory.runners import get_all_runner_meta
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         metas = get_all_runner_meta()
@@ -2197,9 +2401,10 @@ class TestGetAllRunnerMeta:
         assert "bob" in names
 
     def test_handles_runner_without_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from factory.runners import get_all_runner_meta, register_runner
+        from factory.runners import get_all_runner_meta
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         # Register a fake runner class that has no metadata() method
@@ -2208,52 +2413,11 @@ class TestGetAllRunnerMeta:
 
         original_runners = dict(runners_mod._RUNNERS)
         try:
-            register_runner("fake", FakeRunner)  # type: ignore[arg-type]
+            runners_mod._RUNNERS["fake"] = FakeRunner  # type: ignore[assignment]
             metas = get_all_runner_meta()
             # Should not raise — FakeRunner is silently skipped
             fake_names = [m.name for m in metas if m.name == "fake"]
             assert len(fake_names) == 0
-        finally:
-            runners_mod._RUNNERS.clear()
-            runners_mod._RUNNERS.update(original_runners)
-
-
-class TestRegisterRunner:
-    """Tests for register_runner() — adds new runner to the registry."""
-
-    def test_register_new_runner(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from factory.runners import register_runner, get_available_runners
-
-        import factory.runners as runners_mod
-        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
-
-        class MockRunner:
-            name = "mock"
-
-        original_runners = dict(runners_mod._RUNNERS)
-        try:
-            register_runner("mock", MockRunner)  # type: ignore[arg-type]
-            available = get_available_runners()
-            assert "mock" in available
-            assert available["mock"] is MockRunner
-        finally:
-            runners_mod._RUNNERS.clear()
-            runners_mod._RUNNERS.update(original_runners)
-
-    def test_register_overwrites_existing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from factory.runners import register_runner, get_available_runners
-
-        import factory.runners as runners_mod
-        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
-
-        class NewClaude:
-            name = "claude"
-
-        original_runners = dict(runners_mod._RUNNERS)
-        try:
-            register_runner("claude", NewClaude)  # type: ignore[arg-type]
-            available = get_available_runners()
-            assert available["claude"] is NewClaude
         finally:
             runners_mod._RUNNERS.clear()
             runners_mod._RUNNERS.update(original_runners)
@@ -2266,6 +2430,7 @@ class TestGetAvailableRunners:
         from factory.runners import get_available_runners
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         runners = get_available_runners()
@@ -2279,6 +2444,7 @@ class TestGetAvailableRunners:
         from factory.runners import get_available_runners
 
         import factory.runners as runners_mod
+
         monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
 
         runners = get_available_runners()

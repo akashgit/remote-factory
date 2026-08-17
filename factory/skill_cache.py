@@ -57,11 +57,26 @@ def ensure_skills(project_dir: Path, *, mode: str | None = None) -> list[Path]:
 
 
 def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[Path]:
-    from factory.workflow.definitions import register_all
+    from factory.workflow.registry import WorkflowRegistry
     from factory.workflow.skill_export import export_all_skills
 
-    workflows = register_all()
-    checksum = _compute_checksum(workflows)
+    entries = WorkflowRegistry.discover(project_dir)
+
+    builtin_workflows: dict[str, Workflow] = {}
+    project_workflows: dict[str, Workflow] = {}
+
+    for name, entry in entries.items():
+        wf = WorkflowRegistry.get_workflow(name, project_dir)
+        if wf is None:
+            continue
+        if entry.source == "project":
+            project_workflows[name] = wf
+        else:
+            builtin_workflows[name] = wf
+
+    log.info("skill_cache.project_workflows_discovered", count=len(project_workflows))
+
+    checksum = _compute_checksum(builtin_workflows)
 
     cache_dir = Path.home() / ".factory" / "cache" / "skills" / checksum
     skills_target = project_dir / "skills"
@@ -74,7 +89,7 @@ def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[
     else:
         log.info("skill_cache.miss", checksum=checksum)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        export_all_skills(cache_dir, workflows)
+        export_all_skills(cache_dir, builtin_workflows)
         workflow_dirs = sorted(cache_dir.glob("workflow-*"))
 
         cache_parent = cache_dir.parent
@@ -96,10 +111,17 @@ def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[
 
     log.info("skill_cache.copied", count=len(generated), target=str(skills_target))
 
-    if mode and mode in workflows:
+    if project_workflows:
+        project_generated = export_all_skills(skills_target, project_workflows)
+        generated.extend(project_generated)
+        log.info("skill_cache.project_skills_generated", count=len(project_generated))
+
+    all_workflows = {**builtin_workflows, **project_workflows}
+
+    if mode and mode in all_workflows:
         from factory.workflow.verification import write_verification_hooks
 
-        settings_path = write_verification_hooks(workflows[mode], project_dir)
+        settings_path = write_verification_hooks(all_workflows[mode], project_dir)
         if settings_path:
             log.info("skill_cache.hooks_generated", mode=mode, settings=str(settings_path))
 

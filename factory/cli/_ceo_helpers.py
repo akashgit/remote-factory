@@ -13,7 +13,9 @@ from pathlib import Path
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
+    _emit_cli_event,
     _ensure_dashboard,
+    get_all_ceo_modes,
     _print_banner,
     _read_target_branch,
     _resolve_runner,
@@ -29,6 +31,7 @@ from factory.cli._mode_handlers import (
     _resolve_tmux_persist,
 )
 from factory.cli._path_resolver import (
+    PlanSource,
     _dedupe_project_path,
     _derive_session_name,
     _extract_project_name,
@@ -38,6 +41,7 @@ from factory.cli._path_resolver import (
     _materialize_project,
     _read_prompt_file,
     _resolve_input,
+    _resolve_plan_source,
     _slugify,
 )
 from factory.cli._task_builder import _build_ceo_task
@@ -46,16 +50,122 @@ from factory.cli.run import _chain_modes
 log = structlog.get_logger()
 
 
+def _tool_exec_protocol(wt_path: Path) -> str:
+    """Return the tool-exec protocol section appended to the CEO prompt."""
+    p = wt_path
+
+    overview = ""
+    try:
+        from factory.workflow.tool import tool_overview
+        overview = tool_overview(p, fmt="linear")
+    except Exception:
+        pass
+
+    protocol = (
+        "\n\n# Tool-Based Execution Protocol\n"
+        "\n"
+        "You are executing the workflow using factory tool commands instead of "
+        "following a SKILL.md playbook.\n"
+    )
+
+    if overview:
+        protocol += (
+            "\n## Workflow Map\n"
+            "\n"
+            f"{overview}\n"
+        )
+
+    protocol += (
+        "\n## Commands\n"
+        "\n"
+        f"  factory workflow tool next {p}\n"
+        f"  factory workflow tool submit {p} --node <NODE_ID> <<'TOOL_OUTPUT'\n"
+        "  <your output>\n"
+        "  TOOL_OUTPUT\n"
+        f"  factory workflow tool status {p}\n"
+        f"  factory workflow tool curr {p}\n"
+        "\n"
+        "## Protocol\n"
+        "\n"
+        '1. Run "next" to see your current task — it tells you the node type, '
+        "role, and what to do\n"
+        "2. Execute the task:\n"
+        "   - Agent nodes: run factory agent <role> --task \"...\" --project <path>\n"
+        "   - Study nodes: run the study command shown\n"
+        "   - Function nodes: run the command shown\n"
+        '3. Run "next" again — the tool auto-detects that the previous node completed\n'
+        "   (by checking for output files) and advances to the next task\n"
+        "4. Repeat until GATE or DONE\n"
+        "5. For GATE nodes: the tool asks you to evaluate — read the artifacts, then\n"
+        '   call "submit" with your verdict (PROCEED, RETRY, or HALT)\n'
+        "6. If RETRY: the tool rewinds — run \"next\" to get the retry task\n"
+        "7. If DONE: report completion\n"
+        "\n"
+        "## Important\n"
+        "\n"
+        "- For most nodes, just run the command and call \"next\" — the tool handles tracking\n"
+        '- Only call "submit" for gate verdicts (PROCEED/RETRY/HALT)\n'
+        "- The tool auto-detects agent completion via .factory/reviews/ files\n"
+        "- The tool auto-evaluates fn gates (precheck, guard) on your behalf\n"
+        "- All Sacred Rules still apply — delegate to agents, review output, "
+        "do not write code\n"
+        '- Start by running "next" to get your first task\n'
+        "\n"
+        "## Loop Context\n"
+        "\n"
+        "For any node that is a RELOOP target in the workflow graph, the tool "
+        "engine automatically injects a **## LOOP CONTEXT** section into the "
+        "node's task description — starting from the very first invocation "
+        "(iteration 0). This section shows:\n"
+        "- The full loop topology (all nodes from this node through the gate) "
+        "with reads/writes\n"
+        "- The gate's criteria and evaluator command\n"
+        "- The current iteration count (e.g. 0/3 on first pass, 1/3 after first reloop)\n"
+        "\n"
+        "After a RELOOP occurs, the section also includes:\n"
+        "- Which gate triggered the reloop\n"
+        "- Feedback history from prior iterations (last 2, truncated to 500 chars)\n"
+        "\n"
+        "Incorporate gate criteria from the LOOP CONTEXT section into your agent "
+        "task prompts. When spawning a builder agent, include what downstream "
+        "gates will check (e.g. health check criteria, code review expectations, "
+        "QA scope) so the builder can proactively address them. This reduces "
+        "reloops by making the builder aware of review criteria upfront.\n"
+        "\n"
+        "No separate command is needed — context is injected automatically by "
+        "the tool engine.\n"
+    )
+
+    return protocol
+
+
 # ── flag validation ───────────────────────────────────────────
 
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool, str | None, bool] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
+    if mode.startswith("project:"):
+        mode = mode[len("project:"):]
+    all_modes = get_all_ceo_modes()
+    if mode not in all_modes and mode != "auto":
+        from factory.workflow.registry import WorkflowRegistry
+        raw_path = getattr(args, "path", None)
+        project_path = Path(raw_path).resolve() if raw_path else Path.cwd()
+        entries = WorkflowRegistry.discover(project_path)
+        project_entries = {n for n, e in entries.items() if e.source == "project"}
+        if mode not in project_entries:
+            print(
+                f"Error: unknown mode '{mode}'. "
+                f"Not a built-in mode and not found in project workflows at "
+                f"{project_path / '.factory' / 'workflows'}.",
+                file=sys.stderr,
+            )
+            return 1
     warn_deprecated_mode(getattr(args, "mode", "auto"))
     bg: bool = getattr(args, "bg", False)
     bg_agents = _resolve_bg_agents(args)
@@ -66,14 +176,47 @@ def _validate_ceo_flags(
     prompt_file: str | None = getattr(args, "prompt", None)
     focus: str | None = getattr(args, "focus", None)
     dir_name: str | None = getattr(args, "dir", None)
+    auto_approve: bool = getattr(args, "auto_approve", False)
+    from_plan: str | None = getattr(args, "from_plan", None)
+    just_plan: bool = getattr(args, "just_plan", False)
+
+    if auto_approve and mode != "design":
+        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+        return 1
+
+    if just_plan:
+        if mode != "design":
+            print("Error: --just-plan requires --mode design", file=sys.stderr)
+            return 1
+        if from_plan:
+            print("Error: --just-plan and --from-plan are mutually exclusive.", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --just-plan and --prompt are mutually exclusive.", file=sys.stderr)
+            return 1
+
+    if from_plan:
+        if mode != "design":
+            print("Error: --from-plan requires --mode design", file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --from-plan and --focus are mutually exclusive.", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --from-plan and --prompt are mutually exclusive.", file=sys.stderr)
+            return 1
 
     raw_path = getattr(args, "path", None)
     if not raw_path:
-        print(
-            "Error: provide a project path, GitHub URL, idea file, or prompt",
-            file=sys.stderr,
-        )
-        return 1
+        from factory.plugins import get_registry
+        plugin_registry = get_registry()
+        has_pre_hooks = bool(plugin_registry.ceo_pre_hooks)
+        if not has_pre_hooks:
+            print(
+                "Error: provide a project path, GitHub URL, idea file, or prompt",
+                file=sys.stderr,
+            )
+            return 1
 
     no_github = getattr(args, "no_github", False)
     if no_github:
@@ -90,7 +233,7 @@ def _validate_ceo_flags(
         if focus:
             print("Error: --refine and --focus are mutually exclusive.", file=sys.stderr)
             return 1
-        if not Path(raw_path).expanduser().resolve().is_dir():
+        if not raw_path or not Path(raw_path).expanduser().resolve().is_dir():
             print(
                 "Error: --refine requires an existing project directory, not a URL or idea.",
                 file=sys.stderr,
@@ -102,7 +245,9 @@ def _validate_ceo_flags(
     )
 
     if mode == "design":
-        if headless:
+        if auto_approve:
+            headless = True
+        elif headless:
             flag = "--bg" if bg else "--headless"
             print(
                 f"Error: --mode design requires foreground mode (incompatible with {flag})",
@@ -116,7 +261,7 @@ def _validate_ceo_flags(
                 file=sys.stderr,
             )
             return 1
-        if focus and not _design_is_existing:
+        if focus and not _design_is_existing and not just_plan:
             print(
                 "Error: --mode design and --focus are mutually exclusive "
                 "for new ideas. To discuss a topic on an existing project, "
@@ -149,7 +294,7 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request)
+    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan, just_plan)
 
 
 # ── project resolution ────────────────────────────────────────
@@ -211,7 +356,7 @@ def _resolve_ceo_project(
         design_existing = True
     elif mode == "design":
         resolved_file = Path(raw_path).expanduser()
-        if resolved_file.is_file():
+        if _safe_is_file(resolved_file):
             design_idea = resolved_file.read_text()
             slug = (
                 _slugify(dir_name)
@@ -289,6 +434,7 @@ def _validate_late_flags(
     project_path: Path,
     no_github: bool,
     issue_number: int | None,
+    just_plan: bool = False,
 ) -> int | None:
     """Run validations that depend on resolved project state. Returns error code or None."""
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
@@ -308,9 +454,10 @@ def _validate_late_flags(
         )
         return 1
 
-    if focus and mode not in ("improve", "research", "create") and not design_existing:
+    if focus and mode not in ("improve", "research", "create", "evolve", "study", "frontend-design", "frontend-design-discover") and not design_existing and not just_plan:
         print(
-            f"Error: --focus (targeted mode) only works in improve, research, or create mode, "
+            f"Error: --focus (targeted mode) only works in improve, research, create, evolve, study, frontend-design, "
+            f"frontend-design-discover, or design (with --just-plan) mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,
         )
@@ -344,8 +491,12 @@ def _execute_ceo(
     refine_request: str | None,
     issue_number: int | None,
     issue_url: str | None,
-    no_github: bool,
-    raw_path: str,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
+    no_github: bool = False,
+    raw_path: str = "",
+    from_plan: str | None = None,
+    just_plan: bool = False,
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
     from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
@@ -398,9 +549,26 @@ def _execute_ceo(
     else:
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
-    from factory.skill_cache import ensure_skills
+    auto_approve = getattr(args, "auto_approve", False)
+    if auto_approve:
+        _emit_cli_event(wt_path, "auto_approve.enabled", {"mode": mode})
 
-    ensure_skills(wt_path, mode=mode)
+    resolved_plan: PlanSource | None = None
+    if from_plan:
+        resolved_plan = _resolve_plan_source(from_plan, project_path)
+        strategy_dir = wt_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "current.md").write_text(resolved_plan.plan)
+        if resolved_plan.feedback:
+            feedback_text = "\n\n---\n\n".join(resolved_plan.feedback)
+            (strategy_dir / "thread-feedback.md").write_text(feedback_text)
+
+    engine = getattr(args, "engine", "skill")
+
+    if engine != "tool":
+        from factory.skill_cache import ensure_skills
+
+        ensure_skills(wt_path, mode=mode)
 
     from factory.graph import extract_graph, is_graphify_installed
 
@@ -436,6 +604,29 @@ def _execute_ceo(
     else:
         ceo_mode = mode
 
+    headless_prompt_override: str | None = None
+    if engine == "tool" and headless:
+        base = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=None)
+        headless_prompt_override = base + _tool_exec_protocol(wt_path)
+
+    if engine == "deterministic":
+        if not headless:
+            print(
+                "WARNING: --engine deterministic runs headless (no interactive CEO). "
+                "Adding --headless implicitly.",
+                file=sys.stderr,
+            )
+            headless = True
+
+    if engine == "tool":
+        from factory.workflow.tool import tool_init as _tool_init
+
+        try:
+            _tool_init(ceo_mode, wt_path)
+        except Exception as e:
+            log.warning("tool_exec.init_failed", error=str(e), mode=ceo_mode)
+            engine = "skill"
+
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -466,11 +657,16 @@ def _execute_ceo(
         messages=pending,
         issue_number=issue_number,
         issue_url=issue_url,
+        issue_numbers=issue_numbers,
+        issue_urls=issue_urls,
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,
         create_description=create_description,
         update_existing_mode=update_existing_mode,
+        from_plan=resolved_plan.plan if resolved_plan else None,
+        from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
+        just_plan=just_plan,
     )
 
     session_name = _derive_session_name(
@@ -530,6 +726,9 @@ def _execute_ceo(
             no_worktree=no_worktree,
             ceo_mode=ceo_mode,
             verification_settings_file=_verification_settings_file,
+            just_plan=just_plan,
+            engine=engine,
+            prompt_override=headless_prompt_override,
         )
 
     try:
@@ -541,7 +740,15 @@ def _execute_ceo(
             mark_read(project_path, pending_ids)
         from factory.models import AgentRunRequest as _RunReq
 
-        prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode)
+        if engine == "tool":
+            base_prompt = resolve_prompt(
+                "ceo", wt_path, use_profile=use_profile, workflow_mode=None,
+            )
+            prompt = base_prompt + _tool_exec_protocol(wt_path)
+        else:
+            prompt = resolve_prompt(
+                "ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode,
+            )
         runner = get_runner(runner_name)
         extras: dict[str, object] = {}
         if _verification_settings_file:
@@ -560,6 +767,13 @@ def _execute_ceo(
             )
         )
     finally:
+        if engine == "tool":
+            try:
+                from factory.workflow.tool import tool_finalize
+                finalize_result = tool_finalize(wt_path)
+                log.info("tool_exec.finalized", result=finalize_result)
+            except Exception:
+                pass
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
         from factory.ceo_completion import print_resume_hint
@@ -601,12 +815,69 @@ def _run_headless(
     no_worktree: bool,
     ceo_mode: str,
     verification_settings_file: str | None,
+    just_plan: bool = False,
+    engine: str = "skill",
+    prompt_override: str | None = None,
 ) -> int:
     """Run the CEO in headless mode with completion guard."""
     from factory.ceo_completion import run_ceo_with_completion_guard
     from factory.messages import mark_read
     from factory.agents.runner import complete_cycle_session
     from factory.worktree import remove_worktree
+
+    if engine == "deterministic":
+        import asyncio
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.registry import WorkflowRegistry
+        from factory.workflow.primitives import DEFAULT_AGENT_POOL
+
+        wf = WorkflowRegistry.get_workflow(ceo_mode, wt_path)
+        if not wf:
+            print(f'Error: workflow "{ceo_mode}" not found', file=sys.stderr)
+            _stop_ceo_tailer(ceo_tailer)
+            complete_cycle_session(project_path, cycle_span_id)
+            return 1
+
+        executor = WorkflowExecutor(wf, wt_path, agent_pool=DEFAULT_AGENT_POOL)
+        try:
+            exec_result = asyncio.run(executor.execute())
+            print(json.dumps({
+                "workflow": ceo_mode,
+                "engine": "deterministic",
+                "success": exec_result.success,
+                "nodes_executed": exec_result.nodes_executed,
+                "duration_ms": round(exec_result.duration_ms, 1),
+            }, indent=2))
+            code = 0 if exec_result.success else 1
+            if code != 0:
+                return code
+            return _chain_modes(
+                project_path,
+                focus=focus,
+                min_growth=min_growth,
+                max_new=max_new,
+                branch=branch,
+                already_improved=mode in ("improve", "meta") or discover_only,
+                model=model,
+                no_github=no_github,
+                use_profile=use_profile,
+                tmux_persist=tmux_persist,
+                background=background,
+                completed_mode=mode,
+                no_worktree=no_worktree,
+            )
+        finally:
+            _stop_ceo_tailer(ceo_tailer)
+            complete_cycle_session(project_path, cycle_span_id)
+            from factory.ceo_completion import print_resume_hint
+
+            print_resume_hint(project_path)
+            if not no_worktree and wt_branch:
+                remove_worktree(project_path, wt_path, wt_branch)
+            if needs_materialize and _is_scaffold_only(project_path):
+                import shutil
+
+                shutil.rmtree(project_path, ignore_errors=True)
 
     try:
         result, code = _run(
@@ -624,6 +895,7 @@ def _run_headless(
                 background=background,
                 workflow_mode=ceo_mode,
                 settings_file=verification_settings_file,
+                prompt_override=prompt_override,
             )
         )
         print(result)
@@ -631,6 +903,7 @@ def _run_headless(
             mark_read(project_path, pending_ids)
         if code != 0:
             return code
+        chain_mode = "plan" if just_plan else mode
         return _chain_modes(
             project_path,
             focus=focus,
@@ -643,10 +916,16 @@ def _run_headless(
             use_profile=use_profile,
             tmux_persist=tmux_persist,
             background=background,
-            completed_mode=mode,
+            completed_mode=chain_mode,
             no_worktree=no_worktree,
         )
     finally:
+        if engine == "tool":
+            try:
+                from factory.workflow.tool import tool_finalize
+                tool_finalize(wt_path)
+            except Exception:
+                pass
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
         from factory.ceo_completion import print_resume_hint

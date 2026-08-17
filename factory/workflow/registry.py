@@ -68,23 +68,6 @@ class WorkflowRegistry:
         cls._initialized = True
 
     @classmethod
-    def register_search_path(cls, path: str, source: str = "project") -> None:
-        """Add a directory to search for workflow files.
-
-        Parameters
-        ----------
-        path : str
-            Path to directory containing workflow .py files.
-        source : str
-            Label for provenance ("project", "user", etc.).
-        """
-        resolved = str(Path(path).resolve())
-        existing = {p for p, _ in cls._search_paths}
-        if resolved not in existing:
-            cls._search_paths.append((resolved, source))
-            log.debug("workflow_registry.search_path", path=resolved, source=source)
-
-    @classmethod
     def discover(cls, project_path: Path | None = None) -> dict[str, WorkflowEntry]:
         """Discover all workflows from search paths + built-ins.
 
@@ -125,16 +108,22 @@ class WorkflowRegistry:
 
     @classmethod
     def _load_builtins(cls) -> None:
-        """Load built-in workflows from definitions.py."""
-        from factory.workflow.definitions import register_all
+        """Load built-in workflows from definitions.py.
 
-        for name, wf in register_all().items():
+        Uses _get_builtin_registry() so that contributed-workflow modules
+        are NOT imported at discovery time.  The callable is stored but
+        NOT invoked — the Workflow object is only constructed when
+        get_workflow() is called for that specific name.
+        """
+        from factory.workflow.definitions import _get_builtin_registry
+
+        for name, fn in _get_builtin_registry().items():
             cls._entries[name] = WorkflowEntry(
                 name=name,
                 description=_get_builtin_description(name),
                 path="<builtin>",
                 source="builtin",
-                _workflow_fn=lambda _wf=wf: _wf,
+                _workflow_fn=fn,
             )
 
     @classmethod

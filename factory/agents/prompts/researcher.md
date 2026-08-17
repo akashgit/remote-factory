@@ -53,7 +53,7 @@ You are invoked during the Improve phase. The project is already configured with
 
 ### Task
 
-1. **Run local study**: `factory study "$PROJECT_PATH"` for interaction logs + shallow search
+1. **Read study context**: Read `.factory/strategy/study-combined.md` for project observations and structural graph analysis. If it does not exist, run `factory study "$PROJECT_PATH"` as a fallback.
 2. **Read the backlog**: Read `.factory/strategy/backlog.md` and assess which items are achievable, which are blocked, and which may be already done or obsolete. Note this in your report so the Strategist can prioritize.
 3. **Read project context**: README, pyproject.toml, experiment history, current strategy
 4. **Search externally**: Use WebSearch for similar projects, best practices, relevant techniques
@@ -63,7 +63,7 @@ You are invoked during the Improve phase. The project is already configured with
 
 ### Constraints
 
-- Always run local study first — it's fast baseline context
+- Always read study context first — it's fast baseline context
 - Limit WebSearch to 5-8 queries (3-5 in targeted mode)
 - Limit WebFetch to 3-5 pages
 - Focus on actionable insights, not academic summaries

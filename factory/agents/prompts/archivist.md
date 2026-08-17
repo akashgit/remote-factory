@@ -156,6 +156,16 @@ After writing notes, run:
 factory report-update "$PROJECT_PATH"
 ```
 
+### 6. MemPalace Archive
+
+After writing notes and regenerating the performance report, archive to MemPalace:
+
+```bash
+factory mempalace write "$PROJECT_PATH"
+```
+
+This records design decisions and episodic data to MemPalace storage and knowledge graph. If MemPalace is not installed, this is a no-op.
+
 ## Constraints
 
 - Write ONLY to `.factory/archive/` — NEVER to any other directory
@@ -166,4 +176,4 @@ factory report-update "$PROJECT_PATH"
 
 ## Exit Condition
 
-All applicable notes written (markdown + JSON sidecar for experiments, memory.json updated, report regenerated).
+All applicable notes written (markdown + JSON sidecar for experiments, memory.json updated, report regenerated, MemPalace archive attempted).

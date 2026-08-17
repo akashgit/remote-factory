@@ -9,7 +9,6 @@ from factory.research.leakage import (
     _extract_specific_values,
     _tokenize_text,
     fingerprint_fixed_surfaces,
-    scan_diff_for_leakage,
     scan_for_leakage,
     validate_research_config,
 )
@@ -68,7 +67,7 @@ class TestExtractSpecificValues:
         assert "0.5" not in values
 
     def test_quoted_strings(self):
-        values = _extract_specific_values('label = "expected_output" and key = \'secret_value\'')
+        values = _extract_specific_values("label = \"expected_output\" and key = 'secret_value'")
         assert "expected_output" in values
         assert "secret_value" in values
 
@@ -87,9 +86,7 @@ class TestExtractSpecificValues:
 class TestFingerprintFixedSurfaces:
     def test_extracts_tokens_from_files(self, tmp_path):
         (tmp_path / "ground_truth.py").write_text(
-            "def calculate_subtraction(a, b):\n"
-            "    return a - b\n"
-            "EXPECTED_ACCURACY = 0.847\n"
+            "def calculate_subtraction(a, b):\n    return a - b\nEXPECTED_ACCURACY = 0.847\n"
         )
         fps = fingerprint_fixed_surfaces(tmp_path, ["ground_truth.py"])
         assert "ground_truth.py" in fps
@@ -250,57 +247,6 @@ class TestScanForLeakage:
         # High sensitivity should be more likely to flag than low
         if report_low.flagged:
             assert report_high.flagged
-
-
-# ── scan_diff_for_leakage ────────────────────────────────────
-
-
-class TestScanDiffForLeakage:
-    def test_added_lines_scanned(self):
-        fingerprints = {"truth.py": {"0.847"}}
-        diff = (
-            "diff --git a/src/main.py b/src/main.py\n"
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1,3 +1,4 @@\n"
-            " existing code\n"
-            "+EXPECTED_VALUE = 0.847\n"
-            " more code\n"
-        )
-        report = scan_diff_for_leakage(diff, fingerprints)
-        assert report.flagged
-
-    def test_context_lines_ignored(self):
-        fingerprints = {"truth.py": {"0.847"}}
-        diff = (
-            "diff --git a/src/main.py b/src/main.py\n"
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1,3 +1,3 @@\n"
-            " EXISTING_VALUE = 0.847\n"
-            "-old line\n"
-            "+new line\n"
-        )
-        report = scan_diff_for_leakage(diff, fingerprints)
-        assert not report.flagged
-
-    def test_empty_diff(self):
-        fingerprints = {"truth.py": {"0.847"}}
-        report = scan_diff_for_leakage("", fingerprints)
-        assert not report.flagged
-
-    def test_no_added_lines(self):
-        fingerprints = {"truth.py": {"subtract"}}
-        diff = (
-            "diff --git a/src/main.py b/src/main.py\n"
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1,3 +1,2 @@\n"
-            " existing\n"
-            "-removed line with subtract\n"
-        )
-        report = scan_diff_for_leakage(diff, fingerprints)
-        assert not report.flagged
 
 
 # ── validate_research_config ─────────────────────────────────

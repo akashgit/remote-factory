@@ -44,6 +44,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "tmux-capture",
             "tmux-stop",
             "refactory",
+            "contained",
             "dashboard",
             "agent",
         ],
@@ -104,7 +105,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "mempalace"]),
     (
         "Configuration",
         [
@@ -113,6 +114,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "install",
             "self-update",
             "runners",
+            "plugins",
             "usage",
             "serve-mcp",
         ],
@@ -181,6 +183,42 @@ class _GroupedHelpParser(argparse.ArgumentParser):
         return "\n".join(parts)
 
 
+def _cmd_plugins(args: argparse.Namespace) -> int:
+    """List discovered plugins and their registered extensions."""
+    import dataclasses
+    import json
+
+    from factory.plugins import get_registry, get_results
+
+    results = get_results()
+    registry = get_registry()
+
+    if getattr(args, "json", False) if hasattr(args, "json") else False:
+        data = [dataclasses.asdict(r) for r in results]
+        print(json.dumps(data, indent=2))
+        return 0
+
+    if not results:
+        print("No plugins discovered.")
+        return 0
+
+    for r in results:
+        ver = f" v{r.version}" if r.version else ""
+        line = f"  {r.name}{ver}: {r.status}"
+        if r.reason:
+            line += f" ({r.reason})"
+        print(line)
+
+    if registry.commands:
+        print(f"\nRegistered commands: {', '.join(sorted(registry.commands))}")
+    if registry.modes:
+        print(f"Registered modes: {', '.join(registry.modes)}")
+    if registry.agent_roles:
+        print(f"Registered agent roles: {', '.join(registry.agent_roles)}")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     from factory.cli._parser_groups import (
         add_archive_parsers,
@@ -194,9 +232,16 @@ def build_parser() -> argparse.ArgumentParser:
         add_validation_recovery_parsers,
     )
 
+    from importlib.metadata import version as pkg_version
+
     parser = _GroupedHelpParser(
         prog="factory",
         description="Remote Factory — domain-agnostic multi-agent software evolution loop",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"remote-factory {pkg_version('remote-factory')}",
     )
     parser.add_argument(
         "--refactory-agent",
@@ -215,6 +260,41 @@ def build_parser() -> argparse.ArgumentParser:
     add_validation_recovery_parsers(sub)
     add_entry_point_parsers(sub)
 
+    # ── plugin commands ──────────────────────────────────────────
+    p_plugins = sub.add_parser("plugins", help="List discovered plugins and their extensions")
+    p_plugins.add_argument("--json", action="store_true", default=False, help="Machine-readable JSON output")
+
+    from factory.plugins import PluginRegistry, load_plugins
+
+    _plugin_registry = PluginRegistry()
+    load_plugins(_plugin_registry)
+
+    for cmd_name, spec in _plugin_registry.commands.items():
+        p_plugin = sub.add_parser(cmd_name, help=spec.help)
+        if spec.add_arguments is not None:
+            spec.add_arguments(p_plugin)
+        p_plugin.set_defaults(_plugin_handler=spec.handler)
+
+    # ── plugin parser extensions ────────────────────────────────
+    sub_action: argparse._SubParsersAction | None = None  # type: ignore[type-arg]
+    if parser._subparsers is not None:
+        for action in parser._subparsers._group_actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub_action = action
+                break
+
+    if sub_action is not None:
+        import structlog as _structlog
+
+        _ext_log = _structlog.get_logger()
+        for ext_name, ext_fns in _plugin_registry.parser_extensions.items():
+            ext_parser = sub_action._name_parser_map.get(ext_name)
+            if ext_parser is None:
+                _ext_log.warning("plugin_parser_extension_no_target", subcommand=ext_name)
+                continue
+            for ext_fn in ext_fns:
+                ext_fn(ext_parser)
+
     # graph — code knowledge graph operations
     graph_parser = sub.add_parser("graph", help="Code knowledge graph via graphify")
     graph_sub = graph_parser.add_subparsers(dest="graph_command")
@@ -224,6 +304,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_graph_update.add_argument("path", help="Path to the project")
     p_graph_status = graph_sub.add_parser("status", help="Show graph freshness and stats")
     p_graph_status.add_argument("path", help="Path to the project")
+    p_graph_query = graph_sub.add_parser("query", help="BFS traversal of the knowledge graph")
+    p_graph_query.add_argument("path", help="Path to the project")
+    p_graph_query.add_argument("question", help="Natural-language query for graph traversal")
+    p_graph_query.add_argument("--depth", type=int, default=2, help="BFS depth (default: 2)")
+    p_graph_explain = graph_sub.add_parser("explain", help="Explain a node and its neighbors")
+    p_graph_explain.add_argument("path", help="Path to the project")
+    p_graph_explain.add_argument("node", help="Node name or label to explain")
+    p_graph_path = graph_sub.add_parser("path", help="Shortest path between two nodes")
+    p_graph_path.add_argument("path", help="Path to the project")
+    p_graph_path.add_argument("source", help="Source node name")
+    p_graph_path.add_argument("target", help="Target node name")
+
+    # mempalace — MemPalace operations (read, write, browse)
+    mp = sub.add_parser("mempalace", help="MemPalace operations (read, write, browse)")
+    mp_sub = mp.add_subparsers(dest="mempalace_action", required=True)
+
+    mp_read = mp_sub.add_parser("read", help="Read MemPalace context for a project")
+    mp_read.add_argument("project_path", help="Path to the project")
+    mp_read.add_argument("--task-hint", help="Task context for targeted retrieval")
+
+    mp_write = mp_sub.add_parser("write", help="Write project data to MemPalace")
+    mp_write.add_argument("project_path", help="Path to the project")
+
+    mp_browse = mp_sub.add_parser("browse", help="Browse palace hierarchy: wings → rooms → drawers")
+    mp_browse.add_argument("project_path", help="Path to the project")
+    mp_browse.add_argument("--wing", help="Filter to a specific wing")
+    mp_browse.add_argument("--room", help="Filter to a specific room (requires --wing)")
+    mp_browse.add_argument("--drawer", help="Show full content of a specific drawer by ID")
+    mp_browse.add_argument("--all", action="store_true", help="Show all wings (default: only this project's wing)")
 
     return parser
 
@@ -305,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-capture": _cli.cmd_tmux_capture,
         "tmux-stop": _cli.cmd_tmux_stop,
         "refactory": _cli.cmd_refactory,
+        "contained": _cli.cmd_contained,
         "spec": lambda a: {
             "generate": _cli.cmd_spec_generate,
             "validate": _cli.cmd_spec_validate,
@@ -321,18 +431,30 @@ def main(argv: list[str] | None = None) -> int:
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
         ).cmd_workflow(a),
+        "plugins": _cmd_plugins,
+        "mempalace": _cli.cmd_mempalace,
         "graph": lambda a: {
             "extract": _cli.cmd_graph_extract,
             "update": _cli.cmd_graph_update,
             "status": _cli.cmd_graph_status,
+            "query": _cli.cmd_graph_query,
+            "explain": _cli.cmd_graph_explain,
+            "path": _cli.cmd_graph_path,
         }.get(
             str(getattr(a, "graph_command", "")),
-            lambda args: print("Usage: factory graph {extract,update,status}") or 1,
+            lambda args: print("Usage: factory graph {extract,update,status,query,explain,path}") or 1,
         )(a),
     }
 
+    handler = handlers.get(args.command)
+    if handler is None:
+        handler = getattr(args, "_plugin_handler", None)
+    if handler is None:
+        print(f"Unknown command: {args.command}", file=sys.stderr)
+        return 1
+
     try:
-        return handlers[args.command](args)
+        return handler(args)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

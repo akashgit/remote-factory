@@ -11,7 +11,6 @@ from factory.agents.runner import (
     AgentRole,
     _PROMPTS_DIR,
     ConsecutiveAgentFailureError,
-    reset_failure_counter,
 )
 
 
@@ -27,8 +26,11 @@ class TestResolvePrompt:
 
     def test_all_default_prompts_exist(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist",
-            "archivist", "ceo", "failure_analyst",
+            "researcher",
+            "strategist",
+            "archivist",
+            "ceo",
+            "failure_analyst",
         ]
         for role in roles:
             prompt = resolve_prompt(role)
@@ -69,8 +71,11 @@ class TestResolvePrompt:
 
     def test_each_prompt_has_header(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist",
-            "archivist", "ceo", "failure_analyst",
+            "researcher",
+            "strategist",
+            "archivist",
+            "ceo",
+            "failure_analyst",
         ]
         for role in roles:
             prompt = resolve_prompt(role)
@@ -105,66 +110,6 @@ class TestResearcherPromptModes:
         assert "Output (Research)" in prompt
 
 
-class TestInvokeAgentsParallel:
-    @pytest.mark.asyncio
-    async def test_runs_multiple_agents(self, tmp_path, monkeypatch):
-        """invoke_agents_parallel runs multiple agents concurrently."""
-        from factory.agents.runner import invoke_agents_parallel
-
-        call_count = 0
-
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False, background=False, review_tag=None):
-            nonlocal call_count
-            call_count += 1
-            return (f"output-{role}", 0)
-
-        monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
-
-        tasks: list[tuple[AgentRole, str]] = [
-            ("builder", "task 1"),
-            ("health_checker", "task 2"),
-        ]
-        results = await invoke_agents_parallel(tasks, tmp_path)
-        assert len(results) == 2
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_returns_all_results(self, tmp_path, monkeypatch):
-        """invoke_agents_parallel returns results from all agents."""
-        from factory.agents.runner import invoke_agents_parallel
-
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False, background=False, review_tag=None):
-            return (f"output-{role}", 0)
-
-        monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
-
-        tasks: list[tuple[AgentRole, str]] = [
-            ("builder", "task 1"),
-            ("health_checker", "task 2"),
-            ("archivist", "task 3"),
-        ]
-        results = await invoke_agents_parallel(tasks, tmp_path)
-        assert len(results) == 3
-        assert all(rc == 0 for _, rc in results)
-
-    @pytest.mark.asyncio
-    async def test_passes_model_to_invoke_agent(self, tmp_path, monkeypatch):
-        """invoke_agents_parallel passes model kwarg through to invoke_agent."""
-        from factory.agents.runner import invoke_agents_parallel
-
-        captured_models: list[str | None] = []
-
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False, background=False, review_tag=None):
-            captured_models.append(model)
-            return (f"output-{role}", 0)
-
-        monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
-
-        tasks: list[tuple[AgentRole, str]] = [("builder", "task 1"), ("qa", "task 2")]
-        await invoke_agents_parallel(tasks, tmp_path, model="claude-opus-4-6")
-        assert all(m == "claude-opus-4-6" for m in captured_models)
-
-
 class TestInvokeAgentModel:
     @pytest.mark.asyncio
     async def test_model_flag_in_subprocess_cmd(self, tmp_path, monkeypatch):
@@ -186,7 +131,9 @@ class TestInvokeAgentModel:
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
-            monkeypatch.setattr("factory.runners._subprocess.asyncio.create_subprocess_exec", mock_exec)
+            monkeypatch.setattr(
+                "factory.runners._subprocess.asyncio.create_subprocess_exec", mock_exec
+            )
 
             await invoke_agent("researcher", "test task", tmp_path, model="claude-opus-4-6")
             assert "--model" in captured_cmd
@@ -213,7 +160,9 @@ class TestInvokeAgentModel:
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
-            monkeypatch.setattr("factory.runners._subprocess.asyncio.create_subprocess_exec", mock_exec)
+            monkeypatch.setattr(
+                "factory.runners._subprocess.asyncio.create_subprocess_exec", mock_exec
+            )
 
             await invoke_agent("researcher", "test task", tmp_path, model=None)
             assert "--model" not in captured_cmd
@@ -280,11 +229,15 @@ class TestConsecutiveFailureAbort:
 
     def setup_method(self):
         """Reset the failure counter before each test."""
-        reset_failure_counter()
+        import factory.agents.runner as runner_module
+
+        runner_module._consecutive_failures = 0
 
     def teardown_method(self):
         """Reset the failure counter after each test."""
-        reset_failure_counter()
+        import factory.agents.runner as runner_module
+
+        runner_module._consecutive_failures = 0
 
     @pytest.mark.asyncio
     async def test_success_resets_counter(self, tmp_path, monkeypatch):
@@ -297,8 +250,10 @@ class TestConsecutiveFailureAbort:
         # Mock the runner at the point where it's imported in runner.py
         class MockRunner:
             name = "claude"
+
             async def headless(self, *args, **kwargs):
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="success", return_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -321,8 +276,10 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, *args, **kwargs):
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="error output", return_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -345,8 +302,10 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, *args, **kwargs):
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="error", return_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -374,8 +333,10 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, *args, **kwargs):
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="error", return_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -410,6 +371,7 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, *args, **kwargs):
                 raise RuntimeError("Connection failed")
 
@@ -420,14 +382,6 @@ class TestConsecutiveFailureAbort:
         assert code == 1
         assert "Error:" in stdout
         assert runner_module._consecutive_failures == 1
-
-    def test_reset_failure_counter(self):
-        """reset_failure_counter resets the counter to 0."""
-        import factory.agents.runner as runner_module
-
-        runner_module._consecutive_failures = 5
-        reset_failure_counter()
-        assert runner_module._consecutive_failures == 0
 
     def test_error_message_is_actionable(self):
         """Error message provides actionable guidance."""
@@ -452,6 +406,7 @@ class TestCeoPromptNoBackgroundSpawning:
         """CEO prompt must not show `factory agent ... &` pattern."""
         prompt = resolve_prompt("ceo")
         import re
+
         pattern = r"factory\s+agent\s+[^`\n]+\s+&\s*$"
         matches = re.findall(pattern, prompt, re.MULTILINE)
         for match in matches:
@@ -459,22 +414,25 @@ class TestCeoPromptNoBackgroundSpawning:
                 continue
             if "archivist" in match:
                 continue
-            assert "WRONG" in prompt[prompt.find(match) - 50:prompt.find(match)], \
+            assert "WRONG" in prompt[prompt.find(match) - 50 : prompt.find(match)], (
                 f"Found `factory agent ... &` without 'WRONG' context: {match}"
+            )
 
     def test_no_tail_f_for_agent_output(self):
         """CEO prompt must not suggest `tail -f` for agent log output."""
         prompt = resolve_prompt("ceo")
         import re
+
         # Find all tail -f occurrences
         pattern = r"tail\s+-[fF]\s+\S+"
         matches = re.findall(pattern, prompt)
         # All matches should be in a "Forbidden" or "WRONG" context
         for match in matches:
             context_start = max(0, prompt.find(match) - 100)
-            context = prompt[context_start:prompt.find(match) + len(match)]
-            assert any(marker in context for marker in ["WRONG", "Forbidden", "do not"]), \
+            context = prompt[context_start : prompt.find(match) + len(match)]
+            assert any(marker in context for marker in ["WRONG", "Forbidden", "do not"]), (
                 f"Found `tail -f` without forbidden context: {match}"
+            )
 
     def test_has_synchronous_only_rule(self):
         """CEO prompt must explicitly state subagent calls are synchronous."""
@@ -507,9 +465,11 @@ class TestBackgroundDispatch:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, request):
                 captured_extras.update(request.extras)
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="ok", return_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -529,9 +489,11 @@ class TestBackgroundDispatch:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, request):
                 captured_extras.update(request.extras)
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="ok", return_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -542,6 +504,7 @@ class TestBackgroundDispatch:
     def test_supports_background_on_runner_meta(self):
         """ClaudeRunner metadata has supports_background=True."""
         from factory.runners.claude import ClaudeRunner
+
         assert ClaudeRunner.metadata().supports_background is True
 
     def test_other_runners_no_background(self):
@@ -549,6 +512,7 @@ class TestBackgroundDispatch:
         from factory.runners.bob import BobRunner
         from factory.runners.codex import CodexRunner
         from factory.runners.opencode import OpenCodeRunner
+
         assert BobRunner.metadata().supports_background is False
         assert CodexRunner.metadata().supports_background is False
         assert OpenCodeRunner.metadata().supports_background is False
@@ -649,9 +613,17 @@ class TestBgAgents:
         monkeypatch.setattr(factory.user_config, "_cached_config", {})
 
         args = argparse.Namespace(
-            path=str(tmp_path), bg=True, bg_agents=True,
-            mode="auto", headless=False, prompt=None, focus=None,
-            dir=None, no_github=False, refine=None, profile=None,
+            path=str(tmp_path),
+            bg=True,
+            bg_agents=True,
+            mode="auto",
+            headless=False,
+            prompt=None,
+            focus=None,
+            dir=None,
+            no_github=False,
+            refine=None,
+            profile=None,
         )
         result = cmd_ceo(args)
         assert result == 1
@@ -730,9 +702,11 @@ class TestNoGithubPropagation:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, request):
                 captured_prompt.append(request.prompt)
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="ok", return_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -755,9 +729,11 @@ class TestNoGithubPropagation:
 
         class MockRunner:
             name = "claude"
+
             async def headless(self, request):
                 captured_prompt.append(request.prompt)
                 from factory.models import AgentRunResult
+
                 return AgentRunResult(stdout="ok", return_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
@@ -775,4 +751,3 @@ class TestNoGithubPropagation:
         """FACTORY_NO_GITHUB is not set when --no-github is not passed."""
         monkeypatch.delenv("FACTORY_NO_GITHUB", raising=False)
         assert os.environ.get("FACTORY_NO_GITHUB") is None
-
