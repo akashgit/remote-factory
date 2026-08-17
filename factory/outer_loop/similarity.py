@@ -31,7 +31,7 @@ def structural_hash(workflow: Workflow) -> str:
     )
 
     blob = json.dumps(
-        {"name": workflow.name, "nodes": nodes_canonical, "edges": edges_canonical},
+        {"nodes": nodes_canonical, "edges": edges_canonical},
         sort_keys=True,
         separators=(",", ":"),
     )

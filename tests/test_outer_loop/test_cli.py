@@ -187,7 +187,7 @@ class TestOuterLoopWorkflowGraph:
         from factory.workflow.contributed.outer_loop.workflow import workflow
 
         wf = workflow()
-        expected = {"seed", "evaluate", "reflect", "evolve", "gate_converge"}
+        expected = {"seed", "evaluate", "reflect", "evolve", "gate_converge", "promote"}
         assert set(wf.nodes.keys()) == expected
 
     def test_workflow_generation_loop(self) -> None:

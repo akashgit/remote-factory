@@ -246,7 +246,13 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     results_path.write_text(json.dumps(results, indent=2))
 
     state = load_checkpoint(project_path) or OuterLoopState(budget_remaining=config.budget)
-    state = state.model_copy(update={"generation": generation, "total_evaluations": state.total_evaluations + len(results)})
+    gen_best = max((r["score"] for r in results.values()), default=0.0)
+    new_best = max(state.best_score, gen_best)
+    state = state.model_copy(update={
+        "generation": generation,
+        "total_evaluations": state.total_evaluations + len(results),
+        "best_score": new_best,
+    })
     save_checkpoint(project_path, state)
 
     print(f"Evaluated {len(results)} candidates. Results saved to {results_path}")

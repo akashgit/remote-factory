@@ -42,6 +42,10 @@ def workflow() -> Workflow:
     nodes["seed"] = FnNode(
         id="seed",
         command="factory outer-loop calibrate {project_path}",
+        notes=(
+            "Initialize the evolutionary search. The CEO must track $GENERATION=0 after this step. "
+            "All subsequent evaluate/reflect/evolve commands use the current $GENERATION value."
+        ),
         writes={
             ".factory/outer_loop/modes/",
             ".factory/outer_loop/config.json",
@@ -51,6 +55,7 @@ def workflow() -> Workflow:
     nodes["evaluate"] = FnNode(
         id="evaluate",
         command="factory outer-loop evaluate {project_path} --generation {generation}",
+        notes="Substitute {generation} with the current $GENERATION value.",
         reads={".factory/outer_loop/modes/"},
         writes={
             ".factory/outer_loop/results/",
@@ -61,6 +66,7 @@ def workflow() -> Workflow:
     nodes["reflect"] = FnNode(
         id="reflect",
         command="factory outer-loop reflect {project_path} --generation {generation}",
+        notes="Substitute {generation} with the current $GENERATION value.",
         reads={".factory/outer_loop/results/"},
         writes={".factory/outer_loop/reflections/"},
     )
@@ -68,6 +74,10 @@ def workflow() -> Workflow:
     nodes["evolve"] = FnNode(
         id="evolve",
         command="factory outer-loop evolve {project_path} --generation {generation}",
+        notes=(
+            "Substitute {generation} with the current $GENERATION value. "
+            "After this step completes, increment $GENERATION by 1."
+        ),
         reads={
             ".factory/outer_loop/reflections/",
             ".factory/outer_loop/modes/",
@@ -82,12 +92,24 @@ def workflow() -> Workflow:
         reads={".factory/outer_loop/results/"},
     )
 
+    nodes["promote"] = FnNode(
+        id="promote",
+        command="factory outer-loop status {project_path}",
+        notes=(
+            "The search has converged. Read the status output to find the best mode name, "
+            "then run: factory outer-loop promote {project_path} "
+            "--mode-name <best_mode> --permanent-name evolved"
+        ),
+        reads={".factory/outer_loop/results/"},
+    )
+
     edges = [
         Edge(source="seed", target="evaluate"),
         Edge(source="evaluate", target="reflect"),
         Edge(source="reflect", target="evolve"),
         Edge(source="evolve", target="gate_converge"),
         Edge(source="gate_converge", target="evaluate", condition=VerdictType.RELOOP),
+        Edge(source="gate_converge", target="promote", condition=VerdictType.PROCEED),
     ]
 
     return Workflow(
