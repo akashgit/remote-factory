@@ -409,6 +409,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#outer-loop-evolve-workflow-topologies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Outer Loop — evolve workflow topologies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#headless-continuous-loop" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -860,6 +871,34 @@
   
   
     <li class="md-nav__item">
+      <a href="outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="ace/" class="md-nav__link">
         
   
@@ -1166,6 +1205,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#outer-loop-evolve-workflow-topologies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Outer Loop — evolve workflow topologies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#headless-continuous-loop" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1355,10 +1405,10 @@
 <p><strong>Describe what you want. re:factory builds it, tests it, and keeps improving it — autonomously.</strong></p>
 <p>You give it a spec file, a rough idea, or an existing codebase. re:factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Design — brainstorm an idea, refine it, then build</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;distributed eval runner&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"distributed eval runner"</span><span class="w"> </span>--mode<span class="w"> </span>design
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Create — build new factory modes and pipelines</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;PR validation pipeline&quot;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"PR validation pipeline"</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Build — have a fleshed-out idea? Pass the file.</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/ideas/weather-dashboard.md
@@ -1367,7 +1417,7 @@
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Focus — build exactly one thing</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;add WebSocket support&quot;</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"add WebSocket support"</span>
 </code></pre></div>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>graph LR
@@ -1390,8 +1440,8 @@
 <h2 id="design-mode">Design Mode<a class="headerlink" href="#design-mode" title="Permanent link">&para;</a></h2>
 <p>Design mode is the primary way to use re:factory. It researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.</p>
 <p><strong>From a raw idea</strong> — describe what you want and refine it into a buildable spec:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;distributed eval runner&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;Build a REST API for bookmark management&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"distributed eval runner"</span><span class="w"> </span>--mode<span class="w"> </span>design
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"Build a REST API for bookmark management"</span><span class="w"> </span>--mode<span class="w"> </span>design
 </code></pre></div>
 <p><strong>From a spec file</strong> — read and discuss before building:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/ideas/weather-dashboard.md<span class="w"> </span>--mode<span class="w"> </span>design
@@ -1401,20 +1451,20 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/factory-projects/my-app<span class="w"> </span>--mode<span class="w"> </span>design
 </code></pre></div>
 <p><strong>Seed the conversation with a topic</strong> — use <code>--focus</code> to start the discussion around a specific area:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/factory-projects/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;auth layer&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/factory-projects/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"auth layer"</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="m">42</span><span class="w">                       </span><span class="c1"># GitHub issue</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;owner/repo#42&quot;</span><span class="w">          </span><span class="c1"># Issue shorthand</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s1">&#39;111 and 112&#39;</span><span class="w">            </span><span class="c1"># Multiple issues</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s1">&#39;issue 42, issue 43&#39;</span><span class="w">    </span><span class="c1"># With &#39;issue&#39; keyword</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"owner/repo#42"</span><span class="w">          </span><span class="c1"># Issue shorthand</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s1">'111 and 112'</span><span class="w">            </span><span class="c1"># Multiple issues</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-app<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s1">'issue 42, issue 43'</span><span class="w">    </span><span class="c1"># With 'issue' keyword</span>
 </code></pre></div>
 <hr />
 <h2 id="create-your-own-factorymode">Create Your Own Factory/Mode<a class="headerlink" href="#create-your-own-factorymode" title="Permanent link">&para;</a></h2>
 <p>Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via <code>--focus</code> to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;a mode that validates PRs with multi-stage checks&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"a mode that validates PRs with multi-stage checks"</span>
 </code></pre></div>
 <p>To update an existing mode, prefix <code>--focus</code> with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;improve: add plateau detection after 3 consecutive reverts&quot;</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;build: add a code review gate after the builder&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"improve: add plateau detection after 3 consecutive reverts"</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/factory<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"build: add a code review gate after the builder"</span>
 </code></pre></div>
 <p>Without a colon, <code>--focus</code> always creates a new mode.</p>
 <p>The pipeline: <strong>3 parallel researchers</strong> (existing patterns, intent analysis, best practices) → <strong>Strategist</strong> synthesizes a workflow spec → <strong>you approve</strong> (like design mode) → <strong>Builder</strong> implements → <strong>QA</strong> verifies end-to-end → <strong>PR</strong>.</p>
@@ -1422,7 +1472,7 @@
 <hr />
 <h2 id="other-workflows">Other Workflows<a class="headerlink" href="#other-workflows" title="Permanent link">&para;</a></h2>
 <h3 id="build-start-from-an-idea">Build — start from an idea<a class="headerlink" href="#build-start-from-an-idea" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;Build a REST API for bookmark management&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"Build a REST API for bookmark management"</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/ideas/weather-dashboard.md
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>https://github.com/user/repo
 </code></pre></div>
@@ -1433,39 +1483,49 @@
 </code></pre></div>
 <p>Point it at any codebase. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.</p>
 <h3 id="focus-build-exactly-one-thing">Focus — build exactly one thing<a class="headerlink" href="#focus-build-exactly-one-thing" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;add authentication middleware&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"add authentication middleware"</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="m">42</span><span class="w">              </span><span class="c1"># Target GitHub issue #42</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s1">&#39;111 and 112&#39;</span><span class="w">   </span><span class="c1"># Multiple issues</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s1">'111 and 112'</span><span class="w">   </span><span class="c1"># Multiple issues</span>
 </code></pre></div>
 <p>When you know exactly what you want, <code>--focus</code> pins a single backlog item, generates one hypothesis, runs one experiment, and exits.</p>
 <h3 id="research-optimize-a-metric-iteratively">Research — optimize a metric iteratively<a class="headerlink" href="#research-optimize-a-metric-iteratively" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;SWE-bench solver agent&quot;</span><span class="w"> </span>--mode<span class="w"> </span>research
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"SWE-bench solver agent"</span><span class="w"> </span>--mode<span class="w"> </span>research
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-research-project<span class="w"> </span>--mode<span class="w"> </span>research
 </code></pre></div>
 <p>For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. See <a href="getting-started/#research-mode-in-detail">Getting Started</a> for the full picture.</p>
+<h3 id="outer-loop-evolve-workflow-topologies">Outer Loop — evolve workflow topologies<a class="headerlink" href="#outer-loop-evolve-workflow-topologies" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>calibrate<span class="w"> </span>~/my-factory<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span>--benchmark<span class="w"> </span>featurebench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span>--population-size<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span>--project-dir<span class="w"> </span>/path/to/benchmark-instance<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span>--test-command<span class="w"> </span><span class="s2">"pytest tests/ -v"</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-factory<span class="w"> </span>--mode<span class="w"> </span>outer-loop<span class="w"> </span>--headless
+</code></pre></div>
+<p>The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the <a href="outer-loop/">Outer Loop guide</a> for full architecture and CLI reference.</p>
 <h3 id="headless-continuous-loop">Headless &amp; continuous loop<a class="headerlink" href="#headless-continuous-loop" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--headless<span class="w">            </span><span class="c1"># No interaction</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>factory<span class="w"> </span>run<span class="w"> </span>~/my-project<span class="w"> </span>--loop<span class="w">                 </span><span class="c1"># Continuous improvement</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>factory<span class="w"> </span>tmux<span class="w"> </span>~/my-project<span class="w"> </span>--loop<span class="w">                </span><span class="c1"># Detached tmux session</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--headless<span class="w">            </span><span class="c1"># No interaction</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>factory<span class="w"> </span>run<span class="w"> </span>~/my-project<span class="w"> </span>--loop<span class="w">                 </span><span class="c1"># Continuous improvement</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>factory<span class="w"> </span>tmux<span class="w"> </span>~/my-project<span class="w"> </span>--loop<span class="w">                </span><span class="c1"># Detached tmux session</span>
 </code></pre></div>
 <hr />
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <p><strong>Prerequisites:</strong> Python 3.11+, <a href="https://docs.astral.sh/uv/#installation">uv</a>, and <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> (installed and authenticated).</p>
 <h3 id="quick-install">Quick Install<a class="headerlink" href="#quick-install" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>git+https://github.com/akashgit/remote-factory.git
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>git+https://github.com/akashgit/remote-factory.git
 </code></pre></div>
 <h3 id="development-install">Development Install<a class="headerlink" href="#development-install" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/akashgit/remote-factory.git
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nb">cd</span><span class="w"> </span>remote-factory
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>uv<span class="w"> </span>sync
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/akashgit/remote-factory.git
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nb">cd</span><span class="w"> </span>remote-factory
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>uv<span class="w"> </span>sync
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </code></pre></div>
 <p>Then start with one of the two main workflows:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Design — brainstorm an idea, refine it, then build</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;my idea&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Improve an existing project — use design mode with a focus area</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/project<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;issue # or area to improve&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Design — brainstorm an idea, refine it, then build</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"my idea"</span><span class="w"> </span>--mode<span class="w"> </span>design
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Improve an existing project — use design mode with a focus area</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path/to/project<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"issue # or area to improve"</span>
 </code></pre></div>
 <p>See the <a href="setup/">full setup guide</a> for authentication, environment variables, and justification for why we install globally.</p>
 <hr />
@@ -1511,8 +1571,8 @@
     style A fill:#fff3e0,stroke:#ff8f00
     style D fill:#e8eaf6,stroke:#5c6bc0</code></pre>
 <p>Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Run a full improvement cycle, then evolve all agent playbooks</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--mode<span class="w"> </span>meta
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Run a full improvement cycle, then evolve all agent playbooks</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--mode<span class="w"> </span>meta
 </code></pre></div>
 <p>See <a href="self-improvement/">Self-Improvement Loop</a> for the full picture. See <a href="ace/">ACE Playbook Evolution</a> for the playbook mechanics.</p>
 <hr />
@@ -1649,35 +1709,35 @@
 <p>Built something with re:factory? <a href="https://github.com/akashgit/remote-factory/pulls">Open a PR</a> to add it here.</p>
 <hr />
 <h2 id="cli-quick-reference">CLI Quick Reference<a class="headerlink" href="#cli-quick-reference" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Design — brainstorm and build</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;idea&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                              </span><span class="c1"># Design from a raw idea</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/ideas/spec.md<span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                     </span><span class="c1"># Design from a spec file</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                              </span><span class="c1"># Design improvements for existing project</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;topic&quot;</span><span class="w">              </span><span class="c1"># Seed with a specific topic</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># Create — extend the factory</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;description&quot;</span><span class="w">        </span><span class="c1"># Create a new factory mode</span>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;mode: change&quot;</span><span class="w">       </span><span class="c1"># Update an existing mode</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Design — brainstorm and build</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"idea"</span><span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                              </span><span class="c1"># Design from a raw idea</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/ideas/spec.md<span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                     </span><span class="c1"># Design from a spec file</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>design<span class="w">                              </span><span class="c1"># Design improvements for existing project</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>design<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"topic"</span><span class="w">              </span><span class="c1"># Seed with a specific topic</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># Create — extend the factory</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"description"</span><span class="w">        </span><span class="c1"># Create a new factory mode</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>factory<span class="w"> </span>ceo<span class="w"> </span>&lt;path&gt;<span class="w"> </span>--mode<span class="w"> </span>create<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"mode: change"</span><span class="w">       </span><span class="c1"># Update an existing mode</span>
 </code></pre></div>
 <p>See <code>factory --help</code> for the complete list.</p>
 <hr />
 <h2 id="runners">Runners<a class="headerlink" href="#runners" title="Permanent link">&para;</a></h2>
 <p>re:factory supports multiple CLI backends. Default is Claude Code — switch with <code>--runner</code> or <code>FACTORY_RUNNER</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Direct</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nv">CODEX_API_KEY</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--runner<span class="w"> </span>codex
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nv">BOBSHELL_API_KEY</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--runner<span class="w"> </span>bob
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="c1"># Via config.toml profile (persistent)</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--profile<span class="w"> </span>codex
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Direct</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nv">CODEX_API_KEY</span><span class="o">=</span><span class="s2">"..."</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--runner<span class="w"> </span>codex
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nv">BOBSHELL_API_KEY</span><span class="o">=</span><span class="s2">"..."</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--runner<span class="w"> </span>bob
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="c1"># Via config.toml profile (persistent)</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>factory<span class="w"> </span>ceo<span class="w"> </span>/path<span class="w"> </span>--profile<span class="w"> </span>codex
 </code></pre></div>
 <p>Configure profiles in <code>~/.factory/config.toml</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="k">[credentials.codex]</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;codex&quot;</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">CODEX_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;...&quot;</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="k">[credentials.bob]</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob&quot;</span>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="n">BOBSHELL_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;...&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="k">[credentials.codex]</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"codex"</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="n">CODEX_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"..."</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="k">[credentials.bob]</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bob"</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="n">BOBSHELL_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"..."</span>
 </code></pre></div>
 <p>Run <code>factory config show</code> to see resolved config, or <code>factory config edit</code> to open the file. See <a href="setup/">Setup Guide</a> for full details.</p>
 <hr />
@@ -1725,10 +1785,10 @@
 </tbody>
 </table>
 <h2 id="development">Development<a class="headerlink" href="#development" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-groups<span class="w">              </span><span class="c1"># Install all deps including dev</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w">                  </span><span class="c1"># Full test suite</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w">               </span><span class="c1"># Lint</span>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>factory/<span class="w">              </span><span class="c1"># Type check</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-groups<span class="w">              </span><span class="c1"># Install all deps including dev</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w">                  </span><span class="c1"># Full test suite</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w">               </span><span class="c1"># Lint</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>factory/<span class="w">              </span><span class="c1"># Type check</span>
 </code></pre></div>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p><a href="https://github.com/akashgit/remote-factory/blob/main/LICENSE">MIT</a> — Akash Srivastava</p>

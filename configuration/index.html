@@ -961,6 +961,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1634,13 +1662,13 @@
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>### `## Clean PR`
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Strips non-essential artifacts (eval scripts, benchmarks, `.factory/` data, eval test files) from PRs before pushing to external repositories. Useful when contributing factory-managed code to upstream repos that don&#39;t want factory infrastructure.
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Strips non-essential artifacts (eval scripts, benchmarks, `.factory/` data, eval test files) from PRs before pushing to external repositories. Useful when contributing factory-managed code to upstream repos that don't want factory infrastructure.
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>```markdown
 <a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>## Clean PR
 <a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>- clean_pr: true
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>- clean_pr_include: [&quot;src/**&quot;, &quot;lib/**&quot;]
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>- clean_pr_exclude: [&quot;src/internal/**&quot;]
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>- clean_pr_include: ["src/**", "lib/**"]
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>- clean_pr_exclude: ["src/internal/**"]
 </code></pre></div></p>
 <table>
 <thead>
@@ -1944,18 +1972,18 @@
 </code></pre></div>
 <h3 id="example-configtoml">Example config.toml<a class="headerlink" href="#example-configtoml" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="k">[defaults]</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;claude&quot;</span><span class="w">                        </span><span class="c1"># CLI backend: &quot;claude&quot; or &quot;bob&quot;</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w">                               </span><span class="c1"># Claude model for agent subprocesses</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="n">projects_dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/factory-projects&quot;</span><span class="w">      </span><span class="c1"># Root for factory-managed projects</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"claude"</span><span class="w">                        </span><span class="c1"># CLI backend: "claude" or "bob"</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">""</span><span class="w">                               </span><span class="c1"># Claude model for agent subprocesses</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="n">projects_dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"~/factory-projects"</span><span class="w">      </span><span class="c1"># Root for factory-managed projects</span>
 <a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>
 <a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="k">[credentials.vertex]</span>
-<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="n">CLAUDE_CODE_USE_VERTEX</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;1&quot;</span>
-<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="n">ANTHROPIC_VERTEX_PROJECT_ID</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-gcp-project&quot;</span>
-<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="n">CLOUD_ML_REGION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;us-east5&quot;</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="n">CLAUDE_CODE_USE_VERTEX</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"1"</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="n">ANTHROPIC_VERTEX_PROJECT_ID</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my-gcp-project"</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="n">CLOUD_ML_REGION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"us-east5"</span>
 <a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>
 <a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="k">[credentials.bob]</span>
-<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob&quot;</span>
-<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="n">BOBSHELL_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;...&quot;</span>
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bob"</span>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="n">BOBSHELL_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"..."</span>
 </code></pre></div>
 <h3 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>factory<span class="w"> </span>config<span class="w"> </span>edit<span class="w">                      </span><span class="c1"># Open config in $EDITOR (creates template if missing)</span>
@@ -1967,7 +1995,7 @@
 <p>Profiles let you switch between environments without juggling env vars:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>vertex
 <a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>factory<span class="w"> </span>run<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>bob<span class="w"> </span>--loop
-<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>factory<span class="w"> </span>agent<span class="w"> </span>researcher<span class="w"> </span>--task<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span>--project<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>vertex
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>factory<span class="w"> </span>agent<span class="w"> </span>researcher<span class="w"> </span>--task<span class="w"> </span><span class="s2">"..."</span><span class="w"> </span>--project<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>vertex
 </code></pre></div>
 <p>Profile credentials are injected via <code>os.environ.setdefault()</code>, so pre-existing env vars always win.</p>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h3>

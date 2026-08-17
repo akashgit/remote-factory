@@ -568,6 +568,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -909,32 +937,32 @@
 <h2 id="adding-or-modifying-workflow-nodes">Adding or Modifying Workflow Nodes<a class="headerlink" href="#adding-or-modifying-workflow-nodes" title="Permanent link">&para;</a></h2>
 <p>Each workflow function in <code>definitions.py</code> returns a <code>Workflow</code> Pydantic model containing typed nodes connected by <code>Edge</code> objects. Six node types are available:</p>
 <h3 id="agentnode-spawn-a-specialist-agent">AgentNode — spawn a specialist agent<a class="headerlink" href="#agentnode-spawn-a-specialist-agent" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">&quot;researcher&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">AgentNode</span><span class="p">(</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">"researcher"</span><span class="p">]</span> <span class="o">=</span> <span class="n">AgentNode</span><span class="p">(</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">"researcher"</span><span class="p">,</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">role</span><span class="o">=</span><span class="n">AgentRole</span><span class="o">.</span><span class="n">RESEARCHER</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">prompt_template</span><span class="o">=</span><span class="s2">&quot;Research the problem space. Write findings to .factory/strategy/research.md&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">writes</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;.factory/strategy/research.md&quot;</span><span class="p">},</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">prompt_template</span><span class="o">=</span><span class="s2">"Research the problem space. Write findings to .factory/strategy/research.md"</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">writes</span><span class="o">=</span><span class="p">{</span><span class="s2">".factory/strategy/research.md"</span><span class="p">},</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="fnnode-run-a-shell-command">FnNode — run a shell command<a class="headerlink" href="#fnnode-run-a-shell-command" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">&quot;begin&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FnNode</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;begin&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">command</span><span class="o">=</span><span class="s1">&#39;factory begin </span><span class="si">{project_path}</span><span class="s1"> --hypothesis &quot;$HYPOTHESIS&quot;&#39;</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">writes</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;.factory/experiments/current_id&quot;</span><span class="p">},</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">"begin"</span><span class="p">]</span> <span class="o">=</span> <span class="n">FnNode</span><span class="p">(</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">"begin"</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">command</span><span class="o">=</span><span class="s1">'factory begin </span><span class="si">{project_path}</span><span class="s1"> --hypothesis "$HYPOTHESIS"'</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">writes</span><span class="o">=</span><span class="p">{</span><span class="s2">".factory/experiments/current_id"</span><span class="p">},</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="gatenode-ceo-decision-point-proceed-reloop-halt">GateNode — CEO decision point (PROCEED / RELOOP / HALT)<a class="headerlink" href="#gatenode-ceo-decision-point-proceed-reloop-halt" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">&quot;gate_research&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">GateNode</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;gate_research&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">evaluator_type</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">nodes</span><span class="p">[</span><span class="s2">"gate_research"</span><span class="p">]</span> <span class="o">=</span> <span class="n">GateNode</span><span class="p">(</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="nb">id</span><span class="o">=</span><span class="s2">"gate_research"</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">evaluator_type</span><span class="o">=</span><span class="s2">"agent"</span><span class="p">,</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">evaluator_role</span><span class="o">=</span><span class="n">AgentRole</span><span class="o">.</span><span class="n">CEO</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">gate_prompt</span><span class="o">=</span><span class="s2">&quot;Is the research adequate? Check for coverage gaps.&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">reads</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;.factory/strategy/research.md&quot;</span><span class="p">},</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">gate_prompt</span><span class="o">=</span><span class="s2">"Is the research adequate? Check for coverage gaps."</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">reads</span><span class="o">=</span><span class="p">{</span><span class="s2">".factory/strategy/research.md"</span><span class="p">},</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">)</span>
 </code></pre></div>
 <p>Connect nodes with edges. Conditional edges fire on specific gate verdicts:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">Edge</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="s2">&quot;gate_qa&quot;</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;gate_precheck&quot;</span><span class="p">,</span> <span class="n">condition</span><span class="o">=</span><span class="n">VerdictType</span><span class="o">.</span><span class="n">PROCEED</span><span class="p">)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">Edge</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="s2">&quot;gate_qa&quot;</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;builder&quot;</span><span class="p">,</span>        <span class="n">condition</span><span class="o">=</span><span class="n">VerdictType</span><span class="o">.</span><span class="n">RELOOP</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">Edge</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="s2">"gate_qa"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"gate_precheck"</span><span class="p">,</span> <span class="n">condition</span><span class="o">=</span><span class="n">VerdictType</span><span class="o">.</span><span class="n">PROCEED</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">Edge</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="s2">"gate_qa"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"builder"</span><span class="p">,</span>        <span class="n">condition</span><span class="o">=</span><span class="n">VerdictType</span><span class="o">.</span><span class="n">RELOOP</span><span class="p">)</span>
 </code></pre></div>
 <p>See <code>factory/workflow/README.md</code> for the full graph engine documentation, including <code>ForkNode</code>, <code>JoinNode</code>, <code>Study</code>, and the validation system.</p>
 <h2 id="verifying-changes">Verifying Changes<a class="headerlink" href="#verifying-changes" title="Permanent link">&para;</a></h2>

@@ -572,6 +572,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1140,7 +1168,7 @@
 <h2 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w">                  </span><span class="c1"># Full suite (1350+ tests)</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/test_cli.py<span class="w">   </span><span class="c1"># Single file</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;test_detect&quot;</span><span class="w">    </span><span class="c1"># By name pattern</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">"test_detect"</span><span class="w">    </span><span class="c1"># By name pattern</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>--cov<span class="w">               </span><span class="c1"># With coverage</span>
 </code></pre></div>
 <p>Tests use <code>pytest-asyncio</code> with <code>asyncio_mode = "auto"</code> — async test functions run without the <code>@pytest.mark.asyncio</code> decorator.</p>
@@ -1174,7 +1202,7 @@
 <p><strong>Interested in contributing a benchmark?</strong> See the dedicated <a href="../contributing-benchmarks/">Contributing Benchmarks</a> guide for the full walkthrough: workflow definition, Harbor agent setup, CI integration, and the linter validation checklist.</p>
 <p><strong>Use re:factory to build your contribution.</strong> Write your idea as a <code>factory.md</code> goal, point re:factory at the repo, and let it do the implementation work. Every idea below can be expressed as a one-line goal — re:factory will hypothesize, build, test, and iterate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Fork the repo, then:</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/remote-factory<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;shell completions for re:factory CLI&quot;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/remote-factory<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"shell completions for re:factory CLI"</span>
 </code></pre></div>
 <h3 id="good-first-issues">Good First Issues<a class="headerlink" href="#good-first-issues" title="Permanent link">&para;</a></h3>
 <table>

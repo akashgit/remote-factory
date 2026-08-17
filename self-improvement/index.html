@@ -16,7 +16,7 @@
         <link rel="prev" href="../eval/">
       
       
-        <link rel="next" href="../ace/">
+        <link rel="next" href="../outer-loop/">
       
       
         
@@ -924,6 +924,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1597,7 +1625,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gu">### DO</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">-</span><span class="w"> </span>[strat-00003] helpful=8 harmful=1 :: Prioritize testing hypotheses — 85% keep rate across 12 experiments
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="gu">### DON&#39;T</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="gu">### DON'T</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">-</span><span class="w"> </span>[strat-00005] helpful=5 harmful=0 :: Avoid pure refactoring hypotheses — only 30% keep rate, high revert risk
 </code></pre></div>
 <p>In addition to experiment-outcome bullets, the reflector generates two new types of bullets from performance reports:</p>
@@ -1780,7 +1808,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Weekly meta mode via cron, Sunday night</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="m">0</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>*<span class="w"> </span>*<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>~/remote-factory<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>~/remote-factory<span class="w"> </span>--mode<span class="w"> </span>meta
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Or use re:factory&#39;s own tmux loop for nightly runs</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Or use re:factory's own tmux loop for nightly runs</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Note: --mode is forwarded through tmux → run → ceo</span>
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>factory<span class="w"> </span>tmux<span class="w"> </span>~/remote-factory<span class="w"> </span>--loop<span class="w"> </span>--interval<span class="w"> </span><span class="m">86400</span><span class="w"> </span>--mode<span class="w"> </span>meta
 </code></pre></div>

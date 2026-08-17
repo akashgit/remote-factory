@@ -568,6 +568,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1212,8 +1240,8 @@
 <h2 id="plugin-discovery">Plugin Discovery<a class="headerlink" href="#plugin-discovery" title="Permanent link">&para;</a></h2>
 <p>Third-party runners register via Python entry points:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># In third-party package pyproject.toml:</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">[project.entry-points.</span><span class="s2">&quot;factory.runners&quot;</span><span class="k">]</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">myrunner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my_package:MyRunner&quot;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">[project.entry-points.</span><span class="s2">"factory.runners"</span><span class="k">]</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">myrunner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my_package:MyRunner"</span>
 </code></pre></div>
 <p>Discovery: <code>importlib.metadata.entry_points(group="factory.runners")</code></p>
 <ul>

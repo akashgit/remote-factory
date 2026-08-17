@@ -979,6 +979,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1594,7 +1622,7 @@
 <p>re:factory accepts three entry points depending on how far along your thinking is.</p>
 <h3 id="build-you-know-what-you-want">Build — you know what you want<a class="headerlink" href="#build-you-know-what-you-want" title="Permanent link">&para;</a></h3>
 <p>The simplest path. Describe what you want and re:factory handles everything else:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;Build a CLI that converts CSV to JSON with streaming support&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"Build a CLI that converts CSV to JSON with streaming support"</span>
 </code></pre></div>
 <p>This will:</p>
 <ol>
@@ -1604,7 +1632,7 @@
 <li>Launch the CEO agent in Build mode</li>
 </ol>
 <p>The directory name is auto-derived from your prompt — filler words (verbs, articles, adjectives like "comprehensive" or "simple") are stripped and the result is capped at 4 words. Override with <code>--dir</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;Build a CLI that converts CSV to JSON&quot;</span><span class="w"> </span>--dir<span class="w"> </span>csv2json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"Build a CLI that converts CSV to JSON"</span><span class="w"> </span>--dir<span class="w"> </span>csv2json
 </code></pre></div>
 <p>Set <code>FACTORY_PROJECTS_DIR</code> to change the parent directory.</p>
 <p>You can also pass a spec file or a GitHub URL:</p>
@@ -1613,7 +1641,7 @@
 </code></pre></div>
 <h3 id="design-you-have-a-rough-idea">Design — you have a rough idea<a class="headerlink" href="#design-you-have-a-rough-idea" title="Permanent link">&para;</a></h3>
 <p>When you want to brainstorm before committing to a design:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;distributed eval runner&quot;</span><span class="w"> </span>--mode<span class="w"> </span>design
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"distributed eval runner"</span><span class="w"> </span>--mode<span class="w"> </span>design
 </code></pre></div>
 <p>Design mode runs a three-step loop before any code is written:</p>
 <ol>
@@ -1624,7 +1652,7 @@
 <p>Once you sign off, the spec is persisted and re:factory proceeds to Build mode. Incompatible with <code>--headless</code> and <code>--focus</code>.</p>
 <h3 id="research-you-have-a-metric-to-optimize">Research — you have a metric to optimize<a class="headerlink" href="#research-you-have-a-metric-to-optimize" title="Permanent link">&para;</a></h3>
 <p>For projects where the goal is to improve a measurable metric against a dataset — benchmarks, model tuning, prompt optimization:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;SWE-bench solver agent&quot;</span><span class="w"> </span>--mode<span class="w"> </span>research
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"SWE-bench solver agent"</span><span class="w"> </span>--mode<span class="w"> </span>research
 </code></pre></div>
 <p>Research ideation works like design mode but the Strategist collects additional configuration:</p>
 <ul>
@@ -1653,9 +1681,9 @@
 <li>Items the Researcher discovers during observation</li>
 <li>Ideas you add manually with <code>factory backlog-add</code></li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>factory<span class="w"> </span>backlog-list<span class="w"> </span>~/my-project<span class="w">                     </span><span class="c1"># see what&#39;s queued</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>factory<span class="w"> </span>backlog-add<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">&quot;add rate limiting&quot;</span><span class="w">  </span><span class="c1"># add your own item</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>factory<span class="w"> </span>backlog-remove<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">&quot;old item&quot;</span><span class="w">        </span><span class="c1"># remove a completed item</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>factory<span class="w"> </span>backlog-list<span class="w"> </span>~/my-project<span class="w">                     </span><span class="c1"># see what's queued</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>factory<span class="w"> </span>backlog-add<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">"add rate limiting"</span><span class="w">  </span><span class="c1"># add your own item</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>factory<span class="w"> </span>backlog-remove<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">"old item"</span><span class="w">        </span><span class="c1"># remove a completed item</span>
 </code></pre></div>
 <hr />
 <h2 id="4-improve-the-core-loop">4. Improve — The Core Loop<a class="headerlink" href="#4-improve-the-core-loop" title="Permanent link">&para;</a></h2>
@@ -1679,25 +1707,25 @@
 <p>re:factory runs autonomously, but you have four ways to steer it:</p>
 <h3 id="-focus-build-exactly-one-thing"><code>--focus</code> — build exactly one thing<a class="headerlink" href="#-focus-build-exactly-one-thing" title="Permanent link">&para;</a></h3>
 <p>When you know exactly what you want, <code>--focus</code> pins a single backlog item, generates one hypothesis, runs one experiment, and exits:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;add authentication middleware&quot;</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;fix the CSV export bug&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"add authentication middleware"</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"fix the CSV export bug"</span>
 </code></pre></div>
 <p>The entire pipeline is scoped to that single target — the Researcher focuses its research, the Strategist generates exactly one hypothesis, and after the keep/revert decision the cycle ends. Mutually exclusive with <code>--loop</code>.</p>
 <h3 id="-prompt-give-general-direction"><code>--prompt</code> — give general direction<a class="headerlink" href="#-prompt-give-general-direction" title="Permanent link">&para;</a></h3>
 <p>Nudge the Strategist's hypothesis generation without pinning a specific item:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;focus on performance improvements&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"focus on performance improvements"</span>
 </code></pre></div>
 <h3 id="github-issues-async-steering">GitHub Issues — async steering<a class="headerlink" href="#github-issues-async-steering" title="Permanent link">&para;</a></h3>
 <p>File issues on the project's GitHub repo. The Strategist reads open issues and factors them into hypothesis ranking:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;Add WebSocket support&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;Need real-time updates for the dashboard&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">"Add WebSocket support"</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">"Need real-time updates for the dashboard"</span>
 </code></pre></div>
 <h3 id="backlog-add-queue-an-item"><code>backlog-add</code> — queue an item<a class="headerlink" href="#backlog-add-queue-an-item" title="Permanent link">&para;</a></h3>
 <p>Add items directly to the backlog for the next cycle to pick up:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>factory<span class="w"> </span>backlog-add<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">&quot;add structured logging&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>factory<span class="w"> </span>backlog-add<span class="w"> </span>~/my-project<span class="w"> </span><span class="s2">"add structured logging"</span>
 </code></pre></div>
 <h3 id="-refine-targeted-post-cycle-changes"><code>--refine</code> — targeted post-cycle changes<a class="headerlink" href="#-refine-targeted-post-cycle-changes" title="Permanent link">&para;</a></h3>
 <p>After a cycle completes (or anytime on an existing project), request a single refinement:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--refine<span class="w"> </span><span class="s2">&quot;add rate limiting to the API&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--refine<span class="w"> </span><span class="s2">"add rate limiting to the API"</span>
 </code></pre></div>
 <p>This routes through the <strong>Refiner</strong> agent (scopes the change) → <strong>Builder</strong> (implements) → full review pipeline → keep/revert verdict. Mutually exclusive with <code>--mode</code>, <code>--prompt</code>, and <code>--focus</code>.</p>
 <h3 id="-clean-pr-strip-artifacts-for-upstream"><code>--clean-pr</code> — strip artifacts for upstream<a class="headerlink" href="#-clean-pr-strip-artifacts-for-upstream" title="Permanent link">&para;</a></h3>
@@ -1883,13 +1911,13 @@
 <p>Leakage checks run at three hard gates: Strategy review, Builder review, and Precheck. A medium or high leakage risk triggers an automatic redirect or revert.</p>
 <h3 id="running-research-mode">Running research mode<a class="headerlink" href="#running-research-mode" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># New research project (ideation → build → research loop)</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">&quot;SWE-bench solver agent&quot;</span><span class="w"> </span>--mode<span class="w"> </span>research
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span><span class="s2">"SWE-bench solver agent"</span><span class="w"> </span>--mode<span class="w"> </span>research
 <a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
 <a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Existing research project (skip ideation, run research loop)</span>
 <a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-swe-bench-solver<span class="w"> </span>--mode<span class="w"> </span>research
 <a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
 <a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># Focus on a specific hypothesis within research mode</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-swe-bench-solver<span class="w"> </span>--mode<span class="w"> </span>research<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;try chain-of-thought prompting&quot;</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-swe-bench-solver<span class="w"> </span>--mode<span class="w"> </span>research<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"try chain-of-thought prompting"</span>
 <a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>
 <a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="c1"># Continuous research loop</span>
 <a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>factory<span class="w"> </span>run<span class="w"> </span>~/my-swe-bench-solver<span class="w"> </span>--mode<span class="w"> </span>research<span class="w"> </span>--loop

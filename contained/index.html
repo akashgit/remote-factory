@@ -572,6 +572,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../outer-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outer Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ace/" class="md-nav__link">
         
   
@@ -1419,9 +1447,9 @@ See <a href="#what-it-does-and-does-not-protect-you-from">What it does and does 
 <hr />
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>contained<span class="w"> </span>setup<span class="w">                  </span><span class="c1"># pull the image, check prerequisites</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>factory<span class="w"> </span>contained<span class="w"> </span>verify<span class="w">                 </span><span class="c1"># report what&#39;s missing, with the fix for each</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>factory<span class="w"> </span>contained<span class="w"> </span>verify<span class="w">                 </span><span class="c1"># report what's missing, with the fix for each</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>factory<span class="w"> </span>contained<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>factory<span class="w"> </span>contained<span class="w"> </span>ls<span class="w">                     </span><span class="c1"># what&#39;s running</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>factory<span class="w"> </span>contained<span class="w"> </span>ls<span class="w">                     </span><span class="c1"># what's running</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>factory<span class="w"> </span>contained<span class="w"> </span>attach<span class="w"> </span>&lt;name&gt;<span class="w">          </span><span class="c1"># watch it; Ctrl-b d detaches, the run continues</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>factory<span class="w"> </span>contained<span class="w"> </span>sync<span class="w"> </span>&lt;name&gt;<span class="w">            </span><span class="c1"># how to get the work back</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>factory<span class="w"> </span>contained<span class="w"> </span>rm<span class="w"> </span>&lt;name&gt;<span class="w">              </span><span class="c1"># tear it down</span>
@@ -1711,9 +1739,9 @@ its own workspace up, so only runs that actually started leave anything behind.<
 <p>Five assertions run between provisioning and the first agent call. A failure aborts <strong>before</strong> any
 tokens are spent, names the likely cause, and leaves the runtime up so you can look:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--name<span class="w"> </span>my-run<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="go">contained: step &#39;assert:git_usable&#39; failed</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="go">contained: step 'assert:git_usable' failed</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="go">  The workspace is not a usable git repository inside the runtime.</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="go">  Most likely the repository this project belongs to was not mounted — a git worktree&#39;s .git is a</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="go">  Most likely the repository this project belongs to was not mounted — a git worktree's .git is a</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="go">  file pointing at a directory elsewhere.</span>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="go">  Try:  factory contained --mount &lt;path-to-that-repository&gt; -- &lt;your command&gt;</span>
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="go">  The container is still there for inspection:</span>
@@ -1732,12 +1760,12 @@ nothing:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="gp">$ </span><span class="nv">FACTORY_CONTAINED_DRY_RUN</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>factory<span class="w"> </span>contained<span class="w"> </span>--<span class="w"> </span>study<span class="w"> </span>~/code/my-project
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="go">DRY RUN — my-run (ghcr.io/…/factory-runtime:latest); nothing is provisioned.</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="go">[create] podman run -d --init --name my-run --label factory.contained=true …</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="gp">[assert:project_present] podman exec my-run sh -lc &#39;[ -d &quot;…&quot; ] &amp;&amp; [ -n &quot;$</span><span class="o">(</span>ls<span class="w"> </span>-A<span class="w"> </span><span class="s2">&quot;…&quot;</span><span class="o">)</span><span class="s2">&quot; ]&#39;</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="go">[assert:git_usable] podman exec my-run sh -lc &#39;git -C &quot;…&quot; status --porcelain &gt;/dev/null 2&gt;&amp;1&#39;</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="gp">[assert:project_present] podman exec my-run sh -lc '[ -d "…" ] &amp;&amp; [ -n "$</span><span class="o">(</span>ls<span class="w"> </span>-A<span class="w"> </span><span class="s2">"…"</span><span class="o">)</span><span class="s2">" ]'</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="go">[assert:git_usable] podman exec my-run sh -lc 'git -C "…" status --porcelain &gt;/dev/null 2&gt;&amp;1'</span>
 <a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="go">[assert:factory_state] podman exec my-run test -f …/.factory/config.json</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="go">[assert:writable] podman exec my-run sh -lc &#39;touch &quot;…/.factory-write-probe&quot; &amp;&amp; rm -f …&#39;</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="go">[assert:content_hash] podman exec my-run sh -lc &#39;sha256sum &quot;…&quot; | grep -q &quot;^&lt;digest&gt; &quot;&#39;</span>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="go">[run] podman exec my-run sh -lc &#39;tmux new-session -d -s factory -c … &#39;</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="go">[assert:writable] podman exec my-run sh -lc 'touch "…/.factory-write-probe" &amp;&amp; rm -f …'</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="go">[assert:content_hash] podman exec my-run sh -lc 'sha256sum "…" | grep -q "^&lt;digest&gt; "'</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="go">[run] podman exec my-run sh -lc 'tmux new-session -d -s factory -c … '</span>
 <a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="go">      […the run line is ~45 lines: it embeds the Claude Code state seeding verbatim…]</span>
 </code></pre></div>
 <p>Which assertions appear depends on what your project actually has: <code>factory_state</code> only when the
@@ -1756,7 +1784,7 @@ it, read the failure and iterate.</p>
 <p>Builds happen on your machine rather than inside the container: the container has no container
 engine of its own, and nesting one inside it is not workable on macOS. That is why this is a
 separate flag rather than something always on.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--division<span class="w"> </span>--name<span class="w"> </span>buildcycle<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;add a Containerfile&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--division<span class="w"> </span>--name<span class="w"> </span>buildcycle<span class="w"> </span>--<span class="w"> </span>ceo<span class="w"> </span>~/code/my-project<span class="w"> </span>--focus<span class="w"> </span><span class="s2">"add a Containerfile"</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="go">  ┌─ Container builds enabled (--division) ───────────────────────────────────────</span>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="go">  │ Started podman-mcp-server so the agent can build and run container images.</span>
@@ -1788,7 +1816,7 @@ rather than make them safer.</p>
 <p>The agent gets the podman tool surface plus a brief telling it these are capabilities it already
 has. Asked to name its tools, it answers with them rather than proposing to build a CLI wrapper:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="gp">$ </span>factory<span class="w"> </span>contained<span class="w"> </span>--division<span class="w"> </span>--<span class="w"> </span>agent<span class="w"> </span>builder<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;List the container tools available to you. Do not write code.&quot;</span><span class="w"> </span>--project<span class="w"> </span>~/code/my-project
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--task<span class="w"> </span><span class="s2">"List the container tools available to you. Do not write code."</span><span class="w"> </span>--project<span class="w"> </span>~/code/my-project
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="go">I have access to the following Podman/Docker container management tools:</span>
 <a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="go">**Container Operations:**</span>
@@ -1818,32 +1846,32 @@ credentials</strong>:</p>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
 <a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="go">   Clusters in your kubeconfig:</span>
 <a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="go">   1) &#39;default/api-my-cluster-example-com:443/you@example.com&#39; (current)</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="go">   1) 'default/api-my-cluster-example-com:443/you@example.com' (current)</span>
 <a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="go">      https://api.my-cluster.example.com:443</span>
-<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="go">   2) &#39;factory/api-lab-cluster:443/you&#39;</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="go">   2) 'factory/api-lab-cluster:443/you'</span>
 <a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="go">      https://api.lab-cluster.example.com:443</span>
 <a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
 <a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="go">Which cluster? [1] 2</span>
 <a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>
-<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="go">   This is where the factory&#39;s ServiceAccount, Role, RoleBinding and workspace</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="go">   This is where the factory's ServiceAccount, Role, RoleBinding and workspace</span>
 <a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="go">   PVC will live. If it does not exist yet, you will be offered the chance to</span>
 <a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="go">   create it.</span>
 <a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
 <a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="go">   Cluster:   https://api.my-cluster.example.com:443</span>
 <a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="go">   User:      you@example.com</span>
 <a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="go">   Context:   default/api-my-cluster-example-com:443/you@example.com</span>
-<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="go">   Namespace: &#39;default&#39;  (the default below)</span>
+<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="go">   Namespace: 'default'  (the default below)</span>
 <a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>
 <a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="go">Namespace to prepare [default] factory-contained</span>
-<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="go">   Namespace &#39;factory-contained&#39; does not exist on this cluster.</span>
-<a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="go">Create namespace &#39;factory-contained&#39; now?  [y]es  [n]o  (y/N): y</span>
+<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="go">   Namespace 'factory-contained' does not exist on this cluster.</span>
+<a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="go">Create namespace 'factory-contained' now?  [y]es  [n]o  (y/N): y</span>
 <a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a><span class="gp">   $ </span>oc<span class="w"> </span>new-project<span class="w"> </span>factory-contained
 <a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="go">   Created factory-contained.</span>
 <a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="go">   `oc new-project` also made it your current project.</span>
 <a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a>
 <a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="go">━━ 2/3  Review and apply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<a id="__codelineno-15-31" name="__codelineno-15-31" href="#__codelineno-15-31"></a><span class="go">   Comparing 5 object(s) against namespace &#39;factory-contained&#39; on</span>
-<a id="__codelineno-15-32" name="__codelineno-15-32" href="#__codelineno-15-32"></a><span class="go">   &#39;https://api.my-cluster.example.com:443&#39;:</span>
+<a id="__codelineno-15-31" name="__codelineno-15-31" href="#__codelineno-15-31"></a><span class="go">   Comparing 5 object(s) against namespace 'factory-contained' on</span>
+<a id="__codelineno-15-32" name="__codelineno-15-32" href="#__codelineno-15-32"></a><span class="go">   'https://api.my-cluster.example.com:443':</span>
 <a id="__codelineno-15-33" name="__codelineno-15-33" href="#__codelineno-15-33"></a>
 <a id="__codelineno-15-34" name="__codelineno-15-34" href="#__codelineno-15-34"></a><span class="go">   [ ok ] serviceaccount/factory       already present and matches what the factory needs</span>
 <a id="__codelineno-15-35" name="__codelineno-15-35" href="#__codelineno-15-35"></a><span class="go">   [diff] role/factory-runtime         present, but not what the factory needs</span>
@@ -1862,8 +1890,8 @@ credentials</strong>:</p>
 <a id="__codelineno-15-48" name="__codelineno-15-48" href="#__codelineno-15-48"></a>
 <a id="__codelineno-15-49" name="__codelineno-15-49" href="#__codelineno-15-49"></a><span class="go">   What would change in factory-contained:</span>
 <a id="__codelineno-15-50" name="__codelineno-15-50" href="#__codelineno-15-50"></a><span class="go">  rules:</span>
-<a id="__codelineno-15-51" name="__codelineno-15-51" href="#__codelineno-15-51"></a><span class="go">-   verbs: [&quot;get&quot;]</span>
-<a id="__codelineno-15-52" name="__codelineno-15-52" href="#__codelineno-15-52"></a><span class="go">+   verbs: [&quot;create&quot;, &quot;get&quot;, &quot;list&quot;, &quot;watch&quot;, &quot;delete&quot;]</span>
+<a id="__codelineno-15-51" name="__codelineno-15-51" href="#__codelineno-15-51"></a><span class="go">-   verbs: ["get"]</span>
+<a id="__codelineno-15-52" name="__codelineno-15-52" href="#__codelineno-15-52"></a><span class="go">+   verbs: ["create", "get", "list", "watch", "delete"]</span>
 <a id="__codelineno-15-53" name="__codelineno-15-53" href="#__codelineno-15-53"></a><span class="go">Apply this? (1 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip/stop): y</span>
 <a id="__codelineno-15-54" name="__codelineno-15-54" href="#__codelineno-15-54"></a><span class="go">   role.rbac.authorization.k8s.io/factory-runtime configured</span>
 <a id="__codelineno-15-55" name="__codelineno-15-55" href="#__codelineno-15-55"></a>
