@@ -90,7 +90,7 @@ def workflow() -> Workflow:
             f"{_LUMEN_PYTHON} tools/add_sota_to_instruction.py $TASK || true"
         ),
         writes={".factory/lumen/.running/config.json", ".factory/lumen/.running/state.json"},
-        transcript_dir="{project_path}/.factory/lumen/.running/transcripts",
+        transcript_dir="{project_path}/.factory/lumen/.running/logs",
     )
 
     # ── Node 1: Config Gate ────────────────────────────────────
@@ -120,7 +120,7 @@ def workflow() -> Workflow:
         ),
         reads={_CFG, _STATE},
         writes={".factory/lumen/.running/iteration_*/prompts.json"},
-        transcript_dir="{project_path}/.factory/lumen/.running/transcripts",
+        transcript_dir="{project_path}/.factory/lumen/.running/logs",
     )
 
     # ── Node 3: RL Training ─────────────────────────────────────
@@ -139,7 +139,7 @@ def workflow() -> Workflow:
             ".factory/lumen/.running/iteration_*/rollouts.jsonl",
             ".factory/lumen/.running/iteration_*/evaluation_results.json",
         },
-        transcript_dir="{project_path}/.factory/lumen/.running/transcripts",
+        transcript_dir="{project_path}/.factory/lumen/.running/logs",
     )
 
     # ── Node 4: Check Gate ──────────────────────────────────────
@@ -157,7 +157,7 @@ def workflow() -> Workflow:
         id="finalize",
         command=f"cd {{project_path}} && python3 {_LUMEN_ROOT}/finalize.py",
         reads={_CFG, _STATE},
-        transcript_dir="{project_path}/.factory/lumen/.running/transcripts",
+        transcript_dir="{project_path}/.factory/lumen/.running/logs",
     )
 
     # ── Edges ───────────────────────────────────────────────────

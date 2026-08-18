@@ -1076,9 +1076,21 @@ class WorkflowExecutor:
             transcript_path = Path(resolved_dir)
             transcript_path.mkdir(parents=True, exist_ok=True)
 
+            # Try to detect iteration from state.json (LUMEN workflow)
+            iteration_suffix = ""
+            if ".factory/lumen/" in resolved_dir:
+                state_file = self.project_path / ".factory/lumen/.running/state.json"
+                if state_file.exists():
+                    try:
+                        state = json.loads(state_file.read_text())
+                        iteration = state.get("iteration", 0)
+                        iteration_suffix = f"_iteration_{iteration}"
+                    except Exception:
+                        pass  # Silently ignore state.json read failures
+
             # Generate timestamped filename
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            log_file = transcript_path / f"{node_id}_{timestamp}.log"
+            log_file = transcript_path / f"{node_id}{iteration_suffix}_{timestamp}.log"
 
             # Write combined output
             content_parts = [
