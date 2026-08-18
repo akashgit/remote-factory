@@ -923,10 +923,12 @@ class WorkflowExecutor:
                     "{project_path}", shlex.quote(str(self.project_path)),
                 )
                 try:
-                    output = await self._run_shell(cmd)
-                    return self._parse_fn_verdict(output, node.id)
-                except RuntimeError:
-                    return Verdict.halt(reason=f"gate command failed: {cmd}")
+                    stdout, stderr, returncode = await self._run_shell(cmd)
+                    if returncode != 0:
+                        return Verdict.halt(reason=f"gate command failed: {cmd}\n{stderr[:500]}")
+                    return self._parse_fn_verdict(stdout, node.id)
+                except RuntimeError as exc:
+                    return Verdict.halt(reason=f"gate command failed: {exc}")
             return Verdict.proceed()
 
         prompt = self._build_gate_prompt(node)
