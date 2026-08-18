@@ -10,27 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://akashgit.github.io/remote-factory/expected-behaviors/qa/soul/">
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/plugins/">
       
       
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../eval/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>QA Agent — Soul - re:factory</title>
+        <title>Plugins — Build Your Own Factory - re:factory</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -76,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#qa-agent-soul" class="md-skip">
+        <a href="#plugins-build-your-own-factory" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +96,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              QA Agent — Soul
+              Plugins — Build Your Own Factory
             
           </span>
         </div>
@@ -228,7 +232,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -258,7 +262,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -339,7 +343,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../getting-started/" class="md-nav__link">
+      <a href="../getting-started/" class="md-nav__link">
         
   
   
@@ -367,7 +371,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../setup/" class="md-nav__link">
+      <a href="../setup/" class="md-nav__link">
         
   
   
@@ -395,7 +399,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../configuration/" class="md-nav__link">
+      <a href="../configuration/" class="md-nav__link">
         
   
   
@@ -427,8 +431,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -439,13 +445,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -466,7 +470,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -484,7 +488,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../architecture/" class="md-nav__link">
+      <a href="../architecture/" class="md-nav__link">
         
   
   
@@ -509,10 +513,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../plugins/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins — Build Your Own Factory
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -528,6 +559,92 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#extension-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extension Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-a-plugin-mode-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a Plugin Mode Runs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#collision-protection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collision Protection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovery-and-debugging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery and Debugging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Points
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a Plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -540,7 +657,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../eval/" class="md-nav__link">
+      <a href="../eval/" class="md-nav__link">
         
   
   
@@ -568,7 +685,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../self-improvement/" class="md-nav__link">
+      <a href="../self-improvement/" class="md-nav__link">
         
   
   
@@ -596,7 +713,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../outer-loop/" class="md-nav__link">
+      <a href="../outer-loop/" class="md-nav__link">
         
   
   
@@ -624,7 +741,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../ace/" class="md-nav__link">
+      <a href="../ace/" class="md-nav__link">
         
   
   
@@ -659,7 +776,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../contained/" class="md-nav__link">
+      <a href="../contained/" class="md-nav__link">
         
   
   
@@ -686,7 +803,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../benchmarks/" class="md-nav__link">
+      <a href="../benchmarks/" class="md-nav__link">
         
   
   
@@ -713,7 +830,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../full-eval/" class="md-nav__link">
+      <a href="../full-eval/" class="md-nav__link">
         
   
   
@@ -740,7 +857,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../contributing/" class="md-nav__link">
+      <a href="../contributing/" class="md-nav__link">
         
   
   
@@ -767,7 +884,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../contributing-benchmarks/" class="md-nav__link">
+      <a href="../contributing-benchmarks/" class="md-nav__link">
         
   
   
@@ -794,7 +911,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../changelog/" class="md-nav__link">
+      <a href="../changelog/" class="md-nav__link">
         
   
   
@@ -841,10 +958,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#core-identity" class="md-nav__link">
+  <a href="#extension-surfaces" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Core Identity
+        Extension Surfaces
       
     </span>
   </a>
@@ -852,10 +969,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#values-approach" class="md-nav__link">
+  <a href="#how-a-plugin-mode-runs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Values &amp; Approach
+        How a Plugin Mode Runs
       
     </span>
   </a>
@@ -863,10 +980,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#voice-style" class="md-nav__link">
+  <a href="#collision-protection" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Voice &amp; Style
+        Collision Protection
       
     </span>
   </a>
@@ -874,10 +991,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#boundaries" class="md-nav__link">
+  <a href="#discovery-and-debugging" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Boundaries
+        Discovery and Debugging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Points
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a Plugin
       
     </span>
   </a>
@@ -904,23 +1043,155 @@
   
 
 
-<h1 id="qa-agent-soul">QA Agent — Soul<a class="headerlink" href="#qa-agent-soul" title="Permanent link">&para;</a></h1>
-<h2 id="core-identity">Core Identity<a class="headerlink" href="#core-identity" title="Permanent link">&para;</a></h2>
-<p>The QA Agent is the factory's single quality gate. It operates in three modes: mechanical health check, structured code review, and adversarial user testing — where it becomes a skeptical user who actively tries to break the feature.</p>
-<h2 id="values-approach">Values &amp; Approach<a class="headerlink" href="#values-approach" title="Permanent link">&para;</a></h2>
+<h1 id="plugins-build-your-own-factory">Plugins — Build Your Own Factory<a class="headerlink" href="#plugins-build-your-own-factory" title="Permanent link">&para;</a></h1>
+<p>re:factory is an <strong>engine</strong>. The built-in modes (improve, design, research, build, etc.) are one configuration of it — but the plugin system lets anyone build their own factory on top of the same infrastructure.</p>
+<p>A plugin is a pip-installable Python package that registers new capabilities with the engine. The factory discovers plugins at startup via standard Python <a href="https://packaging.python.org/en/latest/specifications/entry-points/">entry points</a>, the same mechanism pip and pytest use. Everything the engine provides — <a href="../eval/">eval scoring</a>, <a href="../architecture/#experiment-loop-improve-mode">keep/revert decisions</a>, <a href="../self-improvement/#archive-and-performance-reports">archival</a>, <a href="../architecture/">crash recovery</a> — works automatically for plugin modes.</p>
+<h2 id="extension-surfaces">Extension Surfaces<a class="headerlink" href="#extension-surfaces" title="Permanent link">&para;</a></h2>
+<p>A plugin's <code>register()</code> function receives a <code>PluginRegistry</code> and can extend six surfaces:</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>What it does</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CEO modes</strong></td>
+<td>New modes for <code>factory ceo --mode &lt;name&gt;</code></td>
+<td>An <code>ml</code> mode that runs paper-survey → hypothesize → train → eval</td>
+</tr>
+<tr>
+<td><strong>Agent roles</strong></td>
+<td>New specialist agents for <code>factory agent &lt;role&gt;</code></td>
+<td>A <code>paper-reader</code> that extracts techniques from arxiv papers</td>
+</tr>
+<tr>
+<td><strong>CLI commands</strong></td>
+<td>New top-level <code>factory</code> subcommands</td>
+<td><code>factory ml-report</code> to summarize experiment results</td>
+</tr>
+<tr>
+<td><strong>CEO pre-hooks</strong></td>
+<td>Logic that runs before CEO dispatch</td>
+<td>Scaffold a <code>.factory/ml/</code> config directory on first run</td>
+</tr>
+<tr>
+<td><strong>Parser extensions</strong></td>
+<td>Inject flags into existing subcommands</td>
+<td>Add <code>--metric</code> and <code>--gpu</code> to <code>factory ceo</code></td>
+</tr>
+<tr>
+<td><strong>Workflow search paths</strong></td>
+<td>Additional directories for <a href="../architecture/">workflow definitions</a></td>
+<td>Point the engine at the plugin's workflow graphs</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-a-plugin-mode-runs">How a Plugin Mode Runs<a class="headerlink" href="#how-a-plugin-mode-runs" title="Permanent link">&para;</a></h2>
+<p>When you run <code>factory ceo /path --mode ml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                    ┌─────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                    │   factory ceo       │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                    │   --mode ml         │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                    └────────┬────────────┘
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                             │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                    ┌────────▼────────────┐
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                    │  1. Pre-hooks       │  Plugin's pre-hook runs
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                    │                     │  before CEO dispatch
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                    └────────┬────────────┘
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                             │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                    ┌────────▼────────────┐
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                    │  2. Mode playbook   │  CEO reads workflow skill file
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                    │                     │  (skills/workflow-ml/SKILL.md)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>                    └────────┬────────────┘
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                             │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>              ┌──────────────▼──────────────┐
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>              │  3. Agent dispatch           │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>              │                              │
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>              │  paper-reader ──► strategist │  Plugin + built-in agents
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>              │       ──► experiment-runner  │  composed freely
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>              │       ──► run_eval          │
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>              └──────────────┬──────────────┘
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                             │
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                    ┌────────▼────────────┐
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>                    │  4. Engine takes     │  Standard experiment
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>                    │     over             │  lifecycle from here
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>                    └─────────────────────┘
+</code></pre></div>
+<p>Plugin workflows can mix plugin-defined agents (<code>paper-reader</code>) with built-in agents (<code>strategist</code>, <code>builder</code>). The engine resolves each role via the <a href="../architecture/#layer-3-specialist-agents">three-tier prompt lookup</a> — plugin roles ship their own prompt files, typically installed to <code>~/.factory/agents/prompts/</code> on first load.</p>
+<p>If no workflow exists for a plugin mode, the CEO falls back to its default improve loop using whatever agents are available.</p>
+<h2 id="collision-protection">Collision Protection<a class="headerlink" href="#collision-protection" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Efficiency through escalation: the three sections are gates, not just steps. Health check is cheap — if it fails, stop. Code review is moderate — if it finds critical issues, stop and send the Builder back. Adversarial QA is expensive — it only runs when the cheap checks pass. This funnel saves tokens and time by catching obvious problems before investing in full adversarial testing</li>
-<li>The adversarial transformation is the most distinctive quality: launch the actual software, type real inputs, test as a human would — not by re-running automated checks</li>
-<li>Burden of proof falls on the Builder: when in doubt, fail the check</li>
-<li>A claim without evidence is not a verification: every test needs the command run and the output produced</li>
+<li><strong>Builtins always win.</strong> A plugin cannot override a built-in command, mode, or agent role.</li>
+<li><strong>First registration wins.</strong> If two plugins register the same name, the first one (sorted by distribution name) keeps it.</li>
+<li><strong>Three-tier error isolation.</strong> Failures at any stage (import, validation, registration) are caught, logged, and skipped — a broken plugin never crashes the factory.</li>
 </ul>
-<h2 id="voice-style">Voice &amp; Style<a class="headerlink" href="#voice-style" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Evidence-rich: scores with deltas, findings with file references, tests with exact commands and outputs</li>
-<li>Reports what it found, not what it thinks should happen</li>
-</ul>
-<h2 id="boundaries">Boundaries<a class="headerlink" href="#boundaries" title="Permanent link">&para;</a></h2>
-<p>The QA Agent is strictly read-only. It never modifies source files, never fixes bugs it finds, and never makes the keep/revert decision. It always cleans up after itself.</p>
+<h2 id="discovery-and-debugging">Discovery and Debugging<a class="headerlink" href="#discovery-and-debugging" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>factory<span class="w"> </span>plugins<span class="w">          </span><span class="c1"># list loaded plugins, versions, and status</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span>factory-ml<span class="w">   </span><span class="c1"># install a plugin</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>pip<span class="w"> </span>uninstall<span class="w"> </span>factory-ml<span class="w"> </span><span class="c1"># remove — discovery is dynamic, no config to clean up</span>
+</code></pre></div>
+<h2 id="integration-points">Integration Points<a class="headerlink" href="#integration-points" title="Permanent link">&para;</a></h2>
+<p>The <code>PluginRegistry</code> singleton (<code>factory/plugins.py</code>) is consumed at six points in the codebase:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>factory/cli/_main.py</code></td>
+<td>Plugin commands → subparsers; parser extensions → existing subcommands</td>
+</tr>
+<tr>
+<td><code>factory/cli/_main.py</code></td>
+<td>Plugin command handlers dispatched via <code>_plugin_handler</code></td>
+</tr>
+<tr>
+<td><code>factory/cli/ceo.py</code></td>
+<td>Pre-hooks invoked before CEO dispatch</td>
+</tr>
+<tr>
+<td><code>factory/cli/_helpers.py</code></td>
+<td><code>get_all_ceo_modes()</code> merges builtins + plugin modes</td>
+</tr>
+<tr>
+<td><code>factory/cli/agents.py</code></td>
+<td>Agent role validation unions builtins + plugin roles</td>
+</tr>
+<tr>
+<td><code>factory/worktree.py</code></td>
+<td>Plugin-created <code>.factory/</code> subdirs propagated into CEO worktrees</td>
+</tr>
+</tbody>
+</table>
+<h2 id="writing-a-plugin">Writing a Plugin<a class="headerlink" href="#writing-a-plugin" title="Permanent link">&para;</a></h2>
+<p>A minimal plugin needs three things:</p>
+<ol>
+<li>A Python package with a <code>register(registry: PluginRegistry)</code> function</li>
+<li>An entry point declaration in <code>pyproject.toml</code> under <code>factory.plugins</code></li>
+<li>Agent prompt files for any custom roles</li>
+</ol>
+<p>The <code>register()</code> function calls <code>add_modes()</code>, <code>add_agent_roles()</code>, <code>add_commands()</code>, <code>add_ceo_pre_hook()</code>, <code>add_parser_extensions()</code>, and <code>add_workflow_search_path()</code> on the registry. See <code>factory/plugins.py</code> for the full API — <code>PluginRegistry</code> and <code>CommandSpec</code> are the only imports needed.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># pyproject.toml — the entry point is all the factory needs to find your plugin</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">[project.entry-points.</span><span class="s2">"factory.plugins"</span><span class="k">]</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">ml</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"factory_ml:register"</span>
+</code></pre></div>
+<pre class="mermaid"><code>graph TD
+    A["pip install factory-ml"] --&gt; B["importlib.metadata.entry_points()"]
+    B --&gt; C["load_plugins()"]
+    C --&gt; D["register(registry)"]
+    D --&gt; E["PluginRegistry singleton"]
+    E --&gt; F["CLI parser"]
+    E --&gt; G["CEO dispatch"]
+    E --&gt; H["Agent runner"]
+    E --&gt; I["Mode validation"]
+    E --&gt; J["Worktree propagation"]
+
+    style E fill:#5c6bc0,color:#fff</code></pre>
 
 
 
@@ -976,10 +1247,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

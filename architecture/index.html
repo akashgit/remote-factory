@@ -16,7 +16,7 @@
         <link rel="prev" href="../configuration/">
       
       
-        <link rel="next" href="../eval/">
+        <link rel="next" href="../plugins/">
       
       
         
@@ -548,15 +548,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#three-layers" class="md-nav__link">
+  <a href="#four-layers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Three Layers
+        Four Layers
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Three Layers">
+    <nav class="md-nav" aria-label="Four Layers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -586,6 +586,17 @@
     <span class="md-ellipsis">
       
         Layer 3: Specialist Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-4-plugin-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 4: Plugin System
       
     </span>
   </a>
@@ -772,6 +783,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins — Build Your Own Factory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1085,15 +1124,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#three-layers" class="md-nav__link">
+  <a href="#four-layers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Three Layers
+        Four Layers
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Three Layers">
+    <nav class="md-nav" aria-label="Four Layers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1123,6 +1162,17 @@
     <span class="md-ellipsis">
       
         Layer 3: Specialist Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-4-plugin-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 4: Plugin System
       
     </span>
   </a>
@@ -1326,8 +1376,8 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>re:factory is a three-layer system with strict separation between tooling, orchestration, and execution.</p>
-<h2 id="three-layers">Three Layers<a class="headerlink" href="#three-layers" title="Permanent link">&para;</a></h2>
+<p>re:factory is a four-layer system with strict separation between tooling, orchestration, execution, and extensibility.</p>
+<h2 id="four-layers">Four Layers<a class="headerlink" href="#four-layers" title="Permanent link">&para;</a></h2>
 <h3 id="layer-1-python-cli-factory">Layer 1: Python CLI (<code>factory/</code>)<a class="headerlink" href="#layer-1-python-cli-factory" title="Permanent link">&para;</a></h3>
 <p>Pure tools that don't make decisions. The CLI provides measurement, storage, and project introspection — never deciding <em>what</em> to change or <em>whether</em> to keep a change.</p>
 <p>Entry point: <code>factory/cli.py</code> → <code>factory.cli:main</code> (registered as <code>factory</code> in pyproject.toml). Each subcommand is a <code>cmd_*</code> function dispatched via a handler dict.</p>
@@ -1399,10 +1449,15 @@
 </tr>
 </tbody>
 </table>
-<p>Agent prompts are resolved via two-tier lookup in <code>factory/agents/runner.py</code>:
+<p>Agent prompts are resolved via three-tier lookup in <code>factory/agents/runner.py</code>:
 1. Project-specific override: <code>&lt;project&gt;/.factory/agents/&lt;role&gt;.md</code>
-2. re:factory default: <code>factory/agents/prompts/&lt;role&gt;.md</code></p>
+2. User-global override: <code>~/.factory/agents/prompts/&lt;role&gt;.md</code>
+3. re:factory default: <code>factory/agents/prompts/&lt;role&gt;.md</code></p>
 <p>Evolved playbooks from ACE are auto-injected at runtime.</p>
+<h3 id="layer-4-plugin-system">Layer 4: Plugin System<a class="headerlink" href="#layer-4-plugin-system" title="Permanent link">&para;</a></h3>
+<p>re:factory is an <strong>engine</strong> — the built-in modes are one configuration of it. Pip-installable plugins can extend the factory with new CEO modes, CLI commands, agent roles, pre-dispatch hooks, parser extensions, and workflow search paths via standard Python entry points (<code>factory.plugins</code> group).</p>
+<p>The plugin registry (<code>factory/plugins.py</code>) loads at parser construction time with three-tier error isolation. Collision protection ensures builtins always win and first-registered plugins take priority.</p>
+<p>See <a href="../plugins/">Plugins — Build Your Own Factory</a> for the full guide.</p>
 <h2 id="state-machine">State Machine<a class="headerlink" href="#state-machine" title="Permanent link">&para;</a></h2>
 <p>The CEO detects project state and routes to the appropriate mode:</p>
 <table>
@@ -1630,6 +1685,10 @@
 <td><code>factory/agents/runner.py</code></td>
 <td>Agent subprocess spawner + event emission</td>
 </tr>
+<tr>
+<td><code>factory/plugins.py</code></td>
+<td>Plugin registry — entry point discovery + extension surfaces</td>
+</tr>
 </tbody>
 </table>
 <h2 id="factory-directory"><code>.factory/</code> Directory<a class="headerlink" href="#factory-directory" title="Permanent link">&para;</a></h2>
@@ -1676,6 +1735,7 @@
 </ul>
 <h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
 <ul>
+<li><a href="../plugins/">Plugins — Build Your Own Factory</a> — How to extend re:factory with custom modes, agents, and commands</li>
 <li><a href="../self-improvement/">Self-Improvement Loop</a> — How the CEO tracks agents, cross-project learning, and autonomous playbook evolution</li>
 <li><a href="../ace/">ACE Playbook Evolution</a> — The Reflect → Curate → Inject playbook evolution mechanics</li>
 <li><a href="../eval/">Eval System</a> — Three-tier scoring, guards, and precheck gates</li>
