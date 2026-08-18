@@ -5,7 +5,7 @@ LUMEN: Learning-based Universal Modeling and Evolution eNgine
 RL training system for scientific discovery tasks.
 
 Usage:
-    python3 -m factory.lumen.train --config .factory/lumen/current_run/config.json
+    python3 -m factory.lumen.train --config .factory/lumen/.running/config.json
 """
 
 import argparse

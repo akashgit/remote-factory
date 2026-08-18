@@ -24,16 +24,19 @@ def extract_last_code_block(text: str) -> str | None:
     return matches[-1].strip()
 
 
-def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> float:
+def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> tuple[float, dict]:
     """Execute code in a sandbox and evaluate with the task's verifier.
 
     1. Write code to a temp file
     2. Execute it (produces solution.json in workspace)
     3. Load verifier.py and score the solution
+
+    Returns:
+        (score, solution) tuple. solution is {} if execution failed.
     """
     verifier_path = (task_dir / "verifier.py").resolve()
     if not verifier_path.exists():
-        return 0.0
+        return 0.0, {}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         workspace = Path(tmpdir) / "workspace"
@@ -51,13 +54,13 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> floa
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            return 0.0
+            return 0.0, {}
         except Exception:
-            return 0.0
+            return 0.0, {}
 
         solution_file = workspace / "solution.json"
         if not solution_file.exists():
-            return 0.0
+            return 0.0, {}
 
         try:
             import json
@@ -69,9 +72,10 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> floa
             sys.modules["verifier"] = module
             spec.loader.exec_module(module)
 
-            return float(module.evaluate(data))
+            score = float(module.evaluate(data))
+            return score, data
         except Exception:
-            return 0.0
+            return 0.0, {}
 
 
 def compute_score(
@@ -87,15 +91,15 @@ def compute_score(
     """
     code = extract_last_code_block(solution_str)
     if not code:
-        return {"score": 0.0, "code": "", "eval_msg": "no code block extracted"}
+        return {"score": 0.0, "code": "", "eval_msg": "no code block extracted", "solution": {}}
 
     task_dir = Path(extra_info.get("task_dir", ""))
     eval_timeout = extra_info.get("eval_timeout", 60)
 
     try:
-        raw_score = evaluate_code_solution(code, task_dir, timeout=eval_timeout)
+        raw_score, solution = evaluate_code_solution(code, task_dir, timeout=eval_timeout)
     except Exception as e:
-        return {"score": 0.0, "raw_score": 0.0, "code": code, "eval_msg": f"eval error: {e}"}
+        return {"score": 0.0, "raw_score": 0.0, "code": code, "eval_msg": f"eval error: {e}", "solution": {}}
 
     from factory.lumen.reward import shape_reward
 
@@ -108,4 +112,5 @@ def compute_score(
         "raw_score": raw_score,
         "code": code,
         "eval_msg": "" if raw_score > 0 else "score is zero",
+        "solution": solution,
     }

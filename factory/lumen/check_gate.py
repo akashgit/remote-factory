@@ -8,32 +8,67 @@ from pathlib import Path
 
 def main():
     """Check if training should continue or halt."""
-    # Read configuration and state
-    cfg = json.load(open(".factory/lumen/current_run/config.json"))
-    state = json.load(open(".factory/lumen/current_run/state.json"))
+    cfg = json.load(open(".factory/lumen/.running/config.json"))
+    state = json.load(open(".factory/lumen/.running/state.json"))
 
     task_name = cfg["task_name"]
-    it = state["iteration"]
-    max_iterations = cfg.get("max_iterations", 3)  # Default to 3 iterations
+    current_it = state["iteration"]
+    max_iterations = cfg.get("max_iterations", 3)
 
-    # Read evaluation results
-    results = json.load(
-        open(f".factory/lumen/current_run/iteration_{it}/evaluation_results.json")
-    )
-
-    # Parse instruction.md for SOTA and scoring direction
-    md = open(f"benchmarks/einsteinarena/{task_name}/instruction.md").read()
-    sota_match = re.search(r"Current best score.*?([0-9.eE+-]+)", md)
-    min_imp_match = re.search(r"Minimum improvement.*?([0-9.eE+-]+)", md)
+    # Find global best across all iterations
+    task_dir = cfg.get("task_dir", f"benchmarks/einsteinarena/{task_name}")
+    md = open(f"{task_dir}/instruction.md").read()
     dir_match = re.search(r"Scoring Direction.*?(MAXIMIZE|MINIMIZE)", md)
+    direction = dir_match.group(1) if dir_match else "MAXIMIZE"
+
+    global_best_score = None
+    global_best_solution = {}
+    global_best_iteration = None
+
+    for it in range(current_it + 1):
+        eval_file = Path(f".factory/lumen/.running/iteration_{it}/evaluation_results.json")
+        if not eval_file.exists():
+            continue
+
+        results = json.load(open(eval_file))
+        score = results["best_score"]
+        solution = results.get("best_solution", {})
+
+        if global_best_score is None:
+            global_best_score = score
+            global_best_solution = solution
+            global_best_iteration = it
+        else:
+            is_better = (score > global_best_score) if direction == "MAXIMIZE" else (score < global_best_score)
+            if is_better:
+                global_best_score = score
+                global_best_solution = solution
+                global_best_iteration = it
+
+    # Update state with global best
+    state["best_score"] = global_best_score
+    state["best_iteration"] = global_best_iteration
+
+    # Parse SOTA thresholds
+    sota_match = re.search(r"Current best score.*?(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)", md)
+    min_imp_match = re.search(r"Minimum improvement.*?(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)", md)
 
     sota = float(sota_match.group(1)) if sota_match else None
     min_imp = float(min_imp_match.group(1)) if min_imp_match else 1e-10
-    direction = dir_match.group(1) if dir_match else "MAXIMIZE"
-    best = results["best_score"]
+    best = global_best_score
+    best_solution = global_best_solution
 
-    # Decision logic
+    verdict = {
+        "best_score": best,
+        "best_solution": best_solution,
+        "best_iteration": global_best_iteration,
+        "current_iteration": current_it,
+        "sota": sota,
+        "direction": direction,
+    }
+
     if sota is None:
+        verdict["outcome"] = "no_sota"
         print("pass: No SOTA yet, any valid score is success")
     else:
         success = (
@@ -42,13 +77,19 @@ def main():
             else (best < sota - min_imp)
         )
         if success:
+            verdict["outcome"] = "sota_beaten"
             print("pass: Score improved beyond SOTA")
-        elif it >= max_iterations - 1:
-            print(f"halt: Max iterations ({max_iterations}) reached without improvement")
+        elif current_it >= max_iterations - 1:
+            verdict["outcome"] = "max_iterations"
+            print("pass: Max iterations reached without improvement")
         else:
-            state["iteration"] = it + 1
-            json.dump(state, open(".factory/lumen/current_run/state.json", "w"))
+            verdict["outcome"] = "reloop"
+            state["iteration"] = current_it + 1
             print("reloop: Need more iterations")
+
+    # Write updated state (with global best_score and best_iteration)
+    json.dump(state, open(".factory/lumen/.running/state.json", "w"))
+    json.dump(verdict, open(".factory/lumen/.running/verdict.json", "w"), indent=2)
 
 
 if __name__ == "__main__":

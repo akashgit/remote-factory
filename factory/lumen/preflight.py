@@ -15,8 +15,8 @@ Reads:
     - benchmarks/einsteinarena/{task}/config.json   (per-task defaults)
 
 Writes:
-    - .factory/lumen/run-{timestamp}/config.json   (resolved config for this run)
-    - .factory/lumen/current_run -> run-{timestamp} (symlink to active run)
+    - .factory/lumen/.running/config.json    (resolved config, cleared each run)
+    - .factory/lumen/.running/state.json     (iteration state, cleared each run)
 """
 
 from __future__ import annotations
@@ -251,35 +251,27 @@ def main() -> None:
     resolved["mock"] = args.mock
     resolved["gpu_info"] = gpu_info
 
-    # 6. Create run directory
+    # 6. Create .running directory (clear previous run if exists)
     lumen_dir.mkdir(parents=True, exist_ok=True)
-    run_tag = make_run_tag()
-    run_dir = lumen_dir / f"run-{run_tag}"
+    run_dir = lumen_dir / ".running"
+    if run_dir.exists():
+        import shutil
+        shutil.rmtree(run_dir)
     run_dir.mkdir()
 
     # Write resolved config
+    resolved["run_started"] = make_run_tag()
     config_out = run_dir / "config.json"
     with open(config_out, "w") as f:
         json.dump(resolved, f, indent=2)
 
     # Write initial state
-    state = {"iteration": 0, "best_score": None}
+    state = {"iteration": 0, "best_score": None, "best_iteration": None}
     with open(run_dir / "state.json", "w") as f:
         json.dump(state, f, indent=2)
 
-    # 7. Update "current_run" symlink
-    current_link = lumen_dir / "current_run"
-    if current_link.exists():
-        if current_link.is_dir() and not current_link.is_symlink():
-            # Left over from previous workflow run - remove directory
-            import shutil
-            shutil.rmtree(current_link)
-        else:
-            current_link.unlink()
-    current_link.symlink_to(f"run-{run_tag}")
-
     print()
-    print(f"Run directory: {run_dir}")
+    print(f"Run directory: {run_dir} (started {resolved['run_started']})")
     print(f"Resolved config: {config_out}")
     print(f"  task_name: {task_name}")
     print(f"  model_path: {resolved.get('model_path')}")

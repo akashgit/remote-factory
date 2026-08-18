@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 
-def build_verl_overrides(args: argparse.Namespace) -> list[str]:
+def build_verl_overrides(args: argparse.Namespace, output_dir: Path) -> list[str]:
     """Generate VERL Hydra override list from parsed CLI args."""
     checkpoint_dir = Path(args.checkpoint_dir)
     latest_ckpt = checkpoint_dir / "latest"
@@ -78,7 +78,8 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
         "trainer.balance_batch=True",
         'trainer.logger=["console","file"]',
         "trainer.project_name=lumen",
-        f"trainer.experiment_name=lumen_iter_{args.iteration}",
+        "trainer.experiment_name=lumen",
+        f"trainer.default_local_dir={args.checkpoint_dir}",
         f"trainer.n_gpus_per_node={args.num_gpus}",
         "trainer.nnodes=1",
         "trainer.save_freq=0",
@@ -91,6 +92,9 @@ def build_verl_overrides(args: argparse.Namespace) -> list[str]:
 
     if resume_path:
         overrides.append(f"trainer.resume_from_path={resume_path}")
+
+    # Hydra: redirect output to iteration directory
+    overrides.append(f"hydra.run.dir={output_dir}")
 
     return overrides
 
@@ -154,13 +158,15 @@ def post_process_results(
         })
 
     best_idx = int(np.argmax(scores) if scoring_direction == "maximize" else np.argmin(scores))
+    best_solution = entries[best_idx].get("solution", {})
+
     results = {
         "iteration": iteration,
         "num_rollouts": num_rollouts,
         "scores": scores,
         "best_score": scores[best_idx],
         "best_rollout_idx": best_idx,
-        "best_solution": {},
+        "best_solution": best_solution,
         "mean_score": float(np.mean(scores)),
         "std_score": float(np.std(scores)),
         "per_prompt_stats": per_prompt_stats,
@@ -205,7 +211,7 @@ def main() -> None:
     args.parquet_path = str(parquet_path)
 
     # Step 2: Build VERL config
-    overrides = build_verl_overrides(args)
+    overrides = build_verl_overrides(args, output_dir)
 
     # Step 3: Set environment variables for AgentLoopManager config
     import os
@@ -213,6 +219,9 @@ def main() -> None:
     os.environ["LUMEN_PHASE1_MAX_TOKENS"] = str(args.phase1_max_tokens)
     os.environ["LUMEN_EVAL_TIMEOUT"] = str(args.eval_timeout)
     os.environ["LUMEN_MAX_MODEL_LEN"] = "32768"
+
+    # Step 3b: Set FileLogger path to iteration directory
+    os.environ["VERL_FILE_LOGGER_PATH"] = str(output_dir / "metrics.jsonl")
 
     # CUDA runtime: PyTorch and vLLM bundle their own libcudart (CUDA 12.x).
     # Do NOT add nvidia/cu13/lib to LD_LIBRARY_PATH — it contains CUDA 13.x
