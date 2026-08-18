@@ -159,38 +159,106 @@ def make_run_tag() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
+# Supported tasks
+SUPPORTED_TASKS = [
+    "circle-packing",
+    "first-autocorrelation-inequality",
+    "second-autocorrelation-inequality",
+    "erdos-min-overlap",
+]
+
+# Supported CLI parameters
+SUPPORTED_CLI_PARAMS = [
+    "model_path", "num_gpus", "rollout_tp", "num_rollouts_per_prompt",
+    "lora_rank", "learning_rate", "kl_coef", "temperature",
+    "phase1_max_tokens", "eval_timeout", "max_iterations",
+    "groups_per_batch", "group_size", "mock", "reward",
+]
+
+
+def validate_task(task_name: str) -> tuple[bool, str]:
+    """Validate task name."""
+    if task_name not in SUPPORTED_TASKS:
+        return False, (
+            f"Unknown task: {task_name}\n"
+            f"Supported tasks:\n" + "\n".join(f"  - {t}" for t in SUPPORTED_TASKS)
+        )
+    return True, ""
+
+
+def validate_cli_params(params: dict[str, Any]) -> tuple[bool, str]:
+    """Validate CLI parameter names."""
+    invalid = [k for k in params if k not in SUPPORTED_CLI_PARAMS and k != "config"]
+    if invalid:
+        return False, (
+            f"Unknown parameters: {', '.join(invalid)}\n"
+            f"Supported parameters:\n" + "\n".join(f"  --{p.replace('_', '-')}" for p in SUPPORTED_CLI_PARAMS)
+        )
+    return True, ""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lumen preflight check")
     parser.add_argument("--project-path", required=True, help="Project root")
-    parser.add_argument("--task-dir", default=None, help="Einstein Arena task directory (overrides config)")
-    parser.add_argument("--mock", action="store_true", help="Mock mode (skip conda/GPU checks)")
+    parser.add_argument("--task", required=True, help="Task name (e.g., circle-packing)")
+    parser.add_argument("--config", default=None, help="Custom config file path (highest priority)")
+    parser.add_argument("--mock", action="store_true", help="Mock mode (skip venv/GPU checks)")
+
+    # CLI parameter overrides
+    parser.add_argument("--model-path", default=None, help="Model path override")
+    parser.add_argument("--num-gpus", type=int, default=None, help="Number of GPUs")
+    parser.add_argument("--rollout-tp", type=int, default=None, help="Rollout tensor parallel size")
+    parser.add_argument("--num-rollouts-per-prompt", type=int, default=None, help="Rollouts per prompt")
+    parser.add_argument("--lora-rank", type=int, default=None, help="LoRA rank")
+    parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate")
+    parser.add_argument("--kl-coef", type=float, default=None, help="KL coefficient")
+    parser.add_argument("--temperature", type=float, default=None, help="Sampling temperature")
+    parser.add_argument("--phase1-max-tokens", type=int, default=None, help="Phase 1 max tokens")
+    parser.add_argument("--eval-timeout", type=int, default=None, help="Eval timeout in seconds")
+    parser.add_argument("--max-iterations", type=int, default=None, help="Maximum iterations")
+    parser.add_argument("--groups-per-batch", type=int, default=None, help="Groups per batch")
+    parser.add_argument("--group-size", type=int, default=None, help="Group size")
+
     args = parser.parse_args()
 
     project_path = Path(args.project_path).resolve()
+    task_name = args.task
+
+    print("=== Lumen Preflight ===")
+    print(f"Task: {task_name}")
+
+    # ── Validation Step 1: Task name ─────────────────────────────
+    ok, msg = validate_task(task_name)
+    if not ok:
+        print(f"[FAIL] {msg}")
+        sys.exit(1)
+    print(f"[OK] Task name validated: {task_name}")
+
+    # ── Validation Step 2: CLI parameters ────────────────────────
+    cli_overrides = {}
+    for param in SUPPORTED_CLI_PARAMS:
+        value = getattr(args, param.replace("-", "_"), None)
+        if value is not None:
+            cli_overrides[param] = value
+
+    ok, msg = validate_cli_params(cli_overrides)
+    if not ok:
+        print(f"[FAIL] {msg}")
+        sys.exit(1)
+    if cli_overrides:
+        print(f"[OK] CLI overrides: {', '.join(cli_overrides.keys())}")
 
     # Clean up any lingering GPU processes from previous runs
     cleanup_gpu_processes()
 
-    # Resolve task_dir: CLI arg > .factory/lumen/config.json
-    lumen_dir = project_path / ".factory" / "lumen"
-    user_config_path = lumen_dir / "config.json"
-    if args.task_dir:
-        task_dir = Path(args.task_dir)
-    elif user_config_path.exists():
-        with open(user_config_path) as f:
-            launch_cfg = json.load(f)
-        task_name = launch_cfg.get("task_name", "")
-        task_dir = Path(launch_cfg.get("task_dir", f"benchmarks/einsteinarena/{task_name}"))
-        if launch_cfg.get("mock", False):
-            args.mock = True
-    else:
-        print("[FAIL] No --task-dir and no .factory/lumen/config.json found")
-        sys.exit(1)
-
-    if not task_dir.is_absolute():
-        task_dir = project_path / task_dir
-
-    print("=== Lumen Preflight ===")
+    # ── Resolve task_dir ─────────────────────────────────────────
+    task_dir = project_path / "benchmarks" / "einsteinarena" / task_name
+    if not task_dir.exists():
+        # Try without benchmarks/ prefix
+        task_dir = project_path / task_name
+        if not task_dir.exists():
+            print(f"[FAIL] Task directory not found: {task_dir}")
+            sys.exit(1)
 
     # 1. Check uv venv (skip in mock mode)
     if args.mock:
@@ -222,36 +290,41 @@ def main() -> None:
             print(f"[OK] {gpu_info['gpu_count']}x {gpu_info['gpu_type']} "
                   f"({gpu_info['gpu_memory_mb']} MB each)")
 
-    # 3. Load per-task defaults
-    task_config_path = task_dir / "config.json"
+    # 3. Load per-task default config
+    task_config_path = task_dir / "default_config.json"
     if not task_config_path.exists():
-        print(f"[FAIL] Task config not found: {task_config_path}")
+        print(f"[FAIL] Task default config not found: {task_config_path}")
         sys.exit(1)
 
     with open(task_config_path) as f:
         task_defaults = json.load(f)
-    print(f"[OK] Task config loaded: {task_config_path}")
+    print(f"[OK] Task default config loaded: {task_config_path}")
 
-    # 4. Load user overrides (optional)
-    user_overrides = {}
-    if user_config_path.exists():
-        with open(user_config_path) as f:
-            user_overrides = json.load(f)
-        print(f"[OK] User overrides loaded: {user_config_path}")
+    # 4. Load custom config (if provided via --config)
+    custom_config = {}
+    if args.config:
+        custom_config_path = Path(args.config)
+        if not custom_config_path.exists():
+            print(f"[FAIL] Custom config not found: {custom_config_path}")
+            sys.exit(1)
+        with open(custom_config_path) as f:
+            custom_config = json.load(f)
+        print(f"[OK] Custom config loaded: {custom_config_path}")
 
-    # 5. Merge: task defaults ← user overrides ← GPU detection
+    # 5. Merge: task defaults ← custom config ← CLI overrides ← GPU detection
+    # Priority: CLI > custom config > task defaults
     resolved = dict(task_defaults)
-    resolved.update(user_overrides)
+    resolved.update(custom_config)
+    resolved.update(cli_overrides)
     resolved = derive_training_params(gpu_info, resolved)
 
     # Add metadata
-    task_name = task_dir.name
     resolved["task_name"] = task_name
     resolved["task_dir"] = str(task_dir)
-    resolved["mock"] = args.mock
     resolved["gpu_info"] = gpu_info
 
     # 6. Create .running directory (clear previous run if exists)
+    lumen_dir = project_path / ".factory" / "lumen"
     lumen_dir.mkdir(parents=True, exist_ok=True)
     run_dir = lumen_dir / ".running"
     if run_dir.exists():

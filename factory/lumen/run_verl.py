@@ -107,7 +107,7 @@ def post_process_results(
     prompts_data: dict,
     iteration: int,
 ) -> dict:
-    """Read VERL rollout log and write evaluation_results.json + rollouts.jsonl."""
+    """Read VERL rollout log and write sm_rollouts.jsonl (small model rollouts)."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     entries = []
@@ -115,14 +115,12 @@ def post_process_results(
         for line in f:
             entries.append(json.loads(line))
 
-    scores = [e["score"] for e in entries]
     num_rollouts = len(entries)
     num_prompts = len(prompts_data["prompts"])
     rollouts_per_prompt = num_rollouts // num_prompts if num_prompts > 0 else 0
-    scoring_direction = prompts_data.get("scoring_direction", "maximize")
 
-    # Write rollouts.jsonl
-    with open(output_dir / "rollouts.jsonl", "w") as f:
+    # Write sm_rollouts.jsonl (small model rollouts from VERL training)
+    with open(output_dir / "sm_rollouts.jsonl", "w") as f:
         for idx, entry in enumerate(entries):
             prompt_idx = idx // rollouts_per_prompt if rollouts_per_prompt > 0 else 0
             rollout_idx = idx % rollouts_per_prompt if rollouts_per_prompt > 0 else idx
@@ -133,7 +131,7 @@ def post_process_results(
                 "prompt": entry.get("input", ""),
                 "thinking": "",
                 "code": "",
-                "solution": {},
+                "solution": entry.get("solution", {}),
                 "score": entry["score"],
                 "gen_case": "A",
                 "p1_len": 0,
@@ -141,43 +139,14 @@ def post_process_results(
             }
             f.write(json.dumps(record) + "\n")
 
-    # Compute per-prompt stats
-    per_prompt_stats = []
-    for i in range(num_prompts):
-        start = i * rollouts_per_prompt
-        end = start + rollouts_per_prompt
-        group_scores = scores[start:end]
-        if not group_scores:
-            continue
-        strategy = prompts_data["prompts"][i].get("strategy", "")
-        best_fn = max if scoring_direction == "maximize" else min
-        per_prompt_stats.append({
-            "prompt_idx": i,
-            "strategy": strategy,
-            "mean": float(np.mean(group_scores)),
-            "std": float(np.std(group_scores)),
-            "best": float(best_fn(group_scores)),
-        })
-
-    best_idx = int(np.argmax(scores) if scoring_direction == "maximize" else np.argmin(scores))
-    best_solution = entries[best_idx].get("solution", {})
-
-    results = {
-        "iteration": iteration,
+    # Return basic stats for logging
+    scores = [e["score"] for e in entries]
+    best_idx = int(np.argmax(scores))
+    return {
         "num_rollouts": num_rollouts,
-        "scores": scores,
         "best_score": scores[best_idx],
-        "best_rollout_idx": best_idx,
-        "best_solution": best_solution,
         "mean_score": float(np.mean(scores)),
-        "std_score": float(np.std(scores)),
-        "per_prompt_stats": per_prompt_stats,
     }
-
-    with open(output_dir / "evaluation_results.json", "w") as f:
-        json.dump(results, f, indent=2)
-
-    return results
 
 
 def main() -> None:

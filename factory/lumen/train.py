@@ -177,66 +177,33 @@ def main() -> None:
 
     print(f"Evaluated {len(scores)} solutions")
 
-    # 4. Find best (by raw score — the verifier's actual metric)
-    if scoring_direction == "maximize":
-        best_idx = int(np.argmax(raw_scores))
-    else:
-        best_idx = int(np.argmin(raw_scores))
-
-    # 5. Compute per-prompt stats
-    per_prompt_stats = []
+    # 4. Save sm_rollouts.jsonl (small model rollouts)
+    # Note: eval_stats.py will read this and generate evaluation_results.json
+    rollouts_file = iteration_dir / "sm_rollouts.jsonl"
     num_prompts = len(prompts)
-    for i in range(num_prompts):
-        start = i * num_rollouts_per_prompt
-        end = start + num_rollouts_per_prompt
-        prompt_raw = raw_scores[start:end]
-        prompt_shaped = scores[start:end]
-
-        per_prompt_stats.append(
-            {
-                "prompt_idx": i,
-                "strategy": prompts[i]["strategy"],
-                "mean_raw": float(np.mean(prompt_raw)),
-                "mean_reward": float(np.mean(prompt_shaped)),
-                "std": float(np.std(prompt_raw)),
-                "best": float(
-                    max(prompt_raw) if scoring_direction == "maximize" else min(prompt_raw)
-                ),
-            }
-        )
-
-    # 6. Save results
-    results = {
-        "iteration": iteration,
-        "num_rollouts": len(all_rollouts),
-        "raw_scores": raw_scores,
-        "scores": scores,
-        "best_raw_score": raw_scores[best_idx],
-        "best_score": scores[best_idx],
-        "best_rollout_idx": best_idx,
-        "best_solution": all_rollouts[best_idx]["solution"],
-        "mean_raw_score": float(np.mean(raw_scores)),
-        "mean_score": float(np.mean(scores)),
-        "std_score": float(np.std(raw_scores)),
-        "per_prompt_stats": per_prompt_stats,
-    }
-
-    results_file = iteration_dir / "evaluation_results.json"
-    with open(results_file, "w") as f:
-        json.dump(results, f, indent=2)
-
-    # Save rollouts
-    rollouts_file = iteration_dir / "rollouts.jsonl"
     with open(rollouts_file, "w") as f:
-        for rollout in all_rollouts:
-            f.write(json.dumps(rollout) + "\n")
+        for i, rollout in enumerate(all_rollouts):
+            prompt_idx = i // num_rollouts_per_prompt if num_rollouts_per_prompt > 0 else 0
+            rollout_idx = i % num_rollouts_per_prompt if num_rollouts_per_prompt > 0 else i
+            record = {
+                "prompt_idx": prompt_idx,
+                "rollout_idx": rollout_idx,
+                "global_idx": i,
+                "prompt": prompts[prompt_idx].get("prompt_text", "") if prompt_idx < num_prompts else "",
+                "thinking": rollout.get("thinking", ""),
+                "code": rollout.get("code", ""),
+                "solution": rollout.get("solution", {}),
+                "score": rollout["score"],
+                "gen_case": rollout.get("gen_case", "mock"),
+                "p1_len": rollout.get("p1_len", 0),
+                "p2_len": rollout.get("p2_len", 0),
+            }
+            f.write(json.dumps(record) + "\n")
 
     print()
-    print("Results saved:")
-    print(f"  - {results_file}")
-    print(f"  - {rollouts_file}")
-    print(f"  - Best score: {results['best_score']:.6f}")
-    print(f"  - Mean score: {results['mean_score']:.6f}")
+    print(f"Results saved to {rollouts_file}")
+    print(f"  - Best score: {max(scores):.6f}")
+    print(f"  - Mean score: {float(np.mean(scores)):.6f}")
 
     # Clean up GPU processes after successful completion
     cleanup_gpu_processes()

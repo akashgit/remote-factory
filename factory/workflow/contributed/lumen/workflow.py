@@ -69,10 +69,47 @@ import pathlib
 _REMOTE_FACTORY_ROOT = str(pathlib.Path(_LUMEN_ROOT).parent.parent)
 
 
-def workflow() -> Workflow:
-    """Build the Lumen workflow graph."""
+def workflow(**kwargs: Any) -> Workflow:
+    """Build the Lumen workflow graph.
+
+    Parameters
+    ----------
+    **kwargs
+        Workflow-specific arguments:
+        - task: Task name (required)
+        - config: Custom config file path (optional)
+        - model_path, num_gpus, rollout_tp, etc: CLI overrides (optional)
+    """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
+
+    # Build preflight command with parameters
+    preflight_args = ["--project-path", "{project_path}"]
+
+    # Add task (required)
+    if "task" in kwargs:
+        preflight_args.extend(["--task", kwargs["task"]])
+
+    # Add custom config if provided
+    if "config" in kwargs:
+        preflight_args.extend(["--config", kwargs["config"]])
+
+    # Add CLI parameter overrides
+    cli_params = ["model_path", "num_gpus", "rollout_tp", "num_rollouts_per_prompt",
+                  "lora_rank", "learning_rate", "kl_coef", "temperature",
+                  "phase1_max_tokens", "eval_timeout", "max_iterations",
+                  "groups_per_batch", "group_size", "mock"]
+    for param in cli_params:
+        if param in kwargs:
+            value = kwargs[param]
+            flag = "--" + param.replace("_", "-")
+            if isinstance(value, bool):
+                if value:
+                    preflight_args.append(flag)
+            else:
+                preflight_args.extend([flag, str(value)])
+
+    preflight_cmd = " ".join(preflight_args)
 
     # ── Node 0: Setup ─────────────────────────────────────────
     # Preflight (checks uv venv, GPUs, run dir, resolved config) + SOTA update.
@@ -82,7 +119,7 @@ def workflow() -> Workflow:
             "cd {project_path} && "
             # Pass resolved LUMEN_PYTHON so preflight finds the correct venv
             f"LUMEN_PYTHON={_LUMEN_PYTHON} "
-            f"python3 {_LUMEN_ROOT}/preflight.py --project-path {{project_path}} && "
+            f"python3 {_LUMEN_ROOT}/preflight.py {preflight_cmd} && "
             # SOTA update runs in lumen env (may need numpy/scientific libs)
             f"TASK=$({_LUMEN_PYTHON} -c \""
             f"import json; print(json.load(open('{_CFG}'))['task_name'])"
@@ -136,13 +173,29 @@ def workflow() -> Workflow:
         ),
         reads={_CFG, _STATE, ".factory/lumen/.running/iteration_*/prompts.json"},
         writes={
-            ".factory/lumen/.running/iteration_*/rollouts.jsonl",
+            ".factory/lumen/.running/iteration_*/sm_rollouts.jsonl",
+        },
+        transcript_dir="{project_path}/.factory/lumen/.running/logs",
+    )
+
+    # ── Node 4: Eval Stats ──────────────────────────────────────
+    # Aggregate sm_rollouts + fm_rollouts (optional) into unified evaluation_results.json
+    # NOTE: fm_rollouts.jsonl is optional — eval_stats.py checks for it internally
+    nodes["eval_stats"] = FnNode(
+        id="eval_stats",
+        command=f"cd {{project_path}} && python3 {_LUMEN_ROOT}/eval_stats.py",
+        reads={
+            _CFG,
+            _STATE,
+            ".factory/lumen/.running/iteration_*/sm_rollouts.jsonl",
+        },
+        writes={
             ".factory/lumen/.running/iteration_*/evaluation_results.json",
         },
         transcript_dir="{project_path}/.factory/lumen/.running/logs",
     )
 
-    # ── Node 4: Check Gate ──────────────────────────────────────
+    # ── Node 5: Check Gate ──────────────────────────────────────
     # Uses only stdlib - can run in any Python
     nodes["check_gate"] = GateNode(
         id="check_gate",
@@ -151,7 +204,7 @@ def workflow() -> Workflow:
         reads={_CFG, _STATE},
     )
 
-    # ── Node 5: Finalize ───────────────────────────────────────
+    # ── Node 6: Finalize ───────────────────────────────────────
     # Archive iteration data; checkpoint only when SOTA beaten.
     nodes["finalize"] = FnNode(
         id="finalize",
@@ -165,7 +218,8 @@ def workflow() -> Workflow:
         Edge(source="setup", target="config_gate"),
         Edge(source="config_gate", target="lumen_context_agent"),
         Edge(source="lumen_context_agent", target="rl_train"),
-        Edge(source="rl_train", target="check_gate"),
+        Edge(source="rl_train", target="eval_stats"),
+        Edge(source="eval_stats", target="check_gate"),
         Edge(source="check_gate", target="lumen_context_agent", condition=VerdictType.RELOOP),
         Edge(source="check_gate", target="finalize"),
     ]

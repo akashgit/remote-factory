@@ -60,6 +60,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
     dry_run = getattr(args, "dry_run", False)
     from_yaml = getattr(args, "from_yaml", None)
 
+    # Parse workflow-args (KEY=VALUE pairs)
+    workflow_kwargs = {}
+    for arg in getattr(args, "workflow_args", []):
+        if "=" not in arg:
+            print(f"Warning: Ignoring invalid workflow arg (missing '='): {arg}")
+            continue
+        key, value = arg.split("=", 1)
+        # Try to parse as int/float/bool, otherwise keep as string
+        if value.lower() in ("true", "false"):
+            workflow_kwargs[key] = value.lower() == "true"
+        elif value.replace(".", "", 1).replace("-", "", 1).isdigit():
+            if "." in value:
+                workflow_kwargs[key] = float(value)
+            else:
+                workflow_kwargs[key] = int(value)
+        else:
+            workflow_kwargs[key] = value
+
     yaml_b64 = os.environ.get("FACTORY_WORKFLOW_YAML_B64")
     if yaml_b64 and not from_yaml:
         tmp = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w")
@@ -73,7 +91,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         wf = yaml_to_workflow(from_yaml, name)
         log.info("workflow loaded from YAML override", path=from_yaml, name=name)
     else:
-        resolved = WorkflowRegistry.get_workflow(name, project_path)
+        resolved = WorkflowRegistry.get_workflow(name, project_path, **workflow_kwargs)
         if not resolved:
             print(f"Unknown workflow: {name}")
             print(f"Available: {', '.join(WorkflowRegistry._entries)}")
@@ -349,6 +367,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument(
         "--from-yaml", default=None, metavar="PATH",
         help="Load workflow from YAML annotations file (overrides slot values on base workflow)",
+    )
+    p.add_argument(
+        "--workflow-args", nargs="*", default=[], metavar="KEY=VALUE",
+        help="Workflow-specific arguments (e.g., task=circle-packing model_path=Qwen/Qwen3-8B)",
     )
 
     # list

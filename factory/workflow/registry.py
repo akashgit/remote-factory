@@ -164,10 +164,22 @@ class WorkflowRegistry:
                 log.debug("workflow_registry.skip", path=str(py_file), reason=str(exc))
 
     @classmethod
-    def get_workflow(cls, name: str, project_path: Path | None = None) -> Workflow | None:
+    def get_workflow(cls, name: str, project_path: Path | None = None, **kwargs: Any) -> Workflow | None:
         """Get a workflow by name, discovering if needed.
 
-        Returns None if not found.
+        Parameters
+        ----------
+        name : str
+            Workflow name
+        project_path : Path, optional
+            Project path for local workflow discovery
+        **kwargs
+            Workflow-specific arguments passed to workflow() function
+
+        Returns
+        -------
+        Workflow | None
+            Workflow instance or None if not found
         """
         if not cls._entries:
             cls.discover(project_path)
@@ -179,7 +191,8 @@ class WorkflowRegistry:
         if entry._workflow_fn is None:
             return None
 
-        return entry._workflow_fn()
+        # Pass kwargs to workflow function
+        return entry._workflow_fn(**kwargs)
 
     @classmethod
     def list_workflows(cls, project_path: Path | None = None) -> list[WorkflowEntry]:

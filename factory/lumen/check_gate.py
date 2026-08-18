@@ -31,8 +31,10 @@ def main():
             continue
 
         results = json.load(open(eval_file))
-        score = results["best_score"]
-        solution = results.get("best_solution", {})
+        # Read from overall stats (aggregates sm + fm rollouts)
+        overall = results.get("overall", results)  # Fallback to old format if no "overall" key
+        score = overall["best_score"]
+        solution = overall.get("best_solution", {})
 
         if global_best_score is None:
             global_best_score = score
