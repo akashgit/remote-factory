@@ -39,6 +39,11 @@ uv run mypy factory/              # Type check
 - **Structured logging** via `structlog` — use `log = structlog.get_logger()` at module level
 - **No comments** unless the "why" is non-obvious
 
+## README
+
+`README.md` is a symlink to `docs/index.md` — edit `docs/index.md` directly.
+Do not break this symlink or create a separate `README.md` file.
+
 ## PR Workflow
 
 1. Create a feature branch from `main`

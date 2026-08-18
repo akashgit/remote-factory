@@ -17,47 +17,41 @@
 # Design — brainstorm an idea, refine it, then build
 factory ceo "distributed eval runner" --mode design
 
+# Focus — build exactly one thing
+factory ceo ~/my-project --focus "add WebSocket support"
+
 # Create — build new factory modes and pipelines
 factory ceo /path/to/factory --mode create --focus "PR validation pipeline"
 
-# Build — have a fleshed-out idea? Pass the file.
-factory ceo ~/ideas/weather-dashboard.md
-
-# Improve — point it at any codebase
-factory ceo ~/my-project
-
-# Focus — build exactly one thing
-factory ceo ~/my-project --focus "add WebSocket support"
+# Outer Loop — evolve workflow topologies via MAP-Elites
+factory outer-loop calibrate ~/my-factory \
+  --benchmark featurebench \
+  --population-size 3 \
+  --project-dir /path/to/benchmark-instance \
+  --test-command "pytest tests/ -v"
 ```
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
 ---
 
-## How It Works
+## Quick Start
 
-re:factory defines every workflow as a **Pydantic graph** — a directed acyclic graph (DAG) where each node is an agent, a shell command, a gate check, or a fork/join for parallelism. The same graph definition produces **three execution modes**:
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/#installation), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
 
-### 1. Headless Executor
+```bash
+uv tool install git+https://github.com/akashgit/remote-factory.git
+```
 
-`factory workflow run <name> /path` — the `WorkflowExecutor` walks the DAG deterministically, running each node in topological order with no human interaction. Used for unattended runs, CI/CD pipelines, and scripted automation.
+```bash
+# Design — brainstorm an idea, refine it, then build
+factory ceo "my idea" --mode design
 
-### 2. Interactive CEO
+# Improve an existing project — use design mode with a focus area
+factory ceo /path/to/project --mode design --focus "issue # or area to improve"
+```
 
-`factory ceo /path --mode <name>` — `skill_export.py` converts the workflow graph into a SKILL.md prose playbook under `skills/workflow-*/`. At runtime, the CEO agent reads the appropriate SKILL.md and follows it step by step, orchestrating specialist agents — Researcher, Strategist, Builder, Health Checker, Code Reviewer, Adversarial Tester, Archivist, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Unlike the headless executor, the CEO can review agent outputs, redirect failing agents, and apply judgment at gate points.
-
-### 3. Outer Loop — Evolutionary Workflow Search
-
-`factory outer-loop` — instead of *executing* a workflow, the outer loop *evolves* workflow topologies via MAP-Elites quality-diversity search. Starting from a seed workflow, it mutates structure (adding/removing nodes, changing edges, tweaking prompts), evaluates each candidate by running a full CEO cycle, and selects for higher fitness. This is how re:factory improves its own pipelines.
-
-### The graph is the source of truth
-
-For example, an **email summarizer agent** might be a simple 3-node workflow: a Researcher reads the inbox → a Strategist prioritizes by urgency → a Builder drafts the summary. A **custom research agent** might fork three parallel researchers (domain, competitors, prior art) → join their findings → pass through a coverage gate → synthesize a final report. The graph structure is the same — what changes is the nodes, their prompts, and the edges between them. All three execution modes operate on the same underlying graph definition.
-
-The two primary modes for getting started:
-
-- **Design mode** (`--mode design`): The entry point for new ideas and existing projects alike. Researches the space, drafts a structured plan via the Strategist, iterates with you until it's right, then builds. Use this when you want to think before you code.
-- **Create mode** (`--mode create`): Builds new workflow graphs themselves — new factory modes, new pipelines, new agent topologies. Point it at the factory repo and describe what mode you want. It researches existing patterns, synthesizes a workflow spec, gets your approval, then implements the full graph definition, skill export, CLI wiring, and tests.
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
 
 ---
 
@@ -97,17 +91,25 @@ factory ceo ~/my-app --mode design --focus 42                       # GitHub iss
 factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shorthand
 ```
 
+Design mode subsumes Build and Improve — it researches, plans, gets your approval, then builds and iterates.
+
 ---
 
-## Create Your Own Factory/Mode
+## Create Your Own Factory Mode
 
-Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
+Create mode lets you build new factory modes — new workflows, new pipelines, new factories.
+
+### Create a New Mode
+
+Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
 
 ```bash
 factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
 ```
 
-To update an existing mode, prefix `--focus` with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:
+### Update an Existing Mode
+
+Prefix `--focus` with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:
 
 ```bash
 factory ceo /path/to/factory --mode create --focus "improve: add plateau detection after 3 consecutive reverts"
@@ -116,9 +118,38 @@ factory ceo /path/to/factory --mode create --focus "build: add a code review gat
 
 Without a colon, `--focus` always creates a new mode.
 
+### How Modes Work
+
+Every mode has three representations:
+
+1. **Workflow definition** — a Pydantic graph in `factory/workflow/definitions.py` with typed nodes (`AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`) and edges
+2. **SKILL.md** — a prose playbook auto-generated from the graph via `factory workflow export-skills`, read by the CEO at runtime
+3. **CLI entry point** — registered in `factory/cli/_main.py` and dispatched via mode routing
+
+### Manual Workflow Editing
+
+1. Modify the graph definition in `factory/workflow/definitions.py`
+2. Re-export skills: `factory workflow export-skills`
+3. Test: `pytest tests/test_workflow.py -v`
+
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
 
 Point it at the factory repo itself to extend re:factory with custom pipelines.
+
+---
+
+## Focus
+
+Focus mode builds exactly one thing and exits. Target a backlog item, a GitHub issue, or multiple issues at once.
+
+```bash
+factory ceo ~/my-project --focus "add WebSocket support"            # Backlog item
+factory ceo ~/my-project --focus 42                                 # GitHub issue #42
+factory ceo ~/my-project --focus "owner/repo#42"                    # Issue shorthand
+factory ceo ~/my-project --focus '42 and 43'                        # Multiple issues
+factory ceo ~/my-project --focus 'issue 42, issue 43'               # With 'issue' keyword
+factory ceo ~/my-project --mode design --focus "auth layer"         # Design mode with focus
+```
 
 ---
 
@@ -155,55 +186,19 @@ Run any workflow with `factory ceo /path --mode <name>` or use Create mode to bu
 
 ---
 
-## Quick Start
-
-**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/#installation), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
-
-### Quick Install
+## Outer Loop — Evolve Workflow Topologies
 
 ```bash
-uv tool install git+https://github.com/akashgit/remote-factory.git
+factory outer-loop calibrate ~/my-factory \
+  --benchmark featurebench \
+  --population-size 3 \
+  --project-dir /path/to/benchmark-instance \
+  --test-command "pytest tests/ -v"
+
+factory ceo ~/my-factory --mode outer-loop --headless
 ```
 
-### Development Install
-
-```bash
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory
-uv sync
-uv tool install -e .
-```
-
-Then start with one of the two main workflows:
-
-```bash
-# Design — brainstorm an idea, refine it, then build
-factory ceo "my idea" --mode design
-
-# Improve an existing project — use design mode with a focus area
-factory ceo /path/to/project --mode design --focus "issue # or area to improve"
-```
-
-See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
-
----
-
-## Self-Evolving Agents
-
-| I want to… | Command |
-|---|---|
-| **Start from a raw idea** | `factory ceo "my idea" --mode design` |
-| **Improve an existing project** | `factory ceo /path/to/project --mode design --focus "issue # or area to improve"` |
-| **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
-| **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
-
-re:factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
-
-This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
-
-Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
-
-See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
+The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](docs/outer-loop.md) for full architecture and CLI reference.
 
 ---
 
@@ -221,82 +216,55 @@ On first run, `factory discover` auto-detects your project's language and framew
 
 ---
 
-## Outer Loop — Evolve Workflow Topologies
+## Architecture
 
-```bash
-factory outer-loop calibrate ~/my-factory \
-  --benchmark featurebench \
-  --population-size 3 \
-  --project-dir /path/to/benchmark-instance \
-  --test-command "pytest tests/ -v"
+re:factory is a **four-layer system**:
 
-factory ceo ~/my-factory --mode outer-loop --headless
+```mermaid
+graph TB
+  subgraph layer1["Layer 1 — Python CLI"]
+    CLI["factory CLI"]
+  end
+  subgraph layer2["Layer 2 — Workflow Graph Engine"]
+    WF["Workflow DAGs + Executor"]
+  end
+  subgraph layer3["Layer 3 — CEO Agent"]
+    CEO["CEO Orchestrator"]
+  end
+  subgraph layer4["Layer 4 — Specialist Agents"]
+    R["Researcher"]
+    S["Strategist"]
+    B["Builder"]
+    HC["Health Checker"]
+    CR["Code Reviewer"]
+    AT["Adversarial Tester"]
+    AR["Archivist"]
+    FA["Failure Analyst"]
+  end
+  layer4 --> layer3 --> layer2 --> layer1
 ```
 
-The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](docs/outer-loop.md) for full architecture and CLI reference.
+**Layer 1 — Python CLI** (`factory/cli/`): Pure tools that don't make decisions. Entry point is `factory.cli:main`, each subcommand a `cmd_*` function dispatched via a handler dict.
+
+**Layer 2 — Workflow Graph Engine** (`factory/workflow/`): All factory modes are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives. The same graph produces two execution formats: **headless** (`WorkflowExecutor` walks the DAG deterministically) and **interactive** (exported as SKILL.md prose playbooks the CEO follows at runtime).
+
+**Layer 3 — CEO Agent** (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`): The executive orchestrator. Detects project state, reads the appropriate SKILL.md playbook, and directs specialists through the experiment lifecycle — hypothesis, build, evaluate, keep/revert.
+
+**Layer 4 — Specialist Agents** (`factory/agents/`): Eight Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Researcher (observe), Strategist (hypothesize), Builder (implement), Health Checker + Code Reviewer + Adversarial Tester (verify), Archivist (record), Failure Analyst (research mode).
+
+See [Architecture](docs/architecture.md) for the full deep-dive.
 
 ---
 
-## Built with re:factory
+## Self-Improvement
 
-| Project | What it does |
-|---------|-------------|
-| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis |
-| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 |
-| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation |
-| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations |
-| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI |
-| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection |
-| **re:factory itself** | re:factory runs on itself — its own agent playbooks are evolved from its own experiment outcomes |
-
-Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
-
----
-
-## CLI Quick Reference
+re:factory improves itself through meta mode — the CEO runs the full improve loop on the factory's own codebase, then evolves agent playbooks via ACE (Autonomous Context Engineering):
 
 ```bash
-# Design — brainstorm and build
-factory ceo "idea" --mode design                              # Design from a raw idea
-factory ceo ~/ideas/spec.md --mode design                     # Design from a spec file
-factory ceo <path> --mode design                              # Design improvements for existing project
-factory ceo <path> --mode design --focus "topic"              # Seed with a specific topic
-
-# Create — extend the factory
-factory ceo <path> --mode create --focus "description"        # Create a new factory mode
-factory ceo <path> --mode create --focus "mode: change"       # Update an existing mode
+factory ceo ~/my-project --mode meta
 ```
 
-See `factory --help` for the complete list.
-
----
-
-## Runners
-
-re:factory supports multiple CLI backends. Default is Claude Code — switch with `--runner` or `FACTORY_RUNNER`:
-
-```bash
-# Direct
-CODEX_API_KEY="..." factory ceo /path --runner codex
-BOBSHELL_API_KEY="..." factory ceo /path --runner bob
-
-# Via config.toml profile (persistent)
-factory ceo /path --profile codex
-```
-
-Configure profiles in `~/.factory/config.toml`:
-
-```toml
-[credentials.codex]
-FACTORY_RUNNER = "codex"
-CODEX_API_KEY = "..."
-
-[credentials.bob]
-FACTORY_RUNNER = "bob"
-BOBSHELL_API_KEY = "..."
-```
-
-Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
+See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
 
 ---
 
@@ -414,18 +382,67 @@ A regression test (`test_annotations_match_source`) runs in CI to catch drift be
 
 ---
 
+## CLI Quick Reference
+
+```bash
+# Design — brainstorm and build
+factory ceo "idea" --mode design                              # Design from a raw idea
+factory ceo ~/ideas/spec.md --mode design                     # Design from a spec file
+factory ceo <path> --mode design                              # Design improvements for existing project
+factory ceo <path> --mode design --focus "topic"              # Seed with a specific topic
+
+# Focus — build exactly one thing
+factory ceo <path> --focus "add WebSocket support"            # Backlog item
+factory ceo <path> --focus 42                                 # GitHub issue #42
+factory ceo <path> --focus '42 and 43'                        # Multiple issues
+
+# Outer Loop — evolve workflow topologies
+factory outer-loop calibrate <path> --benchmark featurebench  # Calibrate seed population
+factory ceo <path> --mode outer-loop --headless               # Run evolution
+
+# Create — extend the factory
+factory ceo <path> --mode create --focus "description"        # Create a new factory mode
+factory ceo <path> --mode create --focus "mode: change"       # Update an existing mode
+
+# Headless & continuous
+factory run <path> --loop --interval 1800                     # Continuous heartbeat
+factory tmux <path> --loop                                    # In detached tmux session
+factory ceo <path> --mode meta                                # Self-improvement cycle
+```
+
+See `factory --help` for the complete list.
+
+---
+
 ## Documentation
 
-| Doc | What's in it |
-|-----|-------------|
-| [Setup Guide](docs/setup.md) | Installation, authentication, environment variables |
-| [Getting Started](docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
-| [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow |
-| [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
-| [Configuration](docs/configuration.md) | `factory.md` reference — all sections and options |
-| [ACE Self-Improvement](docs/ace.md) | How re:factory evolves its own agent playbooks |
-| [Contributing](docs/contributing.md) | Dev setup, code style, testing, PR workflow |
-| [Contributing Benchmarks](docs/contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
+### Getting Started
+
+- **[Setup Guide](docs/setup.md)** — Installation, authentication, environment variables
+- **[Getting Started](docs/getting-started.md)** — Lifecycle walkthrough, research mode details, factory.md config
+
+### Core Workflows
+
+- **[Eval System](docs/eval.md)** — Hygiene/growth/project tiers, scoring, guards, precheck
+- **[Configuration](docs/configuration.md)** — `factory.md` reference — all sections and options
+- **[Benchmarks](docs/benchmarks.md)** — Benchmark infrastructure and available benchmark workflows
+
+### Architecture & Configuration
+
+- **[Architecture](docs/architecture.md)** — Four-layer system, agent roles, state machine, data flow
+- **[ACE Self-Improvement](docs/ace.md)** — How re:factory evolves its own agent playbooks
+- **[Outer Loop](docs/outer-loop.md)** — Evolutionary workflow search, MAP-Elites, mutation operators
+
+### Advanced Topics
+
+- **[Contained Runtimes](docs/contained/index.md)** — Running the factory in containers and on Kubernetes
+- **[Plugins](docs/plugins.md)** — Claude Code plugin distribution and agent installation
+- **[Codex MCP](docs/codex-mcp.md)** — OpenAI Codex integration via MCP
+
+### Contributing
+
+- **[Contributing](docs/contributing.md)** — Dev setup, code style, testing, PR workflow
+- **[Contributing Benchmarks](docs/contributing-benchmarks.md)** — How to add new benchmarks: workflow structure, Harbor setup, CI integration
 
 ## Development
 
