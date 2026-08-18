@@ -64,6 +64,7 @@ nav:
       - Configuration: configuration.md
   - Concepts:
       - Architecture: architecture.md
+      - Plugins — Build Your Own Factory: plugins.md
       - Eval System: eval.md
       - Self-Improvement Loop: self-improvement.md
       - ACE Playbook Evolution: ace.md
