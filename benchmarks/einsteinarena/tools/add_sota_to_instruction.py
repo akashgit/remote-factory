@@ -63,7 +63,7 @@ def get_problem_info(slug: str) -> dict | None:
 
 def update_instruction_md(slug: str, info: dict) -> bool:
     """更新 instruction.md（添加 SOTA section）"""
-    md_path = Path(f"benchmarks/einsteinarena/{slug}/instruction.md")
+    md_path = Path(f"{slug}/instruction.md")
 
     if not md_path.exists():
         print(f"ERROR: {md_path} not found", file=sys.stderr)
@@ -125,7 +125,7 @@ def main():
 
     # 获取任务列表
     if args.all:
-        harbor_dir = Path("benchmarks/einsteinarena")
+        harbor_dir = Path(".")
         tasks = sorted([d.name for d in harbor_dir.iterdir() if d.is_dir()])
     else:
         tasks = [args.task]
