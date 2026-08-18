@@ -324,6 +324,56 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-headless-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Headless Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-interactive-ceo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Interactive CEO
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-outer-loop-evolutionary-workflow-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Outer Loop — Evolutionary Workflow Search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-graph-is-the-source-of-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The graph is the source of truth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1224,6 +1274,56 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-headless-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Headless Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-interactive-ceo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Interactive CEO
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-outer-loop-evolutionary-workflow-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Outer Loop — Evolutionary Workflow Search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-graph-is-the-source-of-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The graph is the source of truth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1602,10 +1702,16 @@
 <p>All state is local — per-project in <code>.factory/</code> (add to <code>.gitignore</code>), global in <code>~/.factory/</code>. See <a href="architecture/">Architecture</a> for the full deep-dive.</p>
 <hr />
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>re:factory orchestrates a <strong>graph workflow of agents</strong> — a directed acyclic graph (DAG) where each node is either an agent, a shell command, a gate check, or a fork/join for parallelism. Each workflow defines which agents run, in what order, with what conditions, and the engine walks the graph deterministically. Workflows can be created for different tasks and optimized through the outer loop's evolutionary search.</p>
-<p>For example, an <strong>email summarizer agent</strong> might be a simple 3-node workflow: a Researcher reads the inbox → a Strategist prioritizes by urgency → a Builder drafts the summary. A <strong>custom research agent</strong> might fork three parallel researchers (domain, competitors, prior art) → join their findings → pass through a coverage gate → synthesize a final report. The graph structure is the same — what changes is the nodes, their prompts, and the edges between them.</p>
-<p>A <strong>CEO agent</strong> sits at the top. It detects project state, selects the appropriate workflow graph, and orchestrates specialist agents — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> subprocess. The CEO walks the graph step by step: the Researcher investigates, the Strategist generates ranked hypotheses, the Builder implements on an experiment branch, the Evaluator scores before and after, and the CEO decides keep or revert. The Archivist records everything for cross-project learning.</p>
-<p>The two primary modes:</p>
+<p>re:factory defines every workflow as a <strong>Pydantic graph</strong> — a directed acyclic graph (DAG) where each node is an agent, a shell command, a gate check, or a fork/join for parallelism. The same graph definition produces <strong>three execution modes</strong>:</p>
+<h3 id="1-headless-executor">1. Headless Executor<a class="headerlink" href="#1-headless-executor" title="Permanent link">&para;</a></h3>
+<p><code>factory workflow run &lt;name&gt; /path</code> — the <code>WorkflowExecutor</code> walks the DAG deterministically, running each node in topological order with no human interaction. Used for unattended runs, CI/CD pipelines, and scripted automation.</p>
+<h3 id="2-interactive-ceo">2. Interactive CEO<a class="headerlink" href="#2-interactive-ceo" title="Permanent link">&para;</a></h3>
+<p><code>factory ceo /path --mode &lt;name&gt;</code> — <code>skill_export.py</code> converts the workflow graph into a SKILL.md prose playbook under <code>skills/workflow-*/</code>. At runtime, the CEO agent reads the appropriate SKILL.md and follows it step by step, orchestrating specialist agents — Researcher, Strategist, Builder, Health Checker, Code Reviewer, Adversarial Tester, Archivist, and Failure Analyst — each running as an independent <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> subprocess. Unlike the headless executor, the CEO can review agent outputs, redirect failing agents, and apply judgment at gate points.</p>
+<h3 id="3-outer-loop-evolutionary-workflow-search">3. Outer Loop — Evolutionary Workflow Search<a class="headerlink" href="#3-outer-loop-evolutionary-workflow-search" title="Permanent link">&para;</a></h3>
+<p><code>factory outer-loop</code> — instead of <em>executing</em> a workflow, the outer loop <em>evolves</em> workflow topologies via MAP-Elites quality-diversity search. Starting from a seed workflow, it mutates structure (adding/removing nodes, changing edges, tweaking prompts), evaluates each candidate by running a full CEO cycle, and selects for higher fitness. This is how re:factory improves its own pipelines.</p>
+<h3 id="the-graph-is-the-source-of-truth">The graph is the source of truth<a class="headerlink" href="#the-graph-is-the-source-of-truth" title="Permanent link">&para;</a></h3>
+<p>For example, an <strong>email summarizer agent</strong> might be a simple 3-node workflow: a Researcher reads the inbox → a Strategist prioritizes by urgency → a Builder drafts the summary. A <strong>custom research agent</strong> might fork three parallel researchers (domain, competitors, prior art) → join their findings → pass through a coverage gate → synthesize a final report. The graph structure is the same — what changes is the nodes, their prompts, and the edges between them. All three execution modes operate on the same underlying graph definition.</p>
+<p>The two primary modes for getting started:</p>
 <ul>
 <li><strong>Design mode</strong> (<code>--mode design</code>): The entry point for new ideas and existing projects alike. Researches the space, drafts a structured plan via the Strategist, iterates with you until it's right, then builds. Use this when you want to think before you code.</li>
 <li><strong>Create mode</strong> (<code>--mode create</code>): Builds new workflow graphs themselves — new factory modes, new pipelines, new agent topologies. Point it at the factory repo and describe what mode you want. It researches existing patterns, synthesizes a workflow spec, gets your approval, then implements the full graph definition, skill export, CLI wiring, and tests.</li>
