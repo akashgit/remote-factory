@@ -802,14 +802,38 @@ class WorkflowExecutor:
         cmd = f"factory study {shlex.quote(str(self.project_path))}"
         if node.focus:
             cmd += f' --focus "{node.focus}"'
-        return await self._run_shell(cmd)
+        stdout, stderr, returncode = await self._run_shell(cmd)
+
+        # Save transcript if transcript_dir is specified
+        if node.transcript_dir:
+            await self._save_fn_transcript(node.id, stdout, stderr, returncode, node.transcript_dir)
+
+        # Raise error if command failed
+        if returncode != 0:
+            raise RuntimeError(
+                f"command failed (exit {returncode}): {cmd}\n{stderr[:500]}"
+            )
+
+        return stdout
 
     async def _run_fn(self, node: FnNode) -> str:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
         cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
-        return await self._run_shell(cmd)
+        stdout, stderr, returncode = await self._run_shell(cmd)
+
+        # Save transcript if transcript_dir is specified
+        if node.transcript_dir:
+            await self._save_fn_transcript(node.id, stdout, stderr, returncode, node.transcript_dir)
+
+        # Raise error if command failed
+        if returncode != 0:
+            raise RuntimeError(
+                f"command failed (exit {returncode}): {cmd}\n{stderr[:500]}"
+            )
+
+        return stdout
 
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
@@ -1017,8 +1041,8 @@ class WorkflowExecutor:
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
-    async def _run_shell(self, cmd: str) -> str:
-        """Run a shell command and return stdout."""
+    async def _run_shell(self, cmd: str) -> tuple[str, str, int]:
+        """Run a shell command and return (stdout, stderr, returncode)."""
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -1027,14 +1051,54 @@ class WorkflowExecutor:
         )
         stdout_bytes, stderr_bytes = await proc.communicate()
         stdout = stdout_bytes.decode() if stdout_bytes else ""
+        stderr = stderr_bytes.decode() if stderr_bytes else ""
 
-        if proc.returncode != 0:
-            stderr = stderr_bytes.decode() if stderr_bytes else ""
-            raise RuntimeError(
-                f"command failed (exit {proc.returncode}): {cmd}\n{stderr[:500]}"
+        return stdout, stderr, proc.returncode or 0
+
+    async def _save_fn_transcript(
+        self,
+        node_id: str,
+        stdout: str,
+        stderr: str,
+        returncode: int,
+        transcript_dir: str,
+    ) -> None:
+        """Save FnNode execution transcript (stdout + stderr) to disk."""
+        from datetime import datetime, timezone
+
+        try:
+            # Resolve transcript_dir template
+            resolved_dir = transcript_dir.replace(
+                "{project_path}", str(self.project_path)
             )
+            transcript_path = Path(resolved_dir)
+            transcript_path.mkdir(parents=True, exist_ok=True)
 
-        return stdout
+            # Generate timestamped filename
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            log_file = transcript_path / f"{node_id}_{timestamp}.log"
+
+            # Write combined output
+            content_parts = [
+                f"# FnNode Transcript: {node_id}",
+                f"# Timestamp: {datetime.now(timezone.utc).isoformat()}",
+                f"# Exit Code: {returncode}",
+                f"# Run ID: {self.run_id}",
+                "",
+                "=== STDOUT ===",
+                stdout if stdout else "(empty)",
+                "",
+                "=== STDERR ===",
+                stderr if stderr else "(empty)",
+            ]
+            content = "\n".join(content_parts)
+
+            log_file.write_text(content)
+            log.debug("fn_transcript_saved", node=node_id, file=str(log_file))
+
+        except Exception as exc:
+            # Never block execution on transcript save failure
+            log.warning("fn_transcript_save_failed", node=node_id, error=str(exc))
 
     async def _wait_for_reads(self, node: NodeType) -> None:
         """Wait until all files in node.reads are available in completed_files."""
