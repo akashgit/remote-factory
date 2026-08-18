@@ -93,8 +93,10 @@ def build_verl_overrides(args: argparse.Namespace, output_dir: Path) -> list[str
     if resume_path:
         overrides.append(f"trainer.resume_from_path={resume_path}")
 
-    # Hydra: redirect output to iteration directory
+    # Hydra: disable .hydra/ directory and log files
     overrides.append(f"hydra.run.dir={output_dir}")
+    overrides.append("hydra.output_subdir=null")  # Disable .hydra/ directory
+    overrides.append("hydra/job_logging=none")     # Disable main_ppo.log
 
     return overrides
 
