@@ -6,90 +6,120 @@ Reinforcement learning training system for scientific discovery tasks, starting 
 
 ## Installation
 
-⚠️ **Install this environment BEFORE using the workflow.**
+**Install this environment BEFORE using the workflow.**
 
-### 1. Install Base Dependencies
+The installation mirrors [TTT-Discover](https://arxiv.org/abs/2601.16175)'s setup — same packages, same versions, same install order. This ensures VERL, vLLM, and the agent loop behave identically.
+
+### Prerequisites
+
+- 8x NVIDIA H100 80GB (or equivalent)
+- CUDA Driver 12.9+
+- Python 3.11
+- [uv](https://docs.astral.sh/uv/) (`pip install uv`)
+
+### 1. Create Virtual Environment
 
 ```bash
 cd factory/lumen
-uv sync --no-install-project
+uv venv --python 3.11 .venv
+source .venv/bin/activate
 ```
 
-This creates `.venv/` in `factory/lumen/` and installs all base dependencies from `pyproject.toml`.
-
-### 2. Install PyTorch & vLLM (CUDA 12.9)
-
-⚠️ **Version Alignment with Discover**: We use the same versions as TTT-Discover for compatibility.
+### 2. Install Base Dependencies
 
 ```bash
-# Install PyTorch 2.11.0+cu129 from direct wheel URLs
-uv pip install \
-  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
-  "https://download.pytorch.org/whl/cu129/torchvision-0.26.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
-  "https://download.pytorch.org/whl/cu129/torchaudio-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
-
-# Install vLLM 0.23.0+cu129 (--no-deps to avoid CUDA version conflicts)
-uv pip install --no-deps https://github.com/vllm-project/vllm/releases/download/v0.23.0/vllm-0.23.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl
+uv pip install --index-strategy unsafe-best-match -r requirements.txt
 ```
 
-**Why this way?**
-- PyTorch wheels: Must use direct URLs because `--extra-index-url` doesn't prioritize `+cu129` suffix
-- vLLM `--no-deps`: vLLM's dependencies don't specify CUDA version for PyTorch, would install wrong version
-- vLLM dependencies: Already included in `pyproject.toml` (installed in Step 1)
+The `--index-strategy unsafe-best-match` flag is required because `requirements.txt` includes `--extra-index-url` for PyTorch cu129 wheels. Without it, uv may pick older packages (e.g., `packaging<=24.1`) from the PyTorch index instead of PyPI, breaking downstream installs.
 
-### 3. Install FlashInfer & Flash-Attention
+### 3. Install vLLM (cu129 build)
+
+**CRITICAL**: Install the cu129 build from GitHub releases with `--no-deps`, NOT from PyPI. The PyPI default targets CUDA 13 and will fail with `libcudart.so.13 not found`.
 
 ```bash
-# Install matching flashinfer versions (0.6.12)
-uv pip install flashinfer-python==0.6.12 flashinfer-cubin==0.6.12
+uv pip install --no-deps \
+  "https://github.com/vllm-project/vllm/releases/download/v0.23.0/vllm-0.23.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl"
+```
 
-# Restore PyTorch cu129 (flashinfer may downgrade it)
+The `--no-deps` flag is essential — vllm's dependency resolver pulls in `nvidia-nccl-cu13` which overwrites the cu12 NCCL library and causes `CUDA driver version is insufficient` at training time.
+
+### 4. Install FlashInfer
+
+**CRITICAL**: Pin both `flashinfer-python` and `flashinfer-cubin` to the same version. A version mismatch (e.g., cubin 0.6.13 vs python 0.6.17) causes `RuntimeError: flashinfer-cubin version does not match flashinfer version` during vLLM worker init. Use `--no-deps` to prevent flashinfer from replacing torch.
+
+```bash
+uv pip install --no-deps "flashinfer-python==0.6.12" "flashinfer-cubin==0.6.12" \
+  --extra-index-url https://flashinfer.ai/whl/cu129/torch2.11/
+```
+
+Verify PyTorch wasn't replaced:
+```bash
+python -c "import torch; print(torch.__version__)"  # must show 2.11.0+cu129
+```
+If it shows a different version, reinstall:
+```bash
 uv pip install --force-reinstall --no-deps \
-  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
-  "https://download.pytorch.org/whl/cu129/torchvision-0.26.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl" \
-  "https://download.pytorch.org/whl/cu129/torchaudio-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
+  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
+```
 
-# Restore nvidia-nccl-cu12
-uv pip install --force-reinstall nvidia-nccl-cu12==2.28.9
+### 5. Install Flash-Attention
 
-# Compile flash-attn from source
+```bash
 MAX_JOBS=8 uv pip install flash-attn --no-build-isolation --no-cache-dir
 ```
 
-**Note**: Flash-attention compilation can take 20-25 minutes.
+This compiles from source and takes 20-25 minutes.
 
-### 4. Install VERL Fork
+### 6. Install VERL Fork
 
-⚠️ **CRITICAL**: You MUST use the ash-ding fork, not official VERL.
+**CRITICAL**: Use the Discover fork (`ash-ding/verl`), not official VERL.
 
 ```bash
-git clone https://github.com/ash-ding/verl.git ~/verl
-uv pip install -e ~/verl
+git clone https://github.com/ash-ding/verl.git /tmp/verl
+uv pip install -e /tmp/verl
+```
+
+Or if you already have a local checkout (e.g., from Discover):
+```bash
+uv pip install -e /path/to/discover/verl
 ```
 
 **Why the fork?**
-- Custom `entropic_adaptive_beta` advantage estimator (hardcoded in `run_verl.py`)
-- DISCOVER environment variable forwarding
-- Enhanced checkpoint/resume
+- Custom `entropic_adaptive_beta` advantage estimator
+- `_write_to_tq` format expected by the LUMEN agent loop
+- Enhanced checkpoint/resume and rollout logging
 
 Official VERL will fail with: `ConfigCompositionException: Could not find 'entropic_adaptive_beta'`
 
-### 5. Verify
+### 7. Fix NCCL (cu12 override)
+
+VERL's dependencies may re-install `nvidia-nccl-cu13`, overwriting the cu12 NCCL library. Force reinstall cu12:
+
+```bash
+uv pip install --force-reinstall nvidia-nccl-cu12
+```
+
+Verify:
+```bash
+python -c "import torch; print(torch.cuda.nccl.version())"  # should show (2, 28, 9)
+```
+
+### 8. Verify
 
 ```bash
 .venv/bin/python env_specs/verify_env.py
 ```
 
-Expected output (CUDA check may fail if GPU drivers are outdated):
+Expected output:
 ```
-✓ torch                2.6.0+cu129
-✓ vllm                 0.23.0
-✓ verl                 0.9.0.dev
-✓ numpy                2.3.5
+Core Packages:
+✓ torch                2.11.0+cu129
+✓ vllm                 0.23.0+cu129
+✓ verl                 0.9.0.dev0
+✓ numpy                2.3.x
 ...
 ```
-
-**If CUDA check fails**: This is a driver issue, not an installation issue. The packages are correctly installed. Update NVIDIA drivers or use a machine with newer drivers for actual training.
 
 ---
 
@@ -105,10 +135,10 @@ The workflow automatically uses `factory/lumen/.venv/bin/python`.
 
 ### Custom Python Path
 
-Override the default:
+Override the default (e.g., to use a conda environment):
 
 ```bash
-export LUMEN_PYTHON=/custom/path/to/python
+export LUMEN_PYTHON=/path/to/python
 factory ceo /path/to/project --mode lumen
 ```
 
@@ -150,56 +180,46 @@ Create `.factory/lumen/config.json` in your project:
 
 ## Troubleshooting
 
-### PyTorch can't find CUDA
+### PyTorch installs CPU-only version
 
-Check NVIDIA drivers: `nvidia-smi`
-
-If drivers are fine, verify PyTorch:
+The `--extra-index-url` in `requirements.txt` should handle this. If it doesn't:
 ```bash
-.venv/bin/python -c "import torch; print(torch.cuda.is_available())"
+uv pip install --force-reinstall \
+  "https://download.pytorch.org/whl/cu129/torch-2.11.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl"
 ```
 
-### VERL not found
+### "entropic_adaptive_beta not found"
 
-Install from ash-ding fork (see step 3 above).
-
-### Training fails with "entropic_adaptive_beta not found"
-
-You installed official VERL. Uninstall and reinstall from ash-ding fork:
+You installed official VERL. Reinstall from the Discover fork:
 ```bash
-cd /workspace/home/asherding/code/remote-factory/factory/lumen
 uv pip uninstall verl
-uv pip install -e ~/verl
+git clone https://github.com/ash-ding/verl.git /tmp/verl
+uv pip install -e /tmp/verl
 ```
 
----
+### FlashInfer version mismatch
 
-## Files
+If you see `RuntimeError: flashinfer-cubin version (X) does not match flashinfer version (Y)`, reinstall both at the same version with `--no-deps`:
+```bash
+uv pip uninstall flashinfer-python flashinfer-cubin
+uv pip install --no-deps "flashinfer-python==0.6.12" "flashinfer-cubin==0.6.12" \
+  --extra-index-url https://flashinfer.ai/whl/cu129/torch2.11/
+```
 
-- **pyproject.toml** - Project dependencies and uv configuration
-- **preflight.py** - Environment validation
-- **train.py** - Main training entry point
-- **run_verl.py** - VERL training orchestration
-- **verl_integration/** - Custom VERL extensions
-- **env_specs/** - Verification and legacy requirements
+### Training silently fails (exit code 1, no traceback)
 
----
-
-## System Requirements
-
-- NVIDIA GPU with CUDA 12.9 toolkit + drivers (toolkit required for flash-attn compilation, drivers for PyTorch cu129 runtime)
-- Python 3.11 (installed in .venv)
-- ~8GB disk space (flash-attn compilation requires extra space)
-- 16GB+ RAM recommended
-- 8+ GPUs recommended for distributed training
+Stale checkpoints from a previously failed run can cause VERL to silently exit. Delete the checkpoint directory and retry:
+```bash
+rm -rf <project>/checkpoints/lumen
+```
 
 ---
 
 ## Workflow Architecture
 
 ```
-Preflight → Context Agent → RL Training → Check Gate
-(Validate)  (Gen prompts)    (VERL+vLLM)  (Iterate/Finish)
+Preflight -> Context Agent -> RL Training -> Check Gate
+(Validate)   (Gen prompts)    (VERL+vLLM)   (Iterate/Finish)
 ```
 
 1. **Preflight** - Validates environment, detects GPUs, resolves config
@@ -209,17 +229,15 @@ Preflight → Context Agent → RL Training → Check Gate
 
 ---
 
-## Development
+## Files
 
-```bash
-# Run tests
-pytest factory/workflow/contributed/lumen/test_workflow.py -v
-pytest tests/test_lumen_*.py -v
-
-# Update dependencies
-# Edit pyproject.toml, then:
-uv pip install -e . --refresh
-```
+- **requirements.txt** - Python dependencies (mirrors Discover's requirements-base.txt)
+- **pyproject.toml** - Project metadata and uv configuration
+- **preflight.py** - Environment validation
+- **train.py** - Main training entry point
+- **run_verl.py** - VERL training orchestration
+- **verl_integration/** - Custom VERL extensions (agent loop, reward, data source)
+- **env_specs/** - Environment verification scripts
 
 ---
 

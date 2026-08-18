@@ -80,7 +80,8 @@ def workflow() -> Workflow:
         id="setup",
         command=(
             "cd {project_path} && "
-            # Preflight runs in refactory env (checks if lumen venv exists)
+            # Pass resolved LUMEN_PYTHON so preflight finds the correct venv
+            f"LUMEN_PYTHON={_LUMEN_PYTHON} "
             f"python3 {_LUMEN_ROOT}/preflight.py --project-path {{project_path}} && "
             # SOTA update runs in lumen env (may need numpy/scientific libs)
             f"TASK=$({_LUMEN_PYTHON} -c \""
