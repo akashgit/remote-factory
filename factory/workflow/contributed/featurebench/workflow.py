@@ -1,13 +1,12 @@
 """FeatureBench mode — hybrid host/container execution pipeline.
 
-6-node pipeline: researcher → strategist → adversarial_tester → builder → gate_tests → archivist
-TDD pattern: adversarial_tester writes validation tests from the spec first,
-builder implements until gate_tests passes them.
+7-node pipeline: researcher → strategist → stub_filler → adversarial_tester → builder → gate_tests → archivist
 
-The adversarial_tester writes validation tests on the host from the problem
-statement alone (before any code is written), then the builder implements the
-feature targeting those tests. gate_tests runs the pre-written tests inside
-the container via docker exec. RELOOP from gate_tests → builder (max 3).
+The stub_filler finds all masked/blank function bodies across the codebase and
+fills them with minimal working implementations. Then the adversarial_tester
+writes validation tests from the spec, and the builder implements the main
+features. gate_tests runs the pre-written tests inside the container via
+docker exec. RELOOP from gate_tests → builder (max 3).
 """
 
 from typing import Any
@@ -124,6 +123,47 @@ def workflow() -> Workflow:
         ],
     )
 
+    # ── Stub filler: fill all masked function bodies (HOST) ─────────
+
+    nodes["stub_filler"] = AgentNode(
+        id="stub_filler",
+        role=AgentRole.BUILDER,
+        timeout=600,
+        reads={".factory/reviews/researcher-latest.md", ".factory/strategy/current.md"},
+        writes={".factory/reviews/stub-filler-latest.md"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/stub-filler-latest.md", must_exist=True),
+        ],
+        prompt_template=(
+            "You are a stub filler for the FeatureBench benchmark. Your ONLY job is to\n"
+            "find and fill ALL masked/blank function bodies in the codebase.\n\n"
+            "The benchmark masks code by replacing function bodies with blank lines.\n"
+            "These empty functions break the entire dependency chain — a blank __init__,\n"
+            "a blank data() method, a blank check_anyuri() — and cause cascading failures.\n\n"
+            "Steps:\n"
+            "1. Read .factory/reviews/researcher-latest.md for the list of source files.\n"
+            "2. Open EVERY source file (.py) in the project. For each file, look for\n"
+            "   functions/methods whose body is just blank lines or pass where real\n"
+            "   logic should be. Signs of a masked function:\n"
+            "   - def/class followed by blank lines then the next def/class\n"
+            "   - A docstring followed by blank lines with no code\n"
+            "   - An __init__ that doesn't set any attributes\n"
+            "   - A method whose name implies behavior (write, check, parse, convert)\n"
+            "     but has no implementation\n"
+            "3. For EACH masked function, implement a minimal working version:\n"
+            "   - Infer behavior from: function name, parameter names/types, docstring,\n"
+            "     how it's called elsewhere in the codebase, similar non-masked functions\n"
+            "   - Keep implementations small (5-15 lines) — just enough to not break callers\n"
+            "   - Do NOT over-engineer — the main builder will handle spec features\n"
+            "4. Commit: git add -A && git commit -m 'fill masked function stubs'\n\n"
+            "ANTI-CHEATING COMPLIANCE:\n"
+            "- Do NOT access /usr/local/lib/python* paths\n"
+            "- Do NOT read test files\n"
+            "- Infer behavior from context only\n\n"
+            "Write a list of all functions you filled to .factory/reviews/stub-filler-latest.md."
+        ),
+    )
+
     # ── Adversarial tester: write validation tests from spec (HOST) ──
 
     nodes["adversarial_tester"] = AgentNode(
@@ -137,46 +177,34 @@ def workflow() -> Workflow:
         ],
         prompt_template=(
             "You are a TDD validation test writer for the FeatureBench benchmark.\n\n"
-            "Your job is to READ the problem statement, SCAN the codebase for masked\n"
-            "functions, and WRITE comprehensive pytest tests BEFORE any code is\n"
-            "implemented. The builder will use these tests as a target.\n"
+            "Your job is to READ the problem statement and WRITE comprehensive pytest tests\n"
+            "BEFORE any code is implemented. The builder will use these tests as a target.\n"
             "You do NOT run the tests — the gate_tests node runs them inside the container\n"
             "via docker exec.\n\n"
             "Steps:\n"
             "1. Read problem_statement.md for interface specs (function signatures, import\n"
-            "   paths, types, expected behavior).\n"
+            "   paths, types, expected behavior). This is your ONLY source of truth for\n"
+            "   what the implementation should do.\n"
             "2. Read .factory/reviews/researcher-latest.md for repo structure understanding\n"
-            "   and the researcher's analysis of masked functions.\n"
-            "3. CRITICAL — Scan the codebase for masked/blank function bodies. The benchmark\n"
-            "   masks code by replacing function bodies with blank lines (empty bodies where\n"
-            "   code should be). These masked helpers are in utility files, parsers, writers,\n"
-            "   row accessors, etc. — NOT just the main interfaces from the problem statement.\n"
-            "   Run: grep -rn 'def ' --include='*.py' | head -200\n"
-            "   Then open files that the researcher identified as containing masked functions.\n"
-            "   Look for functions whose body is just blank lines or 'pass' where real logic\n"
-            "   should be. These are hidden dependencies that the builder MUST also implement.\n"
-            "4. mkdir -p .factory/validation_tests/\n"
-            "5. Write .factory/validation_tests/test_spec_compliance.py with comprehensive\n"
-            "   pytest tests covering BOTH:\n"
-            "   A) Every interface spec from problem_statement.md:\n"
-            "      - Import paths matching the interface specs exactly\n"
-            "      - Function signature tests (correct parameters, return types)\n"
-            "      - Happy-path tests for each specified interface\n"
-            "      - Edge-case tests (empty input, None, boundary values)\n"
-            "   B) Masked helper functions found in step 3:\n"
-            "      - Import and call each masked helper function\n"
-            "      - Test that they return non-None / non-trivial results\n"
-            "      - Test them with representative inputs based on their signatures\n"
-            "      - These helpers are often in utility modules, XML writers, data parsers,\n"
-            "        row/table accessors, strategy implementations, etc.\n"
-            "   All tests must use test_ prefix and be self-contained.\n\n"
+            "   (existing packages, module layout, naming conventions).\n"
+            "3. mkdir -p .factory/validation_tests/\n"
+            "4. Write .factory/validation_tests/test_spec_compliance.py with as many\n"
+            "   comprehensive pytest tests as possible covering EVERY interface spec\n"
+            "   from problem_statement.md:\n"
+            "   - Import paths matching the interface specs exactly\n"
+            "   - test_ prefix for all test functions\n"
+            "   - Function signature tests (correct parameters, return types)\n"
+            "   - Happy-path tests for each specified interface\n"
+            "   - Edge-case tests (empty input, None, boundary values)\n"
+            "   - Type checking tests where specs define types\n"
+            "   - Self-contained tests (no fixtures depending on external state)\n\n"
             "IMPORTANT:\n"
             "- Do NOT run pytest — the gate runs tests inside the container\n"
             "- Do NOT modify any source code — you are writing tests only\n"
             "- Do NOT reference builder code, git diff, or builder-latest.md\n"
             "  (the builder has NOT run yet — this is TDD)\n\n"
-            "Write a summary to .factory/reviews/adversarial-qa.md listing ALL tests\n"
-            "written — both interface spec tests and masked helper tests."
+            "Write a summary to .factory/reviews/adversarial-qa.md listing the tests\n"
+            "written and what interface spec each validates."
         ),
     )
 
@@ -214,13 +242,9 @@ def workflow() -> Workflow:
             "   .factory/validation_tests/test_spec_compliance.py. The gate_tests node\n"
             "   will run them after you commit. Focus on making your implementation pass\n"
             "   these tests.\n\n"
-            "6. BEFORE implementing, scan the ENTIRE codebase for masked function bodies.\n"
-            "   The benchmark replaces function bodies with blank lines. Search for functions\n"
-            "   whose body is empty/blank where real logic should be — especially in utility\n"
-            "   modules, XML writers/parsers, data converters, row/table accessors, strategy\n"
-            "   implementations, and helper files. These are NOT listed in problem_statement.md\n"
-            "   but MUST be implemented for the main interfaces to work. Implement ALL masked\n"
-            "   functions you find, not just the ones the validation tests directly test.\n\n"
+            "6. The stub_filler has already filled masked function bodies across the\n"
+            "   codebase. Check .factory/reviews/stub-filler-latest.md for what was filled.\n"
+            "   If any filled stubs are too minimal, improve them as needed.\n\n"
             "7. If this is a RELOOP from gate_tests (test loop):\n"
             "   - Read .factory/reviews/gate-pytest-output.txt for the pytest failure output.\n"
             "     Each failure has a test name, error type, and traceback. Fix the root cause\n"
@@ -241,6 +265,7 @@ def workflow() -> Workflow:
             ".factory/strategy/current.md",
             ".factory/validation_tests/test_spec_compliance.py",
             ".factory/reviews/adversarial-qa.md",
+            ".factory/reviews/stub-filler-latest.md",
         },
         writes={".factory/reviews/builder-latest.md"},
         post_checks=[
@@ -301,7 +326,8 @@ def workflow() -> Workflow:
 
     edges = [
         Edge(source="researcher", target="strategist"),
-        Edge(source="strategist", target="adversarial_tester"),
+        Edge(source="strategist", target="stub_filler"),
+        Edge(source="stub_filler", target="adversarial_tester"),
         Edge(source="adversarial_tester", target="builder"),
         Edge(source="builder", target="gate_tests"),
         Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
