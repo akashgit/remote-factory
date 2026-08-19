@@ -250,7 +250,7 @@ def workflow() -> Workflow:
             "Read:\n"
             "- .factory/strategy/current.md (implementation plan)\n"
             "- .factory/reviews/builder-latest.md (what was built)\n"
-            "- .factory/reviews/health-check.md (test results)\n\n"
+            "- .factory/reviews/adversarial-qa.md (test results)\n\n"
             "Record:\n"
             "1. Task outcome: resolved or not, number of builder iterations needed\n"
             "2. Successful strategies: what worked well\n"
