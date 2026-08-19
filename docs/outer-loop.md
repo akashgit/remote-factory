@@ -215,6 +215,7 @@ The outer loop supports multiple benchmark types beyond FeatureBench. Each bench
 | `featurebench` | `pytest` | `directory` | Feature implementation — partial credit scoring |
 | `swebench` | `exit_code` | `git-repo` | SWE-bench bug fix — binary pass/fail |
 | `aime` | `exact_match` | `question-answer` | AIME math competition — exact answer match |
+| `forecastbench` | `json` | `question-answer` | ForecastBench — dynamic forecasting with Brier score |
 
 ### Test Output Formats
 
@@ -265,6 +266,47 @@ method = "metric_extraction"        # partial_credit | binary | metric_extractio
    ```
 
 3. The outer loop auto-resolves `test_format`, `test_command`, and `instance_format` from your TOML. You can override any field via CLI flags.
+
+### Working with Your Benchmark
+
+Once registered, your benchmark integrates with the full outer loop pipeline:
+
+**List available benchmarks:**
+```bash
+factory outer-loop list-benchmarks
+```
+
+**Calibrate with your benchmark:**
+```bash
+factory outer-loop calibrate /path/to/factory \
+  --benchmark my_bench \
+  --project-dir /path/to/instances \
+  --population-size 4
+```
+
+**Override config settings via CLI:**
+```bash
+factory outer-loop calibrate /path/to/factory \
+  --benchmark my_bench \
+  --test-format json \
+  --test-command 'python custom_eval.py' \
+  --population-size 4
+```
+
+**Prepare instances from config:**
+```bash
+factory outer-loop prep-instances my_bench \
+  --instances inst_001 inst_002 inst_003 \
+  --output-dir /tmp/my-instances
+```
+
+The outer loop auto-resolves test_format, test_command, metric_path, instance_format, seed_workflow, and prep_command from your TOML config. CLI flags override any config value.
+
+**Scoring formats:**
+- `pytest`: Partial credit — passed/(passed+failed)
+- `exit_code`: Binary — exit 0 = 1.0, non-zero = 0.0
+- `json`: Extract any metric via dotted path (e.g. `stats.accuracy`, `brier_index`)
+- `exact_match`: Compare stdout to expected_answer.txt (supports regex extraction)
 
 ### Instance Preparation
 
