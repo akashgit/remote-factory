@@ -43,17 +43,6 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
         ("Run", "eval", True),
         ("Archive", "archive", False),
     ],
-    "build": [
-        ("Research", "research", False),
-        ("Plan", "strategize", False),
-        ("Build", "build", True),
-        ("Verify", "eval", False),
-        ("Archive", "archive", False),
-    ],
-    "discover": [
-        ("Detect", "detect", False),
-        ("Discover", "discover", False),
-    ],
     "meta": [
         ("Observe", "research", False),
         ("Hypothesize", "strategize", False),
@@ -86,19 +75,6 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "code_reviewer": "Run",
         "adversarial_tester": "Run",
         "archivist": "Archive",
-    },
-    "build": {
-        "researcher": "Research",
-        "strategist": "Plan",
-        "builder": "Build",
-        "qa": "Verify",
-        "health_checker": "Verify",
-        "code_reviewer": "Verify",
-        "adversarial_tester": "Verify",
-        "archivist": "Archive",
-    },
-    "discover": {
-        "researcher": "Discover",
     },
     "meta": {
         "researcher": "Observe",
