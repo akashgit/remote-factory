@@ -2650,7 +2650,7 @@ class TestFromPlanFlag:
 
     def test_from_plan_requires_design_mode(self, capsys):
         """--from-plan without --mode design is rejected."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--from-plan", "plan.md"])
+        result = main(["ceo", "/some/path", "--mode", "founder", "--from-plan", "plan.md"])
         assert result == 1
         assert "--from-plan requires --mode design" in capsys.readouterr().err
 
