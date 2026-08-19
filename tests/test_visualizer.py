@@ -194,7 +194,7 @@ class TestUpdateState:
     def test_incremental_update(self):
         state = FactoryLiveState()
         state = update_state(state, _event("detect", data={"state": "new"}))
-        assert state.current_phase == "Research"
+        assert state.current_phase == "Observe"
         assert state.current_mode == "Design"
 
         state = update_state(state, _event("agent.started", agent="builder", data={"task": "work"}))
