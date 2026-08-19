@@ -612,7 +612,7 @@ class TestBuildContinuationTask:
         task = _build_continuation_task(gap, cycle_state)
         assert "## CRITICAL: Mode Override" in task
         assert "CONTINUATION" in task
-        assert "BUILD" in task
+        assert "DESIGN" in task
         assert "Do NOT re-detect mode" in task
         assert cycle_state.cycle_id in task
 
