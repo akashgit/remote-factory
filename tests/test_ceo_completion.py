@@ -122,7 +122,7 @@ class TestBudgetAllowsRespawn:
 class TestDetectIncomplete:
     """Tests for _detect_incomplete()."""
 
-    def test_build_incomplete_no_eval_profile(self, tmp_path: Path) -> None:
+    def test_design_incomplete_no_eval_profile(self, tmp_path: Path) -> None:
         """Build mode without strategy needs eval profile."""
         from factory.ceo_completion import _detect_incomplete
 
@@ -154,7 +154,7 @@ class TestDetectIncomplete:
         gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
 
-    def test_improve_incomplete_when_missing_verdicts(self, tmp_path: Path) -> None:
+    def test_design_incomplete_when_missing_verdicts(self, tmp_path: Path) -> None:
         """Improve mode is incomplete when verdict count < hypothesis count."""
         from factory.ceo_completion import _detect_incomplete
 
@@ -175,7 +175,7 @@ class TestDetectIncomplete:
         assert gap.planned == 3
         assert gap.completed == 1
         assert gap.next_item == "H2"
-        assert "improve.incomplete" in gap.reason
+        assert "design.incomplete" in gap.reason
 
     def test_improve_no_strategy_returns_none(self, tmp_path: Path) -> None:
         """No strategy file means nothing planned — not incomplete."""
@@ -197,8 +197,8 @@ class TestDetectIncomplete:
         gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
 
-    def test_discover_incomplete_when_no_profile(self, tmp_path: Path) -> None:
-        """Discover mode is incomplete without eval_profile.json."""
+    def test_design_incomplete_when_no_eval_profile_discover(self, tmp_path: Path) -> None:
+        """Design mode is incomplete without eval_profile.json when no hypotheses exist."""
         from factory.ceo_completion import _detect_incomplete
 
         (tmp_path / ".factory").mkdir()
@@ -206,7 +206,7 @@ class TestDetectIncomplete:
         gap = _detect_incomplete(tmp_path, "design")
         assert gap is not None
         assert gap.mode == "design"
-        assert "no eval_profile.json" in gap.reason
+        assert "no eval profile" in gap.reason
 
 
 class TestCountVerdictsWithResultsTsv:
@@ -521,11 +521,11 @@ class TestBuildContinuationTask:
             planned=5,
             completed=2,
             next_item="H3",
-            reason="improve.incomplete",
+            reason="design.incomplete",
         )
 
         task = _build_continuation_task(gap)
-        assert "Resume execution from hypothesis H3" in task
+        assert "Resume execution from H3" in task
         assert "do not re-plan" in task
         assert "Spawn Builder for H3" in task
         assert "2/5" in task
@@ -539,27 +539,27 @@ class TestBuildContinuationTask:
             planned=1,
             completed=0,
             next_item="eval_profile",
-            reason="discover.incomplete",
+            reason="design.incomplete",
         )
 
         task = _build_continuation_task(gap)
-        assert "Resume Design" in task or "design" in task.lower()
+        assert "design" in task.lower()
 
-    def test_build_continuation(self) -> None:
-        """Build mode continuation tells CEO to resume from next phase."""
+    def test_design_continuation_with_phases(self) -> None:
+        """Design mode continuation tells CEO to resume from next hypothesis."""
         from factory.ceo_completion import _build_continuation_task, IncompleteGap
 
         gap = IncompleteGap(
             mode="design",
             planned=6,
             completed=3,
-            next_item="Phase4",
-            reason="build.incomplete",
+            next_item="H4",
+            reason="design.incomplete",
         )
 
         task = _build_continuation_task(gap)
-        assert "Resume Build pipeline" in task
-        assert "Phase4" in task
+        assert "Resume execution from H4" in task
+        assert "3/6" in task
 
     def test_research_continuation(self) -> None:
         """Research mode continuation tells CEO to spawn Builder for next H."""
@@ -593,7 +593,7 @@ class TestBuildContinuationTask:
             planned=6,
             completed=3,
             next_item="Phase4",
-            reason="build.incomplete",
+            reason="design.incomplete",
         )
         cycle_state = create_cycle_state("design", "Build a CLI")
 
