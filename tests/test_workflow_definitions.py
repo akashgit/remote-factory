@@ -327,16 +327,13 @@ class TestAgentPool:
 class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) >= 13, f"Expected at least 13 workflows, got {len(all_wf)}"
+        assert len(all_wf) >= 9, f"Expected at least 9 workflows, got {len(all_wf)}"
         required = {
-            "build",
             "design",
-            "improve",
             "deep-qa",
             "deep-research",
             "research",
             "meta",
-            "discover",
             "review",
             "refine",
             "create",
@@ -375,7 +372,7 @@ class TestStudyWorkflow:
         wf = study_standalone_workflow()
         assert wf.trigger is not None
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "study"})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.NO_REPO, {"mode": "study"})
 
     def test_terminal(self) -> None:
@@ -417,7 +414,9 @@ class TestStudyWorkflow:
         assert "{project_path}/graph.json" in prompt, (
             "prompt must reference graph.json with {project_path} prefix"
         )
-        assert "NOT inside `.factory/`" in prompt, "prompt must clarify graph.json is not in .factory/"
+        assert "NOT inside `.factory/`" in prompt, (
+            "prompt must clarify graph.json is not in .factory/"
+        )
 
     def test_concat_study_writes_combined(self) -> None:
         wf = study_standalone_workflow()
@@ -472,7 +471,7 @@ class TestCreateStructure:
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "create"})
         assert wf.trigger(ProjectState.NO_REPO, {"mode": "create"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
 
     def test_create_name(self) -> None:
         wf = create_workflow()
@@ -1017,7 +1016,7 @@ class TestFounderWorkflow:
         assert wf.trigger is not None
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.NO_REPO, {"mode": "founder"})
 
     def test_founder_name(self) -> None:

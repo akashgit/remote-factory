@@ -19,13 +19,13 @@ class TestCycleState:
             write_cycle_state,
         )
 
-        state = create_cycle_state("build", "Build a CLI tool")
+        state = create_cycle_state("design", "Build a CLI tool")
         write_cycle_state(tmp_path, state)
 
         loaded = read_cycle_state(tmp_path)
         assert loaded is not None
         assert loaded.cycle_id == state.cycle_id
-        assert loaded.mode == "build"
+        assert loaded.mode == "design"
         assert loaded.initial_prompt == "Build a CLI tool"
         assert loaded.respawns == 0
 
@@ -44,7 +44,7 @@ class TestCycleState:
             write_cycle_state,
         )
 
-        state = create_cycle_state("improve")
+        state = create_cycle_state("design")
         write_cycle_state(tmp_path, state)
         assert read_cycle_state(tmp_path) is not None
 
@@ -73,7 +73,7 @@ class TestCycleState:
         state_data = {
             "cycle_id": "old123",
             "started_at": old_time.isoformat(),
-            "mode": "build",
+            "mode": "design",
             "initial_prompt": "",
             "respawns": 5,
         }
@@ -98,7 +98,7 @@ class TestCycleState:
         from factory.ceo_completion import create_cycle_state, write_cycle_state, read_cycle_state
 
         long_prompt = "x" * 5000
-        state = create_cycle_state("build", long_prompt)
+        state = create_cycle_state("design", long_prompt)
         write_cycle_state(tmp_path, state)
 
         loaded = read_cycle_state(tmp_path)
@@ -128,9 +128,9 @@ class TestDetectIncomplete:
 
         (tmp_path / ".factory").mkdir()
 
-        gap = _detect_incomplete(tmp_path, "build")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is not None
-        assert gap.mode == "build"
+        assert gap.mode == "design"
         assert gap.next_item == "discovery"
         assert "no eval profile" in gap.reason
 
@@ -151,7 +151,7 @@ class TestDetectIncomplete:
             exp_dir.mkdir(parents=True)
             (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
 
-        gap = _detect_incomplete(tmp_path, "improve")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
 
     def test_improve_incomplete_when_missing_verdicts(self, tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ class TestDetectIncomplete:
         exp_dir.mkdir(parents=True)
         (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
 
-        gap = _detect_incomplete(tmp_path, "improve")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is not None
         assert gap.planned == 3
         assert gap.completed == 1
@@ -183,7 +183,7 @@ class TestDetectIncomplete:
 
         (tmp_path / ".factory").mkdir()
 
-        gap = _detect_incomplete(tmp_path, "improve")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
 
     def test_discover_complete_when_profile_exists(self, tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ class TestDetectIncomplete:
         factory_dir.mkdir()
         (factory_dir / "eval_profile.json").write_text('{"dimensions": []}')
 
-        gap = _detect_incomplete(tmp_path, "discover")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
 
     def test_discover_incomplete_when_no_profile(self, tmp_path: Path) -> None:
@@ -203,9 +203,9 @@ class TestDetectIncomplete:
 
         (tmp_path / ".factory").mkdir()
 
-        gap = _detect_incomplete(tmp_path, "discover")
+        gap = _detect_incomplete(tmp_path, "design")
         assert gap is not None
-        assert gap.mode == "discover"
+        assert gap.mode == "design"
         assert "no eval_profile.json" in gap.reason
 
 
@@ -390,7 +390,7 @@ class TestDetectIncompleteWithTimestampFiltering:
 
         # Current cycle started at 10:00 on Apr 29 — only 1 verdict should count
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
-        gap = _detect_incomplete(tmp_path, "improve", cycle_started_at=cycle_start)
+        gap = _detect_incomplete(tmp_path, "design", cycle_started_at=cycle_start)
 
         # Should be incomplete: 2 hypotheses, only 1 current-cycle verdict
         assert gap is not None
@@ -420,7 +420,7 @@ class TestDetectIncompleteWithTimestampFiltering:
         )
 
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
-        gap = _detect_incomplete(tmp_path, "improve", cycle_started_at=cycle_start)
+        gap = _detect_incomplete(tmp_path, "design", cycle_started_at=cycle_start)
 
         # Should be complete: 2 hypotheses, 2 current-cycle verdicts
         assert gap is None
@@ -447,7 +447,7 @@ class TestDetectIncompleteWithTimestampFiltering:
         )
 
         cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
-        gap = _detect_incomplete(tmp_path, "build", cycle_started_at=cycle_start)
+        gap = _detect_incomplete(tmp_path, "design", cycle_started_at=cycle_start)
 
         # Should be incomplete: 3 phases, only 1 current-cycle verdict
         assert gap is not None
@@ -517,7 +517,7 @@ class TestBuildContinuationTask:
         from factory.ceo_completion import _build_continuation_task, IncompleteGap
 
         gap = IncompleteGap(
-            mode="improve",
+            mode="design",
             planned=5,
             completed=2,
             next_item="H3",
@@ -535,7 +535,7 @@ class TestBuildContinuationTask:
         from factory.ceo_completion import _build_continuation_task, IncompleteGap
 
         gap = IncompleteGap(
-            mode="discover",
+            mode="design",
             planned=1,
             completed=0,
             next_item="eval_profile",
@@ -543,14 +543,14 @@ class TestBuildContinuationTask:
         )
 
         task = _build_continuation_task(gap)
-        assert "Resume Discovery" in task or "discover" in task.lower()
+        assert "Resume Design" in task or "design" in task.lower()
 
     def test_build_continuation(self) -> None:
         """Build mode continuation tells CEO to resume from next phase."""
         from factory.ceo_completion import _build_continuation_task, IncompleteGap
 
         gap = IncompleteGap(
-            mode="build",
+            mode="design",
             planned=6,
             completed=3,
             next_item="Phase4",
@@ -589,13 +589,13 @@ class TestBuildContinuationTask:
         )
 
         gap = IncompleteGap(
-            mode="build",
+            mode="design",
             planned=6,
             completed=3,
             next_item="Phase4",
             reason="build.incomplete",
         )
-        cycle_state = create_cycle_state("build", "Build a CLI")
+        cycle_state = create_cycle_state("design", "Build a CLI")
 
         task = _build_continuation_task(gap, cycle_state)
         assert "## CRITICAL: Mode Override" in task
@@ -635,7 +635,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -684,7 +684,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -716,7 +716,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -745,7 +745,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -774,7 +774,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
                 max_respawns=2,  # Low cap for test
             )
@@ -809,7 +809,7 @@ class TestRunCeoWithCompletionGuard:
             result, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -837,7 +837,7 @@ class TestRunCeoWithCompletionGuard:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Build task",
-                mode="build",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -871,7 +871,7 @@ class TestRunCeoWithCompletionGuard:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Improve task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -919,7 +919,7 @@ class TestRunCeoWithCompletionGuard:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Build task",
-                mode="build",  # Start in build mode
+                mode="design",  # Start in design mode
                 runner_name="claude",
             )
 
@@ -960,7 +960,7 @@ class TestRunCeoWithCompletionGuard:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Improve task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -1001,7 +1001,7 @@ class TestRunCeoWithCompletionGuard:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -1027,12 +1027,12 @@ class TestAutoDetectModeWithCycle:
         (tmp_path / ".git").mkdir()
 
         # Write in-flight cycle state for build mode
-        state = create_cycle_state("build", "Initial task")
+        state = create_cycle_state("design", "Initial task")
         write_cycle_state(tmp_path, state)
 
         # Even though project has no factory, should return build (from cycle)
         mode = _auto_detect_mode(tmp_path, has_prompt=False)
-        assert mode == "build"
+        assert mode == "design"
 
     def test_ignores_cycle_when_force_fresh(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores cycle.json when force_fresh=True."""
@@ -1043,12 +1043,12 @@ class TestAutoDetectModeWithCycle:
         (tmp_path / ".git").mkdir()
 
         # Write in-flight cycle state for build mode
-        state = create_cycle_state("build", "Initial task")
+        state = create_cycle_state("design", "Initial task")
         write_cycle_state(tmp_path, state)
 
         # With force_fresh, should detect from state (no_factory → discover)
         mode = _auto_detect_mode(tmp_path, has_prompt=False, force_fresh=True)
-        assert mode == "discover"
+        assert mode == "design"
 
     def test_detects_normally_when_no_cycle(self, tmp_path: Path) -> None:
         """_auto_detect_mode detects from project state when no cycle.json."""
@@ -1059,7 +1059,7 @@ class TestAutoDetectModeWithCycle:
 
         # No cycle state exists
         mode = _auto_detect_mode(tmp_path, has_prompt=False)
-        assert mode == "discover"  # no_factory state
+        assert mode == "design"  # no_factory state → design
 
     def test_detects_normally_when_cycle_stale(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores stale cycle.json."""
@@ -1076,7 +1076,7 @@ class TestAutoDetectModeWithCycle:
         state_data = {
             "cycle_id": "old123",
             "started_at": old_time.isoformat(),
-            "mode": "build",
+            "mode": "design",
             "initial_prompt": "",
             "respawns": 0,
         }
@@ -1084,7 +1084,7 @@ class TestAutoDetectModeWithCycle:
 
         # Should ignore stale cycle and detect from state
         mode = _auto_detect_mode(tmp_path, has_prompt=False)
-        assert mode == "discover"  # no_factory state
+        assert mode == "design"  # no_factory state → design
 
 
 class TestCeoPromptResearchMode:
@@ -1225,7 +1225,7 @@ class TestCeoCompletionBackgroundBypass:
             stdout, code = await run_ceo_with_completion_guard(
                 tmp_path,
                 "initial task",
-                mode="improve",
+                mode="design",
                 background=True,
             )
 
@@ -1245,7 +1245,7 @@ class TestPrintResumeHint:
         """Resume hint is printed to stderr when session.json exists."""
         from factory.ceo_completion import print_resume_hint, write_ceo_session_id
 
-        write_ceo_session_id(tmp_path, "abc-123", mode="improve")
+        write_ceo_session_id(tmp_path, "abc-123", mode="design")
         print_resume_hint(tmp_path)
 
         captured = capsys.readouterr()
@@ -1262,7 +1262,7 @@ class TestPrintResumeHint:
             write_ceo_session_id,
         )
 
-        write_ceo_session_id(tmp_path, "abc-123", mode="improve")
+        write_ceo_session_id(tmp_path, "abc-123", mode="design")
         delete_cycle_state(tmp_path)
         print_resume_hint(tmp_path)
 
@@ -1300,14 +1300,14 @@ class TestResumeHintInCompletionGuard:
         (strategy_dir / "current.md").write_text("#### H1: A\n")
         (tmp_path / ".factory" / "experiments").mkdir()
 
-        write_ceo_session_id(tmp_path, "test-session-id", mode="improve")
+        write_ceo_session_id(tmp_path, "test-session-id", mode="design")
         mock_invoke = AsyncMock(return_value=("Incomplete", 0))
 
         with patch("factory.agents.runner.invoke_agent", mock_invoke):
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
                 max_respawns=0,
             )
@@ -1329,14 +1329,14 @@ class TestResumeHintInCompletionGuard:
         exp_dir.mkdir(parents=True)
         (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
 
-        write_ceo_session_id(tmp_path, "test-session-id", mode="improve")
+        write_ceo_session_id(tmp_path, "test-session-id", mode="design")
         mock_invoke = AsyncMock(return_value=("Done", 0))
 
         with patch("factory.agents.runner.invoke_agent", mock_invoke):
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 
@@ -1354,14 +1354,14 @@ class TestResumeHintInCompletionGuard:
         (strategy_dir / "current.md").write_text("#### H1: A\n")
         (tmp_path / ".factory" / "experiments").mkdir()
 
-        write_ceo_session_id(tmp_path, "interrupt-session", mode="improve")
+        write_ceo_session_id(tmp_path, "interrupt-session", mode="design")
         mock_invoke = AsyncMock(return_value=("Interrupted", 130))
 
         with patch("factory.agents.runner.invoke_agent", mock_invoke):
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
             )
 

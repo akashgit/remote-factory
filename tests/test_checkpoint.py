@@ -28,7 +28,7 @@ def checkpoint_project(tmp_path: Path) -> Path:
 def sample_state() -> CheckpointState:
     """Return a sample CheckpointState for testing."""
     return CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=38,
         completed_agents=["researcher", "strategist"],
         pending_agents=["builder", "health_checker"],
@@ -46,7 +46,7 @@ def test_checkpoint_state_strict() -> None:
     """CheckpointState rejects extra fields."""
     with pytest.raises(Exception):
         CheckpointState(
-            mode="improve",
+            mode="design",
             active_experiment_id=None,
             completed_agents=[],
             pending_agents=[],
@@ -60,7 +60,7 @@ def test_checkpoint_state_strict() -> None:
 def test_checkpoint_state_nullable_fields() -> None:
     """CheckpointState allows None for optional fields."""
     state = CheckpointState(
-        mode="build",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=["researcher"],
@@ -75,7 +75,7 @@ def test_checkpoint_state_nullable_fields() -> None:
 def test_checkpoint_state_completed_hypotheses() -> None:
     """CheckpointState includes completed_hypotheses field."""
     state = CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=3,
         completed_agents=["researcher", "strategist"],
         pending_agents=["builder"],
@@ -90,7 +90,7 @@ def test_checkpoint_state_completed_hypotheses() -> None:
 def test_checkpoint_state_completed_hypotheses_default() -> None:
     """completed_hypotheses defaults to empty list for backwards compat."""
     state = CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=[],
@@ -170,7 +170,7 @@ def test_format_full(sample_state: CheckpointState) -> None:
 def test_format_empty_scores() -> None:
     """format_checkpoint omits eval scores line when empty."""
     state = CheckpointState(
-        mode="discover",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=[],
@@ -351,7 +351,7 @@ def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
 
     checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
     old_data = {
-        "mode": "improve",
+        "mode": "design",
         "active_experiment_id": None,
         "completed_agents": ["researcher"],
         "pending_agents": ["strategist"],

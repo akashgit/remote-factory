@@ -100,7 +100,7 @@ def summary_project(tmp_path: Path) -> Path:
     (factory / "events.jsonl").write_text(
         json.dumps({"type": "cycle.started", "timestamp": "2026-04-26T09:00:00Z",
                      "project": "summary-project", "agent": None,
-                     "data": {"cycle": 1, "mode": "improve"}}) + "\n"
+                     "data": {"cycle": 1, "mode": "design"}}) + "\n"
     )
 
     return project
@@ -211,7 +211,7 @@ async def test_session_scoping(summary_project: Path) -> None:
             "timestamp": "2026-04-26T11:30:00+00:00",
             "project": "summary-project",
             "agent": None,
-            "data": {"cycle": 2, "mode": "improve"},
+            "data": {"cycle": 2, "mode": "design"},
         }) + "\n")
 
     summary = await generate_summary(summary_project)
@@ -259,7 +259,7 @@ def test_format_output() -> None:
     summary = SessionSummary(
         project_name="test-project",
         generated_at=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
-        mode="improve",
+        mode="design",
         experiments_kept=[_make_record(id=1, verdict="keep")],
         experiments_reverted=[_make_record(id=2, verdict="revert", delta=-0.005)],
         experiments_errored=[],
@@ -290,7 +290,7 @@ def test_format_empty_kept() -> None:
     summary = SessionSummary(
         project_name="test",
         generated_at=datetime(2026, 4, 26, tzinfo=timezone.utc),
-        mode="improve",
+        mode="design",
         experiments_kept=[],
         experiments_reverted=[],
         experiments_errored=[],
@@ -312,7 +312,7 @@ def test_format_no_scores() -> None:
     summary = SessionSummary(
         project_name="test",
         generated_at=datetime(2026, 4, 26, tzinfo=timezone.utc),
-        mode="build",
+        mode="design",
         experiments_kept=[],
         experiments_reverted=[],
         experiments_errored=[],
@@ -338,7 +338,7 @@ async def test_save_creates_files(tmp_path: Path) -> None:
     summary = SessionSummary(
         project_name="save-project",
         generated_at=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
-        mode="improve",
+        mode="design",
         experiments_kept=[_make_record()],
         experiments_reverted=[],
         experiments_errored=[],
@@ -370,7 +370,7 @@ async def test_save_creates_reviews_dir(tmp_path: Path) -> None:
     summary = SessionSummary(
         project_name="no-reviews",
         generated_at=datetime(2026, 4, 26, tzinfo=timezone.utc),
-        mode="build",
+        mode="design",
         experiments_kept=[],
         experiments_reverted=[],
         experiments_errored=[],
@@ -413,7 +413,7 @@ def test_session_summary_strict() -> None:
         SessionSummary(
             project_name="test",
             generated_at=datetime(2026, 4, 26, tzinfo=timezone.utc),
-            mode="improve",
+            mode="design",
             experiments_kept=[],
             experiments_reverted=[],
             experiments_errored=[],

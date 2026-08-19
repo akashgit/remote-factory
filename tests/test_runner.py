@@ -74,7 +74,7 @@ class TestResolvePromptWithWorkflowMode:
         skill_dir = tmp_path / "skills" / "workflow-improve"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# Improve Workflow\n\nStep 1: study")
-        prompt = resolve_prompt("ceo", tmp_path, workflow_mode="improve")
+        prompt = resolve_prompt("ceo", tmp_path, workflow_mode="design")
         assert "# Workflow Playbook (improve)" in prompt
         assert "# Improve Workflow" in prompt
         assert "Step 1: study" in prompt
@@ -87,7 +87,7 @@ class TestResolvePromptWithWorkflowMode:
         skill_dir = tmp_path / "skills" / "workflow-improve"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# Improve Workflow\n\nStep 1: study")
-        prompt = resolve_prompt("researcher", tmp_path, workflow_mode="improve")
+        prompt = resolve_prompt("researcher", tmp_path, workflow_mode="design")
         assert "# Workflow Playbook" not in prompt
 
     def test_missing_skill_file_raises_error(self, tmp_path: Path) -> None:

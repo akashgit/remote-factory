@@ -5,38 +5,59 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-import structlog
 
-from factory.cli._helpers import DEPRECATED_MODES, CEO_MODES, RUN_MODES, warn_deprecated_mode
+from factory.cli._helpers import (
+    CEO_MODES,
+    DEAD_MODES,
+    DEPRECATED_MODES,
+    RUN_MODES,
+    warn_deprecated_mode,
+)
 
 
 EXPECTED_DEPRECATED = frozenset(
     {
-        "build",
-        "improve",
         "research",
         "meta",
-        "discover",
         "review",
         "refine",
-        "parallel-improve",
-        "interactive",
     }
 )
+
+EXPECTED_DEAD = {
+    "build": "design",
+    "improve": "design",
+    "discover": "design",
+    "interactive": "design",
+    "parallel-improve": "design",
+}
 
 
 def test_deprecated_modes_exact_set():
     assert DEPRECATED_MODES == EXPECTED_DEPRECATED
 
 
+def test_dead_modes_exact_map():
+    assert DEAD_MODES == EXPECTED_DEAD
+
+
 def test_deprecated_modes_subset_of_known_modes():
-    all_known = set(CEO_MODES) | set(RUN_MODES) | {"interactive", "refine", "review"}
+    all_known = set(CEO_MODES) | set(RUN_MODES) | {"refine", "review"}
     for mode in DEPRECATED_MODES:
         assert mode in all_known, f"{mode} is deprecated but not a known CLI mode"
 
 
+def test_dead_modes_not_in_ceo_or_run():
+    for mode in DEAD_MODES:
+        assert mode not in CEO_MODES, f"dead mode {mode} still in CEO_MODES"
+        assert mode not in RUN_MODES, f"dead mode {mode} still in RUN_MODES"
+        assert mode not in DEPRECATED_MODES, f"dead mode {mode} still in DEPRECATED_MODES"
+
+
 class TestWarnDeprecatedMode:
     def test_deprecated_mode_emits_structlog(self):
+        import structlog
+
         cfg = structlog.get_config()
         old_processors = cfg.get("processors", [])
         try:
@@ -48,29 +69,30 @@ class TestWarnDeprecatedMode:
                 orig_log = _helpers.log
                 _helpers.log = log
                 try:
-                    warn_deprecated_mode("build")
+                    warn_deprecated_mode("research")
                 finally:
                     _helpers.log = orig_log
             mock_warn.assert_called_once_with(
-                "deprecated_cli_mode", mode="build", replacement="design"
+                "deprecated_cli_mode", mode="research", replacement="design"
             )
         finally:
             structlog.configure(processors=old_processors)
 
     def test_deprecated_mode_prints_stderr(self, capsys):
         with patch("factory.cli._helpers.log"):
-            warn_deprecated_mode("build")
+            warn_deprecated_mode("research")
         captured = capsys.readouterr()
         assert "WARNING" in captured.err
-        assert "--mode build is deprecated" in captured.err
+        assert "--mode research is deprecated" in captured.err
         assert "--mode design instead" in captured.err
         assert "remains functional" in captured.err
 
-    def test_interactive_has_alias_note(self, capsys):
-        with patch("factory.cli._helpers.log"):
-            warn_deprecated_mode("interactive")
+    def test_dead_mode_does_not_warn(self, capsys):
+        with patch("factory.cli._helpers.log") as mock_log:
+            warn_deprecated_mode("build")
+        mock_log.warning.assert_not_called()
         captured = capsys.readouterr()
-        assert "alias for 'design'" in captured.err
+        assert captured.err == ""
 
     def test_create_not_deprecated(self, capsys):
         with patch("factory.cli._helpers.log") as mock_log:

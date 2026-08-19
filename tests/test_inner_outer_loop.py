@@ -306,7 +306,7 @@ class TestCheckpointSaveLoadFormat:
         (project / ".factory").mkdir()
 
         old_data = {
-            "mode": "improve",
+            "mode": "design",
             "active_experiment_id": None,
             "completed_agents": [],
             "pending_agents": [],

@@ -732,7 +732,7 @@ class TestCmdCeoMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             headless=False,
             bg=False,
             bg_agents=False,
@@ -789,7 +789,7 @@ class TestCmdCeoMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             headless=False,
             bg=False,
             bg_agents=False,
@@ -840,7 +840,7 @@ class TestCmdCeoMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             headless=False,
             bg=False,
             bg_agents=False,
@@ -880,7 +880,7 @@ class TestCmdRunMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             loop=False,
             focus="111 and 112",
             discover_only=False,
@@ -938,7 +938,7 @@ class TestCmdRunMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             loop=False,
             focus="42",
             discover_only=False,
@@ -991,7 +991,7 @@ class TestCmdRunMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             loop=False,
             focus="111 and 112",
             discover_only=False,
@@ -1109,7 +1109,7 @@ class TestCmdRunBacklogMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             loop=False,
             focus="111 and 112",
             discover_only=False,
@@ -1160,7 +1160,7 @@ class TestCmdRunBacklogMultiIssue:
         ns = argparse.Namespace(
             path="/tmp/fake",
             profile=None,
-            mode="improve",
+            mode="design",
             loop=False,
             focus="111, 112",
             discover_only=False,

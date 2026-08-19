@@ -277,7 +277,7 @@ class TestFormatElapsed:
 class TestModeAwarePhaseInference:
     def test_improve_researcher_sets_observe(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("agent.started", agent="researcher", data={"task": "study"}),
         ]
         state = infer_state(events)
@@ -285,7 +285,7 @@ class TestModeAwarePhaseInference:
 
     def test_improve_strategist_sets_hypothesize(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("agent.started", agent="strategist", data={"task": "plan"}),
         ]
         state = infer_state(events)
@@ -309,7 +309,7 @@ class TestModeAwarePhaseInference:
 
     def test_build_strategist_sets_plan(self):
         events = [
-            _event("cycle.started", data={"mode": "build"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("agent.started", agent="strategist", data={"task": "plan"}),
         ]
         state = infer_state(events)
@@ -332,7 +332,7 @@ class TestModeAwarePhaseInference:
 
     def test_hypothesis_number_increments(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
             _event("experiment.finalize", data={"exp_id": 1, "verdict": "keep"}),
             _event("experiment.begin", data={"exp_id": 2, "hypothesis": "H2"}),
@@ -343,15 +343,15 @@ class TestModeAwarePhaseInference:
 
     def test_hypothesis_number_resets_on_new_cycle(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
         ]
         state = infer_state(events)
         assert state.hypothesis_number == 0
 
     def test_to_dict_includes_mode_phases(self):
-        events = [_event("cycle.started", data={"mode": "improve"})]
+        events = [_event("cycle.started", data={"mode": "design"})]
         state = infer_state(events)
         d = state.to_dict()
         assert d["phases"] == ["Observe", "Hypothesize", "Build", "Review", "Eval", "Archive"]
@@ -374,19 +374,19 @@ class TestModeAwarePhaseInference:
 
 class TestModeAwarePhaseIndex:
     def test_improve_observe_index(self):
-        assert phase_index("Observe", mode="improve") == 0
+        assert phase_index("Observe", mode="design") == 0
 
     def test_improve_hypothesize_index(self):
-        assert phase_index("Hypothesize", mode="improve") == 1
+        assert phase_index("Hypothesize", mode="design") == 1
 
     def test_improve_research_not_found(self):
-        assert phase_index("Research", mode="improve") == -1
+        assert phase_index("Research", mode="design") == -1
 
     def test_generic_research_found(self):
         assert phase_index("Research", mode=None) == 2
 
     def test_completed_phases_mode_aware(self):
-        state = FactoryLiveState(current_phase="Build", current_mode="improve")
+        state = FactoryLiveState(current_phase="Build", current_mode="design")
         assert completed_phases(state) == ["Observe", "Hypothesize"]
 
     def test_completed_phases_generic(self):

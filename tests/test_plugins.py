@@ -13,7 +13,13 @@ from factory.plugins import (
 )
 
 
-def _make_ep(name: str, load_return=None, load_exc=None, dist_name: str | None = None, dist_version: str | None = "0.1.0"):
+def _make_ep(
+    name: str,
+    load_return=None,
+    load_exc=None,
+    dist_name: str | None = None,
+    dist_version: str | None = "0.1.0",
+):
     """Build a mock entry point."""
     ep = MagicMock()
     ep.name = name
@@ -60,6 +66,7 @@ class TestLoadPluginsValidPlugin:
 class TestLoadPluginsBrokenImport:
     def test_import_error_isolated(self):
         good_called = []
+
         def good_plugin(reg: PluginRegistry):
             good_called.append(True)
             reg.add_commands({"good": CommandSpec(handler=lambda a: 0, help="Works")})
@@ -134,10 +141,12 @@ class TestCollisionDetectionCommands:
 class TestCollisionWithBuiltinCommand:
     def test_builtin_command_skipped_with_warning(self):
         registry = PluginRegistry()
-        registry.add_commands({
-            "eval": CommandSpec(handler=lambda a: 0, help="Shadow builtin eval"),
-            "my-new-cmd": CommandSpec(handler=lambda a: 0, help="Legit plugin cmd"),
-        })
+        registry.add_commands(
+            {
+                "eval": CommandSpec(handler=lambda a: 0, help="Shadow builtin eval"),
+                "my-new-cmd": CommandSpec(handler=lambda a: 0, help="Legit plugin cmd"),
+            }
+        )
         assert "eval" not in registry.commands
         assert "my-new-cmd" in registry.commands
 
@@ -145,7 +154,7 @@ class TestCollisionWithBuiltinCommand:
 class TestCollisionDetectionModes:
     def test_collision_with_builtin_skipped(self):
         def plugin(reg: PluginRegistry):
-            reg.add_modes(["improve", "custom-mode"])
+            reg.add_modes(["design", "custom-mode"])
 
         registry = PluginRegistry()
         ep = _make_ep("mode-plugin", load_return=plugin)
@@ -153,7 +162,7 @@ class TestCollisionDetectionModes:
             mock_eps.return_value = MagicMock()
             mock_eps.return_value.select.return_value = [ep]
             load_plugins(registry)
-        assert "improve" not in registry.modes
+        assert "design" not in registry.modes
         assert "custom-mode" in registry.modes
 
 
@@ -161,7 +170,9 @@ class TestCmdPluginsOutput:
     def test_human_readable_format(self, capsys):
         results = [
             PluginLoadResult(name="my-plugin", status="loaded", version="1.0.0"),
-            PluginLoadResult(name="bad-plugin", status="failed", reason="Import error", version="0.1.0"),
+            PluginLoadResult(
+                name="bad-plugin", status="failed", reason="Import error", version="0.1.0"
+            ),
         ]
 
         registry = PluginRegistry()
@@ -237,6 +248,7 @@ class TestAddParserExtensionsApplied:
 
         ext_fn.assert_called_once()
         import argparse
+
         assert isinstance(ext_fn.call_args[0][0], argparse.ArgumentParser)
 
 
@@ -255,11 +267,28 @@ class TestCeoPreHookCalled:
             patch("factory.user_config.load_config"),
         ):
             mock_validate.return_value = (
-                "improve", False, False, False, None, None, None, None, False, None, False,
+                "design",
+                False,
+                False,
+                False,
+                None,
+                None,
+                None,
+                None,
+                False,
+                None,
+                False,
             )
             mock_resolve.return_value = (
-                "/tmp/proj", None, None, None,
-                None, False, False, None, None,
+                "/tmp/proj",
+                None,
+                None,
+                None,
+                None,
+                False,
+                False,
+                None,
+                None,
             )
             from factory.cli.ceo import cmd_ceo
 
@@ -271,15 +300,17 @@ class TestCeoPreHookCalled:
 
         hook.assert_called_once()
         call_args = hook.call_args[0]
-        assert call_args[0] == "improve"
+        assert call_args[0] == "design"
 
 
 class TestDeterministicLoadOrder:
     def test_sorted_by_dist_name(self):
         def plugin_c(reg: PluginRegistry):
             pass
+
         def plugin_a(reg: PluginRegistry):
             pass
+
         def plugin_b(reg: PluginRegistry):
             pass
 
@@ -297,6 +328,7 @@ class TestDeterministicLoadOrder:
 
 
 # ── helpers used by tests ──────────────────────────────────────
+
 
 def _cmd_plugins_text(results: list[PluginLoadResult], registry: PluginRegistry) -> None:
     if not results:
@@ -316,6 +348,7 @@ def _cmd_plugins_text(results: list[PluginLoadResult], registry: PluginRegistry)
 
 def _cmd_plugins_json(results: list[PluginLoadResult], registry: PluginRegistry) -> None:
     import dataclasses
+
     data = []
     for r in results:
         entry = dataclasses.asdict(r)
