@@ -26,7 +26,7 @@ PHASES = [
 
 # Mode-specific phase definitions: (display_name, builder_key, is_loop_phase)
 MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
-    "improve": [
+    "design": [
         ("Observe", "research", False),
         ("Hypothesize", "strategize", False),
         ("Build", "build", True),
@@ -66,7 +66,7 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
 }
 
 MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
+    "design": {
         "researcher": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
@@ -206,9 +206,9 @@ def infer_mode_from_artifacts(factory_dir: Path) -> str | None:
                 return "research"
         except (json.JSONDecodeError, OSError):
             pass
-        return "improve"
+        return "design"
     if (factory_dir / "eval_profile.json").exists():
-        return "discover"
+        return "design"
     return None
 
 

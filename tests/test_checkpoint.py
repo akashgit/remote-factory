@@ -114,7 +114,7 @@ def test_save_and_load(checkpoint_project: Path, sample_state: CheckpointState) 
     loaded = load_checkpoint(checkpoint_project)
     assert loaded is not None
     assert loaded == sample_state
-    assert loaded.mode == "improve"
+    assert loaded.mode == "design"
     assert loaded.active_experiment_id == 38
     assert loaded.completed_agents == ["researcher", "strategist"]
     assert loaded.pending_agents == ["builder", "health_checker"]

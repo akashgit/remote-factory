@@ -417,7 +417,7 @@ class TestInferModeFromArtifacts:
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
         (factory_dir / "config.json").write_text('{"goal":"test"}')
-        assert infer_mode_from_artifacts(factory_dir) == "improve"
+        assert infer_mode_from_artifacts(factory_dir) == "design"
 
     def test_research_from_target(self, tmp_path):
         factory_dir = tmp_path / ".factory"
@@ -431,7 +431,7 @@ class TestInferModeFromArtifacts:
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
         (factory_dir / "eval_profile.json").write_text('{"project_type":"python"}')
-        assert infer_mode_from_artifacts(factory_dir) == "discover"
+        assert infer_mode_from_artifacts(factory_dir) == "design"
 
     def test_none_from_empty(self, tmp_path):
         assert infer_mode_from_artifacts(tmp_path / ".factory") is None

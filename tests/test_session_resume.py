@@ -307,7 +307,7 @@ class TestSessionPersistence:
         assert result is not None
         assert result["session_id"] == "sid-full"
         assert result["interactive"] is False
-        assert result["mode"] == "improve"
+        assert result["mode"] == "design"
         assert "created" in result
 
     def test_read_ceo_session_nonexistent(self, tmp_path: Path) -> None:

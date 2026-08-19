@@ -925,7 +925,7 @@ class TestRunCeoWithCompletionGuard:
 
         assert call_count == 2
         # Both invocations should see the same mode
-        assert all(m == "build" for m in observed_modes)
+        assert all(m == "design" for m in observed_modes)
 
     async def test_respawn_increments_counter(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1012,7 +1012,7 @@ class TestRunCeoWithCompletionGuard:
         assert len(respawn_events) == 1
         assert "cycle_id" in respawn_events[0]["data"]
         assert "mode" in respawn_events[0]["data"]
-        assert respawn_events[0]["data"]["mode"] == "improve"
+        assert respawn_events[0]["data"]["mode"] == "design"
 
 
 class TestAutoDetectModeWithCycle:

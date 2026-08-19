@@ -197,7 +197,7 @@ async def test_needs_human_input(summary_project: Path) -> None:
 async def test_mode_from_events(summary_project: Path) -> None:
     """Mode is detected from events.jsonl."""
     summary = await generate_summary(summary_project)
-    assert summary.mode == "improve"
+    assert summary.mode == "design"
 
 
 async def test_session_scoping(summary_project: Path) -> None:
