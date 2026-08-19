@@ -9,7 +9,7 @@ timeout = 1800
 
 [instances]
 format = "git-repo"
-prep_command = "git clone {repo_url} {instance_dir} && cd {instance_dir} && git checkout {commit}"
+prep_command = "python -m swebench.harness.prepare --instance_id {instance_id} --testbed {instance_dir}"
 
 [seed_workflow]
 name = "improve"

@@ -25,7 +25,7 @@ from factory.outer_loop.evaluators.exact_match import ExactMatchEvaluator
 from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
 from factory.outer_loop.evaluators.json_evaluator import JSONEvaluator
 from factory.outer_loop.evaluators.pytest_evaluator import PytestEvaluator
-from factory.outer_loop.instance_prep import prepare_instances, validate_instance
+from factory.outer_loop.instance_prep import _needs_shell, prepare_instances, validate_instance
 from factory.outer_loop.models import SwarmConfig
 
 
@@ -370,6 +370,31 @@ class TestInstancePrep:
         assert len(prepared) == 2
         assert (prepared[0] / "src").is_dir()
 
+    def test_prepare_with_shell_operators(self, tmp_path: Path):
+        config = BenchmarkConfig(
+            name="test_shell",
+            instance_format="directory",
+            prep_command="mkdir -p {instance_dir}/src && touch {instance_dir}/src/ready.txt",
+        )
+        prepared = prepare_instances(config, ["s1"], tmp_path / "output")
+        assert len(prepared) == 1
+        assert (prepared[0] / "src" / "ready.txt").exists()
+
+    def test_needs_shell_detection(self) -> None:
+        assert _needs_shell("cmd1 && cmd2") is True
+        assert _needs_shell("cmd1 || cmd2") is True
+        assert _needs_shell("cmd1 ; cmd2") is True
+        assert _needs_shell("cmd1 | cmd2") is True
+        assert _needs_shell("simple-command --flag value") is False
+        assert _needs_shell("mkdir -p /some/path") is False
+
+    def test_swebench_prep_command_uses_supported_vars(self) -> None:
+        config = load_benchmark_config("swebench")
+        assert "{instance_id}" in config.prep_command
+        assert "{instance_dir}" in config.prep_command
+        assert "{repo_url}" not in config.prep_command
+        assert "{commit}" not in config.prep_command
+
     def test_prepare_question_answer_instances(self, tmp_path: Path):
         script = tmp_path / "setup.sh"
         script.write_text(
@@ -443,7 +468,8 @@ class TestE2ESWEBench:
         config = load_benchmark_config("swebench")
         assert config.test_format == "exit_code"
         assert config.instance_format == "git-repo"
-        assert "{repo_url}" in config.prep_command
+        assert "{instance_id}" in config.prep_command
+        assert "{instance_dir}" in config.prep_command
 
     def test_swebench_evaluator(self):
         ev = get_evaluator("exit_code")

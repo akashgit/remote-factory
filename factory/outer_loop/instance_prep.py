@@ -6,6 +6,7 @@ instance directories ready for the outer loop.
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -15,6 +16,13 @@ import structlog
 from factory.outer_loop.benchmark_config import BenchmarkConfig
 
 log = structlog.get_logger()
+
+_SHELL_OPERATORS_RE = re.compile(r"&&|\|\||[;|]")
+
+
+def _needs_shell(cmd: str) -> bool:
+    """Return True if cmd contains shell operators that require shell=True."""
+    return bool(_SHELL_OPERATORS_RE.search(cmd))
 
 
 def prepare_instances(
@@ -26,6 +34,7 @@ def prepare_instances(
 
     Expands template variables ({instance_id}, {instance_dir}) in prep_command,
     runs via subprocess, validates required files exist based on instance_format.
+    Uses shell=True when the command contains shell operators (&&, ||, ;, |).
 
     Returns list of successfully prepared instance directories.
     """
@@ -45,14 +54,16 @@ def prepare_instances(
                 "{instance_dir}", str(instance_dir)
             )
 
-            log.info("prep_instance", instance_id=instance_id, command=cmd)
+            use_shell = _needs_shell(cmd)
+            log.info("prep_instance", instance_id=instance_id, command=cmd, shell=use_shell)
             try:
                 result = subprocess.run(
-                    shlex.split(cmd),
+                    cmd if use_shell else shlex.split(cmd),
                     cwd=str(output_dir),
                     capture_output=True,
                     text=True,
                     timeout=300,
+                    shell=use_shell,
                 )
                 if result.returncode != 0:
                     log.error(

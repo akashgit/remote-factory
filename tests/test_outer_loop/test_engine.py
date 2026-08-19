@@ -152,6 +152,77 @@ class TestSwarmEngineSeed:
         ids = {i.id for i in pop.individuals}
         assert len(ids) == pop.size
 
+    def test_seed_uses_registry_workflow_when_seed_workflow_set(self) -> None:
+        """When config.seed_workflow names a registered workflow, seed() uses it."""
+        from unittest.mock import patch
+
+        registry_wf = Workflow(
+            name="registry-seed",
+            nodes={
+                "builder": AgentNode(
+                    id="builder", role=AgentRole.BUILDER,
+                    writes={".factory/reviews/builder-latest.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+        )
+
+        config = _make_config(population_size=2, designer_count=0, seed_workflow="improve")
+        evaluator = _make_deterministic_evaluator()
+        engine = SwarmEngine(config, evaluator)
+
+        with patch(
+            "factory.outer_loop.engine.WorkflowRegistry.get_workflow",
+            return_value=registry_wf,
+        ) as mock_get:
+            fallback_wf = _make_workflow()
+            pop = engine.seed(fallback_wf, config)
+            mock_get.assert_called_once_with("improve")
+
+        seed_ind = [i for i in pop.individuals if i.parent_id is None][0]
+        seed_data = Workflow.from_dict(seed_ind.workflow_data)  # type: ignore[arg-type]
+        assert seed_data.name == "registry-seed"
+
+    def test_seed_falls_back_when_seed_workflow_not_found(self) -> None:
+        """When seed_workflow is set but not found in registry, falls back to base_workflow."""
+        from unittest.mock import patch
+
+        config = _make_config(population_size=2, designer_count=0, seed_workflow="nonexistent")
+        evaluator = _make_deterministic_evaluator()
+        engine = SwarmEngine(config, evaluator)
+
+        with patch(
+            "factory.outer_loop.engine.WorkflowRegistry.get_workflow",
+            return_value=None,
+        ):
+            fallback_wf = _make_workflow()
+            pop = engine.seed(fallback_wf, config)
+
+        seed_ind = [i for i in pop.individuals if i.parent_id is None][0]
+        seed_data = Workflow.from_dict(seed_ind.workflow_data)  # type: ignore[arg-type]
+        assert seed_data.name == "test_evo"
+
+    def test_seed_ignores_empty_seed_workflow(self) -> None:
+        """When seed_workflow is empty, uses the passed-in base_workflow."""
+        from unittest.mock import patch
+
+        config = _make_config(population_size=2, designer_count=0, seed_workflow="")
+        evaluator = _make_deterministic_evaluator()
+        engine = SwarmEngine(config, evaluator)
+
+        with patch(
+            "factory.outer_loop.engine.WorkflowRegistry.get_workflow",
+        ) as mock_get:
+            fallback_wf = _make_workflow()
+            pop = engine.seed(fallback_wf, config)
+            mock_get.assert_not_called()
+
+        seed_ind = [i for i in pop.individuals if i.parent_id is None][0]
+        seed_data = Workflow.from_dict(seed_ind.workflow_data)  # type: ignore[arg-type]
+        assert seed_data.name == "test_evo"
+
 
 class TestSwarmEngineEvolve:
     def test_evolve_generation_returns_summary(self) -> None:

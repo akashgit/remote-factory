@@ -29,6 +29,7 @@ from factory.outer_loop.population import MAPElitesArchive, Population
 from factory.outer_loop.similarity import NoveltyFilter
 from factory.outer_loop.subset import FixedSubsetSelector, SubsetSelector
 from factory.workflow.primitives import Workflow
+from factory.workflow.registry import WorkflowRegistry
 
 if TYPE_CHECKING:
     pass
@@ -132,12 +133,24 @@ class SwarmEngine:
     ) -> Population:
         """Create the initial population from a base workflow.
 
+        If config.seed_workflow is set, looks up the workflow from
+        WorkflowRegistry and uses it instead of the passed-in base_workflow.
+        Falls back to base_workflow when seed_workflow is empty or not found.
+
         Slot 0: unmodified seed.
         Slots 1..N-designer_count: random mutations of seed.
         Last designer_count slots: from-scratch designs via DesignerAgent.
         """
         cfg = config or self._config
         pop = Population()
+
+        if cfg.seed_workflow:
+            registry_wf = WorkflowRegistry.get_workflow(cfg.seed_workflow)
+            if registry_wf is not None:
+                log.info("seed_workflow_from_registry", name=cfg.seed_workflow)
+                base_workflow = registry_wf
+            else:
+                log.warning("seed_workflow_not_found", name=cfg.seed_workflow)
 
         seed_ind = Population.make_individual(base_workflow, generation=0)
         pop.add(seed_ind)
