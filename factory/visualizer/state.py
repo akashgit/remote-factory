@@ -247,11 +247,11 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
     if event_type == "detect":
         detected = data.get("state", "")
         mode_map = {
-            "new": "Build",
-            "init": "Build",
-            "discovered": "Improve",
-            "running": "Improve",
-            "stale": "Improve",
+            "new": "Design",
+            "init": "Design",
+            "discovered": "Design",
+            "running": "Design",
+            "stale": "Design",
         }
         inferred = mode_map.get(detected)
         if inferred and not state.current_mode:
