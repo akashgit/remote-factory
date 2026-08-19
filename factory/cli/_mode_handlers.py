@@ -1,4 +1,5 @@
 """Mode-specific early-exit handlers for CEO commands (review, deep-qa)."""
+
 from __future__ import annotations
 
 import argparse
@@ -48,7 +49,9 @@ def _resolve_bg_agents(args: argparse.Namespace) -> bool:
     return bool(val and val.lower() in ("1", "true", "yes"))
 
 
-def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
+def _auto_detect_mode(
+    project_path: Path, has_prompt: bool = False, force_fresh: bool = False
+) -> str:
     """Detect the right mode based on project state.
 
     Checks for an in-flight cycle first — if one exists, returns its mode
@@ -58,33 +61,39 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
         project_path: Path to the project.
         has_prompt: True if a build spec is available.
         force_fresh: If True, ignores in-flight cycle and detects from scratch.
-
-    When a build spec is available (--prompt, idea file, or raw prompt),
-    no_factory routes to build (not discover).
     """
+    import structlog
+
     from factory.ceo_completion import read_cycle_state
+    from factory.cli._helpers import DEAD_MODES
+    from factory.cli._path_resolver import _has_research_target
     from factory.models import ProjectState
     from factory.state import detect_state
 
-    from factory.cli._path_resolver import _has_research_target
+    _log = structlog.get_logger()
 
     if not force_fresh:
         cycle_state = read_cycle_state(project_path)
         if cycle_state:
+            mode = cycle_state.mode
+            if mode in DEAD_MODES:
+                new_mode = DEAD_MODES[mode]
+                _log.warning("cycle_state.mode_migrated", old=mode, new=new_mode)
+                mode = new_mode
             print(
-                f"  In-flight cycle: {cycle_state.cycle_id} → mode: {cycle_state.mode} "
+                f"  In-flight cycle: {cycle_state.cycle_id} → mode: {mode} "
                 f"(respawns: {cycle_state.respawns})",
                 file=sys.stderr,
             )
-            return cycle_state.mode
+            return mode
 
     state = detect_state(project_path)
     mode_map = {
-        ProjectState.NO_REPO: "build",
-        ProjectState.REPO_INCOMPLETE: "build",
-        ProjectState.NO_FACTORY: "build" if has_prompt else "discover",
-        ProjectState.EVALS_PENDING_REVIEW: "discover",
-        ProjectState.HAS_FACTORY: "improve",
+        ProjectState.NO_REPO: "design",
+        ProjectState.REPO_INCOMPLETE: "design",
+        ProjectState.NO_FACTORY: "design",
+        ProjectState.EVALS_PENDING_REVIEW: "design",
+        ProjectState.HAS_FACTORY: "design",
     }
     mode = mode_map[state]
 
