@@ -786,6 +786,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#multi-benchmark-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Benchmark Support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Multi-Benchmark Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#built-in-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-output-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Output Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmark-config-toml-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmark Config TOML Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-custom-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Custom Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#working-with-your-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Working with Your Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instance-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Instance Preparation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1145,6 +1239,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#multi-benchmark-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-Benchmark Support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Multi-Benchmark Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#built-in-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-output-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Output Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmark-config-toml-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmark Config TOML Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-custom-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Custom Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#working-with-your-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Working with Your Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instance-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Instance Preparation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1242,7 +1430,7 @@
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="nt">"score"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.99</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
 </code></pre></div></p>
-<p>The <code>test_command</code> is benchmark-agnostic — any command that produces pytest-style output works. Set it during calibration with <code>--test-command</code>.</p>
+<p>The <code>test_command</code> is benchmark-agnostic. The <code>--test-format</code> flag controls how output is parsed. Set both during calibration, or let them auto-resolve from a benchmark TOML config.</p>
 <h3 id="isolation">Isolation<a class="headerlink" href="#isolation" title="Permanent link">&para;</a></h3>
 <p>Each candidate evaluation runs in an isolated git worktree of the benchmark instance:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>/tmp/benchmark-instance/           ← original (never modified)
@@ -1308,8 +1496,20 @@
 <td><code>SwarmConfig</code>, <code>Individual</code>, <code>EvalResult</code>, <code>OuterLoopState</code></td>
 </tr>
 <tr>
+<td><code>evaluators/</code></td>
+<td>Pluggable test output parsers: <code>pytest</code>, <code>exit_code</code>, <code>json</code>, <code>exact_match</code></td>
+</tr>
+<tr>
+<td><code>benchmark_config.py</code></td>
+<td>TOML-based benchmark config registry</td>
+</tr>
+<tr>
+<td><code>instance_prep.py</code></td>
+<td>Instance preparation and validation</td>
+</tr>
+<tr>
 <td><code>featurebench_evaluator.py</code></td>
-<td>pytest output parser for partial credit scoring</td>
+<td>pytest output parser for partial credit scoring (backward compat)</td>
 </tr>
 <tr>
 <td><code>featurebench_inner_loop.py</code></td>
@@ -1375,6 +1575,167 @@
 <a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>├── events.jsonl          # Per-generation metrics
 <a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>├── costs.jsonl           # Per-candidate cost tracking
 <a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>└── trajectory.jsonl      # Score trajectory over generations
+</code></pre></div>
+<h2 id="multi-benchmark-support">Multi-Benchmark Support<a class="headerlink" href="#multi-benchmark-support" title="Permanent link">&para;</a></h2>
+<p>The outer loop supports multiple benchmark types beyond FeatureBench. Each benchmark is defined as a TOML config file specifying the test format, test command, instance format, and seed workflow.</p>
+<h3 id="built-in-benchmarks">Built-in Benchmarks<a class="headerlink" href="#built-in-benchmarks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Test Format</th>
+<th>Instance Format</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>featurebench</code></td>
+<td><code>pytest</code></td>
+<td><code>directory</code></td>
+<td>Feature implementation — partial credit scoring</td>
+</tr>
+<tr>
+<td><code>swebench</code></td>
+<td><code>exit_code</code></td>
+<td><code>git-repo</code></td>
+<td>SWE-bench bug fix — binary pass/fail</td>
+</tr>
+<tr>
+<td><code>aime</code></td>
+<td><code>exact_match</code></td>
+<td><code>question-answer</code></td>
+<td>AIME math competition — exact answer match</td>
+</tr>
+<tr>
+<td><code>forecastbench</code></td>
+<td><code>json</code></td>
+<td><code>question-answer</code></td>
+<td>ForecastBench — dynamic forecasting with Brier score</td>
+</tr>
+</tbody>
+</table>
+<h3 id="test-output-formats">Test Output Formats<a class="headerlink" href="#test-output-formats" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Parsing Method</th>
+<th>Score Range</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pytest</code></td>
+<td>Parse pytest stdout for pass/fail counts</td>
+<td>0.0–1.0 (fraction)</td>
+</tr>
+<tr>
+<td><code>exit_code</code></td>
+<td>Binary from subprocess returncode (0 = pass)</td>
+<td>0.0 or 1.0</td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>Extract metric via configurable JSON path</td>
+<td>float</td>
+</tr>
+<tr>
+<td><code>exact_match</code></td>
+<td>Compare output to expected answer (optional regex)</td>
+<td>0.0 or 1.0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="benchmark-config-toml-schema">Benchmark Config TOML Schema<a class="headerlink" href="#benchmark-config-toml-schema" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">[meta]</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my_benchmark"</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"What this benchmark evaluates"</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="k">[test]</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"json"</span><span class="w">                     </span><span class="c1"># pytest | exit_code | json | exact_match</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"python run_eval.py"</span><span class="w">      </span><span class="c1"># shell command to run</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">600</span><span class="w">                       </span><span class="c1"># seconds</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">metric_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"accuracy"</span><span class="w">            </span><span class="c1"># for json format: dotted path to metric</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">answer_extraction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">""</span><span class="w">              </span><span class="c1"># for exact_match: regex to extract answer</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="k">[instances]</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="n">format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"directory"</span><span class="w">                </span><span class="c1"># directory | git-repo | question-answer</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="n">prep_command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"mkdir -p {instance_dir}/data"</span><span class="w">  </span><span class="c1"># template variables: {instance_id}, {instance_dir}</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="k">[seed_workflow]</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"improve"</span><span class="w">                    </span><span class="c1"># workflow to use as seed</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="k">[scoring]</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="n">method</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"metric_extraction"</span><span class="w">        </span><span class="c1"># partial_credit | binary | metric_extraction | exact_match</span>
+</code></pre></div>
+<h3 id="adding-a-custom-benchmark">Adding a Custom Benchmark<a class="headerlink" href="#adding-a-custom-benchmark" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create a TOML file in one of these locations (searched in order):</li>
+<li>Project-local: <code>.factory/benchmarks/my_bench.toml</code></li>
+<li>User-local: <code>~/.factory/benchmarks/my_bench.toml</code></li>
+<li>
+<p>Built-in: <code>benchmarks/configs/my_bench.toml</code></p>
+</li>
+<li>
+<p>Run calibration with your benchmark:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>calibrate<span class="w"> </span>/path/to/factory<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span>--benchmark<span class="w"> </span>my_bench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span>--project-dir<span class="w"> </span>/path/to/instance
+</code></pre></div></p>
+</li>
+<li>
+<p>The outer loop auto-resolves <code>test_format</code>, <code>test_command</code>, and <code>instance_format</code> from your TOML. You can override any field via CLI flags.</p>
+</li>
+</ol>
+<h3 id="working-with-your-benchmark">Working with Your Benchmark<a class="headerlink" href="#working-with-your-benchmark" title="Permanent link">&para;</a></h3>
+<p>Once registered, your benchmark integrates with the full outer loop pipeline:</p>
+<p><strong>List available benchmarks:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>list-benchmarks
+</code></pre></div></p>
+<p><strong>Calibrate with your benchmark:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>calibrate<span class="w"> </span>/path/to/factory<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>--benchmark<span class="w"> </span>my_bench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>--project-dir<span class="w"> </span>/path/to/instances<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>--population-size<span class="w"> </span><span class="m">4</span>
+</code></pre></div></p>
+<p><strong>Override config settings via CLI:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>calibrate<span class="w"> </span>/path/to/factory<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span>--benchmark<span class="w"> </span>my_bench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--test-format<span class="w"> </span>json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span>--test-command<span class="w"> </span><span class="s1">'python custom_eval.py'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span>--population-size<span class="w"> </span><span class="m">4</span>
+</code></pre></div></p>
+<p><strong>Prepare instances from config:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>prep-instances<span class="w"> </span>my_bench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>--instances<span class="w"> </span>inst_001<span class="w"> </span>inst_002<span class="w"> </span>inst_003<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>--output-dir<span class="w"> </span>/tmp/my-instances
+</code></pre></div></p>
+<p>The outer loop auto-resolves test_format, test_command, metric_path, instance_format, seed_workflow, and prep_command from your TOML config. CLI flags override any config value.</p>
+<p><strong>Scoring formats:</strong>
+- <code>pytest</code>: Partial credit — passed/(passed+failed)
+- <code>exit_code</code>: Binary — exit 0 = 1.0, non-zero = 0.0
+- <code>json</code>: Extract any metric via dotted path (e.g. <code>stats.accuracy</code>, <code>brier_index</code>)
+- <code>exact_match</code>: Compare stdout to expected_answer.txt (supports regex extraction)</p>
+<h3 id="instance-preparation">Instance Preparation<a class="headerlink" href="#instance-preparation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># List available benchmarks</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>list-benchmarks
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Prepare instances from config</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>prep-instances<span class="w"> </span>swebench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span>--instances<span class="w"> </span>django__django-12345<span class="w"> </span>flask__flask-67890<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span>--output-dir<span class="w"> </span>/tmp/instances
+</code></pre></div>
+<p>The <code>prep_command</code> template supports <code>{instance_id}</code> and <code>{instance_dir}</code> variables. Validation runs after preparation:
+- <code>directory</code>: checks directory exists
+- <code>git-repo</code>: checks <code>.git/</code> exists and runs <code>git fsck --quick</code>
+- <code>question-answer</code>: checks for <code>question.txt</code>/<code>question.md</code> and <code>answer.txt</code>/<code>expected.txt</code></p>
+<h3 id="cli-flags">CLI Flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>factory<span class="w"> </span>outer-loop<span class="w"> </span>calibrate<span class="w"> </span>&lt;project&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span>--benchmark<span class="w"> </span>swebench<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span>--test-format<span class="w"> </span>exit_code<span class="w"> </span><span class="se">\ </span><span class="w">        </span><span class="c1"># override test format from TOML</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span>--test-command<span class="w"> </span><span class="s2">"pytest -xvs"</span><span class="w"> </span><span class="se">\ </span><span class="w">   </span><span class="c1"># override test command</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span>--population-size<span class="w"> </span><span class="m">4</span>
 </code></pre></div>
 
 
