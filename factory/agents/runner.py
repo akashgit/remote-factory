@@ -257,6 +257,7 @@ async def invoke_agent(
     workflow_mode: str | None = None,
     settings_file: str | None = None,
     prompt_override: str | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -312,6 +313,7 @@ async def invoke_agent(
         session_id=session_id,
         resume_session_id=resume_session_id,
         project_path=project_path,
+        extra_env=extra_env or {},
         extras={
             "tmux_persist": tmux_persist,
             "background": background,

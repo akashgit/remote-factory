@@ -194,6 +194,7 @@ class BobRunner:
             cmd.append("--yolo")
 
         env = _make_env_with_bob_path()
+        env.update(request.extra_env)
         return cmd, env, []
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:

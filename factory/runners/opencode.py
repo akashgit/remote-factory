@@ -193,6 +193,7 @@ class OpenCodeRunner:
             cmd.append("--continue")
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        env.update(request.extra_env)
         return cmd, env, temp_files
 
     def build_interactive_command(
@@ -218,6 +219,7 @@ class OpenCodeRunner:
         cmd.append(str(request.cwd))
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        env.update(request.extra_env)
         return cmd, env, temp_files
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:

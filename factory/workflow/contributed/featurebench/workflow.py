@@ -1,16 +1,13 @@
-"""FeatureBench benchmark workflow — feature implementation pipeline for containerized evaluation.
+"""FeatureBench mode — hybrid host/container execution pipeline.
 
-4-node pipeline: study → builder → gate_verify → auto_merge
-RELOOP from gate_verify back to builder (max 3 iterations) on test failure.
+6-node pipeline: researcher → strategist → adversarial_tester → builder → gate_tests → archivist
+TDD pattern: adversarial_tester writes validation tests from the spec first,
+builder implements until gate_tests passes them.
 
-Designed for Harbor containers where:
-- Task instruction is at /tmp/task-instruction.md (detailed problem statement with
-  explicit interface definitions: function signatures, import paths, types)
-- Solutions must be directly callable modules matching the specified interface exactly
-- Evaluation uses fail-to-pass + pass-to-pass tests — ALL must pass for 'resolved'
-- Harbor's verifier is the FINAL authority on pass/fail
-- Harbor checks the MAIN branch for changes
-- No .factory/ infrastructure (no eval, no experiments, no deep-QA)
+The adversarial_tester writes validation tests on the host from the problem
+statement alone (before any code is written), then the builder implements the
+feature targeting those tests. gate_tests runs the pre-written tests inside
+the container via docker exec. RELOOP from gate_tests → builder (max 3).
 """
 
 from typing import Any
@@ -19,8 +16,8 @@ from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    ArtifactCheck,
     Edge,
-    FnNode,
     GateNode,
     VerdictType,
     Workflow,
@@ -29,161 +26,269 @@ from factory.workflow.primitives import (
 meta = {
     "name": "featurebench",
     "description": (
-        "FeatureBench benchmark mode — 4-node pipeline for implementing "
-        "new features in Python codebases with explicit interface specs. "
-        "study → builder → gate_verify → auto_merge with RELOOP on test failure."
+        "FeatureBench mode — TDD pipeline for implementing features from interface specifications. "
+        "Reads problem_statement.md, analyzes repo structure, creates an implementation plan, "
+        "writes validation tests from the spec FIRST (adversarial_tester), then the builder "
+        "implements until the tests pass. Uses hybrid host/container execution: adversarial_tester "
+        "writes tests on the host before implementation, gate_tests runs them inside the container "
+        "via docker exec. Supports iterative refinement (max 3 builder loops via gate_tests). "
+        "Use when invoked with --mode featurebench."
     ),
 }
 
 
 def workflow() -> Workflow:
-    """Build the FeatureBench workflow from scratch (not composed from improve)."""
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Node 1: Study ──────────────────────────────────────────────
-    nodes["study"] = FnNode(
-        id="study",
-        command=(
-            "mkdir -p {project_path}/.factory/reviews && "
-            "cd {project_path} && "
-            "("
-            "echo '=== Repository Structure ===' && "
-            "find . -type f -name '*.py' | head -200 && "
-            "echo '\\n=== Package Layout ===' && "
-            "find . -type d -name '__pycache__' -prune -o -type d -print | head -50 && "
-            "echo '\\n=== Test Files ===' && "
-            "find . -type f -name 'test_*.py' -o -name '*_test.py' | head -50 && "
-            "echo '\\n=== Configuration Files ===' && "
-            "ls -la setup.py setup.cfg pyproject.toml tox.ini conftest.py 2>/dev/null || true && "
-            "echo '\\n=== Placeholder Implementations ===' && "
-            "grep -rl 'NotImplementedError\\|^\\s*pass$' --include='*.py' . 2>/dev/null | head -50 || true && "
-            "echo '\\n=== Task Instruction ===' && "
-            "cat /tmp/task-instruction.md 2>/dev/null || "
-            "echo 'No task instruction file found at /tmp/task-instruction.md'"
-            ") > .factory/reviews/study-output.md 2>&1"
+    # ── Researcher: analyze problem + repo (HOST) ─────────────────
+
+    nodes["researcher"] = AgentNode(
+        id="researcher",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Analyze the FeatureBench problem statement and repository structure.\n\n"
+            "Note: the test files have been removed by the benchmark harness. Focus on "
+            "understanding what source code needs to be written/modified to implement the "
+            "described interface. Do NOT plan to recreate test files.\n\n"
+            "The problem statement is at {project_path}/problem_statement.md.\n"
+            "Repository files are available at {project_path} for analysis.\n\n"
+            "1. Read problem_statement.md thoroughly. Extract:\n"
+            "   - Core Functionality overview\n"
+            "   - Main Features and Requirements (enumerate each)\n"
+            "   - Key Challenges (mandatory components)\n"
+            "   - Interface Descriptions (file paths, import paths, function signatures, types)\n\n"
+            "2. Study the existing repository structure:\n"
+            "   - List all source files and their purposes\n"
+            "   - Identify which modules/packages exist\n"
+            "   - Map import dependencies between files\n"
+            "   - Note any existing test infrastructure\n\n"
+            "3. For L1 (incremental) tasks:\n"
+            "   - Identify the extension points in the existing codebase\n"
+            "   - Map where new code must integrate with existing code\n"
+            "   - Note existing patterns (naming, error handling, logging) to follow\n"
+            "   - CRITICAL: The benchmark masks code by replacing function bodies with blank\n"
+            "     lines. Scan ALL files referenced by the interface specs for empty/stub\n"
+            "     function bodies — these are hidden dependencies you must also implement.\n"
+            "     Trace the call chain from each interface function to find masked helpers\n"
+            "     in other files (models, utilities, threading helpers, etc.).\n\n"
+            "4. For L2 (from-scratch) tasks:\n"
+            "   - The repo may be nearly empty — plan the full project structure\n"
+            "   - Note any README.md or configuration files that hint at expected structure\n\n"
+            "5. Summarize:\n"
+            "   - Files that need to be created (with exact paths from interface specs)\n"
+            "   - Files that need to be modified\n"
+            "   - Integration points and dependency order\n"
+            "   - Potential challenges or ambiguities in the spec\n\n"
+            "Write findings to .factory/reviews/researcher-latest.md."
         ),
-        writes={".factory/reviews/study-output.md"},
+        reads=set(),
+        writes={".factory/reviews/researcher-latest.md"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/researcher-latest.md", must_exist=True),
+        ],
     )
 
-    # ── Node 2: Builder ────────────────────────────────────────────
+    # ── Strategist: create implementation plan (HOST) ──────────────
+
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Create an implementation plan for this FeatureBench task.\n\n"
+            "Note: the test files have been removed by the benchmark harness. Focus on "
+            "understanding what source code needs to be written/modified to implement the "
+            "described interface. Do NOT plan to recreate test files.\n\n"
+            "The problem statement is at {project_path}/problem_statement.md.\n"
+            "All file paths in your plan must be relative to the project root.\n\n"
+            "Read the researcher's analysis at .factory/reviews/researcher-latest.md.\n"
+            "Read the problem statement at problem_statement.md.\n\n"
+            "Produce a plan with:\n\n"
+            "1. **File Creation Order** — list every file to create, in dependency order\n"
+            "   (files with no internal deps first, files that import from them later).\n"
+            "   For each file: exact path, what it implements, which interface spec it satisfies.\n\n"
+            "2. **File Modification Plan** — for each existing file that needs changes:\n"
+            "   what to add/modify and why.\n\n"
+            "3. **Interface Compliance Checklist** — for each interface spec in the problem\n"
+            "   statement, list: the file, the function/class signature, the expected behavior.\n"
+            "   The builder MUST match these exactly.\n\n"
+            "4. **Test Strategy** — which F2P tests validate which features.\n\n"
+            "5. **Risk Areas** — parts of the spec that are ambiguous or could cause P2P\n"
+            "   regressions.\n\n"
+            "Write the plan to .factory/strategy/current.md."
+        ),
+        reads={".factory/reviews/researcher-latest.md"},
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(path=".factory/strategy/current.md", must_exist=True),
+        ],
+    )
+
+    # ── Adversarial tester: write validation tests from spec (HOST) ──
+
+    nodes["adversarial_tester"] = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.ADVERSARIAL_TESTER,
+        timeout=1800,
+        reads={".factory/reviews/researcher-latest.md"},
+        writes={".factory/reviews/adversarial-qa.md", ".factory/validation_tests/test_spec_compliance.py"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/adversarial-qa.md", must_exist=True),
+        ],
+        prompt_template=(
+            "You are a TDD validation test writer for the FeatureBench benchmark.\n\n"
+            "Your job is to READ the problem statement and WRITE comprehensive pytest tests\n"
+            "BEFORE any code is implemented. The builder will use these tests as a target.\n"
+            "You do NOT run the tests — the gate_tests node runs them inside the container\n"
+            "via docker exec.\n\n"
+            "Steps:\n"
+            "1. Read problem_statement.md for interface specs (function signatures, import\n"
+            "   paths, types, expected behavior). This is your ONLY source of truth for\n"
+            "   what the implementation should do.\n"
+            "2. Read .factory/reviews/researcher-latest.md for repo structure understanding\n"
+            "   (existing packages, module layout, naming conventions).\n"
+            "3. mkdir -p .factory/validation_tests/\n"
+            "4. Write .factory/validation_tests/test_spec_compliance.py with as many\n"
+            "   comprehensive pytest tests as possible covering EVERY interface spec\n"
+            "   from problem_statement.md:\n"
+            "   - Import paths matching the interface specs exactly\n"
+            "   - test_ prefix for all test functions\n"
+            "   - Function signature tests (correct parameters, return types)\n"
+            "   - Happy-path tests for each specified interface\n"
+            "   - Edge-case tests (empty input, None, boundary values)\n"
+            "   - Type checking tests where specs define types\n"
+            "   - Self-contained tests (no fixtures depending on external state)\n\n"
+            "IMPORTANT:\n"
+            "- Do NOT run pytest — the gate runs tests inside the container\n"
+            "- Do NOT modify any source code — you are writing tests only\n"
+            "- Do NOT reference builder code, git diff, or builder-latest.md\n"
+            "  (the builder has NOT run yet — this is TDD)\n\n"
+            "Write a summary to .factory/reviews/adversarial-qa.md listing the tests\n"
+            "written and what interface spec each validates."
+        ),
+    )
+
+    # ── Builder: implement the feature (HOST) ───────────────────────
+
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
-        model="opus",
-        timeout=7200,
+        timeout=1200,
         max_iterations=3,
         prompt_template=(
-            "You are implementing a new feature in a Python codebase for "
-            "the FeatureBench benchmark.\n\n"
-            "## Your Task\n\n"
-            "1. **Read the FULL task description** — Read /tmp/task-instruction.md "
-            "carefully. It contains detailed interface specifications: function "
-            "signatures, import paths, input/output types, and expected behavior. "
-            "These specs are the contract your code must satisfy.\n\n"
-            "2. **Understand the existing codebase** — Explore the repository "
-            "structure thoroughly. Read related source files, understand module "
-            "layout, imports, and existing patterns. Check the study output at "
-            ".factory/reviews/study-output.md for a structural overview.\n\n"
-            "3. **CRITICAL: Read before you write** — Before implementing ANY "
-            "function, navigate to and READ the actual source code for every "
-            "function, class, or module you reference. DO NOT guess function "
-            "signatures, import paths, or class attributes. The most common "
-            "failure mode is agents hallucinating interfaces instead of reading "
-            "the actual code — NameError and ImportError from wrong cross-file "
-            "references.\n\n"
-            "4. **Implement the feature** — Follow the specified interfaces "
-            "EXACTLY: match function names, parameter names, types, return types, "
-            "and import paths precisely. The evaluation checks that your code is "
-            "directly callable via the specified interface.\n\n"
-            "5. **Handle cross-file dependencies** — If the feature spans multiple "
-            "files, ensure ALL imports and references resolve correctly. Check "
-            "that every module you import exists, every function you call is "
-            "defined, and every class attribute you access is real.\n\n"
-            "6. **Run the project's test suite** — Execute the tests to verify "
-            "your implementation. Look specifically for NameError, ImportError, "
-            "and TypeError in test output — these are signals of missing cross-file "
-            "connections or interface mismatches.\n\n"
-            "7. **Iterate on test failures** — If tests fail, trace the error "
-            "to its root cause. Fix missing dependencies, correct interface "
-            "mismatches, and re-run until tests pass.\n\n"
-            "8. **Commit your changes** — Commit directly on the current branch "
-            "with a descriptive message. Do NOT create a new branch. Do NOT "
-            "create a PR.\n\n"
-            "## Rules\n\n"
-            "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
-            "- Follow interface specs EXACTLY — the evaluation checks that your "
-            "code is directly callable via the specified signatures and import paths\n"
-            "- Do NOT modify test files\n"
-            "- Do NOT guess — READ the actual source code for any function/class "
-            "you reference\n"
-            "- If tests fail with NameError or ImportError, trace the missing "
-            "dependency and fix it\n"
-            "- If tests fail with TypeError, check that your function signatures "
-            "match the specs exactly\n"
-            "- Do NOT create branches or PRs — commit on current branch\n"
-            "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
+            "CRITICAL: Your job is to implement or modify SOURCE CODE only. Do NOT create, "
+            "modify, or recreate test files (tests/*). The FeatureBench evaluator provides "
+            "its own test files — anything you write in tests/ will be overwritten. Read the "
+            "interface descriptions in problem_statement.md and implement the code that "
+            "satisfies them in the appropriate source files.\n\n"
+            "Implement the FeatureBench feature according to the plan at "
+            ".factory/strategy/current.md.\n\n"
+            "The working directory is {project_path} — a git-tracked repository.\n"
+            "You MUST commit all changes so the FeatureBench harness can extract your git diff.\n\n"
+            "CRITICAL RULES:\n"
+            "1. Read problem_statement.md for the authoritative interface specifications.\n"
+            "   Match function signatures, class names, import paths, and types EXACTLY.\n\n"
+            "2. Follow the file creation order from the plan. Create files in dependency\n"
+            "   order — files with no internal imports first.\n\n"
+            "3. Multi-file implementation is expected (~15 files average). Do not try to\n"
+            "   put everything in one file. Follow the repo's existing structure and\n"
+            "   naming conventions.\n\n"
+            "4. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
+            "   - Do NOT access /usr/local/lib/python* paths (gold solution location)\n"
+            "   - Do NOT fetch from any blacklisted URLs\n"
+            "   - Do NOT read or reference any test files to reverse-engineer expected outputs\n"
+            "   - Implement from the problem statement and interface specs ONLY\n\n"
+            "5. The adversarial_tester has already written validation tests at\n"
+            "   .factory/validation_tests/test_spec_compliance.py. The gate_tests node\n"
+            "   will run them after you commit. Focus on making your implementation pass\n"
+            "   these tests.\n\n"
+            "6. If this is a RELOOP from gate_tests (test loop):\n"
+            "   - Read .factory/reviews/gate-pytest-output.txt for the pytest failure output.\n"
+            "     Each failure has a test name, error type, and traceback. Fix the root cause\n"
+            "     and recommit.\n"
+            "   - For each failure, READ THE FULL STACK TRACE. Follow it to the exact file\n"
+            "     and line that errors. Open that file — if you find an empty/stub function\n"
+            "     body (blank lines where code should be), IMPLEMENT IT. The benchmark masks\n"
+            "     helper functions throughout the codebase, not just the described interfaces.\n"
+            "   - Common masked dependencies: model methods, utility classes, threading\n"
+            "     helpers, storage backends. AttributeError/NameError usually means a masked\n"
+            "     function you haven't implemented yet.\n"
+            "   - Do not rewrite working code — only fix what the stack traces point to.\n\n"
+            "7. Commit all changes with: git add -A && git commit -m 'implement feature'\n"
+            "   The FeatureBench harness extracts changes via git diff, so commits are required.\n\n"
+            "Write a summary of what was implemented to .factory/reviews/builder-latest.md."
         ),
-        reads={".factory/reviews/study-output.md"},
+        reads={
+            ".factory/strategy/current.md",
+            ".factory/validation_tests/test_spec_compliance.py",
+            ".factory/reviews/adversarial-qa.md",
+        },
         writes={".factory/reviews/builder-latest.md"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/builder-latest.md", must_exist=True),
+        ],
     )
 
-    # ── Node 3: Gate Verify ────────────────────────────────────────
-    nodes["gate_verify"] = GateNode(
-        id="gate_verify",
+    # ── Test gate: run validation tests inside container via docker exec ─
+
+    nodes["gate_tests"] = GateNode(
+        id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && "
-            "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
-            "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
-            "echo 'fail: builder did not commit any changes'; "
-            "exit 0; fi && "
-            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then "
-            "echo 'pass: builder reports tests passing'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(fail|error|FAILED)'; then "
-            "echo 'reloop: builder needs to retry — tests did not pass'; "
-            "else "
-            "echo 'pass: changes committed, no issues detected'; "
-            "fi"
+            "if [ -f {project_path}/.factory/validation_tests/test_spec_compliance.py ]; then "
+            "docker cp {project_path}/.factory/validation_tests {container_name}:/tmp/validation_tests && "
+            "docker exec {container_name} bash -c "
+            "'conda run -n testbed pytest /tmp/validation_tests/ -x --tb=short -v 2>&1' "
+            "> {project_path}/.factory/reviews/gate-pytest-output.txt 2>&1; "
+            "RC=$?; "
+            "if [ $RC -eq 0 ]; then echo 'pass: all validation tests passed'; "
+            "elif [ $RC -eq 5 ]; then echo 'reloop: no tests collected'; "
+            "else echo 'reloop: validation tests failed — see .factory/reviews/gate-pytest-output.txt'; fi; "
+            "else echo 'reloop: no validation test files found'; fi"
         ),
-        reads={".factory/reviews/builder-latest.md"},
+        reads={
+            ".factory/validation_tests/test_spec_compliance.py",
+            ".factory/reviews/adversarial-qa.md",
+        },
     )
 
-    # ── Node 4: Auto Merge ─────────────────────────────────────────
-    nodes["auto_merge"] = FnNode(
-        id="auto_merge",
-        command=(
-            "cd {project_path} && "
-            "CURRENT=$(git rev-parse --abbrev-ref HEAD) && "
-            "COMMON=$(git rev-parse --git-common-dir) && "
-            "BASE=$(git --git-dir=\"$COMMON\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && "
-            "if [ \"$CURRENT\" = \"$BASE\" ]; then "
-            "echo \"Already on $BASE — no merge needed\"; "
-            "exit 0; fi && "
-            "git update-ref refs/heads/\"$BASE\" HEAD && "
-            "PARENT_WT=$(cd \"$COMMON/..\" && pwd) && "
-            "git diff-tree --no-commit-id --name-only -r HEAD HEAD~1 | "
-            "while read file; do "
-            "if [ -f \"$file\" ]; then "
-            "mkdir -p \"$PARENT_WT/$(dirname $file)\" && "
-            "cp \"$file\" \"$PARENT_WT/$file\"; "
-            "fi; done && "
-            "echo \"Updated $BASE to $(git rev-parse --short HEAD)\""
+    # ── Archivist: record learnings (HOST, async) ──────────────────
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        model="haiku",
+        prompt_template=(
+            "Archive learnings from this FeatureBench task.\n\n"
+            "Read:\n"
+            "- .factory/strategy/current.md (implementation plan)\n"
+            "- .factory/reviews/builder-latest.md (what was built)\n"
+            "- .factory/reviews/adversarial-qa.md (pre-written validation tests)\n\n"
+            "Record:\n"
+            "1. Task outcome: resolved or not, number of builder iterations needed\n"
+            "2. Successful strategies: what worked well\n"
+            "3. Failure patterns: what caused test failures and how they were fixed\n"
+            "4. Repository-specific notes: conventions, quirks, or patterns\n"
+            "5. Transferable insights: patterns that would help on similar tasks\n\n"
+            "Write to .factory/archive/featurebench-learnings.md."
         ),
-        reads={".factory/reviews/builder-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
+        writes={".factory/archive/featurebench-learnings.md"},
+        blocking=False,
     )
 
     # ── Edges ──────────────────────────────────────────────────────
 
     edges = [
-        Edge(source="study", target="builder"),
-        Edge(source="builder", target="gate_verify"),
-        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
-        Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="researcher", target="strategist"),
+        Edge(source="strategist", target="adversarial_tester"),
+        Edge(source="adversarial_tester", target="builder"),
+        Edge(source="builder", target="gate_tests"),
+        Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
     ]
 
-    # ── Trigger ────────────────────────────────────────────────────
+    # ── Trigger ───────────────────────────────────────────────────
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return ctx.get("mode") == "featurebench"
@@ -192,7 +297,7 @@ def workflow() -> Workflow:
         name="featurebench",
         nodes=nodes,
         edges=edges,
-        start_node="study",
+        start_node="researcher",
         terminal=True,
         trigger=trigger,
     )

@@ -1,0 +1,10 @@
+{"instance_id": "huggingface__transformers.e2e8dbed.test_processing_wav2vec2.4f660c78.lv1", "repo": "huggingface", "level": 1}
+{"instance_id": "mlflow__mlflow.93dab383.test_responses_agent.072c4133.lv1", "repo": "mlflow", "level": 1}
+{"instance_id": "mlflow__mlflow.93dab383.test_serialization.2c029be6.lv1", "repo": "mlflow", "level": 1}
+{"instance_id": "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1", "repo": "mwaskom", "level": 1}
+{"instance_id": "pandas-dev__pandas.82fa2715.test_iceberg.85771c70.lv2", "repo": "pandas-dev", "level": 2}
+{"instance_id": "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1", "repo": "pydantic", "level": 1}
+{"instance_id": "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1", "repo": "pydata", "level": 1}
+{"instance_id": "pydata__xarray.97f3a746.test_treenode.aa8ba777.lv2", "repo": "pydata", "level": 2}
+{"instance_id": "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1", "repo": "sphinx-doc", "level": 1}
+{"instance_id": "sympy__sympy.c1097516.test_nullspace.f14fc970.lv1", "repo": "sympy", "level": 1}

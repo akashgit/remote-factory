@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -84,12 +86,18 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        context: dict[str, Any] | None = None,
+        pre_node_hook: Callable[[str, NodeType], Awaitable[None]] | None = None,
+        post_node_hook: Callable[[str, NodeType], Awaitable[None]] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        self.context: dict[str, Any] = context or {}
+        self.pre_node_hook = pre_node_hook
+        self.post_node_hook = post_node_hook
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -99,6 +107,14 @@ class WorkflowExecutor:
         self._edge_index: dict[str, list[Edge]] = {}
         for edge in workflow.edges:
             self._edge_index.setdefault(edge.source, []).append(edge)
+
+    def _expand_templates(self, text: str) -> str:
+        """Replace {project_path} and any context variables in template strings."""
+        result = text.replace("{project_path}", shlex.quote(str(self.project_path)))
+        for key, value in self.context.items():
+            if isinstance(value, str):
+                result = result.replace(f"{{{key}}}", shlex.quote(value))
+        return result
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""
@@ -244,7 +260,11 @@ class WorkflowExecutor:
 
         start = time.monotonic()
         try:
+            if self.pre_node_hook:
+                await self.pre_node_hook(node_id, node)
             output = await self._run_node(node)
+            if self.post_node_hook:
+                await self.post_node_hook(node_id, node)
             elapsed = (time.monotonic() - start) * 1000
 
             self.result.node_outputs[node_id] = output
@@ -808,11 +828,32 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
-        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
+        if node.metadata.get("execution_context") == "container":
+            return await self._run_fn_in_container(node)
+        cmd = self._expand_templates(node.command)
         return await self._run_shell(cmd)
+
+    async def _run_fn_in_container(self, node: FnNode) -> str:
+        """Run a FnNode's shell command inside a container via podman/docker exec."""
+        container_name = self.context.get("container_name")
+        if not container_name:
+            raise RuntimeError(
+                f"node '{node.id}' has execution_context=container but no "
+                "container_name in executor context"
+            )
+        runtime = self.context.get("container_runtime", "podman")
+        cmd = node.command.replace("{project_path}", "/testbed")
+        shell_cmd = (
+            f"{runtime} exec --workdir /testbed {shlex.quote(container_name)} "
+            f"bash -c {shlex.quote(cmd)}"
+        )
+        return await self._run_shell(shell_cmd)
 
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
+        if node.metadata.get("execution_context") == "container":
+            return await self._run_agent_in_container(node)
+
         from factory.agents.runner import invoke_agent
 
         task = node.prompt_template.replace(
@@ -834,16 +875,95 @@ class WorkflowExecutor:
             if pool_entry:
                 timeout = pool_entry.timeout
 
+        extra_env = self.context.get("subprocess_env")
+
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
             model=model or None,
             timeout=float(timeout) if timeout is not None else 600.0,
+            extra_env=extra_env,
         )
 
         if code != 0:
             raise RuntimeError(f"agent {node.role.value} exited with code {code}")
+
+        return stdout
+
+    async def _run_agent_in_container(self, node: AgentNode) -> str:
+        """Invoke an agent inside a container via podman/docker exec."""
+        container_name = self.context.get("container_name")
+        if not container_name:
+            raise RuntimeError(
+                f"node '{node.id}' has execution_context=container but no "
+                "container_name in executor context"
+            )
+        runtime = self.context.get("container_runtime", "podman")
+
+        task = node.prompt_template.replace("{project_path}", "/testbed")
+        node_ctx = self.node_context.get(node.id, "")
+        if node_ctx:
+            task = f"{task}\n\n{node_ctx}"
+
+        model = node.model
+        if not model:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                model = pool_entry.model
+
+        timeout = node.timeout
+        if timeout is None:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                timeout = pool_entry.timeout
+
+        env_script = self.context.get("container_env_script", "")
+        conda_env = self.context.get("container_conda_env", "")
+
+        agent_cmd = f"factory agent {node.role.value}"
+        agent_cmd += f" --task {shlex.quote(task)} --project /testbed"
+        if model:
+            agent_cmd += f" --model {shlex.quote(model)}"
+        if timeout is not None:
+            agent_cmd += f" --timeout {timeout}"
+
+        if env_script:
+            inner = f"source {shlex.quote(env_script)} 2>/dev/null; "
+        else:
+            inner = ""
+        if conda_env:
+            inner += f"conda run --no-capture-output -n {shlex.quote(conda_env)} {agent_cmd}"
+        else:
+            inner += agent_cmd
+
+        cmd: list[str] = [runtime, "exec", "--workdir", "/testbed"]
+
+        sub_env = self.context.get("subprocess_env", {})
+        if not env_script:
+            for env_var in ("ANTHROPIC_API_KEY", "FACTORY_RUNNER",
+                            "CLAUDE_CODE_USE_VERTEX",
+                            "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION"):
+                val = sub_env.get(env_var) or os.environ.get(env_var)
+                if val:
+                    cmd.extend(["--env", f"{env_var}={val}"])
+
+        cmd.extend([container_name, "bash", "-c", inner])
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+        stdout = stdout_bytes.decode() if stdout_bytes else ""
+
+        if proc.returncode != 0:
+            stderr = stderr_bytes.decode() if stderr_bytes else ""
+            raise RuntimeError(
+                f"container agent {node.role.value} exited with code "
+                f"{proc.returncode}: {stderr[:500]}"
+            )
 
         return stdout
 
@@ -889,9 +1009,7 @@ class WorkflowExecutor:
 
         if node.evaluator_type == "fn":
             if node.evaluator_command:
-                cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
-                )
+                cmd = self._expand_templates(node.evaluator_command)
                 try:
                     output = await self._run_shell(cmd)
                     return self._parse_fn_verdict(output, node.id)
@@ -922,9 +1040,7 @@ class WorkflowExecutor:
     def _build_gate_prompt(self, node: GateNode) -> str:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
-            return node.gate_prompt.replace(
-                "{project_path}", str(self.project_path),
-            )
+            return self._expand_templates(node.gate_prompt)
 
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
         context = self.node_context.get(node.id, "none")
@@ -997,8 +1113,12 @@ class WorkflowExecutor:
             pass
 
         first_line = text.split("\n")[0].strip().lower()
-        if first_line.startswith("pass"):
+        if first_line.startswith("pass") or first_line.startswith("proceed"):
             return Verdict.proceed()
+        if first_line.startswith("halt"):
+            raw_line = text.split("\n")[0].strip()
+            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+            return Verdict.halt(reason=after_prefix if after_prefix else "gate halted")
         if first_line.startswith("fail") or first_line.startswith("revert"):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
         if first_line.startswith("reloop"):
