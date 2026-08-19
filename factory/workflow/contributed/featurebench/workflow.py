@@ -2,13 +2,12 @@
 
 6-node pipeline with host-side orchestration and container-side testing:
   researcher (host) → strategist (host) → builder (host) →
-    health_checker (container) → gate_tests → [RELOOP to builder, max 3] →
-    archivist (host, async)
+    adversarial_tester (host) → gate_tests (docker exec) →
+    [RELOOP to builder, max 3] → archivist (host, async)
 
-Most nodes run on the host where Claude Code is already installed. Only
-health_checker runs inside the FeatureBench container (needs the conda env
-and project dependencies to run tests). File sync between host workspace
-and container is handled by the adapter via docker cp.
+The adversarial_tester writes validation tests on the host, then gate_tests
+runs them inside the container via docker exec. All other nodes run on the
+host where Claude Code is already installed.
 """
 
 from typing import Any
@@ -29,9 +28,9 @@ meta = {
     "description": (
         "FeatureBench mode — implement complete features from interface specifications. "
         "Reads problem_statement.md, analyzes repo structure, creates an implementation plan, "
-        "builds the feature on the host, then verifies via test suite inside the container. "
-        "Uses hybrid host/container execution: all agents run on the host except "
-        "health_checker which runs inside the container for test execution. "
+        "builds the feature on the host, then verifies via validation tests inside the container. "
+        "Uses hybrid host/container execution: adversarial_tester writes validation tests on "
+        "the host, gate_tests runs them inside the container via docker exec. "
         "Supports iterative refinement (max 3 builder loops via gate_tests). "
         "Use when invoked with --mode featurebench."
     ),
@@ -155,10 +154,11 @@ def workflow() -> Workflow:
             "   - Do NOT fetch from any blacklisted URLs\n"
             "   - Do NOT read or reference any test files to reverse-engineer expected outputs\n"
             "   - Implement from the problem statement and interface specs ONLY\n\n"
-            "5. Do NOT run the test suite yourself. The health_checker node runs\n"
-            "   tests later in the pipeline — focus your time on implementation.\n\n"
+            "5. Do NOT run the test suite yourself. The adversarial_tester writes\n"
+            "   validation tests and gate_tests runs them later — focus your time on implementation.\n\n"
             "6. If this is a RELOOP from gate_tests (test loop):\n"
-            "   - Read the test failure output from .factory/reviews/health-check.md\n"
+            "   - Read the test failure output from .factory/reviews/adversarial-qa.md\n"
+            "     and .factory/reviews/gate-pytest-output.txt\n"
             "   - For each failure, READ THE FULL STACK TRACE. Follow it to the exact file\n"
             "     and line that errors. Open that file — if you find an empty/stub function\n"
             "     body (blank lines where code should be), IMPLEMENT IT. The benchmark masks\n"
@@ -178,65 +178,65 @@ def workflow() -> Workflow:
         ],
     )
 
-    # ── Health checker: run tests (CONTAINER) ──────────────────────
+    # ── Adversarial tester: write validation tests (HOST) ──────────
 
-    nodes["health_checker"] = AgentNode(
-        id="health_checker",
-        role=AgentRole.HEALTH_CHECKER,
-        timeout=600,
-        metadata={"execution_context": "container"},
-        prompt_template=(
-            "Provide diagnostic feedback on the FeatureBench implementation.\n\n"
-            "You are running inside a container at /testbed with conda env testbed.\n"
-            "The working directory is {project_path}.\n\n"
-            "DO NOT write RESOLVED: true or RESOLVED: false. The gate handles pass/fail "
-            "determination directly via pytest exit code (L1) or your spec-compliance "
-            "output (L2). Your job is diagnostic feedback, not verdicts.\n\n"
-            "First, check if test files exist:\n"
-            "  find /testbed -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -5\n\n"
-            "For L1 tasks (test files exist in the repo):\n"
-            "  Run: conda run -n testbed pytest /testbed --tb=long 2>&1\n"
-            "  Report: which tests failed, full stack traces, root cause analysis\n"
-            "  Suggest: specific fixes the builder should make on RELOOP\n"
-            "  Format each failure as:\n"
-            "    ## Failed: test_name\n"
-            "    Stack trace: ...\n"
-            "    Root cause: ...\n"
-            "    Suggested fix: ...\n\n"
-            "For L2 tasks (no test files — check with: find /testbed -name 'test_*.py'):\n"
-            "  Read problem_statement.md for interface specs\n"
-            "  Verify programmatically: modules importable, function signatures match, "
-            "classes have required methods, inheritance hierarchies correct\n"
-            "  Write: SPEC_COMPLIANCE: PASS or SPEC_COMPLIANCE: FAIL at the top of your report\n"
-            "  Detail: which interfaces pass/fail and why\n\n"
-            "Write the full diagnostic report to .factory/reviews/health-check.md."
-        ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/health-check.md"},
+    nodes["adversarial_tester"] = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.ADVERSARIAL_TESTER,
+        timeout=1800,
+        reads={".factory/reviews/builder-latest.md", ".factory/reviews/researcher-latest.md"},
+        writes={".factory/reviews/adversarial-qa.md", ".factory/validation_tests/test_spec_compliance.py"},
         post_checks=[
-            ArtifactCheck(path=".factory/reviews/health-check.md", must_exist=True),
+            ArtifactCheck(path=".factory/reviews/adversarial-qa.md", must_exist=True),
         ],
+        prompt_template=(
+            "You are a validation test writer for the FeatureBench benchmark.\n\n"
+            "Your job is to READ the problem statement and the builder's code changes,\n"
+            "then WRITE pytest tests to .factory/validation_tests/test_spec_compliance.py.\n"
+            "You do NOT run the tests — the gate_tests node runs them inside the container\n"
+            "via docker exec.\n\n"
+            "Steps:\n"
+            "1. Read problem_statement.md for interface specs (function signatures, import\n"
+            "   paths, types, expected behavior).\n"
+            "2. Read the builder's code changes via git diff HEAD~1 and by reading the\n"
+            "   modified source files directly.\n"
+            "3. Read .factory/reviews/researcher-latest.md for repo structure understanding.\n"
+            "4. mkdir -p .factory/validation_tests/\n"
+            "5. Write .factory/validation_tests/test_spec_compliance.py with:\n"
+            "   - Correct import paths (READ the actual source first, do NOT guess)\n"
+            "   - test_ prefix for all test functions\n"
+            "   - Happy-path tests for each specified interface\n"
+            "   - Edge-case tests (empty input, None, boundary values)\n"
+            "   - Self-contained tests (no fixtures depending on external state)\n\n"
+            "IMPORTANT:\n"
+            "- Do NOT run pytest — the gate runs tests inside the container\n"
+            "- Do NOT modify the builder's implementation\n\n"
+            "Write a results summary to .factory/reviews/adversarial-qa.md listing\n"
+            "the tests written and what each validates."
+        ),
     )
 
-    # ── Test gate: deterministic pytest / spec-compliance check ────
+    # ── Test gate: run validation tests inside container via docker exec ─
 
     nodes["gate_tests"] = GateNode(
         id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && "
-            "TEST_FILES=$(find . -name 'test_*.py' -o -name '*_test.py' 2>/dev/null | head -1) && "
-            "if [ -n \"$TEST_FILES\" ]; then "
-            "conda run -n testbed pytest . -x --tb=short 2>&1 && "
-            "echo 'PROCEED' || "
-            "echo 'RELOOP: pytest failed'; "
-            "else "
-            "if grep -q 'SPEC_COMPLIANCE: PASS' "
-            "{project_path}/.factory/reviews/health-check.md; then "
-            "echo 'PROCEED'; else "
-            "echo 'RELOOP: spec compliance check failed'; fi; fi"
+            "if [ -f {project_path}/.factory/validation_tests/test_spec_compliance.py ]; then "
+            "docker cp {project_path}/.factory/validation_tests {container_name}:/tmp/validation_tests && "
+            "docker exec {container_name} bash -c "
+            "'conda run -n testbed pytest /tmp/validation_tests/ -x --tb=short -v 2>&1' "
+            "> {project_path}/.factory/reviews/gate-pytest-output.txt 2>&1; "
+            "RC=$?; "
+            "if [ $RC -eq 0 ]; then echo 'pass: all validation tests passed'; "
+            "elif [ $RC -eq 5 ]; then echo 'reloop: no tests collected'; "
+            "else echo 'reloop: validation tests failed — see .factory/reviews/gate-pytest-output.txt'; fi; "
+            "else echo 'reloop: no validation test files found'; fi"
         ),
-        reads={".factory/reviews/health-check.md"},
+        reads={
+            ".factory/validation_tests/test_spec_compliance.py",
+            ".factory/reviews/adversarial-qa.md",
+        },
     )
 
     # ── Archivist: record learnings (HOST, async) ──────────────────
@@ -269,8 +269,8 @@ def workflow() -> Workflow:
     edges = [
         Edge(source="researcher", target="strategist"),
         Edge(source="strategist", target="builder"),
-        Edge(source="builder", target="health_checker"),
-        Edge(source="health_checker", target="gate_tests"),
+        Edge(source="builder", target="adversarial_tester"),
+        Edge(source="adversarial_tester", target="gate_tests"),
         Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
         Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
     ]

@@ -28,7 +28,7 @@ class TestFeaturebenchWorkflow:
             "researcher",
             "strategist",
             "builder",
-            "health_checker",
+            "adversarial_tester",
             "gate_tests",
             "archivist",
         }
@@ -69,16 +69,16 @@ class TestFeaturebenchWorkflow:
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
         assert node.timeout == 1200
-        # Contributed workflow runs entirely inside the container —
-        # no per-node execution_context needed (that's for the hybrid adapter)
 
-    def test_health_checker_node(self) -> None:
+    def test_adversarial_tester_node(self) -> None:
         wf = workflow()
-        node = wf.nodes["health_checker"]
+        node = wf.nodes["adversarial_tester"]
         assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.HEALTH_CHECKER
-        assert node.timeout == 600
-        assert node.metadata.get("execution_context") == "container"
+        assert node.role == AgentRole.ADVERSARIAL_TESTER
+        assert node.timeout == 1800
+        assert ".factory/reviews/adversarial-qa.md" in node.writes
+        assert "validation_tests" in node.prompt_template
+        assert "problem_statement" in node.prompt_template
 
     def test_gate_tests_is_fn_evaluator(self) -> None:
         wf = workflow()
@@ -86,8 +86,10 @@ class TestFeaturebenchWorkflow:
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "PROCEED" in node.evaluator_command
-        assert "RELOOP" in node.evaluator_command
+        assert "docker exec" in node.evaluator_command
+        assert "gate-pytest-output.txt" in node.evaluator_command
+        assert "pass:" in node.evaluator_command
+        assert "reloop:" in node.evaluator_command
 
     def test_archivist_non_blocking(self) -> None:
         wf = workflow()
@@ -134,17 +136,46 @@ class TestFeaturebenchWorkflow:
             if isinstance(node, GateNode):
                 assert node.evaluator_type != "user"
 
-    def test_container_nodes_have_metadata(self) -> None:
-        """Health_checker must have execution_context=container (runs tests in container).
-        Builder runs on host in hybrid mode but contributed workflow runs all inside container."""
-        wf = workflow()
-        assert wf.nodes["health_checker"].metadata.get("execution_context") == "container"
-
     def test_host_nodes_no_container_metadata(self) -> None:
-        """Gate and archivist do not need container context."""
+        """Adversarial tester, gate, and archivist do not need container context."""
         wf = workflow()
-        for nid in ("gate_tests", "archivist"):
+        for nid in ("adversarial_tester", "gate_tests", "archivist"):
             assert wf.nodes[nid].metadata.get("execution_context") != "container"
+
+    def test_adversarial_tester_writes_tests(self) -> None:
+        """Adversarial tester writes tests but does NOT run them."""
+        wf = workflow()
+        node = wf.nodes["adversarial_tester"]
+        assert "Write" in node.prompt_template or "write" in node.prompt_template.lower()
+        assert "Do NOT run pytest" in node.prompt_template
+
+    def test_gate_tests_uses_docker_exec(self) -> None:
+        """Gate runs validation tests inside the container via docker exec."""
+        wf = workflow()
+        node = wf.nodes["gate_tests"]
+        assert "docker exec" in node.evaluator_command
+
+    def test_builder_to_adversarial_tester_edge(self) -> None:
+        """Unconditional edge from builder to adversarial_tester."""
+        wf = workflow()
+        edges = [
+            e for e in wf.edges
+            if e.source == "builder"
+            and e.target == "adversarial_tester"
+            and e.condition is None
+        ]
+        assert len(edges) == 1
+
+    def test_adversarial_tester_to_gate_tests_edge(self) -> None:
+        """Unconditional edge from adversarial_tester to gate_tests."""
+        wf = workflow()
+        edges = [
+            e for e in wf.edges
+            if e.source == "adversarial_tester"
+            and e.target == "gate_tests"
+            and e.condition is None
+        ]
+        assert len(edges) == 1
 
 
 class TestFeaturebenchTerminal:
