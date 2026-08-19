@@ -3046,7 +3046,7 @@ class TestJustPlanFlag:
 
     def test_just_plan_requires_design_mode(self, capsys):
         """--just-plan without --mode design is rejected."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--just-plan"])
+        result = main(["ceo", "/some/path", "--mode", "founder", "--just-plan"])
         assert result == 1
         assert "--just-plan requires --mode design" in capsys.readouterr().err
 
