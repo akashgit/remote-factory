@@ -1,0 +1,18 @@
+[meta]
+name = "swebench"
+description = "SWE-bench — software engineering bug fix benchmark"
+
+[test]
+format = "exit_code"
+command = "pytest -xvs"
+timeout = 1800
+
+[instances]
+format = "git-repo"
+prep_command = "git clone {repo_url} {instance_dir} && cd {instance_dir} && git checkout {commit}"
+
+[seed_workflow]
+name = "improve"
+
+[scoring]
+method = "binary"

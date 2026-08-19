@@ -94,7 +94,7 @@ The cycle_summary.json for each evaluation includes:
 }
 ```
 
-The `test_command` is benchmark-agnostic — any command that produces pytest-style output works. Set it during calibration with `--test-command`.
+The `test_command` is benchmark-agnostic. The `--test-format` flag controls how output is parsed. Set both during calibration, or let them auto-resolve from a benchmark TOML config.
 
 ### Isolation
 
@@ -138,7 +138,10 @@ Modes are registered via `EphemeralModeRegistry` which:
 | `mode_registry.py` | `EphemeralModeRegistry` — lifecycle management for candidate modes |
 | `designer.py` | `DesignerAgent` — from-scratch workflow design |
 | `models.py` | `SwarmConfig`, `Individual`, `EvalResult`, `OuterLoopState` |
-| `featurebench_evaluator.py` | pytest output parser for partial credit scoring |
+| `evaluators/` | Pluggable test output parsers: `pytest`, `exit_code`, `json`, `exact_match` |
+| `benchmark_config.py` | TOML-based benchmark config registry |
+| `instance_prep.py` | Instance preparation and validation |
+| `featurebench_evaluator.py` | pytest output parser for partial credit scoring (backward compat) |
 | `featurebench_inner_loop.py` | Bridges outer loop evaluation to InnerLoop.step() |
 | `filesystem.py` | Directory initialization, config/checkpoint persistence |
 | `overfit.py` | Training vs holdout score comparison |
@@ -199,4 +202,93 @@ From running the outer loop on FeatureBench instances (cancel-async-tasks, fix-c
 ├── events.jsonl          # Per-generation metrics
 ├── costs.jsonl           # Per-candidate cost tracking
 └── trajectory.jsonl      # Score trajectory over generations
+```
+
+## Multi-Benchmark Support
+
+The outer loop supports multiple benchmark types beyond FeatureBench. Each benchmark is defined as a TOML config file specifying the test format, test command, instance format, and seed workflow.
+
+### Built-in Benchmarks
+
+| Benchmark | Test Format | Instance Format | Description |
+|-----------|-------------|-----------------|-------------|
+| `featurebench` | `pytest` | `directory` | Feature implementation — partial credit scoring |
+| `swebench` | `exit_code` | `git-repo` | SWE-bench bug fix — binary pass/fail |
+| `aime` | `exact_match` | `question-answer` | AIME math competition — exact answer match |
+
+### Test Output Formats
+
+| Format | Parsing Method | Score Range |
+|--------|---------------|-------------|
+| `pytest` | Parse pytest stdout for pass/fail counts | 0.0–1.0 (fraction) |
+| `exit_code` | Binary from subprocess returncode (0 = pass) | 0.0 or 1.0 |
+| `json` | Extract metric via configurable JSON path | float |
+| `exact_match` | Compare output to expected answer (optional regex) | 0.0 or 1.0 |
+
+### Benchmark Config TOML Schema
+
+```toml
+[meta]
+name = "my_benchmark"
+description = "What this benchmark evaluates"
+
+[test]
+format = "json"                     # pytest | exit_code | json | exact_match
+command = "python run_eval.py"      # shell command to run
+timeout = 600                       # seconds
+metric_path = "accuracy"            # for json format: dotted path to metric
+answer_extraction = ""              # for exact_match: regex to extract answer
+
+[instances]
+format = "directory"                # directory | git-repo | question-answer
+prep_command = "mkdir -p {instance_dir}/data"  # template variables: {instance_id}, {instance_dir}
+
+[seed_workflow]
+name = "improve"                    # workflow to use as seed
+
+[scoring]
+method = "metric_extraction"        # partial_credit | binary | metric_extraction | exact_match
+```
+
+### Adding a Custom Benchmark
+
+1. Create a TOML file in one of these locations (searched in order):
+   - Project-local: `.factory/benchmarks/my_bench.toml`
+   - User-local: `~/.factory/benchmarks/my_bench.toml`
+   - Built-in: `benchmarks/configs/my_bench.toml`
+
+2. Run calibration with your benchmark:
+   ```bash
+   factory outer-loop calibrate /path/to/factory \
+     --benchmark my_bench \
+     --project-dir /path/to/instance
+   ```
+
+3. The outer loop auto-resolves `test_format`, `test_command`, and `instance_format` from your TOML. You can override any field via CLI flags.
+
+### Instance Preparation
+
+```bash
+# List available benchmarks
+factory outer-loop list-benchmarks
+
+# Prepare instances from config
+factory outer-loop prep-instances swebench \
+  --instances django__django-12345 flask__flask-67890 \
+  --output-dir /tmp/instances
+```
+
+The `prep_command` template supports `{instance_id}` and `{instance_dir}` variables. Validation runs after preparation:
+- `directory`: checks directory exists
+- `git-repo`: checks `.git/` exists and runs `git fsck --quick`
+- `question-answer`: checks for `question.txt`/`question.md` and `answer.txt`/`expected.txt`
+
+### CLI Flags
+
+```bash
+factory outer-loop calibrate <project> \
+  --benchmark swebench \
+  --test-format exit_code \         # override test format from TOML
+  --test-command "pytest -xvs" \    # override test command
+  --population-size 4
 ```

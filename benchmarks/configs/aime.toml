@@ -1,0 +1,18 @@
+[meta]
+name = "aime"
+description = "AIME math competition — exact match scoring with LaTeX answer extraction"
+
+[test]
+format = "exact_match"
+command = ""
+timeout = 300
+answer_extraction = "\\\\boxed\\{(\\d+)\\}"
+
+[instances]
+format = "question-answer"
+
+[seed_workflow]
+name = ""
+
+[scoring]
+method = "exact_match"

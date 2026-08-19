@@ -1,0 +1,17 @@
+[meta]
+name = "featurebench"
+description = "Feature implementation benchmark — pytest partial credit scoring"
+
+[test]
+format = "pytest"
+command = "pytest -xvs"
+timeout = 600
+
+[instances]
+format = "directory"
+
+[seed_workflow]
+name = "improve"
+
+[scoring]
+method = "partial_credit"

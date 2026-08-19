@@ -117,6 +117,7 @@ class InnerLoop:
         workflow: Workflow | None = None,
         frozen_nodes: frozenset[str] = frozenset(),
         test_command: str = "",
+        test_format: str = "pytest",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -125,6 +126,7 @@ class InnerLoop:
         self.workflow = workflow
         self.frozen_nodes = frozenset(frozen_nodes)
         self.test_command = test_command
+        self.test_format = test_format
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._validate_frozen_nodes()
@@ -317,9 +319,14 @@ class InnerLoop:
             return None
 
     def _run_test_command(self) -> tuple[float | None, dict[str, Any] | None]:
-        """Run the configured test command and return (pass_rate, details)."""
-        from factory.outer_loop.featurebench_evaluator import parse_pytest_stdout
+        """Run the configured test command and return (score, details).
 
+        Dispatches output parsing based on self.test_format:
+        - pytest: parse stdout for pass/fail counts
+        - exit_code: binary pass/fail from returncode
+        - json: parse stdout as JSON, extract metric
+        - exact_match: compare output to expected answer
+        """
         try:
             result = subprocess.run(
                 shlex.split(self.test_command),
@@ -328,18 +335,57 @@ class InnerLoop:
                 text=True,
                 timeout=600,
             )
-            metrics = parse_pytest_stdout(result.stdout)
-            pass_rate = metrics.get("pass_rate", 0.0)
-            return pass_rate, {
-                "tests_passed": metrics.get("tests_passed", 0.0),
-                "tests_total": metrics.get("tests_total", 0.0),
-                "pass_rate": pass_rate,
-                "test_returncode": result.returncode,
-            }
+            return self._parse_test_output(result)
         except subprocess.TimeoutExpired:
             return 0.0, {"error": "test_command_timeout"}
         except Exception as exc:
             return None, {"error": str(exc)}
+
+    def _parse_test_output(
+        self, result: subprocess.CompletedProcess[str],
+    ) -> tuple[float, dict[str, Any]]:
+        """Parse test command output based on test_format."""
+        if self.test_format == "exit_code":
+            score = 1.0 if result.returncode == 0 else 0.0
+            return score, {
+                "returncode": result.returncode,
+                "passed": score,
+                "test_format": "exit_code",
+            }
+
+        if self.test_format == "json":
+            try:
+                data = json.loads(result.stdout)
+                score = float(data.get("score", data.get("pass_rate", 0.0)))
+                return score, {
+                    "score": score,
+                    "test_format": "json",
+                    "test_returncode": result.returncode,
+                    **{k: v for k, v in data.items() if isinstance(v, (int, float))},
+                }
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return 0.0, {"error": "json_parse_failed", "test_format": "json"}
+
+        if self.test_format == "exact_match":
+            output = result.stdout.strip()
+            expected = result.stderr.strip()
+            score = 1.0 if output == expected else 0.0
+            return score, {
+                "match": score,
+                "test_format": "exact_match",
+                "test_returncode": result.returncode,
+            }
+
+        from factory.outer_loop.featurebench_evaluator import parse_pytest_stdout
+        metrics = parse_pytest_stdout(result.stdout)
+        pass_rate = metrics.get("pass_rate", 0.0)
+        return pass_rate, {
+            "tests_passed": metrics.get("tests_passed", 0.0),
+            "tests_total": metrics.get("tests_total", 0.0),
+            "pass_rate": pass_rate,
+            "test_returncode": result.returncode,
+            "test_format": "pytest",
+        }
 
     def _write_cycle_summary(
         self,

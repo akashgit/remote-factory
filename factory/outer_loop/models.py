@@ -102,6 +102,10 @@ class SwarmConfig(BaseModel):
     diversity_floor: float = 0.2
     target_project: str = ""
     test_command: str = ""
+    test_format: str = "pytest"
+    seed_workflow: str = ""
+    instance_format: str = "directory"
+    prep_command: str = ""
     early_stop_unchanged: int = 3
 
     @field_validator("holdout_instances")

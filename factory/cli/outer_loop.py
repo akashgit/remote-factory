@@ -98,6 +98,8 @@ def cmd_outer_loop(args: argparse.Namespace) -> int:
         "evolve": _cmd_evolve,
         "status": _cmd_status,
         "promote": _cmd_promote,
+        "prep-instances": _cmd_prep_instances,
+        "list-benchmarks": _cmd_list_benchmarks,
     }
     handler = handlers.get(sub)
     if handler is None:
@@ -129,6 +131,22 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         designer_count = 0 if benchmark == "featurebench" else 2
         target_proj = getattr(args, "project_dir", None)
         test_cmd = getattr(args, "test_command", "")
+        test_fmt = getattr(args, "test_format", "")
+
+        bench_config = None
+        try:
+            from factory.outer_loop.benchmark_config import load_benchmark_config
+            bench_config = load_benchmark_config(benchmark, project_path)
+            _log.info("benchmark_config_loaded", benchmark=benchmark)
+        except FileNotFoundError:
+            _log.info("benchmark_config_not_found", benchmark=benchmark)
+
+        resolved_test_format = test_fmt or (bench_config.test_format if bench_config else "pytest")
+        resolved_test_command = test_cmd or (bench_config.test_command if bench_config else "")
+        resolved_seed_workflow = bench_config.seed_workflow if bench_config else ""
+        resolved_instance_format = bench_config.instance_format if bench_config else "directory"
+        resolved_prep_command = bench_config.prep_command if bench_config else ""
+
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -137,7 +155,11 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             training_instances=getattr(args, "training_instances", []),
             holdout_instances=getattr(args, "holdout_instances", []),
             target_project=str(Path(target_proj).resolve()) if target_proj else "",
-            test_command=test_cmd or "",
+            test_command=resolved_test_command,
+            test_format=resolved_test_format,
+            seed_workflow=resolved_seed_workflow,
+            instance_format=resolved_instance_format,
+            prep_command=resolved_prep_command,
         )
 
     root = init_filesystem(project_path, config)
@@ -511,6 +533,55 @@ def _cmd_promote(args: argparse.Namespace) -> int:
         return 1
 
 
+def _cmd_prep_instances(args: argparse.Namespace) -> int:
+    """Prepare benchmark instances from config."""
+    benchmark = getattr(args, "benchmark", "featurebench")
+    instances = getattr(args, "instances", [])
+    output_dir = Path(getattr(args, "output_dir", ".")).resolve()
+    project_path = Path(getattr(args, "project_path", ".")).resolve()
+
+    if not instances:
+        print("Error: --instances required", file=sys.stderr)
+        return 1
+
+    from factory.outer_loop.benchmark_config import load_benchmark_config
+    from factory.outer_loop.instance_prep import prepare_instances
+
+    try:
+        config = load_benchmark_config(benchmark, project_path)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    prepared = prepare_instances(config, instances, output_dir)
+    print(f"Prepared {len(prepared)}/{len(instances)} instances:")
+    for p in prepared:
+        print(f"  ✓ {p.name}")
+    failed = set(instances) - {p.name for p in prepared}
+    for name in sorted(failed):
+        print(f"  ✗ {name}")
+    return 0 if len(prepared) == len(instances) else 1
+
+
+def _cmd_list_benchmarks(args: argparse.Namespace) -> int:
+    """List all available benchmark configurations."""
+    project_path = Path(getattr(args, "project_path", ".")).resolve()
+
+    from factory.outer_loop.benchmark_config import list_benchmarks
+
+    configs = list_benchmarks(project_path)
+    if not configs:
+        print("No benchmark configurations found.")
+        return 0
+
+    print(f"Available benchmarks ({len(configs)}):")
+    for cfg in configs:
+        print(f"  {cfg.name:20s}  format={cfg.test_format:12s}  instances={cfg.instance_format}")
+        if cfg.description:
+            print(f"    {cfg.description}")
+    return 0
+
+
 def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     """Add the outer-loop subcommand group to the CLI parser."""
     outer = subparsers.add_parser(
@@ -536,6 +607,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--test-command",
         default="",
         help="Test command for scoring (e.g. 'pytest tests/test_outputs.py -v')",
+    )
+    cal.add_argument(
+        "--test-format",
+        default="",
+        help="Test output format: pytest, exit_code, json, exact_match (auto-detected from benchmark config if omitted)",
     )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")
@@ -563,3 +639,12 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
     pr.add_argument("project_path", nargs="?", default=".")
     pr.add_argument("--mode-name", required=True)
     pr.add_argument("--permanent-name", default="evolved")
+
+    prep = outer_sub.add_parser("prep-instances", help="Prepare benchmark instances")
+    prep.add_argument("benchmark", help="Benchmark name (e.g. featurebench, swebench)")
+    prep.add_argument("--instances", nargs="+", required=True, help="Instance IDs to prepare")
+    prep.add_argument("--output-dir", default=".", help="Output directory for prepared instances")
+    prep.add_argument("--project-path", default=".", help="Project path for config lookup")
+
+    lb = outer_sub.add_parser("list-benchmarks", help="List available benchmarks")
+    lb.add_argument("project_path", nargs="?", default=".")
