@@ -1483,12 +1483,6 @@ class TestFocusMutualExclusion:
         )
         assert result == 1
 
-    def test_focus_rejected_in_study_mode(self):
-        from factory.cli import main
-
-        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "study"])
-        assert result == 1
-
     def test_focus_rejected_in_meta_mode(self):
         from factory.cli import main
 

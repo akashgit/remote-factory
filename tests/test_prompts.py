@@ -42,9 +42,16 @@ class TestStrategistPrompt:
 
     def test_lists_all_dimensions(self, strategist_prompt: str) -> None:
         dimensions = [
-            "Features", "Bug fixes", "Instrumentation", "Flow changes",
-            "New agents", "Prompt engineering", "Eval improvements",
-            "Knowledge management", "Infrastructure", "Self-evolution",
+            "Features",
+            "Bug fixes",
+            "Instrumentation",
+            "Flow changes",
+            "New agents",
+            "Prompt engineering",
+            "Eval improvements",
+            "Knowledge management",
+            "Infrastructure",
+            "Self-evolution",
         ]
         for dim in dimensions:
             assert dim in strategist_prompt, f"Missing dimension: {dim}"
@@ -113,11 +120,9 @@ class TestCeoPrompt:
 
     def test_has_all_modes(self, ceo_prompt: str) -> None:
         """CEO routes to all modes via Skill Selection section."""
-        assert "workflow-build" in ceo_prompt
-        assert "workflow-improve" in ceo_prompt
+        assert "workflow-design" in ceo_prompt
         assert "workflow-research" in ceo_prompt
         assert "workflow-meta" in ceo_prompt
-        assert "workflow-design" in ceo_prompt
 
     def test_has_sacred_rules(self, ceo_prompt: str) -> None:
         assert "## Sacred Rules" in ceo_prompt
@@ -187,6 +192,7 @@ class TestCeoPrompt:
     def test_strategist_hard_gate_in_design_mode(self, ceo_prompt: str) -> None:
         """Design workflow has gate node after strategist."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         gate_ids = [nid for nid, n in design.nodes.items() if hasattr(n, "evaluator_type")]
@@ -199,18 +205,20 @@ class TestCeoPrompt:
     def test_design_mode_has_builder_review(self, ceo_prompt: str) -> None:
         """Design workflow skill has deep-qa specialist agents after builder."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
         has_deep_qa = any(
-            hasattr(n, "role") and n.role.value in deep_qa_roles
-            for n in design.nodes.values()
+            hasattr(n, "role") and n.role.value in deep_qa_roles for n in design.nodes.values()
         )
         assert has_deep_qa, "Design workflow must have deep-qa specialist nodes"
 
     def test_improve_mode_has_builder_pr_review(self, ceo_prompt: str) -> None:
         """CEO prompt references PR review before proceeding."""
-        assert "gh pr diff" in ceo_prompt or "PR diff" in ceo_prompt or "Builder review" in ceo_prompt
+        assert (
+            "gh pr diff" in ceo_prompt or "PR diff" in ceo_prompt or "Builder review" in ceo_prompt
+        )
 
     def test_improve_mode_has_qa_verification(self, ceo_prompt: str) -> None:
         """CEO prompt mandates QA via Sacred Rule 9."""
@@ -227,12 +235,12 @@ class TestCeoPrompt:
     def test_build_mode_has_e2e_gate(self, ceo_prompt: str) -> None:
         """Design workflow skill has deep-qa specialists for E2E verification."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
         has_deep_qa = any(
-            hasattr(n, "role") and n.role.value in deep_qa_roles
-            for n in design.nodes.values()
+            hasattr(n, "role") and n.role.value in deep_qa_roles for n in design.nodes.values()
         )
         assert has_deep_qa
 
@@ -240,9 +248,10 @@ class TestCeoPrompt:
         """Build workflow has fork_qa (QA entry) after builder in topological order."""
         from factory.workflow.skill_export import _topological_sort
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
-        order = _topological_sort(build)
+        order = _topological_sort(design)
         builder_ids = [nid for nid in order if nid == "builder"]
         fork_ids = [nid for nid in order if nid == "fork_qa"]
         if builder_ids and fork_ids:
@@ -265,22 +274,22 @@ class TestCeoPrompt:
     def test_archivist_in_build_mode(self, ceo_prompt: str) -> None:
         """Build workflow skill includes archivist node."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         has_archivist = any(
-            hasattr(n, "role") and n.role.value == "archivist"
-            for n in design.nodes.values()
+            hasattr(n, "role") and n.role.value == "archivist" for n in design.nodes.values()
         )
         assert has_archivist
 
     def test_archivist_in_improve_mode(self, ceo_prompt: str) -> None:
         """Improve workflow skill includes archivist node."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         has_archivist = any(
-            hasattr(n, "role") and n.role.value == "archivist"
-            for n in design.nodes.values()
+            hasattr(n, "role") and n.role.value == "archivist" for n in design.nodes.values()
         )
         assert has_archivist
 
@@ -298,9 +307,10 @@ class TestCeoPrompt:
         """Build workflow has research before builder in graph."""
         from factory.workflow.definitions import register_all
         from factory.workflow.skill_export import _topological_sort
+
         wfs = register_all()
         design = wfs["design"]
-        order = _topological_sort(build)
+        order = _topological_sort(design)
         researcher_ids = [nid for nid in order if "researcher" in nid]
         builder_ids = [nid for nid in order if "builder" in nid]
         if researcher_ids and builder_ids:
@@ -320,6 +330,7 @@ class TestCeoPrompt:
         """Build workflow has gate nodes with RELOOP edges (iteration limits)."""
         from factory.workflow.definitions import register_all
         from factory.workflow.primitives import VerdictType
+
         wfs = register_all()
         design = wfs["design"]
         reloop_edges = [e for e in design.edges if e.condition == VerdictType.RELOOP]
@@ -334,9 +345,10 @@ class TestCeoPrompt:
         """Build workflow has builder after strategist in graph order."""
         from factory.workflow.definitions import register_all
         from factory.workflow.skill_export import _topological_sort
+
         wfs = register_all()
         design = wfs["design"]
-        order = _topological_sort(build)
+        order = _topological_sort(design)
         strat_ids = [nid for nid in order if "strategist" in nid]
         builder_ids = [nid for nid in order if "builder" in nid]
         if strat_ids and builder_ids:
@@ -345,11 +357,11 @@ class TestCeoPrompt:
     def test_plan_loop_references_archivist(self, ceo_prompt: str) -> None:
         """Build workflow has archivist node."""
         from factory.workflow.definitions import register_all
+
         wfs = register_all()
         design = wfs["design"]
         has_archivist = any(
-            hasattr(n, "role") and n.role.value == "archivist"
-            for n in design.nodes.values()
+            hasattr(n, "role") and n.role.value == "archivist" for n in design.nodes.values()
         )
         assert has_archivist
 
@@ -361,7 +373,7 @@ class TestCeoPrompt:
     def test_forbidden_actions_list_agent_tool(self, ceo_prompt: str) -> None:
         """The Forbidden Actions list includes native Agent tool prohibition."""
         forbidden_section_start = ceo_prompt.index("**Forbidden Actions")
-        forbidden_section = ceo_prompt[forbidden_section_start:forbidden_section_start + 800]
+        forbidden_section = ceo_prompt[forbidden_section_start : forbidden_section_start + 800]
         assert "Agent" in forbidden_section
         assert "factory agent" in forbidden_section
 

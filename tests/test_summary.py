@@ -67,40 +67,101 @@ def summary_project(tmp_path: Path) -> Path:
     writer = csv.writer(buf, dialect="excel-tab")
     writer.writerow(TSV_COLUMNS)
     for row in [
-        [1, "2026-04-26T10:00:00+00:00", "Add logging", "Added logging", "", "42",
-         "0.700", "0.745", "0.045", "keep", "1.50", "", ""],
-        [2, "2026-04-26T11:00:00+00:00", "Fix imports", "Fixed imports", "", "43",
-         "0.745", "0.760", "0.015", "keep", "0.80", "", ""],
-        [3, "2026-04-26T12:00:00+00:00", "Add caching", "Added caching", "", "",
-         "0.760", "0.755", "-0.005", "revert", "2.00", "", ""],
-        [4, "2026-04-26T13:00:00+00:00", "Broken refactor", "Refactored", "", "",
-         "0.760", "", "", "error", "0.50", "", ""],
+        [
+            1,
+            "2026-04-26T10:00:00+00:00",
+            "Add logging",
+            "Added logging",
+            "",
+            "42",
+            "0.700",
+            "0.745",
+            "0.045",
+            "keep",
+            "1.50",
+            "",
+            "",
+        ],
+        [
+            2,
+            "2026-04-26T11:00:00+00:00",
+            "Fix imports",
+            "Fixed imports",
+            "",
+            "43",
+            "0.745",
+            "0.760",
+            "0.015",
+            "keep",
+            "0.80",
+            "",
+            "",
+        ],
+        [
+            3,
+            "2026-04-26T12:00:00+00:00",
+            "Add caching",
+            "Added caching",
+            "",
+            "",
+            "0.760",
+            "0.755",
+            "-0.005",
+            "revert",
+            "2.00",
+            "",
+            "",
+        ],
+        [
+            4,
+            "2026-04-26T13:00:00+00:00",
+            "Broken refactor",
+            "Refactored",
+            "",
+            "",
+            "0.760",
+            "",
+            "",
+            "error",
+            "0.50",
+            "",
+            "",
+        ],
     ]:
         writer.writerow(row)
     (factory / "results.tsv").write_text(buf.getvalue())
 
     # Write backlog
     (factory / "strategy" / "backlog.md").write_text(
-        "- Add rate limiting\n"
-        "- Improve test coverage\n"
-        "- Write API docs\n"
+        "- Add rate limiting\n- Improve test coverage\n- Write API docs\n"
     )
 
     # Write eval_after with guard violations for experiment 3
     exp3 = factory / "experiments" / "003"
     exp3.mkdir()
-    (exp3 / "eval_after.json").write_text(json.dumps({
-        "total": 0.755,
-        "results": [],
-        "guard_violations": ["scope_check: modified files outside scope"],
-        "passed": False,
-    }))
+    (exp3 / "eval_after.json").write_text(
+        json.dumps(
+            {
+                "total": 0.755,
+                "results": [],
+                "guard_violations": ["scope_check: modified files outside scope"],
+                "passed": False,
+            }
+        )
+    )
 
     # Write events.jsonl with mode info
     (factory / "events.jsonl").write_text(
-        json.dumps({"type": "cycle.started", "timestamp": "2026-04-26T09:00:00Z",
-                     "project": "summary-project", "agent": None,
-                     "data": {"cycle": 1, "mode": "design"}}) + "\n"
+        json.dumps(
+            {
+                "type": "cycle.started",
+                "timestamp": "2026-04-26T09:00:00Z",
+                "project": "summary-project",
+                "agent": None,
+                "data": {"cycle": 1, "mode": "design"},
+            }
+        )
+        + "\n"
     )
 
     return project
@@ -206,13 +267,18 @@ async def test_session_scoping(summary_project: Path) -> None:
     # Add a second cycle.started at 11:30 — only experiments 3 and 4 should appear.
     events_path = summary_project / ".factory" / "events.jsonl"
     with open(events_path, "a") as f:
-        f.write(json.dumps({
-            "type": "cycle.started",
-            "timestamp": "2026-04-26T11:30:00+00:00",
-            "project": "summary-project",
-            "agent": None,
-            "data": {"cycle": 2, "mode": "design"},
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "type": "cycle.started",
+                    "timestamp": "2026-04-26T11:30:00+00:00",
+                    "project": "summary-project",
+                    "agent": None,
+                    "data": {"cycle": 2, "mode": "design"},
+                }
+            )
+            + "\n"
+        )
 
     summary = await generate_summary(summary_project)
     all_ids = (
@@ -243,8 +309,23 @@ async def test_zero_cost_not_dropped(tmp_path: Path) -> None:
     buf = io.StringIO()
     writer = csv.writer(buf, dialect="excel-tab")
     writer.writerow(TSV_COLUMNS)
-    writer.writerow([1, "2026-04-26T10:00:00+00:00", "Free fix", "Fixed",
-                     "", "", "0.7", "0.8", "0.1", "keep", "0.0", "", ""])
+    writer.writerow(
+        [
+            1,
+            "2026-04-26T10:00:00+00:00",
+            "Free fix",
+            "Fixed",
+            "",
+            "",
+            "0.7",
+            "0.8",
+            "0.1",
+            "keep",
+            "0.0",
+            "",
+            "",
+        ]
+    )
     (factory / "results.tsv").write_text(buf.getvalue())
 
     summary = await generate_summary(project)
@@ -277,7 +358,7 @@ def test_format_output() -> None:
     assert "## What Was Deferred" in output
     assert "## Needs Your Input" in output
     assert "test-project" in output
-    assert "improve" in output
+    assert "design" in output
     assert "0.7000" in output
     assert "0.7450" in output
     assert "$2.30" in output
