@@ -514,7 +514,7 @@ class TestCmdCeoDesign:
 class TestRunAutoApprove:
     def test_run_auto_approve_rejected_without_design(self, capsys):
         """cmd_run rejects --auto-approve when mode is not design."""
-        result = main(["run", "/some/path", "--mode", "design", "--auto-approve"])
+        result = main(["run", "/some/path", "--mode", "founder", "--auto-approve"])
         assert result == 1
         assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
 
