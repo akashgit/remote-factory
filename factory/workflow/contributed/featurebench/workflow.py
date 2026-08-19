@@ -236,9 +236,10 @@ def workflow() -> Workflow:
         evaluator_type="fn",
         evaluator_command=(
             "if [ -f {project_path}/.factory/validation_tests/test_spec_compliance.py ]; then "
+            "docker exec {container_name} rm -rf /tmp/validation_tests && "
             "docker cp {project_path}/.factory/validation_tests {container_name}:/tmp/validation_tests && "
             "docker exec {container_name} bash -c "
-            "'conda run -n testbed pytest /tmp/validation_tests/ -x --tb=short -v 2>&1' "
+            "'cd /tmp/validation_tests && conda run -n testbed pytest . -x --tb=short -v 2>&1' "
             "> {project_path}/.factory/reviews/gate-pytest-output.txt 2>&1; "
             "RC=$?; "
             "if [ $RC -eq 0 ]; then echo 'pass: all validation tests passed'; "
