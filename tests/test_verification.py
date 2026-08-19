@@ -521,16 +521,16 @@ class TestDesignWorkflowAnnotations:
         assert "code_reviewer" in wf.nodes
         assert "adversarial_tester" in wf.nodes
 
-    def test_design_workflow_inherits_post_checks(self) -> None:
+    def test_design_workflow_overrides_post_checks(self) -> None:
         from factory.workflow.definitions import design_workflow
 
         wf = design_workflow()
-        # Design inherits from build — verify inherited sentinel values
+        # Design overrides build's strategist post_checks with dual-format sentinels
         strat = wf.nodes["strategist"]
         assert isinstance(strat, AgentNode)
         assert len(strat.post_checks) > 0
         assert "### Phase 1" in strat.post_checks[0].must_contain
-        assert "### Architecture" in strat.post_checks[0].must_contain
+        assert "### Hypotheses" in strat.post_checks[0].must_contain
 
         builder = wf.nodes["builder"]
         assert isinstance(builder, AgentNode)
