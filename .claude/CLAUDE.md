@@ -287,8 +287,9 @@ At the start of every cycle, create a task list using `TaskCreate` **before spaw
 
 | # | Subject | activeForm |
 |---|---------|------------|
-| 1 | Graph update + study | Scanning project |
+| 1 | Graph update + study | Scanning project graph |
 | 2 | Graph exploration | Exploring code structure |
+| 3 | Synthesis report | Synthesizing findings |
 
 ### Status Transition Rules
 
@@ -526,3 +527,398 @@ When the Strategist generates hypotheses, they should follow the FEEC priority h
 **Backlog priority:** The Strategist reads `.factory/strategy/backlog.md` and clears as many items as possible each cycle. Backlog items are the primary work — new items are capped. FEEC ordering applies within the backlog: Fix items first, then Exploit, then Explore. When the backlog is empty, the Strategist is in pure exploration mode.
 
 Stuck detection: if 3+ consecutive experiments in the same category are reverted, the Strategist MUST pivot to a different category.
+
+
+---
+
+## Behavioral Playbook (auto-evolved from experiment data)
+
+Follow these empirically-derived rules. Items with higher helpful counts are more strongly supported by data.
+
+---
+role: ceo
+updated: 2026-04-26
+item_count: 9
+---
+
+## Behavioral Playbook — Ceo
+
+### DO
+- [ceo-00001] helpful=0 harmful=0 :: Before starting any improve cycle, check if the project can actually run end-to-end. If .env exists with credentials, try starting the app. Optimizing code that has never been run wastes entire cycles.
+- [ceo-00002] helpful=0 harmful=0 :: After any experiment that touches external integration code (browser automation, API clients, scraping), mandate a real E2E test before marking as "keep". Mock-only test suites and eval scores do not prove integration correctness.
+- [ceo-00003] helpful=0 harmful=0 :: ALWAYS spawn the Archivist after every phase (research, strategy, build, experiment). Write the checkpoint to archivist-checkpoints.md BEFORE moving to the next phase. Every skipped archival is knowledge permanently lost.
+- [ceo-00004] helpful=0 harmful=0 :: When reviewing the Strategist's hypotheses, HARD-REJECT if all hypotheses are hygiene-only (tests, lint, cleanup). The eval is 50% hygiene + 50% growth — always include at least one hypothesis that adds real functionality.
+- [ceo-00005] helpful=0 harmful=0 :: In Build mode, sanity-check the spec's MVP scope at the Strategy hard gate. If the product IS an external integration and the build plan defers that integration entirely, flag it. The CEO's job is to catch scope gaps, not rubber-stamp.
+- [ceo-00006] helpful=0 harmful=0 :: At the end of Build mode (before transitioning to Discover/Improve), extract all deferred items from the build plan into .factory/strategy/deferred.md via `factory deferred-list`. The Strategist's $DEFERRED_DIRECTIVE checks for this file.
+
+### DON'T
+- [ceo-00007] helpful=0 harmful=0 :: NEVER exit Build mode between phases with a self-judged "stopping point" rationale. Phrases like "This is a good stopping point" or "Phase 1 is complete and documented" are FORBIDDEN exit reasons. A scaffold without implementation is not a deliverable — complete ALL planned phases before exiting.
+- [ceo-00008] helpful=0 harmful=0 :: NEVER exit Improve mode after Strategy approval but before executing hypotheses. Phrases like "this is beyond the scope of a single session" or "strategy is ready for execution" are FORBIDDEN exit reasons. Strategy approval is NOT completion — you MUST spawn Builder for EVERY approved hypothesis and get verdicts before exiting.
+- [ceo-00009] helpful=0 harmful=0 :: NEVER spawn subagents in the background. Do not run `factory agent <role>` with `&`, `run_in_background`, or any background process mode. Do not `tail -f` any log file waiting for subagent output — no such file exists. The runner captures all output to `.factory/reviews/<role>-latest.md` synchronously. Background spawning causes double-spend when the CEO "recovers" by re-invoking synchronously.
+
+# Workflow Playbook (design)
+
+---
+name: workflow-design
+description: "Interactive design mode — build with a user approval gate at strategy, plus conditional study for existing projects. Use when the user says 'design X', 'plan X', 'let's discuss what to build', or wants to review the strategy before building. Works for both new and existing projects. Supports --from-plan to load an existing plan and skip research. With --just-plan, runs plan-only (research + strategy + GitHub publish, NO implementation)."
+disable-model-invocation: true
+argument-hint: "<project_path> [idea or spec] [--from-plan <path_or_url>] [--just-plan]"
+---
+
+# Design Workflow
+
+The user wants: **$ARGUMENTS**
+
+### Gate — Has Factory (Automated)
+
+**MANDATORY:** Wait for the preceding agent to finish, then run this check BEFORE spawning the next agent. Do NOT run agents in parallel across this gate.
+
+```bash
+python3 -c "from pathlib import Path; exists = Path("$PROJECT_PATH/.factory/config.json").exists(); print("PROCEED" if exists else "HALT")"
+```
+
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `graph_update`
+- **HALT** (exit non-zero / FAIL in output) → continue to `discover` instead.
+
+## Step: Discover
+
+```bash
+factory discover $PROJECT_PATH
+```
+
+## Step: Graph Update
+
+Extract or incrementally update the code knowledge graph before study.
+
+```bash
+factory graph update $PROJECT_PATH
+```
+
+## Phase 1: Observe
+
+Run local study to gather observations:
+
+```bash
+factory study $PROJECT_PATH
+```
+
+Writes observations to `.factory/strategy/observations.md`.
+
+## Phase 2: Researcher — Graph Explorer
+
+```bash
+factory agent researcher --task "Explore the project's code knowledge graph to build structural understanding. Read .factory/strategy/observations.md for focus context.
+
+If graphify is installed and graph.json exists:
+1. Run `factory graph query "<focus from observations>" --depth 2` to find relevant nodes
+2. Run `factory graph explain "<key node>"` on the most important nodes to understand their connections and dependencies
+3. Run `factory graph path "<A>" "<B>"` to trace dependency paths between key components
+4. Write structured findings to .factory/strategy/graph-context.md covering: key modules and their relationships, dependency paths, architectural layers, entry points and hotspots
+
+If graphify is NOT installed or graph.json is missing, fall back to direct file exploration:
+1. Use `find . -name '*.py' | head -50` to discover source files
+2. Use `grep -rn 'class \|def ' --include='*.py' | head -100` to map functions and classes
+3. Use `grep -rn 'import ' --include='*.py' | head -100` to trace dependencies
+4. Write the same structured findings to .factory/strategy/graph-context.md
+Read: .factory/strategy/observations.md
+Write output to: .factory/strategy/graph-context.md" --project "$PROJECT_PATH" --timeout 600
+```
+
+```bash
+# Artifact verification: graph_explorer
+_vfail=0
+_f="$PROJECT_PATH/.factory/strategy/graph-context.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: graph_explorer: .factory/strategy/graph-context.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: graph_explorer: .factory/strategy/graph-context.md is empty" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=graph_explorer" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: graph_explorer artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=graph_explorer" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+## Step: Concat Study
+
+```bash
+cat $PROJECT_PATH/.factory/strategy/observations.md $PROJECT_PATH/.factory/strategy/graph-context.md > $PROJECT_PATH/.factory/strategy/study-combined.md
+```
+
+## Phase 3: Research (Parallel)
+
+Spawn 3 agents in parallel:
+
+```bash
+factory agent researcher --review-tag similar --task "Similar projects research. Read .factory/strategy/study-combined.md for project context (observations + structural graph analysis). Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities.
+Read: .factory/strategy/study-combined.md
+Write output to: .factory/strategy/research-similar.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
+factory agent researcher --review-tag techstack --task "Tech stack research. Read .factory/strategy/study-combined.md for project context (observations + structural graph analysis). Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons.
+Read: .factory/strategy/study-combined.md
+Write output to: .factory/strategy/research-techstack.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
+factory agent researcher --review-tag pitfalls --task "Pitfalls and scope research. Read .factory/strategy/study-combined.md for project context (observations + structural graph analysis). Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds.
+Read: .factory/strategy/study-combined.md
+Write output to: .factory/strategy/research-pitfalls.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
+wait
+```
+
+```bash
+# Artifact verification: researcher_similar
+_vfail=0
+_f="$PROJECT_PATH/.factory/strategy/research-similar.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: researcher_similar: .factory/strategy/research-similar.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: researcher_similar: .factory/strategy/research-similar.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 50 ] && echo "VERIFY FAIL: researcher_similar: .factory/strategy/research-similar.md smaller than 50 bytes" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=researcher_similar" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: researcher_similar artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=researcher_similar" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+
+# Artifact verification: researcher_techstack
+_vfail=0
+_f="$PROJECT_PATH/.factory/strategy/research-techstack.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: researcher_techstack: .factory/strategy/research-techstack.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: researcher_techstack: .factory/strategy/research-techstack.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 50 ] && echo "VERIFY FAIL: researcher_techstack: .factory/strategy/research-techstack.md smaller than 50 bytes" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=researcher_techstack" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: researcher_techstack artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=researcher_techstack" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+
+# Artifact verification: researcher_pitfalls
+_vfail=0
+_f="$PROJECT_PATH/.factory/strategy/research-pitfalls.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: researcher_pitfalls: .factory/strategy/research-pitfalls.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: researcher_pitfalls: .factory/strategy/research-pitfalls.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 50 ] && echo "VERIFY FAIL: researcher_pitfalls: .factory/strategy/research-pitfalls.md smaller than 50 bytes" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=researcher_pitfalls" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: researcher_pitfalls artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=researcher_pitfalls" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(post-barrier harness verification — DO NOT SKIP)*
+
+## Barrier: Research
+
+Wait for all parallel agents to complete: `researcher_similar`, `researcher_techstack`, `researcher_pitfalls`
+
+### CEO Review — Research
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/strategy/research-pitfalls.md`, `.factory/strategy/research-similar.md`, `.factory/strategy/research-techstack.md`
+3. Assess: Is the research relevant? Does it cover the technology landscape adequately? Check for gaps in similar projects, tech stack analysis, and pitfall coverage.
+4. Write verdict to `.factory/reviews/ceo-verdict-research.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `fork_research` (max 3 iterations)*
+
+## Phase 4: Strategist
+
+```bash
+factory agent strategist --task "Synthesize a project specification from study and research. If .factory/strategy/study-combined.md exists, read it for project observations and structural graph analysis. Read ALL research files at .factory/strategy/research-similar.md, research-techstack.md, and research-pitfalls.md. Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. Every Phase must have substantive What/Why/Expected impact fields. Build EVERYTHING in this pass. Only defer items requiring human intervention. Write the plan to .factory/strategy/current.md.
+Read: .factory/strategy/research-pitfalls.md, .factory/strategy/research-similar.md, .factory/strategy/research-techstack.md, .factory/strategy/study-combined.md
+Write output to: .factory/strategy/current.md" --project "$PROJECT_PATH" --timeout 600
+```
+
+```bash
+# Artifact verification: strategist
+_vfail=0
+_f="$PROJECT_PATH/.factory/strategy/current.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: strategist: .factory/strategy/current.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: strategist: .factory/strategy/current.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 200 ] && echo "VERIFY FAIL: strategist: .factory/strategy/current.md smaller than 200 bytes" && _vfail=1
+[ -f "$_f" ] && ! grep -qE '\#\#\#\ Phase\ 1|\#\#\#\ Architecture' "$_f" && echo "VERIFY FAIL: strategist: .factory/strategy/current.md missing required sentinel (### Phase 1, ### Architecture)" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=strategist" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: strategist artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=strategist" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+### Steering Point — Strategy (User Approval)
+
+**This is a USER approval gate, NOT a CEO review gate. Do NOT self-approve.**
+
+Present the strategy/findings to the user by summarizing key points in your output.
+Then explicitly ask the user: "Do you approve this plan, or do you have feedback?"
+
+**You MUST wait for the user's response before proceeding.**
+- The user says "approve", "yes", "looks good", or similar → proceed to next step
+- The user provides feedback or corrections → re-run the previous step incorporating their feedback
+- Do NOT write a verdict file and auto-proceed — this gate requires human input
+
+*On RELOOP: return to `strategist` (max 3 iterations)*
+
+## Phase 5: Archivist Plan
+
+```bash
+factory agent archivist --task "Archive the approved research and strategy.
+Read: .factory/strategy/current.md
+Write output to: .factory/archive/plan.md" --project "$PROJECT_PATH" --timeout 300 --model haiku &
+```
+*(fire-and-forget — CEO continues immediately)*
+
+## Phase 6: Builder
+
+```bash
+factory agent builder --task "Implement the next phase from .factory/strategy/current.md. Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. Read CLAUDE.md and factory.md if they exist. Implement exactly what the current phase describes. Run tests. Commit changes and open a draft PR.
+Read: .factory/strategy/current.md
+Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 1200
+```
+
+```bash
+# Artifact verification: builder
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/builder-latest.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: builder: .factory/reviews/builder-latest.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: builder: .factory/reviews/builder-latest.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 500 ] && echo "VERIFY FAIL: builder: .factory/reviews/builder-latest.md smaller than 500 bytes" && _vfail=1
+[ -f "$_f" ] && ! grep -qE 'commit' "$_f" && echo "VERIFY FAIL: builder: .factory/reviews/builder-latest.md missing required sentinel (commit)" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=builder" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: builder artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=builder" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+### CEO Review — Build
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/builder-latest.md`
+3. Assess: Read builder output. Check git log and diff. Does the work match the plan for this phase? If the Builder opened a PR, read it. REDIRECT if off-scope or missed key requirements.
+4. Write verdict to `.factory/reviews/ceo-verdict-build.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
+
+## Phase 7: Health Checker
+
+```bash
+factory agent health_checker --task "Execute health_checker task for the project.
+Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+Write output to: .factory/reviews/health-check.md" --project "$PROJECT_PATH" --timeout 600
+```
+
+```bash
+# Artifact verification: health_checker
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/health-check.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: health_checker: .factory/reviews/health-check.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: health_checker: .factory/reviews/health-check.md is empty" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=health_checker" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: health_checker artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=health_checker" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+## Phase 8: Code Reviewer
+
+```bash
+factory agent code_reviewer --task "Execute code_reviewer task for the project.
+Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+Write output to: .factory/reviews/code-review.md" --project "$PROJECT_PATH" --timeout 900
+```
+
+```bash
+# Artifact verification: code_reviewer
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/code-review.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: code_reviewer: .factory/reviews/code-review.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: code_reviewer: .factory/reviews/code-review.md is empty" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=code_reviewer" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: code_reviewer artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=code_reviewer" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+### Gate — Review (Automated)
+
+**MANDATORY:** Wait for the preceding agent to finish, then run this check BEFORE spawning the next agent. Do NOT run agents in parallel across this gate.
+
+```bash
+if grep -q 'CRITICAL_FOUND' $PROJECT_PATH/.factory/reviews/code-review.md; then echo 'FAIL: critical issues found'; else echo 'PROCEED'; fi
+```
+
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `adversarial_tester`
+- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `adversarial_tester`. Skip to the next CEO review gate or finalize as error.
+
+## Phase 9: Adversarial Tester
+
+```bash
+factory agent adversarial_tester --task "Execute adversarial_tester task for the project.
+Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+Write output to: .factory/reviews/adversarial-qa.md" --project "$PROJECT_PATH" --timeout 1800
+```
+
+```bash
+# Artifact verification: adversarial_tester
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/adversarial-qa.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: adversarial_tester: .factory/reviews/adversarial-qa.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: adversarial_tester: .factory/reviews/adversarial-qa.md is empty" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=adversarial_tester" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: adversarial_tester artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=adversarial_tester" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+### CEO Review — Qa
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/adversarial-qa.md`, `.factory/reviews/code-review.md`, `.factory/reviews/health-check.md`
+3. Assess: Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.
+4. Write verdict to `.factory/reviews/ceo-verdict-qa.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
+
+### CEO Review — Doc Freshness
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/adversarial-qa.md`
+3. Assess: Check the PR diff for documentation freshness. If public APIs, CLI commands, configuration options, or architecture were changed or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy changes exist. RELOOP to builder if documentation is stale — specify exactly which changes need doc updates.
+4. Write verdict to `.factory/reviews/ceo-verdict-doc-freshness.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
+
+### Gate — Precheck (Automated)
+
+**MANDATORY:** Wait for the preceding agent to finish, then run this check BEFORE spawning the next agent. Do NOT run agents in parallel across this gate.
+
+```bash
+factory precheck $PROJECT_PATH --score-before 0 --score-after 0
+```
+
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `archivist_build`
+- **HALT** (exit non-zero / FAIL in output) → continue to `archivist_build` instead.
+
+## Phase 10: Archivist Build
+
+```bash
+factory agent archivist --task "Archive the build phase results.
+Read: .factory/reviews/adversarial-qa.md
+Write output to: .factory/archive/build.md" --project "$PROJECT_PATH" --timeout 300 --model haiku &
+```
+*(fire-and-forget — CEO continues immediately)*
+
+## Step: Spec Generate
+
+Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.
+
+```bash
+factory workflow run spec-generate $PROJECT_PATH
+```
