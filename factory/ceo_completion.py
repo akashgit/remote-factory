@@ -292,53 +292,18 @@ def _detect_incomplete(
         cycle_started_at: If provided, only counts experiments created after this time.
             This prevents counting stale experiments from previous cycles.
     """
-    if mode in ("improve", "meta", "research"):
+    if mode in ("design", "meta", "research"):
         planned = _count_hypotheses(project_path)
         completed = _count_verdicts(project_path, since_ts=cycle_started_at)
 
         if planned == 0:
-            # No strategy yet — not an incomplete cycle, probably discover mode
-            return None
-
-        if completed >= planned:
-            return None
-
-        next_h = completed + 1
-        reason_prefix = "research" if mode == "research" else "improve"
-        return IncompleteGap(
-            mode=mode,
-            planned=planned,
-            completed=completed,
-            next_item=f"H{next_h}",
-            reason=f"{reason_prefix}.incomplete: {completed}/{planned} hypotheses have verdicts",
-        )
-
-    elif mode == "discover":
-        if _has_eval_profile(project_path):
-            return None
-        return IncompleteGap(
-            mode=mode,
-            planned=1,
-            completed=0,
-            next_item="eval_profile",
-            reason="discover.incomplete: no eval_profile.json",
-        )
-
-    elif mode == "build":
-        # For build mode, check if Builder completed at least one hypothesis
-        # In build mode, the strategy file should have phases marked as hypotheses
-        planned = _count_hypotheses(project_path)
-        completed = _count_verdicts(project_path, since_ts=cycle_started_at)
-
-        if planned == 0:
-            # No strategy means we're in scaffold phase — check for eval profile
             if not _has_eval_profile(project_path):
                 return IncompleteGap(
                     mode=mode,
                     planned=1,
                     completed=0,
                     next_item="discovery",
-                    reason="build.incomplete: no eval profile yet",
+                    reason="design.incomplete: no eval profile yet",
                 )
             return None
 
@@ -346,12 +311,13 @@ def _detect_incomplete(
             return None
 
         next_h = completed + 1
+        reason_prefix = "research" if mode == "research" else "design"
         return IncompleteGap(
             mode=mode,
             planned=planned,
             completed=completed,
-            next_item=f"Phase{next_h}",
-            reason=f"build.incomplete: {completed}/{planned} phases have verdicts",
+            next_item=f"H{next_h}",
+            reason=f"{reason_prefix}.incomplete: {completed}/{planned} hypotheses have verdicts",
         )
 
     # Unknown mode — assume complete
@@ -386,25 +352,13 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
             f"research cycle (R3–R5) for each remaining hypothesis. "
             f"Progress so far: {gap.completed}/{gap.planned} hypotheses have verdicts."
         )
-    elif gap.mode in ("improve", "meta"):
+    elif gap.mode in ("design", "meta"):
         body = (
-            f"Resume execution from hypothesis {gap.next_item}. "
+            f"Resume execution from {gap.next_item}. "
             f"Strategy is already approved at .factory/strategy/current.md — "
             f"do not re-plan, do not re-run Researcher or Strategist. "
             f"Spawn Builder for {gap.next_item} immediately. "
             f"Progress so far: {gap.completed}/{gap.planned} hypotheses have verdicts."
-        )
-    elif gap.mode == "build":
-        body = (
-            f"Resume Build pipeline from {gap.next_item}. "
-            f"Plan is already approved at .factory/strategy/current.md. "
-            f"Progress so far: {gap.completed}/{gap.planned} phases complete. "
-            f"Continue with the next phase immediately."
-        )
-    elif gap.mode == "discover":
-        body = (
-            "Resume Discovery. The eval profile has not been generated yet. "
-            "Complete the Discover mode workflow to produce .factory/eval_profile.json."
         )
     else:
         body = f"Resume from {gap.next_item}."

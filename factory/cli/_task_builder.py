@@ -17,12 +17,10 @@ def _slug(desc: str) -> str:
 
 def _mode_suffix(mode: str, discover_only: bool) -> str:
     _SIMPLE_MODE_SUFFIXES = {
-        "build": (
-            "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
-            "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
-            "(B3-B6): Build phases → E2E verification. "
-            "Do NOT skip to Improve mode — the project needs to be built first. "
-            "The full step-by-step playbook is in your system prompt above."
+        "design": (
+            "\n\nRun Design mode: the universal entry point. Design mode handles build, "
+            "discover, and improve workflows inline via its conditional gates. "
+            "Follow the step-by-step playbook in your system prompt above."
         ),
         "meta": (
             "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
