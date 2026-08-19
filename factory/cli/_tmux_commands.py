@@ -129,7 +129,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         print(f"  tmux attach -t {session}")
         return 0
 
-    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "BOBSHELL_", "OPENAI_", "CODEX_", "CLAUDE_CODE_", "CLOUD_ML_")
+    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "OPENAI_", "CLAUDE_CODE_", "CLOUD_ML_")
     run_cmd_parts = []
     for key, val in sorted(os.environ.items()):
         if key.startswith(_ENV_PREFIXES):

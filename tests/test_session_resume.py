@@ -97,13 +97,6 @@ class TestRunnerMetaSessionResume:
         meta = ClaudeRunner.metadata()
         assert meta.supports_session_resume is True
 
-    def test_bob_does_not_support_session_resume(self) -> None:
-        from factory.runners.bob import BobRunner
-
-        meta = BobRunner.metadata()
-        assert meta.supports_session_resume is False
-
-
 class TestClaudeBuildCommandSessionFlags:
     """Tests for --session-id and --resume flags in build_command."""
 

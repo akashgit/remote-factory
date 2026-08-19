@@ -62,49 +62,9 @@ def _runner_has_auth(name: str) -> bool:
     if not meta.is_available():
         return False
 
-    if name == "bob":
-        # Bob stores auth in ~/.bob/, not env vars — if the binary responds, it's authed
-        try:
-            result = subprocess.run(
-                ["bob", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+    if name != "claude":
+        return False
 
-    if name == "codex":
-        # Codex uses ChatGPT OAuth — check via login status
-        if os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"):
-            return True
-        try:
-            result = subprocess.run(
-                ["codex", "login", "status"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-
-    if name == "opencode":
-        if os.environ.get("OPENAI_API_KEY"):
-            return True
-        try:
-            result = subprocess.run(
-                ["zsh", "-c", "source ~/.zshrc 2>/dev/null && echo $OPENAI_API_KEY"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            return bool(result.stdout.strip())
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-
-    # Claude — if binary is available, auth is handled by the CLI itself
     return True
 
 
@@ -317,27 +277,21 @@ def test_runners_list_json() -> None:
     assert code == 0
     data = json.loads(buf.getvalue())
     assert isinstance(data, list)
-    assert len(data) >= 4
+    assert len(data) >= 1
     names = {r["name"] for r in data}
     assert "claude" in names
-    assert "bob" in names
-    assert "codex" in names
-    assert "opencode" in names
 
 
 def test_get_available_runners_includes_all_builtins() -> None:
-    """get_available_runners includes all 4 built-in runners."""
+    """get_available_runners includes the claude runner."""
     runners = get_available_runners()
     assert "claude" in runners
-    assert "bob" in runners
-    assert "codex" in runners
-    assert "opencode" in runners
 
 
 def test_runner_metadata_consistency() -> None:
     """All runners have consistent metadata."""
     meta_list = get_all_runner_meta()
-    assert len(meta_list) >= 4
+    assert len(meta_list) >= 1
 
     names = set()
     for m in meta_list:
@@ -554,7 +508,7 @@ async def test_headless_produces_output(runner_name: str, sample_project: Path) 
 
 
 def _cli_env() -> dict[str, str]:
-    """Build subprocess env with PATH that includes ~/go/bin for opencode."""
+    """Build subprocess env with PATH additions for runner discovery."""
     env = os.environ.copy()
     go_bin = str(Path.home() / "go" / "bin")
     if go_bin not in env.get("PATH", ""):
@@ -582,9 +536,6 @@ def _cli_env() -> dict[str, str]:
 def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) -> None:
     """factory agent researcher via CLI subprocess for each runner."""
     env = _cli_env()
-    if runner_name == "codex":
-        env.pop("OPENAI_API_KEY", None)
-        env.pop("CODEX_API_KEY", None)
     result = subprocess.run(
         [
             "uv",
@@ -651,8 +602,7 @@ def test_factory_runners_list_all_present() -> None:
     data = json.loads(result.stdout)
     assert isinstance(data, list)
     names = {r["name"] for r in data}
-    for expected in ("claude", "bob", "codex", "opencode"):
-        assert expected in names, f"runner '{expected}' missing from list"
+    assert "claude" in names, "runner 'claude' missing from list"
     for runner in data:
         assert "name" in runner
         assert "display_name" in runner

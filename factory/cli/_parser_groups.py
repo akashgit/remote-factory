@@ -254,17 +254,11 @@ def add_self_evolution_parsers(sub: argparse._SubParsersAction) -> None:  # type
 def add_configuration_parsers(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
-    p = sub.add_parser("install", help="Install Factory agents as CLI agents (~/.claude/agents/ or ~/.codex/agents/)")
+    p = sub.add_parser("install", help="Install Factory agents as CLI agents (~/.claude/agents/)")
     p.add_argument(
         "--role",
         default=None,
         help="Install only a specific agent role (default: all)",
-    )
-    p.add_argument(
-        "--runner",
-        choices=["claude", "codex"],
-        default="claude",
-        help="Target CLI: claude writes Markdown to ~/.claude/agents/, codex writes TOML to ~/.codex/agents/ (default: claude)",
     )
 
     p = sub.add_parser("usage", help="Show per-agent token usage and cost breakdown")

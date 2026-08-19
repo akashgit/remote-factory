@@ -39,7 +39,7 @@ _CONFIG_TEMPLATE = """\
 # See: factory config show
 
 [defaults]
-# runner = "claude"                    # CLI backend: "claude", "bob", or "codex"
+# runner = "claude"                    # CLI backend
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 # tmux_persist = false                 # Launch agents in tmux windows
@@ -50,14 +50,6 @@ _CONFIG_TEMPLATE = """\
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"
 # ANTHROPIC_API_KEY = "sk-ant-..."
-#
-# [credentials.bob]
-# FACTORY_RUNNER = "bob"
-# BOBSHELL_API_KEY = "..."
-#
-# [credentials.codex]
-# FACTORY_RUNNER = "codex"
-# CODEX_API_KEY = "..."
 #
 # [credentials.litellm-proxy]
 # FACTORY_RUNNER = "claude"
@@ -310,8 +302,6 @@ def migrate_env_to_config() -> str:
         "FACTORY_REGISTRY_DIR": "registry_dir",
         "FACTORY_MANAGED_DIRS": "managed_dirs",
         "FACTORY_RUNNER_QUIET": "runner_quiet",
-        "FACTORY_BOB_DRY_RUN": "bob_dry_run",
-        "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE": "bob_max_invocations_per_cycle",
         "FACTORY_CEO_RESPAWN_DISABLED": "ceo_respawn_disabled",
         "FACTORY_CEO_MAX_RESPAWNS": "ceo_max_respawns",
         "FACTORY_REMOVE_WORKTREE": "remove_worktree",

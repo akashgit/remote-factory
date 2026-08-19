@@ -209,60 +209,9 @@ Usage: `factory ceo /path --profile litellm-proxy`
 
 ## Runners
 
-The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI). Bob Shell (`bob` CLI) and OpenAI Codex (`codex` CLI) are also supported as switchable alternatives.
+The factory uses Claude Code (`claude` CLI) as its agent backend. The runner abstraction (`factory/runners/`) supports this via `ClaudeRunner` in `factory/runners/claude.py`. The runner protocol (`factory/runners/protocol.py`) defines the interface.
 
-**Runner selection:** Set `FACTORY_RUNNER=codex` (or `bob`) to switch backends, or pass `--runner codex` to individual commands. Default is `claude`.
-
-**Bob Shell specifics:**
-- Requires `BOBSHELL_API_KEY` environment variable to be set
-- Uses 'code' mode; agent role definitions are injected via the prompt
-- Model selection is not configurable (Bob Shell uses its default model)
-
-**Dry-run mode:** Set `FACTORY_BOB_DRY_RUN=1` to test Bob Shell integration without spending tokens. The factory returns stub responses and logs usage. This is automatically set in tests via `tests/conftest.py`.
-
-**Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8)
-- All invocations are logged to `.factory/bob_usage.jsonl`
-- When ≤2 invocations remain before the ceiling, a warning is logged and emitted to `.factory/events.jsonl` (type: `bob.ceiling_warning`)
-- Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
-
-**Codex specifics:**
-- Requires `CODEX_API_KEY` (or `OPENAI_API_KEY`) environment variable (or set via config.toml profile)
-- `CODEX_API_KEY` is auto-mapped to `OPENAI_API_KEY` in subprocess env if needed
-- Headless mode uses `codex exec` with `--sandbox workspace-write --ask-for-approval never`
-- Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`)
-- Progress streams to stderr, final message to stdout (matches factory capture model)
-- Install: `npm install -g @openai/codex`
-
-**Codex dry-run mode:** Set `FACTORY_CODEX_DRY_RUN=1` to test Codex integration without spending tokens.
-
-**Codex config profile example** (`~/.factory/config.toml`):
-```toml
-[credentials.codex]
-FACTORY_RUNNER = "codex"
-CODEX_API_KEY = "..."
-```
-Then run: `factory ceo /path/to/project --profile codex`
-
-**OpenCode specifics:**
-- The factory targets `anomalyco/opencode` v1.x (TypeScript/Bun). Install via: `curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`
-- Auth: run `opencode auth login` (interactive), or set a provider env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AWS_ACCESS_KEY_ID`, etc.)
-- Headless mode uses `opencode run '<prompt>' --format json --dir <cwd> --auto`
-- Model selection via `--model` flag (e.g., `anthropic/claude-sonnet-4-20250514`)
-- Session management: `--title <name>` (name a session), `--session <id>` (resume by ID), `--continue` (continue last session)
-- Dry-run mode: `FACTORY_OPENCODE_DRY_RUN=1`
-- Token guardrails: `FACTORY_OPENCODE_MAX_INVOCATIONS_PER_CYCLE` (default: 8), logged to `.factory/opencode_usage.jsonl`
-- Unsupported: `--bg` (no background mode), `--tmux-persist` (returns explicit error), CEO message events (no JSON streaming equivalent)
-
-**OpenCode config profile example** (`~/.factory/config.toml`):
-```toml
-[credentials.opencode]
-FACTORY_RUNNER = "opencode"
-ANTHROPIC_API_KEY = "sk-ant-..."
-```
-Then run: `factory ceo /path/to/project --profile opencode`
-
-**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
+**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data and usage logs to this directory. These are project-local artifacts that should not be committed to version control.
 
 ## Running the factory
 
@@ -347,7 +296,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Multiple issues can be specified in a single `--focus` string using commas, spaces, or "and" (e.g., `--focus "111 and 112"`, `--focus "issue 42, issue 43"`, `--focus "#111 #112"`). Each issue is fetched independently and added as a separate backlog item. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on, then continues to implementation automatically after approval. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless` unless `--auto-approve` is used. `--auto-approve` lifts the headless restriction for design mode, forcing headless execution and auto-approving user gates (e.g. strategy review) — useful for CI/CD and automated pipelines. `--from-plan <source>` loads an existing plan into design mode, skipping the research phase. Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string (searches GitHub issues with the `plan` label). Requires `--mode design`; mutually exclusive with `--focus` and `--prompt`. When fetching from a GitHub issue, includes both the issue body and all comments. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`. `--just-plan` (requires `--mode design`) enters planning-only mode — research + strategy + optional GitHub publishing with no implementation. Three parallel researchers investigate domain, practices, and constraints. The Strategist synthesizes a phased plan. Single user gate: keep the plan? Approval auto-publishes to GitHub as an issue with the `plan` label and seeds the backlog with plan phases. Terminal mode — does not chain to other modes. Compatible with `--focus`. Mutually exclusive with `--from-plan` and `--prompt`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the Claude Code runner. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Multiple issues can be specified in a single `--focus` string using commas, spaces, or "and" (e.g., `--focus "111 and 112"`, `--focus "issue 42, issue 43"`, `--focus "#111 #112"`). Each issue is fetched independently and added as a separate backlog item. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on, then continues to implementation automatically after approval. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless` unless `--auto-approve` is used. `--auto-approve` lifts the headless restriction for design mode, forcing headless execution and auto-approving user gates (e.g. strategy review) — useful for CI/CD and automated pipelines. `--from-plan <source>` loads an existing plan into design mode, skipping the research phase. Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string (searches GitHub issues with the `plan` label). Requires `--mode design`; mutually exclusive with `--focus` and `--prompt`. When fetching from a GitHub issue, includes both the issue body and all comments. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`. `--just-plan` (requires `--mode design`) enters planning-only mode — research + strategy + optional GitHub publishing with no implementation. Three parallel researchers investigate domain, practices, and constraints. The Strategist synthesizes a phased plan. Single user gate: keep the plan? Approval auto-publishes to GitHub as an issue with the `plan` label and seeds the backlog with plan phases. Terminal mode — does not chain to other modes. Compatible with `--focus`. Mutually exclusive with `--from-plan` and `--prompt`.
 
 ## Contained runtimes
 

@@ -489,7 +489,7 @@ async def run_ceo_with_completion_guard(
         project_path: Path to the project.
         initial_task: Initial task string for the CEO.
         mode: CEO mode (improve, build, discover, meta).
-        runner_name: Runner to use (claude or bob).
+        runner_name: Runner to use (default: claude).
         model: Optional model override.
         timeout: Timeout per CEO spawn in seconds.
         max_respawns: Max re-spawns (default from env or 5).
