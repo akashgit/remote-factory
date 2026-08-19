@@ -646,12 +646,52 @@ def design_workflow(just_plan: bool = False) -> Workflow:
             update={"reads": (node.reads or set()) | {".factory/strategy/study-combined.md"}},
         )
 
+    # Bootstrap nodes: create factory.md + config.json when missing
+    wf.nodes["gate_factory_md_exists"] = GateNode(
+        id="gate_factory_md_exists",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            'exists = Path("{project_path}/factory.md").exists(); '
+            'print("PROCEED" if exists else "HALT")'
+            '"'
+        ),
+    )
+
+    wf.nodes["create_factory_md"] = AgentNode(
+        id="create_factory_md",
+        role=AgentRole.CEO,
+        prompt_template=(
+            "Create factory.md from template. "
+            "Copy the factory config template to the project root. "
+            "Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test. "
+            "If .factory/eval_spec.json exists, populate the Eval Spec section. "
+            "If .factory/strategy/current.md has a Research Configuration section, "
+            "populate research sections (Research Target, Mutable/Fixed Surfaces, etc.)."
+        ),
+        reads={".factory/eval_profile.json"},
+        writes={"factory.md"},
+    )
+
+    wf.nodes["factory_init"] = FnNode(
+        id="factory_init",
+        command="factory init {project_path}",
+        notes="Parse factory.md and generate .factory/config.json. Must run after factory.md is created.",
+        reads={"factory.md"},
+        writes={".factory/config.json"},
+    )
+
     wf.edges.extend(
         [
             *s_edges,
             Edge(source="gate_has_factory", target="graph_update", condition=VerdictType.PROCEED),
             Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
-            Edge(source="discover", target="graph_update"),
+            Edge(source="discover", target="gate_factory_md_exists"),
+            Edge(source="gate_factory_md_exists", target="factory_init", condition=VerdictType.PROCEED),
+            Edge(source="gate_factory_md_exists", target="create_factory_md", condition=VerdictType.HALT),
+            Edge(source="create_factory_md", target="factory_init"),
+            Edge(source="factory_init", target="graph_update"),
             Edge(source="concat_study", target="fork_research"),
         ]
     )

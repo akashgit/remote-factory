@@ -260,6 +260,40 @@ def _sync_backlog_to_main(worktree_path: Path, project_path: Path) -> None:
         log.info("backlog_synced", src=str(wt_backlog), dst=str(main_backlog))
 
 
+_BOOTSTRAP_FACTORY_FILES: Final[tuple[str, ...]] = (
+    "config.json",
+    "eval_profile.json",
+)
+
+
+def _sync_bootstrap_to_main(worktree_path: Path, project_path: Path) -> None:
+    """Sync bootstrap artifacts from worktree back to main project.
+
+    Only copies files that are real (not symlinks), meaning they were freshly
+    created during this run rather than symlinked from main.
+    """
+    wt_factory = worktree_path / ".factory"
+    main_factory = project_path / ".factory"
+
+    if not wt_factory.exists():
+        return
+
+    main_factory.mkdir(parents=True, exist_ok=True)
+    for filename in _BOOTSTRAP_FACTORY_FILES:
+        src = wt_factory / filename
+        if src.exists() and not src.is_symlink():
+            dst = main_factory / filename
+            if not dst.exists():
+                shutil.copy2(src, dst)
+                log.info("bootstrap_synced", file=filename, src=str(src), dst=str(dst))
+
+    wt_factory_md = worktree_path / "factory.md"
+    main_factory_md = project_path / "factory.md"
+    if wt_factory_md.exists() and not wt_factory_md.is_symlink() and not main_factory_md.exists():
+        shutil.copy2(wt_factory_md, main_factory_md)
+        log.info("bootstrap_synced", file="factory.md", src=str(wt_factory_md), dst=str(main_factory_md))
+
+
 def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
     """Copy telemetry files from worktree .factory/ to main project .factory/."""
     wt_factory = worktree_path / ".factory"
@@ -364,6 +398,7 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
             )
             return
         _sync_backlog_to_main(worktree_path, project_path)
+        _sync_bootstrap_to_main(worktree_path, project_path)
         _preserve_telemetry(worktree_path, project_path)
         shutil.rmtree(worktree_path)
 
