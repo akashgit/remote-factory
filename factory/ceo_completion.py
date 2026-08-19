@@ -297,7 +297,7 @@ def _detect_incomplete(
         completed = _count_verdicts(project_path, since_ts=cycle_started_at)
 
         if planned == 0:
-            if not _has_eval_profile(project_path):
+            if mode == "design" and not _has_eval_profile(project_path):
                 return IncompleteGap(
                     mode=mode,
                     planned=1,
