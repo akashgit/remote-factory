@@ -80,7 +80,7 @@ skip_empty = true
 
 [tool.ruff]
 line-length = 100
-extend-exclude = ["mkdocs.yml"]
+extend-exclude = []
 
 [dependency-groups]
 dev = [
@@ -93,4 +93,3 @@ dev = [
     "types-pyyaml>=6.0",
     "types-networkx>=3.6.1.20260612",
 ]
-docs = ["mkdocs-material>=9.5"]

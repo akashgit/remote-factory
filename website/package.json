@@ -1,0 +1,36 @@
+{
+  "name": "refactory-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "prebuild": "node scripts/sync-changelog.mjs",
+    "build": "next build && touch out/.nojekyll",
+    "start": "next start",
+    "postinstall": "fumadocs-mdx"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@orama/orama": "^3.1.7",
+    "fumadocs-core": "^15.8.5",
+    "fumadocs-mdx": "^11.10.1",
+    "fumadocs-mermaid": "^1.0.2",
+    "fumadocs-ui": "^15.8.5",
+    "next": "^15.3.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.10",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^22.16.3",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.6",
+    "postcss": "^8.5.5",
+    "tailwindcss": "^4.1.10",
+    "typescript": "^5.8.3"
+  }
+}

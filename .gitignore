@@ -33,6 +33,12 @@ factory/_version.py
 skills/workflow-*/SKILL.md
 skills/workflow-*/SKILL.annotations.yaml
 
+# FumaDocs website build artifacts
+website/node_modules/
+website/.next/
+website/out/
+website/.source/
+
 # Dev artifacts
 .playwright-mcp/
 screenshots/

@@ -1,0 +1,17 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "setup",
+    "configuration",
+    "...concepts",
+    "...contained",
+    "benchmarks",
+    "full-eval",
+    "contributing",
+    "contributing-benchmarks",
+    "changelog",
+    "...reference"
+  ]
+}
