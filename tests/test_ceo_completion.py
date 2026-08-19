@@ -177,11 +177,23 @@ class TestDetectIncomplete:
         assert gap.next_item == "H2"
         assert "design.incomplete" in gap.reason
 
-    def test_improve_no_strategy_returns_none(self, tmp_path: Path) -> None:
-        """No strategy file means nothing planned — not incomplete."""
+    def test_design_no_strategy_no_eval_profile_returns_gap(self, tmp_path: Path) -> None:
+        """No strategy + no eval profile means discovery is needed."""
         from factory.ceo_completion import _detect_incomplete
 
         (tmp_path / ".factory").mkdir()
+
+        gap = _detect_incomplete(tmp_path, "design")
+        assert gap is not None
+        assert "no eval profile" in gap.reason
+
+    def test_design_no_strategy_with_eval_profile_returns_none(self, tmp_path: Path) -> None:
+        """No strategy but eval profile exists means nothing planned — not incomplete."""
+        from factory.ceo_completion import _detect_incomplete
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "eval_profile.json").write_text('{"dimensions": []}')
 
         gap = _detect_incomplete(tmp_path, "design")
         assert gap is None
