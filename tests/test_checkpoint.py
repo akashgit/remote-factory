@@ -180,7 +180,8 @@ def test_format_empty_scores() -> None:
     )
     output = format_checkpoint(state)
     assert "Eval scores" not in output
-    assert "discover" in output
+    assert "design" in output
+    assert "Mode:" in output
 
 
 def test_format_completed_hypotheses(sample_state: CheckpointState) -> None:
@@ -213,7 +214,7 @@ def test_cli_checkpoint_save_and_show(
             str(checkpoint_project),
             "--save",
             "--mode",
-            "improve",
+            "design",
             "--experiment",
             "38",
             "--completed",
@@ -307,7 +308,7 @@ def test_cli_checkpoint_save_with_completed_hypotheses(
             str(checkpoint_project),
             "--save",
             "--mode",
-            "improve",
+            "design",
             "--completed",
             "researcher,strategist",
             "--pending",
