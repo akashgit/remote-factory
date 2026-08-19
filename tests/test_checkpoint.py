@@ -156,7 +156,7 @@ def test_save_creates_factory_dir(tmp_path: Path, sample_state: CheckpointState)
 def test_format_full(sample_state: CheckpointState) -> None:
     """format_checkpoint includes all fields."""
     output = format_checkpoint(sample_state)
-    assert "improve" in output
+    assert "design" in output
     assert "38" in output
     assert "researcher" in output
     assert "builder" in output
@@ -233,7 +233,7 @@ def test_cli_checkpoint_save_and_show(
     code = main(["checkpoint", str(checkpoint_project)])
     assert code == 0
     output = capsys.readouterr().out
-    assert "improve" in output
+    assert "design" in output
     assert "38" in output
     assert "researcher" in output
     assert "builder" in output
