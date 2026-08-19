@@ -465,7 +465,7 @@ class TestDetectIncompleteWithTimestampFiltering:
         assert gap is not None
         assert gap.planned == 3
         assert gap.completed == 1
-        assert gap.next_item == "Phase2"
+        assert gap.next_item == "H2"
 
 
 class TestDetectIncompleteResearchMode:
