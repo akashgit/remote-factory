@@ -1,12 +1,13 @@
 """FeatureBench mode — hybrid host/container execution pipeline.
 
-7-node pipeline: researcher → strategist → stub_filler → adversarial_tester → builder → gate_tests → archivist
+8-node pipeline with two RELOOP gates:
+  researcher → strategist → stub_filler ⇄ gate_stubs → adversarial_tester → builder ⇄ gate_tests → archivist
 
-The stub_filler finds all masked/blank function bodies across the codebase and
-fills them with minimal working implementations. Then the adversarial_tester
-writes validation tests from the spec, and the builder implements the main
-features. gate_tests runs the pre-written tests inside the container via
-docker exec. RELOOP from gate_tests → builder (max 3).
+The stub_filler uses an AST scanner to find all masked/blank function bodies,
+fills them, then gate_stubs verifies none remain (RELOOP max 2). Then the
+adversarial_tester writes validation tests from the spec, and the builder
+implements the main features. gate_tests runs the pre-written tests inside
+the container via docker exec (RELOOP max 3).
 """
 
 from typing import Any
@@ -129,6 +130,7 @@ def workflow() -> Workflow:
         id="stub_filler",
         role=AgentRole.BUILDER,
         timeout=600,
+        max_iterations=2,
         reads={".factory/reviews/researcher-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/stub-filler-latest.md"},
         post_checks=[
@@ -178,13 +180,60 @@ def workflow() -> Workflow:
             "     how it's called elsewhere in the codebase, similar non-masked functions\n"
             "   - Keep implementations small (5-15 lines) — just enough to not break callers\n"
             "   - Do NOT over-engineer — the main builder will handle spec features\n\n"
-            "3. Commit: git add -A && git commit -m 'fill masked function stubs'\n\n"
+            "3. If this is a RELOOP from gate_stubs, read\n"
+            "   .factory/reviews/gate-stubs-output.txt for the list of functions still\n"
+            "   empty. Focus on filling THOSE specifically.\n\n"
+            "4. Commit: git add -A && git commit -m 'fill masked function stubs'\n\n"
             "ANTI-CHEATING COMPLIANCE:\n"
             "- Do NOT access /usr/local/lib/python* paths\n"
             "- Do NOT read test files\n"
             "- Infer behavior from context only\n\n"
             "Write a list of all functions you filled to .factory/reviews/stub-filler-latest.md."
         ),
+    )
+
+    # ── Gate stubs: check if any blank function bodies remain (HOST) ──
+
+    _ast_scanner = (
+        "import ast, os\\n"
+        "for root, dirs, files in os.walk('.'):\\n"
+        "    dirs[:] = [d for d in dirs if d not in ('.git','.factory','__pycache__','test','tests')]\\n"
+        "    for f in files:\\n"
+        "        if not f.endswith('.py'): continue\\n"
+        "        path = os.path.join(root, f)\\n"
+        "        try: tree = ast.parse(open(path).read())\\n"
+        "        except: continue\\n"
+        "        src = open(path).readlines()\\n"
+        "        for node in ast.walk(tree):\\n"
+        "            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): continue\\n"
+        "            if not hasattr(node, 'end_lineno'): continue\\n"
+        "            body = node.body\\n"
+        "            is_empty = False\\n"
+        "            if len(body)==1 and isinstance(body[0], ast.Expr) and isinstance(body[0].value, (ast.Constant,)):\\n"
+        "                after = src[body[0].end_lineno:node.end_lineno] if hasattr(body[0],'end_lineno') else []\\n"
+        "                is_empty = all(l.strip()=='' for l in after)\\n"
+        "            elif all(isinstance(s, ast.Pass) for s in body):\\n"
+        "                is_empty = True\\n"
+        "            else:\\n"
+        "                code = src[node.lineno:node.end_lineno]\\n"
+        "                non_empty = [l for l in code if l.strip() and not l.strip().startswith(('#','def ','class '))]\\n"
+        "                is_empty = len(non_empty) <= 1\\n"
+        "            if is_empty: print(f'{path}:{node.lineno} {node.name}')\\n"
+    )
+
+    nodes["gate_stubs"] = GateNode(
+        id="gate_stubs",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            "python3 -c \"" + _ast_scanner + "\" "
+            "> {project_path}/.factory/reviews/gate-stubs-output.txt 2>&1; "
+            "COUNT=$(wc -l < {project_path}/.factory/reviews/gate-stubs-output.txt | tr -d ' '); "
+            "if [ \"$COUNT\" -eq 0 ] || [ \"$COUNT\" -le 3 ]; then "
+            "echo \"pass: $COUNT blank stubs remaining (acceptable)\"; "
+            "else echo \"reloop: $COUNT blank function bodies still empty — see .factory/reviews/gate-stubs-output.txt\"; fi"
+        ),
+        reads={".factory/reviews/stub-filler-latest.md"},
     )
 
     # ── Adversarial tester: write validation tests from spec (HOST) ──
@@ -350,7 +399,9 @@ def workflow() -> Workflow:
     edges = [
         Edge(source="researcher", target="strategist"),
         Edge(source="strategist", target="stub_filler"),
-        Edge(source="stub_filler", target="adversarial_tester"),
+        Edge(source="stub_filler", target="gate_stubs"),
+        Edge(source="gate_stubs", target="adversarial_tester", condition=VerdictType.PROCEED),
+        Edge(source="gate_stubs", target="stub_filler", condition=VerdictType.RELOOP),
         Edge(source="adversarial_tester", target="builder"),
         Edge(source="builder", target="gate_tests"),
         Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
