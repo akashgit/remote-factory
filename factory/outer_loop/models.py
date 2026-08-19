@@ -103,6 +103,7 @@ class SwarmConfig(BaseModel):
     target_project: str = ""
     test_command: str = ""
     test_format: str = "pytest"
+    metric_path: str = "score"
     seed_workflow: str = ""
     instance_format: str = "directory"
     prep_command: str = ""

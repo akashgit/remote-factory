@@ -326,6 +326,7 @@ class SwarmEvaluator:
                 frozen_nodes=frozenset(self._config.frozen_node_ids),
                 test_command=self._config.test_command,
                 test_format=self._config.test_format,
+                metric_path=self._config.metric_path,
             )
             record = loop.step()
 

@@ -492,6 +492,47 @@ class TestE2ESWEBench:
         assert score == 0.0
 
 
+class TestInnerLoopExactMatch:
+    """Tests for InnerLoop._parse_test_output with exact_match format."""
+
+    def test_exact_match_reads_expected_answer_file(self, tmp_path: Path):
+        (tmp_path / "expected_answer.txt").write_text("42\n")
+        loop = InnerLoop(project_dir=tmp_path, test_command="echo 42", test_format="exact_match")
+        mock_result = subprocess.CompletedProcess(
+            args=["echo", "42"], returncode=0, stdout="42\n", stderr=""
+        )
+        score, details = loop._parse_test_output(mock_result)
+        assert score == 1.0
+        assert details["test_format"] == "exact_match"
+
+    def test_exact_match_falls_back_to_expected_txt(self, tmp_path: Path):
+        (tmp_path / "expected.txt").write_text("hello\n")
+        loop = InnerLoop(project_dir=tmp_path, test_command="echo hello", test_format="exact_match")
+        mock_result = subprocess.CompletedProcess(
+            args=["echo", "hello"], returncode=0, stdout="hello\n", stderr=""
+        )
+        score, details = loop._parse_test_output(mock_result)
+        assert score == 1.0
+
+    def test_exact_match_mismatch(self, tmp_path: Path):
+        (tmp_path / "expected_answer.txt").write_text("42\n")
+        loop = InnerLoop(project_dir=tmp_path, test_command="echo wrong", test_format="exact_match")
+        mock_result = subprocess.CompletedProcess(
+            args=["echo", "wrong"], returncode=0, stdout="wrong\n", stderr=""
+        )
+        score, details = loop._parse_test_output(mock_result)
+        assert score == 0.0
+
+    def test_exact_match_missing_file(self, tmp_path: Path):
+        loop = InnerLoop(project_dir=tmp_path, test_command="echo 42", test_format="exact_match")
+        mock_result = subprocess.CompletedProcess(
+            args=["echo", "42"], returncode=0, stdout="42\n", stderr=""
+        )
+        score, details = loop._parse_test_output(mock_result)
+        assert score == 0.0
+        assert details["error"] == "expected_answer_file_missing"
+
+
 class TestE2ECustomBenchmark:
     """E2E test 3: Custom user-defined benchmark with JSON format.
 
@@ -590,11 +631,12 @@ class TestE2ECustomBenchmark:
         assert swarm.instance_format == "directory"
 
     def test_custom_inner_loop_json_parsing(self, custom_benchmark_project: Path):
-        """InnerLoop._parse_test_output with json format and custom metric."""
+        """InnerLoop._parse_test_output with json format and custom metric_path."""
         loop = InnerLoop(
             project_dir=custom_benchmark_project,
             test_command="python eval_runner.py",
             test_format="json",
+            metric_path="accuracy",
         )
         mock_result = subprocess.CompletedProcess(
             args=["python", "eval_runner.py"],
@@ -603,7 +645,7 @@ class TestE2ECustomBenchmark:
             stderr="",
         )
         score, details = loop._parse_test_output(mock_result)
-        assert score == 0.0  # default extracts "score" key, not "accuracy"
+        assert score == 0.92
         assert details["test_format"] == "json"
 
     def test_custom_inner_loop_json_with_score_key(self, custom_benchmark_project: Path):

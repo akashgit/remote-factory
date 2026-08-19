@@ -118,6 +118,7 @@ class InnerLoop:
         frozen_nodes: frozenset[str] = frozenset(),
         test_command: str = "",
         test_format: str = "pytest",
+        metric_path: str = "score",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -127,6 +128,7 @@ class InnerLoop:
         self.frozen_nodes = frozenset(frozen_nodes)
         self.test_command = test_command
         self.test_format = test_format
+        self.metric_path = metric_path
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._validate_frozen_nodes()
@@ -356,19 +358,27 @@ class InnerLoop:
         if self.test_format == "json":
             try:
                 data = json.loads(result.stdout)
-                score = float(data.get("score", data.get("pass_rate", 0.0)))
+                obj: Any = data
+                for key in self.metric_path.split("."):
+                    obj = obj[key]
+                score = float(obj)
                 return score, {
                     "score": score,
                     "test_format": "json",
                     "test_returncode": result.returncode,
                     **{k: v for k, v in data.items() if isinstance(v, (int, float))},
                 }
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                 return 0.0, {"error": "json_parse_failed", "test_format": "json"}
 
         if self.test_format == "exact_match":
             output = result.stdout.strip()
-            expected = result.stderr.strip()
+            expected_path = self.project_dir / "expected_answer.txt"
+            if not expected_path.exists():
+                expected_path = self.project_dir / "expected.txt"
+            if not expected_path.exists():
+                return 0.0, {"error": "expected_answer_file_missing", "test_format": "exact_match"}
+            expected = expected_path.read_text(errors="replace").strip()
             score = 1.0 if output == expected else 0.0
             return score, {
                 "match": score,
