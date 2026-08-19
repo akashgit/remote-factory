@@ -89,7 +89,7 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
 }
 
 MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
+    "design": {
         "study.started": "Observe",
         "study.completed": "Observe",
         "insights.started": "Observe",
@@ -106,18 +106,6 @@ MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
         "eval.completed": "Run",
         "guard.completed": "Run",
         "archive.completed": "Archive",
-    },
-    "build": {
-        "study.started": "Research",
-        "study.completed": "Research",
-        "eval.started": "Verify",
-        "eval.completed": "Verify",
-        "archive.completed": "Archive",
-    },
-    "discover": {
-        "detect": "Detect",
-        "discover.started": "Discover",
-        "discover.completed": "Discover",
     },
     "meta": {
         "study.started": "Observe",

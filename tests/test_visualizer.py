@@ -92,7 +92,7 @@ class TestAgentTracking:
 class TestPhaseInference:
     def test_detect_phase(self):
         state = infer_state([_event("detect", data={"state": "new"})])
-        assert state.current_phase == "Research"
+        assert state.current_phase == "Observe"
         assert state.current_mode == "Design"
 
     def test_discover_phase(self):
