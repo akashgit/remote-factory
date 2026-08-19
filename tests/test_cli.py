@@ -430,7 +430,7 @@ class TestCmdCeoDesign:
 
     def test_auto_approve_rejected_without_design_mode(self, capsys):
         """--auto-approve without --mode design is rejected."""
-        result = main(["ceo", "/some/path", "--mode", "design", "--auto-approve"])
+        result = main(["ceo", "/some/path", "--mode", "founder", "--auto-approve"])
         assert result == 1
         assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
 
