@@ -1,0 +1,18 @@
+[meta]
+name = "forecastbench"
+description = "ForecastBench — dynamic AI forecasting benchmark with Brier score evaluation"
+
+[test]
+format = "json"
+command = "python eval_forecast.py"
+timeout = 900
+metric_path = "brier_index"
+
+[instances]
+format = "question-answer"
+
+[seed_workflow]
+name = ""
+
+[scoring]
+method = "metric_extraction"

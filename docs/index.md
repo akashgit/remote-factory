@@ -2,20 +2,19 @@
   <img src="https://raw.githubusercontent.com/akashgit/remote-factory/main/docs/assets/refactory_logo.png" alt="re:factory" width="480">
 </p>
 
+
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/akashgit/remote-factory/blob/main/LICENSE)
 [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 [![Docs](https://img.shields.io/badge/docs-akashgit.github.io-blue)](https://akashgit.github.io/remote-factory/)
 
-# re:factory
+<p align="center"><b><a href="https://akashgit.github.io/remote-factory/">Full Documentation</a></b></p>
 
-**Describe what you want. re:factory builds it, tests it, and keeps improving it — autonomously.**
-
-You give it a spec file, a rough idea, or an existing codebase. re:factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+**Describe what you want — re:factory designs and builds it.** Brainstorm an idea from scratch, refine a plan for an existing project, or create entirely new factory modes.
 
 ```bash
 # Design — brainstorm an idea, refine it, then build
@@ -34,31 +33,40 @@ factory ceo ~/my-project
 factory ceo ~/my-project --focus "add WebSocket support"
 ```
 
+All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
+
+---
+
 ## How It Works
 
-```mermaid
-graph LR
-    A["🔍 Researcher<br><i>observe</i>"] --> B["🎯 Strategist<br><i>hypothesize</i>"]
-    B --> C["🔨 Builder<br><i>implement</i>"]
-    C --> RV["🛡️ Reviewer<br><i>guard</i>"]
-    RV --> D["📊 Evaluator<br><i>measure</i>"]
-    D --> E{"CEO<br><i>decide</i>"}
-    E -- "score ↑" --> F["✅ KEEP"]
-    E -- "score ↓" --> G["↩️ REVERT"]
-    F --> H["📝 Archivist<br><i>record</i>"]
-    G --> H
-    H -.-> A
+re:factory defines every workflow as a **Pydantic graph** — a directed acyclic graph (DAG) where each node is an agent, a shell command, a gate check, or a fork/join for parallelism. The same graph definition produces **three execution modes**:
 
-    style E fill:#5c6bc0,color:#fff,stroke:#3949ab
-    style F fill:#43a047,color:#fff,stroke:#2e7d32
-    style G fill:#e53935,color:#fff,stroke:#c62828
-```
+### 1. Headless Executor
 
-A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In design mode, the Strategist synthesizes research into a buildable plan through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+`factory workflow run <name> /path` — the `WorkflowExecutor` walks the DAG deterministically, running each node in topological order with no human interaction. Used for unattended runs, CI/CD pipelines, and scripted automation.
+
+### 2. Interactive CEO
+
+`factory ceo /path --mode <name>` — `skill_export.py` converts the workflow graph into a SKILL.md prose playbook under `skills/workflow-*/`. At runtime, the CEO agent reads the appropriate SKILL.md and follows it step by step, orchestrating specialist agents — Researcher, Strategist, Builder, Health Checker, Code Reviewer, Adversarial Tester, Archivist, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Unlike the headless executor, the CEO can review agent outputs, redirect failing agents, and apply judgment at gate points.
+
+### 3. Outer Loop — Evolutionary Workflow Search
+
+`factory outer-loop` — instead of *executing* a workflow, the outer loop *evolves* workflow topologies via MAP-Elites quality-diversity search. Starting from a seed workflow, it mutates structure (adding/removing nodes, changing edges, tweaking prompts), evaluates each candidate by running a full CEO cycle, and selects for higher fitness. This is how re:factory improves its own pipelines.
+
+### The graph is the source of truth
+
+For example, an **email summarizer agent** might be a simple 3-node workflow: a Researcher reads the inbox → a Strategist prioritizes by urgency → a Builder drafts the summary. A **custom research agent** might fork three parallel researchers (domain, competitors, prior art) → join their findings → pass through a coverage gate → synthesize a final report. The graph structure is the same — what changes is the nodes, their prompts, and the edges between them. All three execution modes operate on the same underlying graph definition.
+
+The two primary modes for getting started:
+
+- **Design mode** (`--mode design`): The entry point for new ideas and existing projects alike. Researches the space, drafts a structured plan via the Strategist, iterates with you until it's right, then builds. Use this when you want to think before you code.
+- **Create mode** (`--mode create`): Builds new workflow graphs themselves — new factory modes, new pipelines, new agent topologies. Point it at the factory repo and describe what mode you want. It researches existing patterns, synthesizes a workflow spec, gets your approval, then implements the full graph definition, skill export, CLI wiring, and tests.
 
 ---
 
 ## Design Mode
+
+### Design — brainstorm before building
 
 Design mode is the primary way to use re:factory. It researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.
 
@@ -69,7 +77,9 @@ factory ceo "distributed eval runner" --mode design
 factory ceo "Build a REST API for bookmark management" --mode design
 ```
 
-**From a spec file** — read and discuss before building:
+**From a spec file** — for longer, more detailed descriptions, write your idea to a `.md` file and pass the path:
+
+> **Tip:** For detailed ideas with multiple paragraphs, requirements, or research notes, use a spec file instead of a quoted string. There's no length limit on file content.
 
 ```bash
 factory ceo ~/ideas/weather-dashboard.md --mode design
@@ -88,8 +98,6 @@ factory ceo ~/factory-projects/my-app --mode design
 factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 factory ceo ~/my-app --mode design --focus 42                       # GitHub issue
 factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shorthand
-factory ceo ~/my-app --mode design --focus '111 and 112'            # Multiple issues
-factory ceo ~/my-app --mode design --focus 'issue 42, issue 43'    # With 'issue' keyword
 ```
 
 ---
@@ -117,53 +125,36 @@ Point it at the factory repo itself to extend re:factory with custom pipelines.
 
 ---
 
-## Other Workflows
+## Available Workflows
 
-### Build — start from an idea
+Beyond the core Design and Create modes, re:factory ships with a growing set of workflows — both built-in and community-contributed. Each is a complete graph definition with its own agent topology, gates, and iteration strategy.
 
-```bash
-factory ceo "Build a REST API for bookmark management"
-factory ceo ~/ideas/weather-dashboard.md
-factory ceo https://github.com/user/repo
-```
+### Built-in Workflows
 
-Give re:factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
+| Workflow | What it does |
+|----------|-------------|
+| **frontend-design** | Feature-to-UI pipeline — forks 5 design researchers in parallel, joins findings, then runs design audit → spec → build → render → deep QA |
+| **parallel-improve** | Forks N hypotheses into isolated git worktrees, runs experiments concurrently, and selects the best result |
+| **deep-research** | Decomposes a topic into research directions, executes each with internal iteration, and checks coverage |
+| **deep-qa** | Multi-stage quality assurance — health check, code review, and adversarial testing in parallel |
+| **study** | Graph-powered codebase analysis — builds a dependency graph, explores it, and produces a combined study report |
 
-### Improve — make an existing codebase better
+### Community-Contributed Benchmarks
 
-```bash
-factory ceo ~/my-project
-factory run ~/my-project --loop
-```
+These benchmark workflows live in `factory/workflow/contributed/` and follow a standard 4-node pipeline pattern (study → solver → gate → merge). See [Contributing Benchmarks](docs/contributing-benchmarks.md) for how to add your own.
 
-Point it at any codebase. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.
+| Workflow | What it solves |
+|----------|---------------|
+| **swebench** | GitHub issues from the SWE-bench dataset in containerized evaluation |
+| **featurebench** | New feature implementations in Python codebases with explicit interface specs |
+| **legacybench** | Bugs in legacy code — COBOL, Fortran, C, Java 7, Assembly |
+| **devopsgym** | Build/configuration tasks — Maven, Gradle, Go modules, Make, Docker, CI/CD |
+| **terminalbench** | Real-world terminal engineering tasks — compiling legacy software, scientific computing, system configuration |
+| **programbench** | Adversarial discovery verification with builder → reviewer loops |
+| **tomswe** | Preference-aware coding tasks with embedded user profiles (Theory of Mind) |
+| **salitrap** | Commonsense reasoning — identifying salience traps in scenarios with numerical distractors |
 
-### Focus — build exactly one thing
-
-```bash
-factory ceo ~/my-project --focus "add authentication middleware"
-factory ceo ~/my-project --focus 42              # Target GitHub issue #42
-factory ceo ~/my-project --focus '111 and 112'   # Multiple issues
-```
-
-When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits.
-
-### Research — optimize a metric iteratively
-
-```bash
-factory ceo "SWE-bench solver agent" --mode research
-factory ceo ~/my-research-project --mode research
-```
-
-For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. See [Getting Started](getting-started.md#research-mode-in-detail) for the full picture.
-
-### Headless & continuous loop
-
-```bash
-factory ceo ~/my-project --headless            # No interaction
-factory run ~/my-project --loop                 # Continuous improvement
-factory tmux ~/my-project --loop                # Detached tmux session
-```
+Run any workflow with `factory ceo /path --mode <name>` or use Create mode to build your own.
 
 ---
 
@@ -196,7 +187,7 @@ factory ceo "my idea" --mode design
 factory ceo /path/to/project --mode design --focus "issue # or area to improve"
 ```
 
-See the [full setup guide](setup.md) for authentication, environment variables, and justification for why we install globally.
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
 
 ---
 
@@ -206,7 +197,6 @@ See the [full setup guide](setup.md) for authentication, environment variables, 
 |---|---|
 | **Start from a raw idea** | `factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `factory ceo /path/to/project --mode design --focus "issue # or area to improve"` |
-| **Target multiple issues** | `factory ceo /path/to/project --focus '111 and 112'` |
 | **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
 | **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
 
@@ -214,115 +204,53 @@ re:factory doesn't just improve your project — it improves *itself*. Every kee
 
 This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
 
-```mermaid
-graph LR
-    A["Experiment Outcomes<br><i>kept or reverted</i>"] -->|Reflect| B["Generate<br>candidate bullets"]
-    B -->|Curate| C["Merge & prune<br>playbooks"]
-    C -->|Inject| D["Agent Prompts<br><i>auto-appended</i>"]
-    D -.->|"next cycle"| A
-
-    style A fill:#fff3e0,stroke:#ff8f00
-    style D fill:#e8eaf6,stroke:#5c6bc0
-```
-
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
 
-```bash
-# Run a full improvement cycle, then evolve all agent playbooks
-factory ceo ~/my-project --mode meta
-```
-
-See [Self-Improvement Loop](self-improvement.md) for the full picture. See [ACE Playbook Evolution](ace.md) for the playbook mechanics.
+See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
 
 ---
 
-## Architecture
+## Eval System
 
-```mermaid
-graph TB
-    subgraph agents ["Specialist Agents"]
-        R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
-        RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
-        RF["Refiner"] ~~~ FA["Failure Analyst"]
-    end
-    subgraph ceo ["CEO Agent"]
-        C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
-    end
-    subgraph cli ["Python CLI"]
-        T["eval · guard · store · discover · events · strategy"]
-    end
-
-    agents --> ceo --> cli
-
-    style agents fill:#e8eaf6,stroke:#5c6bc0
-    style ceo fill:#fff3e0,stroke:#ff8f00
-    style cli fill:#e8f5e9,stroke:#43a047
-```
-
-re:factory is a three-layer system:
-
-**Layer 1 — Python CLI** (`factory/`): Pure tools that don't make decisions. Eval runner, strategy engine, experiment store, discovery, event logging. Entry point: `factory --help`.
-
-**Layer 2 — CEO Agent** (`factory/agents/prompts/ceo.md`): The orchestrator. Detects project state, spawns specialist agents, and makes the keep/revert decision for each experiment. Mode-specific playbooks are auto-generated from workflow graph definitions.
-
-**Layer 3 — Specialist Agents** (`factory/agents/`): Eight independent Claude Code subprocesses — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst. Each has a focused prompt, receives context from the CEO, and returns structured output.
-
-See [Architecture](architecture.md) for the full deep-dive.
-
----
-
-## The Eval System
-
-```mermaid
-graph LR
-    subgraph hygiene ["Hygiene · 6 dims"]
-        H1["tests · lint · types<br>coverage · guards · config"]
-    end
-    subgraph growth ["Growth · 5 dims"]
-        G1["capability · diversity<br>observability · research<br>effectiveness"]
-    end
-    subgraph project ["Project · N dims"]
-        P1["your custom metrics<br>benchmarks · latency<br>accuracy · win rate"]
-    end
-
-    hygiene --> M["⚖️ Weighted<br>Composite"]
-    growth --> M
-    project --> M
-    M --> S{"score ≥<br>threshold?"}
-    S -- "yes" --> K["✅ Keep"]
-    S -- "no" --> R["↩️ Revert"]
-
-    style hygiene fill:#e8eaf6,stroke:#5c6bc0
-    style growth fill:#fff3e0,stroke:#ff8f00
-    style project fill:#e8f5e9,stroke:#43a047
-    style K fill:#43a047,color:#fff
-    style R fill:#e53935,color:#fff
-```
+Every change is measured by a composite score across three tiers:
 
 | Tier | What it measures | Examples |
 |------|-----------------|---------|
-| **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage |
-| **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
+| **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage, guards, config |
+| **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability, research effectiveness |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
-On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](eval.md) for scoring details, weights, and guards.
+On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. The weighted composite of all dimensions determines whether each experiment is kept or reverted. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
+
+---
+
+## Outer Loop — Evolve Workflow Topologies
+
+```bash
+factory outer-loop calibrate ~/my-factory \
+  --benchmark featurebench \
+  --population-size 3 \
+  --project-dir /path/to/benchmark-instance \
+  --test-command "pytest tests/ -v"
+
+factory ceo ~/my-factory --mode outer-loop --headless
+```
+
+The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](docs/outer-loop.md) for full architecture and CLI reference.
 
 ---
 
 ## Built with re:factory
 
-re:factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
-
-| Project | What it does | Mode |
-|---------|-------------|------|
-| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
-| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
-| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
-| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
-| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
-| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
-| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
-| **re:factory itself** | re:factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+| Project | What it does |
+|---------|-------------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection |
+| **re:factory itself** | re:factory runs on itself — its own agent playbooks are evolved from its own experiment outcomes |
 
 Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
 
@@ -371,7 +299,121 @@ FACTORY_RUNNER = "bob"
 BOBSHELL_API_KEY = "..."
 ```
 
-Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](setup.md) for full details.
+Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
+
+---
+
+## LLM Tracing (LangFuse)
+
+LangFuse provides LLM observability and tracing — track agent invocations, token usage, and execution flow across all factory runs.
+
+### Quick Start
+
+```bash
+# Start LangFuse services
+scripts/langfuse-setup start
+
+# Set the env vars the factory needs
+export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_BASE_URL=http://localhost:3000
+export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+export TELEMETRY_PLATFORM=langfuse
+```
+
+The dev credentials above match the docker-compose setup. Add them to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
+
+### Viewing Traces
+
+1. Start LangFuse: `scripts/langfuse-setup start`
+2. Run the factory: `factory ceo /path/to/project`
+3. Open `http://localhost:3000` in your browser
+4. Login: `dev@localhost.local` / `devpassword123`
+
+### CLI Commands
+
+```bash
+scripts/langfuse-setup start    # Start LangFuse services
+scripts/langfuse-setup stop     # Stop services
+scripts/langfuse-setup status   # Show status and credentials
+```
+
+### Requirements
+
+- **Docker** or **Podman** — any of `docker compose`, `docker-compose`, or `podman-compose` works
+
+### Disabling Tracing
+
+To disable tracing without stopping LangFuse:
+```bash
+export LANGFUSE_TRACING_ENABLED=false
+```
+
+For LLM connection setup, trace structure details, and troubleshooting, see [`infra/langfuse/README.md`](https://github.com/akashgit/remote-factory/blob/main/infra/langfuse/README.md).
+
+---
+
+## Install as a Claude Code Plugin
+
+re:factory is also distributed as a fully-bundled [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins) — agents, skills, and slash commands packaged together. A GitHub Actions workflow rebuilds the `plugins` branch of this repo on every push to `main`, so it always tracks the latest generated artifacts.
+
+From inside Claude Code:
+
+```text
+/plugin marketplace add akashgit/remote-factory#plugins
+/plugin install factory@remote-factory
+/reload-plugins
+```
+
+Once installed, the plugin exposes:
+
+- The `/factory:implement` slash command (entry point for the multi-agent pipeline).
+- Namespaced subagents — invoke with `factory:ceo`, `factory:researcher`, `factory:builder`, etc.
+- The bundled skills under `.agents/skills/` (e.g. `pipeline-subagents`, `implement`).
+
+The plugin still shells out to the `factory` CLI for the heavy lifting, so you'll need the `factory` package installed globally as described in [Quick Start](#quick-start).
+
+To update later: `/plugin marketplace update remote-factory`. To remove: `/plugin uninstall factory@remote-factory`.
+
+---
+
+## Plugin Agents
+
+If you'd rather skip the marketplace and just register the specialist agents as standalone Claude Code (or Codex) subagents, use the built-in installer:
+
+```bash
+factory install                   # Install all 9 agents to ~/.claude/agents/
+factory install --runner codex    # Or install Codex TOML agents to ~/.codex/agents/
+claude --agent factory-ceo "improve this project"
+claude --agent factory-researcher "study the auth system"
+```
+
+This path only ships the agent prompts (no skills, no slash commands) and is independent of the plugin marketplace install above.
+
+---
+
+## Verified Skill Generation
+
+Workflow graphs (Pydantic definitions) are converted to SKILL.md prose files that the CEO follows at runtime. This conversion goes through a verified pipeline to prevent information loss:
+
+```
+Workflow (Pydantic) → templatize → review agent → guard → split
+                         │              │           │        │
+                    {{slot::default}}   opus    structural   SKILL.md +
+                    + annotations     refines    diff check  annotations.yaml
+```
+
+The pipeline produces two artifacts per workflow:
+- **SKILL.md** — clean prose the CEO reads at runtime
+- **SKILL.annotations.yaml** — structured metadata per node for programmatic verification
+
+Regenerate all skills after changing workflow definitions:
+
+```bash
+factory workflow export-skills
+```
+
+A regression test (`test_annotations_match_source`) runs in CI to catch drift between workflow definitions and exported skills.
 
 ---
 
@@ -379,22 +421,22 @@ Run `factory config show` to see resolved config, or `factory config edit` to op
 
 | Doc | What's in it |
 |-----|-------------|
-| [Setup Guide](setup.md) | Installation, authentication, environment variables |
-| [Getting Started](getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
-| [Architecture](architecture.md) | Three-layer system, agent roles, state machine, data flow |
-| [Eval System](eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
-| [Configuration](configuration.md) | `factory.md` reference — all sections and options |
-| [ACE Self-Improvement](ace.md) | How re:factory evolves its own agent playbooks |
-| [Contributing](contributing.md) | Dev setup, code style, testing, PR workflow |
-| [Contributing Benchmarks](contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
+| [Setup Guide](docs/setup.md) | Installation, authentication, environment variables |
+| [Getting Started](docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
+| [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow |
+| [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
+| [Configuration](docs/configuration.md) | `factory.md` reference — all sections and options |
+| [ACE Self-Improvement](docs/ace.md) | How re:factory evolves its own agent playbooks |
+| [Contributing](docs/contributing.md) | Dev setup, code style, testing, PR workflow |
+| [Contributing Benchmarks](docs/contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
 
 ## Development
 
 ```bash
 uv sync --all-groups              # Install all deps including dev
-uv run pytest -v                  # Full test suite
-uv run ruff check .               # Lint
-uv run mypy factory/              # Type check
+pytest -v                         # Full test suite
+ruff check .                      # Lint
+mypy factory/                     # Type check
 ```
 
 ## License

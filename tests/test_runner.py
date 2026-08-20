@@ -7,7 +7,32 @@ from unittest.mock import patch
 
 import pytest
 
-from factory.agents.runner import _save_review, resolve_prompt
+from factory.agents.runner import _save_review, resolve_prompt, resolve_prompt_core
+
+
+class TestResolvePromptCore:
+    def test_returns_string_under_40000_bytes(self) -> None:
+        core = resolve_prompt_core()
+        assert isinstance(core, str)
+        assert len(core.encode("utf-8")) < 40000
+
+    def test_contains_sacred_rules(self) -> None:
+        core = resolve_prompt_core()
+        assert "Sacred Rules" in core
+
+    def test_contains_agent_dispatch_syntax(self) -> None:
+        core = resolve_prompt_core()
+        assert "factory agent" in core
+
+    def test_contains_review_verdicts(self) -> None:
+        core = resolve_prompt_core()
+        assert "PROCEED" in core
+        assert "REDIRECT" in core
+        assert "ABORT" in core
+
+    def test_contains_mode_pointer(self) -> None:
+        core = resolve_prompt_core()
+        assert ".factory/strategy/current.md" in core
 
 
 class TestResolvePromptWithProfile:

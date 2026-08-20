@@ -22,6 +22,14 @@ _CREDENTIAL_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 _SENSITIVE_FRAGMENTS = ("key", "token", "secret", "password", "api_key")
 
+_PROTECTED_VARS = frozenset({
+    "PATH", "HOME", "USER", "SHELL", "TMPDIR", "TERM", "PWD",
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+    "PYTHONPATH", "GOPATH", "CLASSPATH", "NODE_PATH",
+    "IFS",
+    "FACTORY_TRACE_ID", "FACTORY_PARENT_SPAN_ID",
+})
+
 _cached_config: dict | None = None
 
 _CONFIG_TEMPLATE = """\
@@ -31,7 +39,7 @@ _CONFIG_TEMPLATE = """\
 # See: factory config show
 
 [defaults]
-# runner = "claude"                    # CLI backend: "claude", "bob", or "codex"
+# runner = "claude"                    # CLI backend
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 # tmux_persist = false                 # Launch agents in tmux windows
@@ -43,13 +51,15 @@ _CONFIG_TEMPLATE = """\
 # FACTORY_RUNNER = "claude"
 # ANTHROPIC_API_KEY = "sk-ant-..."
 #
-# [credentials.bob]
-# FACTORY_RUNNER = "bob"
-# BOBSHELL_API_KEY = "..."
+# [credentials.litellm-proxy]
+# FACTORY_RUNNER = "claude"
+# FACTORY_MODEL = "your-model-name"
+# ANTHROPIC_BASE_URL = "https://your-litellm-proxy.example.com"
+# ANTHROPIC_API_KEY = "your-api-key-here"
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
 #
-# [credentials.codex]
-# FACTORY_RUNNER = "codex"
-# CODEX_API_KEY = "..."
+# [credentials.litellm-proxy.unset]
+# vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
 """
 
 
@@ -83,8 +93,11 @@ def load_config(profile: str | None = None) -> dict:
     """Read ~/.factory/config.toml; apply credential profile overlay if given.
 
     Returns the parsed TOML dict. If the file doesn't exist, returns an empty dict.
-    When a profile is specified, its ``[credentials.<name>]`` keys are injected
-    into ``os.environ`` so normal env-var precedence resolves them.
+    When a profile is specified (explicit ``--profile`` opt-in), its
+    ``[credentials.<name>]`` keys **override** existing env vars via direct
+    assignment to ``os.environ``.  A ``[credentials.<name>.unset]`` sub-table
+    with ``vars = [...]`` removes listed env vars before the overrides are
+    applied.  Protected variables (PATH, HOME, etc.) cannot be set or unset.
     """
     if not CONFIG_PATH.exists():
         if profile:
@@ -92,6 +105,10 @@ def load_config(profile: str | None = None) -> dict:
                 f"Config file {CONFIG_PATH} not found — cannot load profile {profile!r}"
             )
         return {}
+
+    stat_mode = CONFIG_PATH.stat().st_mode & 0o077
+    if stat_mode:
+        log.warning("config_permissions_too_open", path=str(CONFIG_PATH), mode=oct(stat_mode))
 
     with open(CONFIG_PATH, "rb") as f:
         data = tomllib.load(f)
@@ -101,11 +118,51 @@ def load_config(profile: str | None = None) -> dict:
         creds = data.get("credentials", {}).get(profile)
         if creds is None:
             available = list(data.get("credentials", {}).keys())
-            raise KeyError(f"Profile {profile!r} not found in config.toml. Available: {available}")
-        _validate_credential_keys(creds)
-        for k, v in creds.items():
-            os.environ.setdefault(k, str(v))
-        log.info("profile_loaded", profile=profile, keys=list(creds.keys()))
+            raise KeyError(
+                f"Profile {profile!r} not found in config.toml. "
+                f"Available: {available}"
+            )
+
+        unset_config = creds.get("unset")
+        unset_vars: list[str] = []
+        if isinstance(unset_config, dict):
+            raw = unset_config.get("vars", [])
+            if raw is not None and not isinstance(raw, list):
+                raise ValueError(
+                    f"Profile {profile!r}: [credentials.{profile}.unset].vars "
+                    f"must be a list, got {type(raw).__name__}"
+                )
+            if isinstance(raw, list):
+                unset_vars = [str(v) for v in raw]
+
+        env_keys = {k: v for k, v in creds.items() if k != "unset"}
+        _validate_credential_keys(env_keys)
+
+        protected_set = _PROTECTED_VARS & env_keys.keys()
+        protected_unset = _PROTECTED_VARS & set(unset_vars)
+        if protected_set or protected_unset:
+            offending = sorted(protected_set | protected_unset)
+            raise ValueError(
+                f"Profile {profile!r} attempts to modify protected variable(s): "
+                f"{', '.join(offending)}. "
+                f"Protected vars ({', '.join(sorted(_PROTECTED_VARS))}) cannot be "
+                f"set or unset via profiles."
+            )
+
+        for var in unset_vars:
+            os.environ.pop(var, None)
+
+        for k, v in env_keys.items():
+            if k in os.environ and os.environ[k] != str(v):
+                log.warning("profile_override", key=k, profile=profile)
+            os.environ[k] = str(v)
+
+        log.info(
+            "profile_loaded",
+            profile=profile,
+            keys=list(env_keys.keys()),
+            unset=unset_vars or None,
+        )
 
     global _cached_config  # noqa: PLW0603
     _cached_config = data
@@ -197,6 +254,14 @@ def show_config(*, reveal: bool = False) -> str:
     for profile_name, creds in credentials.items():
         lines.append(f"[credentials.{profile_name}]")
         for k, v in creds.items():
+            if isinstance(v, dict):
+                lines.append(f"  [{k}]")
+                for sk, sv in v.items():
+                    display_sv = str(sv)
+                    if not reveal and is_sensitive(sk):
+                        display_sv = mask_value(display_sv)
+                    lines.append(f"    {sk} = {display_sv}")
+                continue
             display = str(v)
             if not reveal and is_sensitive(k):
                 display = mask_value(display)
@@ -237,8 +302,6 @@ def migrate_env_to_config() -> str:
         "FACTORY_REGISTRY_DIR": "registry_dir",
         "FACTORY_MANAGED_DIRS": "managed_dirs",
         "FACTORY_RUNNER_QUIET": "runner_quiet",
-        "FACTORY_BOB_DRY_RUN": "bob_dry_run",
-        "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE": "bob_max_invocations_per_cycle",
         "FACTORY_CEO_RESPAWN_DISABLED": "ceo_respawn_disabled",
         "FACTORY_CEO_MAX_RESPAWNS": "ceo_max_respawns",
         "FACTORY_REMOVE_WORKTREE": "remove_worktree",

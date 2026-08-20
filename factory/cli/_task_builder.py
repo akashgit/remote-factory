@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re as _re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from factory.messages import Message
+
+
+def _slug(desc: str) -> str:
+    slug = _re.sub(r"[^a-z0-9]+", "-", desc.lower().strip())
+    return slug.strip("-")[:40]
 
 
 def _mode_suffix(mode: str, discover_only: bool) -> str:
@@ -182,6 +188,8 @@ def _build_ceo_task(
     display_mode: str | None = None,
     create_description: str | None = None,
     update_existing_mode: str | None = None,
+    plugin_mode: bool = False,
+    plugin_folder: str | None = None,
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
@@ -335,6 +343,61 @@ def _build_ceo_task(
             f"19. Start node is still valid and reachable from all edges\n\n"
             f"Follow the Create workflow playbook in skills/workflow-create/SKILL.md.\n"
         )
+    elif create_description and plugin_mode:
+        folder = plugin_folder if plugin_folder else f"./{_slug(create_description)}-plugin"
+        task += (
+            f"\n\n## Create Mode (Plugin Package)\n\n"
+            f"**Mode description from user:**\n{create_description}\n\n"
+            f"**plugin_mode:** true\n"
+            f"**output_folder:** {folder}\n\n"
+            f"You are creating a PLUGIN workflow — a standalone pip-installable package.\n\n"
+            f"**Package structure:**\n"
+            f"```\n"
+            f"{folder}/\n"
+            f"├── pyproject.toml         # Package metadata + entry point\n"
+            f"├── README.md              # Installation and usage instructions\n"
+            f"└── <mode_name>.py         # Workflow definition + registration\n"
+            f"```\n\n"
+            f"**pyproject.toml requirements:**\n"
+            f"- Build system: hatchling\n"
+            f"- Package name: `factory-<mode-name>-workflow`\n"
+            f"- Version: `0.1.0`\n"
+            f"- `requires-python = '>=3.11'`\n"
+            f"- Dependencies: `['remote-factory']` (no version pin)\n"
+            f"- Entry point group: `[project.entry-points.'factory.plugins']`\n"
+            f"- Entry point value: `<mode_name> = '<mode_name>:register_plugin'`\n\n"
+            f"**Workflow file (`<mode_name>.py`) requirements:**\n"
+            f"- `meta` dict with `name` and `description` keys\n"
+            f"- `workflow()` function returning a `Workflow` object\n"
+            f"- `register_plugin(registry)` function that calls:\n"
+            f"  - `registry.add_modes([meta['name']])`\n"
+            f"  - `registry.add_workflow_search_path(str(Path(__file__).parent))`\n"
+            f"- Only import from `factory.workflow.primitives` and stdlib\n"
+            f"- NO imports from other factory internals\n\n"
+            f"**README.md content:**\n"
+            f"- Project description\n"
+            f"- Installation: `pip install -e {folder}/`\n"
+            f"- Usage: `factory ceo /path/to/project --mode <mode-name>`\n"
+            f"- Verification: `factory workflow list`, `factory workflow validate <name>`\n\n"
+            f"**Verification steps (Builder MUST run all):**\n"
+            f"1. Create the output directory: `mkdir -p {folder}`\n"
+            f"2. Write `pyproject.toml` with correct entry point\n"
+            f"3. Write `<mode_name>.py` with `meta` + `workflow()` + `register_plugin()`\n"
+            f"4. Write `README.md` with installation instructions\n"
+            f"5. Install locally: `pip install -e {folder}/`\n"
+            f"6. Verify discovery: `factory workflow list` (should show the new mode)\n"
+            f"7. Validate graph: `factory workflow validate <mode-name>`\n"
+            f"8. Clean up: `pip uninstall -y factory-<mode-name>-workflow`\n\n"
+            f"**Constraints:**\n"
+            f"- Do NOT modify `factory/workflow/definitions.py` or any upstream factory files\n"
+            f"- Do NOT use `src/` layout — flat layout with workflow `.py` at package root\n"
+            f"- Do NOT `git init` the output directory\n"
+            f"- Do NOT commit the plugin to the factory repo or open a PR — "
+            f"the plugin package stays in the output directory as a standalone artifact\n"
+            f"- Do NOT include a `tests/` directory (users can add their own later)\n\n"
+            f"Follow the Create workflow playbook in skills/workflow-create/SKILL.md.\n"
+        )
+
     elif create_description:
         task += (
             f"\n\n## Create Mode (New Factory Mode)\n\n"

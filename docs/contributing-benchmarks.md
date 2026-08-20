@@ -2,7 +2,7 @@
 
 This guide walks you through adding a new benchmark to re:factory. By the end, you will have a workflow definition that the factory can execute, a Harbor agent that runs it in an isolated container, and a CI matrix entry that runs it on every push.
 
-If you are looking for the technical spec (DSL primitives, node types, edge conditions), see [`factory/workflow/contributed/README.md`](../factory/workflow/contributed/README.md). This guide focuses on the practical, end to end process.
+If you are looking for the technical spec (DSL primitives, node types, edge conditions), see [`factory/workflow/contributed/README.md`](https://github.com/akashgit/remote-factory/blob/main/factory/workflow/contributed/README.md). This guide focuses on the practical, end to end process.
 
 
 ## What a Benchmark Contribution Consists Of
@@ -368,8 +368,8 @@ When in doubt, read the source. The legacybench workflow is the simplest (4 node
 
 ## Further Reading
 
-- [`factory/workflow/contributed/README.md`](../factory/workflow/contributed/README.md) for the technical spec (DSL primitives, directory layout, linting details)
-- [`factory/workflow/README.md`](../factory/workflow/README.md) for full workflow engine documentation
-- [`benchmarks/factory_harbor_agent.py`](../benchmarks/factory_harbor_agent.py) for the base Harbor agent implementation
-- [`benchmarks/config.sh`](../benchmarks/config.sh) for benchmark configuration examples
-- [`.github/workflows/benchmark.yml`](../.github/workflows/benchmark.yml) for CI integration patterns
+- [`factory/workflow/contributed/README.md`](https://github.com/akashgit/remote-factory/blob/main/factory/workflow/contributed/README.md) for the technical spec (DSL primitives, directory layout, linting details)
+- [`factory/workflow/README.md`](https://github.com/akashgit/remote-factory/blob/main/factory/workflow/README.md) for full workflow engine documentation
+- [`benchmarks/factory_harbor_agent.py`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/factory_harbor_agent.py) for the base Harbor agent implementation
+- [`benchmarks/config.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/config.sh) for benchmark configuration examples
+- [`.github/workflows/benchmark.yml`](https://github.com/akashgit/remote-factory/blob/main/.github/workflows/benchmark.yml) for CI integration patterns

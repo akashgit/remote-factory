@@ -486,6 +486,8 @@ def _execute_ceo(
     research_ideation: str | None,
     create_description: str | None,
     update_existing_mode: str | None,
+    plugin_mode: bool = False,
+    plugin_folder: str | None = None,
     deferred_spec: str | None,
     needs_materialize: bool,
     refine_request: str | None,
@@ -499,7 +501,7 @@ def _execute_ceo(
     just_plan: bool = False,
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
-    from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
+    from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt, resolve_prompt_core
     from factory.runners import get_runner
     from factory.runners.claude import _make_ceo_message_emitter
     from factory.worktree import create_worktree, prune_stale, remove_worktree
@@ -664,6 +666,8 @@ def _execute_ceo(
         display_mode=banner_mode,
         create_description=create_description,
         update_existing_mode=update_existing_mode,
+        plugin_mode=plugin_mode,
+        plugin_folder=plugin_folder,
         from_plan=resolved_plan.plan if resolved_plan else None,
         from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
         just_plan=just_plan,
@@ -753,9 +757,11 @@ def _execute_ceo(
         extras: dict[str, object] = {}
         if _verification_settings_file:
             extras["settings_file"] = _verification_settings_file
+        prompt_core = resolve_prompt_core()
         return runner.interactive_run(
             _RunReq(
                 prompt=prompt,
+                prompt_core=prompt_core,
                 task=task,
                 cwd=wt_path,
                 model=model,

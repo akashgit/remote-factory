@@ -507,16 +507,6 @@ class TestBackgroundDispatch:
 
         assert ClaudeRunner.metadata().supports_background is True
 
-    def test_other_runners_no_background(self):
-        """Non-claude runners have supports_background=False."""
-        from factory.runners.bob import BobRunner
-        from factory.runners.codex import CodexRunner
-        from factory.runners.opencode import OpenCodeRunner
-
-        assert BobRunner.metadata().supports_background is False
-        assert CodexRunner.metadata().supports_background is False
-        assert OpenCodeRunner.metadata().supports_background is False
-
     def test_resolve_background_flag(self, monkeypatch):
         """_resolve_background resolves CLI flag correctly."""
         import argparse

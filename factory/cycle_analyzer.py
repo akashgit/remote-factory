@@ -102,9 +102,13 @@ class CycleAnalyzer:
         self,
         factory_dir: Path,
         workflow: Workflow | None = None,
+        event_offset: int = 0,
+        tsv_offset: int = 0,
     ) -> None:
         self.factory_dir = Path(factory_dir)
         self.workflow = workflow
+        self._event_offset = event_offset
+        self._tsv_offset = tsv_offset
 
     # ── Main API ──
 
@@ -166,7 +170,9 @@ class CycleAnalyzer:
         if not events_path.exists():
             return []
         events = []
-        for line in events_path.read_text().splitlines():
+        for idx, line in enumerate(events_path.read_text().splitlines()):
+            if idx < self._event_offset:
+                continue
             line = line.strip()
             if line:
                 try:
@@ -310,7 +316,9 @@ class CycleAnalyzer:
         rows: dict[int, dict[str, str]] = {}
         with open(tsv_path) as f:
             reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
+            for data_idx, row in enumerate(reader):
+                if data_idx < self._tsv_offset:
+                    continue
                 try:
                     rows[int(row["id"])] = row
                 except (KeyError, ValueError):
@@ -345,7 +353,9 @@ class CycleAnalyzer:
         known_ids = {e.exp_id for e in experiments}
         with open(tsv_path) as f:
             reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
+            for data_idx, row in enumerate(reader):
+                if data_idx < self._tsv_offset:
+                    continue
                 try:
                     exp_id = int(row["id"])
                 except (KeyError, ValueError):
@@ -390,7 +400,9 @@ class CycleAnalyzer:
         scores: list[float] = []
         with open(tsv_path) as f:
             reader = csv.DictReader(f, delimiter="\t")
-            for row in reader:
+            for data_idx, row in enumerate(reader):
+                if data_idx < self._tsv_offset:
+                    continue
                 try:
                     if row.get("score_after"):
                         scores.append(float(row["score_after"]))

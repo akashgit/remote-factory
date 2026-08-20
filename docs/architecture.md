@@ -1,8 +1,8 @@
 # Architecture
 
-re:factory is a three-layer system with strict separation between tooling, orchestration, and execution.
+re:factory is a four-layer system with strict separation between tooling, orchestration, execution, and extensibility.
 
-## Three Layers
+## Four Layers
 
 ### Layer 1: Python CLI (`factory/`)
 
@@ -38,11 +38,20 @@ Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Refiner** | Classify and scope post-cycle refinement requests (T1/T2/T3 tiers) | `factory agent refiner --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
 
-Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
+Agent prompts are resolved via three-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
-2. re:factory default: `factory/agents/prompts/<role>.md`
+2. User-global override: `~/.factory/agents/prompts/<role>.md`
+3. re:factory default: `factory/agents/prompts/<role>.md`
 
 Evolved playbooks from ACE are auto-injected at runtime.
+
+### Layer 4: Plugin System
+
+re:factory is an **engine** — the built-in modes are one configuration of it. Pip-installable plugins can extend the factory with new CEO modes, CLI commands, agent roles, pre-dispatch hooks, parser extensions, and workflow search paths via standard Python entry points (`factory.plugins` group).
+
+The plugin registry (`factory/plugins.py`) loads at parser construction time with three-tier error isolation. Collision protection ensures builtins always win and first-registered plugins take priority.
+
+See [Plugins — Build Your Own Factory](plugins.md) for the full guide.
 
 ## State Machine
 
@@ -210,6 +219,7 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/report.py` | Performance report generation and loading |
 | `factory/adversarial.py` | GAN-style adversarial eval loop state machine |
 | `factory/agents/runner.py` | Agent subprocess spawner + event emission |
+| `factory/plugins.py` | Plugin registry — entry point discovery + extension surfaces |
 
 ## `.factory/` Directory
 
@@ -259,6 +269,7 @@ Generated at runtime — not checked into version control:
 
 ## Related Docs
 
+- [Plugins — Build Your Own Factory](plugins.md) — How to extend re:factory with custom modes, agents, and commands
 - [Self-Improvement Loop](self-improvement.md) — How the CEO tracks agents, cross-project learning, and autonomous playbook evolution
 - [ACE Playbook Evolution](ace.md) — The Reflect → Curate → Inject playbook evolution mechanics
 - [Eval System](eval.md) — Three-tier scoring, guards, and precheck gates

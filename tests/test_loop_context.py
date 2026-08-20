@@ -682,10 +682,16 @@ class TestLoopContextE2EComparison:
                 nid = order[idx]
                 node = wf.nodes.get(nid)
                 if isinstance(node, AgentNode):
-                    reviews_dir = tmp_path / ".factory" / "reviews"
-                    reviews_dir.mkdir(parents=True, exist_ok=True)
-                    role = node.role.value
-                    (reviews_dir / f"{role}-latest.md").write_text(f"{role} output")
+                    if node.writes:
+                        for wp in node.writes:
+                            out = tmp_path / wp
+                            out.parent.mkdir(parents=True, exist_ok=True)
+                            out.write_text(f"{node.role.value} output")
+                    else:
+                        reviews_dir = tmp_path / ".factory" / "reviews"
+                        reviews_dir.mkdir(parents=True, exist_ok=True)
+                        role = node.role.value
+                        (reviews_dir / f"{role}-latest.md").write_text(f"{role} output")
                     result = tool_next(tmp_path)
                     if result.startswith("RETRY"):
                         reloop_count += 1

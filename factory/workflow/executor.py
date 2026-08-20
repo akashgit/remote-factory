@@ -839,7 +839,9 @@ class WorkflowExecutor:
         """Invoke an agent via factory/agents/runner.py."""
         from factory.agents.runner import invoke_agent
 
-        task = node.prompt_template
+        task = node.prompt_template.replace(
+            "{project_path}", str(self.project_path),
+        )
         context = self.node_context.get(node.id, "")
         if context:
             task = f"{task}\n\n{context}"

@@ -597,6 +597,7 @@ class AgentRunRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     prompt: str
+    prompt_core: str = ""
     task: str
     cwd: Path
     timeout: float = 600.0

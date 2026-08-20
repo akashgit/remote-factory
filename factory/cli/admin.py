@@ -281,14 +281,11 @@ def cmd_self_update(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    """Install Factory agents as Claude Code or Codex CLI agents."""
+    """Install Factory agents as Claude Code CLI agents."""
     from factory.agents.plugin import (
         generate_agent_content,
-        generate_codex_agent_toml,
         load_agent_config,
     )
-
-    runner = getattr(args, "runner", "claude") or "claude"
 
     role_filter = getattr(args, "role", None)
     config = load_agent_config()
@@ -300,32 +297,19 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     roles = [role_filter] if role_filter else list(config)
 
-    if runner == "codex":
-        agents_dir = Path.home() / ".codex" / "agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        for role in roles:
-            content = generate_codex_agent_toml(role)
-            agent_path = agents_dir / f"factory-{role}.toml"
-            agent_path.write_text(content)
-            print(f"  Installed factory-{role} -> {agent_path}")
-        print()
-        print("Usage:")
-        print("  codex --agent factory-<role>              # from any project directory")
-        print('  codex --agent factory-ceo "improve X"     # with initial prompt')
-    else:
-        agents_dir = Path.home() / ".claude" / "agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        for role in roles:
-            content = generate_agent_content(role)
-            agent_path = agents_dir / f"factory-{role}.md"
-            agent_path.write_text(content)
-            print(f"  Installed factory-{role} -> {agent_path}")
-        print()
-        print("Usage:")
-        print("  claude --agent factory-<role>              # from any project directory")
-        print('  claude --agent factory-ceo "improve X"     # with initial prompt')
-        print()
-        print('Or from within Claude Code, ask: "use the factory-<role> agent"')
+    agents_dir = Path.home() / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    for role in roles:
+        content = generate_agent_content(role)
+        agent_path = agents_dir / f"factory-{role}.md"
+        agent_path.write_text(content)
+        print(f"  Installed factory-{role} -> {agent_path}")
+    print()
+    print("Usage:")
+    print("  claude --agent factory-<role>              # from any project directory")
+    print('  claude --agent factory-ceo "improve X"     # with initial prompt')
+    print()
+    print('Or from within Claude Code, ask: "use the factory-<role> agent"')
 
     return 0
 

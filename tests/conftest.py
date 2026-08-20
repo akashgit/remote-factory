@@ -10,10 +10,6 @@ import pytest
 
 from factory.models import FactoryConfig
 
-# CRITICAL: Set FACTORY_BOB_DRY_RUN=1 before any tests run.
-# This ensures BobRunner never invokes real bob during tests.
-os.environ["FACTORY_BOB_DRY_RUN"] = "1"
-
 # Disable CEO completion guard by default in tests.
 # Tests that need to exercise the guard can unset this or test with mocked invoke_agent.
 os.environ["FACTORY_CEO_RESPAWN_DISABLED"] = "1"

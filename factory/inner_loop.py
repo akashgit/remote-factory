@@ -17,8 +17,10 @@ Usage:
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
+import time
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -114,6 +116,9 @@ class InnerLoop:
         evaluator: Evaluator | None = None,
         workflow: Workflow | None = None,
         frozen_nodes: frozenset[str] = frozenset(),
+        test_command: str = "",
+        test_format: str = "pytest",
+        metric_path: str = "score",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -121,6 +126,9 @@ class InnerLoop:
         self.evaluator = evaluator
         self.workflow = workflow
         self.frozen_nodes = frozenset(frozen_nodes)
+        self.test_command = test_command
+        self.test_format = test_format
+        self.metric_path = metric_path
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._validate_frozen_nodes()
@@ -157,25 +165,69 @@ class InnerLoop:
         """Return the set of frozen node IDs."""
         return set(self.frozen_nodes)
 
+    @staticmethod
+    def _count_lines(path: Path) -> int:
+        if not path.exists():
+            return 0
+        return len(path.read_text().splitlines())
+
+    @staticmethod
+    def _count_tsv_data_rows(path: Path) -> int:
+        if not path.exists():
+            return 0
+        lines = path.read_text().splitlines()
+        return max(0, len(lines) - 1)
+
     def step(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Run one inner-loop cycle and return structured results.
 
         1. Write directives (steering from outer loop) if provided
-        2. Run the factory mode via subprocess
-        3. CycleAnalyzer reads execution artifacts (agents, costs, verdicts)
-        4. Evaluator parses eval-specific artifacts (scores, metrics)
-        5. Return composed CycleRecord
+        2. Snapshot artifact offsets for isolation
+        3. Run the factory mode via subprocess
+        4. Write cycle_summary.json with observable outcomes
+        5. CycleAnalyzer reads only new execution artifacts (scoped by offset)
+        6. Evaluator parses eval-specific artifacts (scores, metrics)
+        7. Return composed CycleRecord
         """
         if directives:
             self._write_directives(directives)
 
+        event_offset = self._count_lines(self.factory_dir / "events.jsonl")
+        tsv_offset = self._count_tsv_data_rows(self.factory_dir / "results.tsv")
+
+        head_before = self._get_git_head()
+        t0 = time.monotonic()
+
         result = subprocess.run(
             [sys.executable, "-m", "factory", "ceo", str(self.project_dir),
-             "--mode", self.mode, "--no-worktree"],
+             "--mode", self.mode, "--headless", "--no-worktree"],
             cwd=self.project_dir,
         )
 
-        record = self._collect_results()
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        head_after = self._get_git_head()
+        builder_committed = (
+            head_before is not None
+            and head_after is not None
+            and head_before != head_after
+        )
+
+        record = self._collect_results(
+            event_offset=event_offset, tsv_offset=tsv_offset,
+        )
+
+        test_score, test_details = self._run_test_command() if self.test_command else (None, None)
+
+        self._write_cycle_summary(
+            returncode=result.returncode,
+            event_offset=event_offset,
+            duration_ms=duration_ms,
+            builder_committed=builder_committed,
+            experiments=len(record.experiments),
+            test_score=test_score,
+            test_details=test_details,
+        )
+
         if result.returncode != 0:
             record.errored = (record.errored or 0) + 1
         record.cycle_number = self._step_count + 1
@@ -202,9 +254,18 @@ class InnerLoop:
         """All cycle records from this session."""
         return list(self._history)
 
-    def _collect_results(self) -> CycleRecord:
+    def _collect_results(
+        self,
+        event_offset: int = 0,
+        tsv_offset: int = 0,
+    ) -> CycleRecord:
         """Read execution artifacts + eval artifacts, compose into CycleRecord."""
-        analyzer = CycleAnalyzer(self.factory_dir, workflow=self.workflow)
+        analyzer = CycleAnalyzer(
+            self.factory_dir,
+            workflow=self.workflow,
+            event_offset=event_offset,
+            tsv_offset=tsv_offset,
+        )
         record = analyzer.latest()
         if record is None:
             record = CycleRecord(
@@ -245,6 +306,177 @@ class InnerLoop:
                 record.score_end = final.score
 
         return record
+
+    def _get_git_head(self) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.stdout.strip() if result.returncode == 0 else None
+        except Exception:
+            return None
+
+    def _run_test_command(self) -> tuple[float | None, dict[str, Any] | None]:
+        """Run the configured test command and return (score, details).
+
+        Dispatches output parsing based on self.test_format:
+        - pytest: parse stdout for pass/fail counts
+        - exit_code: binary pass/fail from returncode
+        - json: parse stdout as JSON, extract metric
+        - exact_match: compare output to expected answer
+        """
+        try:
+            result = subprocess.run(
+                shlex.split(self.test_command),
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            return self._parse_test_output(result)
+        except subprocess.TimeoutExpired:
+            return 0.0, {"error": "test_command_timeout"}
+        except Exception as exc:
+            return None, {"error": str(exc)}
+
+    def _parse_test_output(
+        self, result: subprocess.CompletedProcess[str],
+    ) -> tuple[float, dict[str, Any]]:
+        """Parse test command output based on test_format."""
+        if self.test_format == "exit_code":
+            score = 1.0 if result.returncode == 0 else 0.0
+            return score, {
+                "returncode": result.returncode,
+                "passed": score,
+                "test_format": "exit_code",
+            }
+
+        if self.test_format == "json":
+            try:
+                data = json.loads(result.stdout)
+                obj: Any = data
+                for key in self.metric_path.split("."):
+                    obj = obj[key]
+                score = float(obj)
+                return score, {
+                    "score": score,
+                    "test_format": "json",
+                    "test_returncode": result.returncode,
+                    **{k: v for k, v in data.items() if isinstance(v, (int, float))},
+                }
+            except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+                return 0.0, {"error": "json_parse_failed", "test_format": "json"}
+
+        if self.test_format == "exact_match":
+            output = result.stdout.strip()
+            expected_path = self.project_dir / "expected_answer.txt"
+            if not expected_path.exists():
+                expected_path = self.project_dir / "expected.txt"
+            if not expected_path.exists():
+                return 0.0, {"error": "expected_answer_file_missing", "test_format": "exact_match"}
+            expected = expected_path.read_text(errors="replace").strip()
+            score = 1.0 if output == expected else 0.0
+            return score, {
+                "match": score,
+                "test_format": "exact_match",
+                "test_returncode": result.returncode,
+            }
+
+        from factory.outer_loop.featurebench_evaluator import parse_pytest_stdout
+        metrics = parse_pytest_stdout(result.stdout)
+        pass_rate = metrics.get("pass_rate", 0.0)
+        return pass_rate, {
+            "tests_passed": metrics.get("tests_passed", 0.0),
+            "tests_total": metrics.get("tests_total", 0.0),
+            "pass_rate": pass_rate,
+            "test_returncode": result.returncode,
+            "test_format": "pytest",
+        }
+
+    def _write_cycle_summary(
+        self,
+        returncode: int,
+        event_offset: int,
+        duration_ms: int,
+        builder_committed: bool,
+        experiments: int,
+        test_score: float | None = None,
+        test_details: dict[str, Any] | None = None,
+    ) -> Path:
+        """Write a structured summary of observable outcomes from this cycle."""
+        events_path = self.factory_dir / "events.jsonl"
+
+        agents_spawned = 0
+        agents_succeeded = 0
+        agents_failed = 0
+        total_cost = 0.0
+
+        if events_path.exists():
+            for idx, line in enumerate(events_path.read_text().splitlines()):
+                if idx < event_offset:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                etype = e.get("type", "")
+                if etype == "agent.started":
+                    agents_spawned += 1
+                elif etype == "agent.completed":
+                    agents_succeeded += 1
+                    total_cost += e.get("data", {}).get("total_cost_usd", 0) or 0
+                elif etype == "agent.failed":
+                    agents_failed += 1
+
+        heuristic_score = 0.0
+        if agents_spawned > 0:
+            heuristic_score += 0.2
+        if builder_committed:
+            heuristic_score += 0.2
+        if returncode == 0:
+            heuristic_score += 0.2
+        if agents_failed == 0 and agents_spawned > 0:
+            heuristic_score += 0.2
+        if experiments > 0:
+            heuristic_score += 0.2
+
+        score = test_score if test_score is not None else heuristic_score
+
+        errors: list[str] = []
+        if returncode != 0:
+            errors.append(f"subprocess exited with code {returncode}")
+
+        summary: dict[str, Any] = {
+            "mode": self.mode,
+            "score": round(score, 4),
+            "scoring_method": "pytest_pass_rate" if test_score is not None else "heuristic",
+            "heuristic_score": round(heuristic_score, 2),
+            "cost_usd": round(total_cost, 2),
+            "agents_spawned": agents_spawned,
+            "agents_succeeded": agents_succeeded,
+            "agents_failed": agents_failed,
+            "builder_committed": builder_committed,
+            "tests_passed": returncode == 0,
+            "experiments": experiments,
+            "duration_ms": duration_ms,
+            "errors": errors,
+        }
+        if test_details:
+            summary["test_details"] = test_details
+
+        summary_dir = self.factory_dir / "outer_loop" / "runs" / self.mode
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        summary_path = summary_dir / "cycle_summary.json"
+        summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+
+        return summary_path
 
     def _write_directives(self, directives: dict[str, Any]) -> None:
         """Write outer-loop directives as a factory message."""

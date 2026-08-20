@@ -1,0 +1,18 @@
+[meta]
+name = "swebench"
+description = "SWE-bench — software engineering bug fix benchmark"
+
+[test]
+format = "exit_code"
+command = "pytest -xvs"
+timeout = 1800
+
+[instances]
+format = "git-repo"
+prep_command = "python -m swebench.harness.prepare --instance_id {instance_id} --testbed {instance_dir}"
+
+[seed_workflow]
+name = "improve"
+
+[scoring]
+method = "binary"

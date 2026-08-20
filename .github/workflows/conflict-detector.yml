@@ -179,6 +179,7 @@ jobs:
           cp conflicts.jsonl /tmp/conflicts.jsonl.updated
 
           # Checkout or create conflict-data branch
+          rm -f conflicts.jsonl
           git fetch origin conflict-data || true
           if git show-ref --verify --quiet refs/remotes/origin/conflict-data; then
             git checkout -b conflict-data origin/conflict-data

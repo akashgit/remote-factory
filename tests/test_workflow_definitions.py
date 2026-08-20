@@ -9,6 +9,9 @@ import pytest
 from factory.models import ProjectState
 from factory.workflow.definitions import (
     DOC_FRESHNESS_GATE_PROMPT,
+    _GRAPH_EXPLORER_PROMPT,  # noqa: F401
+    _graph_explorer_prompt,  # noqa: F401
+    _study_subgraph,  # noqa: F401
     build_workflow,
     create_workflow,
     design_workflow,
@@ -389,6 +392,27 @@ class TestStudyWorkflow:
         node = wf.nodes["graph_explorer"]
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.RESEARCHER
+
+    def test_graph_explorer_prompt_includes_project_path_in_commands(self) -> None:
+        wf = study_standalone_workflow()
+        node = wf.nodes["graph_explorer"]
+        prompt = node.prompt_template
+        assert "test -f graph.json" in prompt, (
+            "smoke check must use relative path (CWD is project root)"
+        )
+        assert 'factory graph query "{project_path}"' in prompt, (
+            "graph query command must use {project_path} template"
+        )
+        assert 'factory graph explain "{project_path}"' in prompt, (
+            "graph explain command must use {project_path} template"
+        )
+        assert 'factory graph path "{project_path}"' in prompt, (
+            "graph path command must use {project_path} template"
+        )
+        assert "{project_path}/graph.json" in prompt, (
+            "prompt must reference graph.json with {project_path} prefix"
+        )
+        assert "NOT inside `.factory/`" in prompt, "prompt must clarify graph.json is not in .factory/"
 
     def test_concat_study_writes_combined(self) -> None:
         wf = study_standalone_workflow()
@@ -1049,3 +1073,30 @@ class TestFounderWorkflow:
         issues = validate_skill(skill_md)
         assert issues == [], f"founder skill has issues: {issues}"
         assert "workflow-founder" in skill_md
+
+
+# ── _study_subgraph focus threading ─────────────────────────────
+
+
+class TestStudySubgraphFocus:
+    def test_focus_sets_study_node(self) -> None:
+        nodes, _ = _study_subgraph(focus="auth")
+        assert nodes["study"].focus == "auth"
+
+    def test_focus_sets_graph_explorer_prompt(self) -> None:
+        nodes, _ = _study_subgraph(focus="auth")
+        assert "auth" in nodes["graph_explorer"].prompt_template
+
+    def test_no_focus_backward_compatible(self) -> None:
+        nodes, _ = _study_subgraph()
+        assert nodes["study"].focus is None
+        assert nodes["graph_explorer"].prompt_template == _GRAPH_EXPLORER_PROMPT
+
+    def test_graph_explorer_prompt_with_focus(self) -> None:
+        prompt = _graph_explorer_prompt("auth flow")
+        assert "Focus your exploration on: auth flow" in prompt
+        assert 'factory graph query "auth flow"' in prompt
+
+    def test_graph_explorer_prompt_without_focus(self) -> None:
+        assert _graph_explorer_prompt() == _GRAPH_EXPLORER_PROMPT
+        assert _graph_explorer_prompt(None) == _GRAPH_EXPLORER_PROMPT

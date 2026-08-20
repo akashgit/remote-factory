@@ -45,6 +45,7 @@ __all__ = [
     "DOC_FRESHNESS_GATE_PROMPT",
     "ResearcherConfig",
     "_GRAPH_EXPLORER_PROMPT",
+    "_graph_explorer_prompt",
     "_research_subgraph",
     "_study_subgraph",
     "build_workflow",
@@ -89,15 +90,25 @@ DOC_FRESHNESS_GATE_PROMPT = (
 _GRAPH_EXPLORER_PROMPT = (
     "Explore the project's code knowledge graph to build structural understanding. "
     "Read .factory/strategy/observations.md for focus context.\n\n"
-    "If graphify is installed and graph.json exists:\n"
-    '1. Run `factory graph query "<focus from observations>" --depth 2` to find relevant nodes\n'
-    '2. Run `factory graph explain "<key node>"` on the most important nodes to understand '
-    "their connections and dependencies\n"
-    '3. Run `factory graph path "<A>" "<B>"` to trace dependency paths between key components\n'
+    "**Step 0 — detect graph availability:** Your working directory is already "
+    "the project root. The graph file lives at `{project_path}/graph.json` "
+    "(NOT inside `.factory/`). "
+    "Run this smoke check FIRST — use a relative path since your CWD is the "
+    "project root: "
+    "`test -f graph.json && echo 'GRAPH AVAILABLE' || echo 'NO GRAPH'` — "
+    "if the output says GRAPH AVAILABLE, proceed with the graph commands below. "
+    "If the output says NO GRAPH, skip to the fallback section.\n\n"
+    "**If the graph IS available:**\n"
+    '1. Run `factory graph query "{project_path}" "<focus from observations>" --depth 2` '
+    "to find relevant nodes\n"
+    '2. Run `factory graph explain "{project_path}" "<key node>"` on the most important '
+    "nodes to understand their connections and dependencies\n"
+    '3. Run `factory graph path "{project_path}" "<A>" "<B>"` to trace dependency paths '
+    "between key components\n"
     "4. Write structured findings to .factory/strategy/graph-context.md covering: "
     "key modules and their relationships, dependency paths, architectural layers, "
     "entry points and hotspots\n\n"
-    "If graphify is NOT installed or graph.json is missing, fall back to direct file exploration:\n"
+    "**If the graph is NOT available**, fall back to direct file exploration:\n"
     "1. Use `find . -name '*.py' | head -50` to discover source files\n"
     "2. Use `grep -rn 'class \\|def ' --include='*.py' | head -100` to map functions and classes\n"
     "3. Use `grep -rn 'import ' --include='*.py' | head -100` to trace dependencies\n"
@@ -105,7 +116,34 @@ _GRAPH_EXPLORER_PROMPT = (
 )
 
 
-def _study_subgraph() -> tuple[dict[str, Any], list[Edge]]:
+def _graph_explorer_prompt(focus: str | None = None) -> str:
+    """Return the graph_explorer prompt, optionally scoped to *focus*."""
+    if not focus:
+        return _GRAPH_EXPLORER_PROMPT
+    return (
+        f"Focus your exploration on: {focus}\n\n"
+        "Explore the project's code knowledge graph targeting the area above. "
+        "Read .factory/strategy/observations.md for additional context.\n\n"
+        "If graphify is installed and graph.json exists:\n"
+        f'1. Run `factory graph query "{focus}" --depth 2` to find relevant nodes\n'
+        '2. Run `factory graph explain "<key node>"` on the most important nodes to understand '
+        "their connections and dependencies\n"
+        '3. Run `factory graph path "<A>" "<B>"` to trace dependency paths between key components\n'
+        "4. Write structured findings to .factory/strategy/graph-context.md covering: "
+        "key modules and their relationships, dependency paths, architectural layers, "
+        "entry points and hotspots\n\n"
+        "If graphify is NOT installed or graph.json is missing, fall back to direct file exploration:\n"
+        "1. Use `find . -name '*.py' | head -50` to discover source files\n"
+        "2. Use `grep -rn 'class \\|def ' --include='*.py' | head -100` to map functions and classes\n"
+        "3. Use `grep -rn 'import ' --include='*.py' | head -100` to trace dependencies\n"
+        "4. Write the same structured findings to .factory/strategy/graph-context.md"
+    )
+
+
+def _study_subgraph(
+    *,
+    focus: str | None = None,
+) -> tuple[dict[str, Any], list[Edge]]:
     """Return (nodes, internal_edges) for the graph-powered study chain.
 
     Four nodes run sequentially:
@@ -128,12 +166,13 @@ def _study_subgraph() -> tuple[dict[str, Any], list[Edge]]:
         id="study",
         command="factory study {project_path}",
         writes={".factory/strategy/observations.md"},
+        focus=focus,
     )
 
     nodes["graph_explorer"] = AgentNode(
         id="graph_explorer",
         role=AgentRole.RESEARCHER,
-        prompt_template=_GRAPH_EXPLORER_PROMPT,
+        prompt_template=_graph_explorer_prompt(focus),
         reads={".factory/strategy/observations.md"},
         writes={".factory/strategy/graph-context.md"},
     )
@@ -1841,10 +1880,17 @@ def create_workflow() -> Workflow:
             prompt_template=(
                 "Mode description analysis. "
                 "Read the user's mode description from the CEO task. "
-                "If the CEO task includes '## Create Mode (Update Existing Mode)', parse the "
-                "**Requested changes:** field and structure the requested modifications against "
-                "the existing mode's current behavior. Identify which nodes, edges, prompts, or "
-                "gates need to change and which must remain untouched. "
+                "If the CEO task includes '## Create Mode (Plugin Package)', parse the "
+                "**output_folder** and plugin-specific constraints (standalone package, "
+                "entry point registration, no upstream modifications). Structure the plugin "
+                "packaging requirements: pyproject.toml entry point, workflow file layout, "
+                "register_plugin() function pattern, installation and verification steps. "
+                "Write findings to .factory/strategy/research-intent.md covering: "
+                "structured requirements, packaging needs, workflow node candidates. "
+                "Otherwise, if the CEO task includes '## Create Mode (Update Existing Mode)', "
+                "parse the **Requested changes:** field and structure the requested modifications "
+                "against the existing mode's current behavior. Identify which nodes, edges, "
+                "prompts, or gates need to change and which must remain untouched. "
                 "Otherwise, parse and structure the description into a new workflow specification: "
                 "- Purpose and trigger conditions "
                 "- Agent roles needed (which specialists) "
@@ -1937,12 +1983,34 @@ def create_workflow() -> Workflow:
             "Implement the workflow changes from the approved specification. "
             "Read the approved spec at .factory/strategy/current.md. "
             "Read CLAUDE.md for project conventions. "
-            "If the CEO task includes '## Create Mode (Update Existing Mode)', follow the "
-            "update checklist: modify the existing workflow function in definitions.py, verify "
-            "the register_all() entry still resolves, update WORKFLOW_META if needed, verify all "
-            "20 registration points from the CEO task, run factory workflow validate <name>, "
-            "regenerate SKILL.md via factory workflow export-skills, update tests, run pytest "
-            "and ruff check. "
+            "If the CEO task includes '## Create Mode (Plugin Package)', follow the "
+            "PLUGIN checklist: "
+            "1) Read **output_folder** from the CEO task "
+            "2) Create the output directory: mkdir -p <output_folder> "
+            "3) Write pyproject.toml with: "
+            "   name factory-<mode-name>-workflow, version 0.1.0, "
+            "   build-system hatchling, requires-python >=3.11, "
+            "   dependencies [remote-factory], "
+            "   entry point [factory.plugins] <mode-name> = '<mode_name>:register_plugin' "
+            "4) Write <mode_name>.py with: "
+            "   meta dict (name, description), "
+            "   workflow() function returning a Workflow object, "
+            "   register_plugin(registry) calling registry.add_modes() and "
+            "   registry.add_workflow_search_path(str(Path(__file__).parent)) "
+            "5) Write README.md with installation and usage "
+            "6) Test: pip install -e <output_folder>/ "
+            "7) Verify: factory workflow list shows the mode "
+            "8) Validate: factory workflow validate <mode-name> "
+            "9) Clean up: pip uninstall -y factory-<mode-name>-workflow "
+            "The plugin package stays in the output directory — do NOT commit it "
+            "to the factory repo or open a PR. It is a standalone artifact. "
+            "Do NOT modify factory/workflow/definitions.py or register_all(). "
+            "Otherwise, if the CEO task includes '## Create Mode (Update Existing Mode)', "
+            "follow the update checklist: modify the existing workflow function in "
+            "definitions.py, verify the register_all() entry still resolves, update "
+            "WORKFLOW_META if needed, verify all 20 registration points from the CEO task, "
+            "run factory workflow validate <name>, regenerate SKILL.md via factory workflow "
+            "export-skills, update tests, run pytest and ruff check. "
             "Otherwise, follow the new-mode checklist for portable workflows: "
             "1) Create $PROJECT_PATH/.factory/workflows/ directory if it doesn't exist "
             "2) Write the workflow file to $PROJECT_PATH/.factory/workflows/<name>.py "
@@ -1968,6 +2036,9 @@ def create_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Read builder output and PR diff. Does work match the approved spec? "
+            "For plugin packages: verify output directory contains pyproject.toml, "
+            "workflow .py with meta + workflow() + register_plugin(), and README.md. "
+            "Verify NO upstream factory files were modified. "
             "For new modes: verify workflow file exists at .factory/workflows/<name>.py "
             "with meta dict and workflow() function, NOT patched into definitions.py. "
             "For existing mode updates: verify definitions.py changes are correct. "
@@ -1979,8 +2050,19 @@ def create_workflow() -> Workflow:
     # Deep-QA verification (replaces monolithic QA)
     dq_nodes, dq_edges = _deep_qa_subgraph(
         adversarial_extra=(
-            "For new modes: verify the workflow was written to "
-            ".factory/workflows/<name>.py (NOT to definitions.py). "
+            "**Plugin mode check:** If the CEO task includes '## Create Mode "
+            "(Plugin Package)', verify the plugin package structure: "
+            "1) Output directory exists at the specified output_folder path. "
+            "2) pyproject.toml exists with [project.entry-points.'factory.plugins'] section. "
+            "3) Workflow .py file has meta dict + workflow() + register_plugin() function. "
+            "4) README.md documents installation and usage. "
+            "5) Run: pip install -e <folder>/ (must succeed). "
+            "6) Run: factory workflow list (must show the new mode). "
+            "7) Run: factory workflow validate <mode-name> (must pass). "
+            "8) Run: pip uninstall -y factory-<mode-name>-workflow (cleanup). "
+            "Verify NO upstream factory files were modified (definitions.py, register_all, etc). "
+            "**Project-local mode check:** Otherwise, for new modes: verify the workflow "
+            "was written to .factory/workflows/<name>.py (NOT to definitions.py). "
             "Run: factory workflow validate <name> --project-path $PROJECT_PATH, "
             "factory workflow show <name> --project-path $PROJECT_PATH. "
             "Verify SKILL.md generated under skills/workflow-<name>/. "
@@ -4146,6 +4228,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "lumen": lambda **kwargs: __import__(
             "factory.workflow.contributed.lumen", fromlist=["workflow"]
         ).workflow(**kwargs),
+        "outer-loop": lambda: __import__(
+            "factory.workflow.contributed.outer_loop", fromlist=["workflow"]
+        ).workflow(),
     }
     return _BUILTIN_REGISTRY
 
@@ -4383,9 +4468,7 @@ def parallel_improve_workflow() -> Workflow:
         [
             Edge(source="exp_begin", target="exp_builder"),
             Edge(source="exp_builder", target="exp_gate_build"),
-            Edge(
-                source="exp_gate_build", target="exp_fork_qa", condition=VerdictType.PROCEED
-            ),
+            Edge(source="exp_gate_build", target="exp_fork_qa", condition=VerdictType.PROCEED),
             Edge(source="exp_gate_build", target="exp_builder", condition=VerdictType.RELOOP),
             *exp_dq_edges,
             Edge(source="exp_join_qa", target="exp_gate_qa"),

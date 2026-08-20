@@ -259,15 +259,23 @@ class ClaudeRunner:
 
         temp_files: list[Path] = [prompt_path]
 
-        # Write CEO prompt to .claude/CLAUDE.md so it survives session transitions
-        # (background via ←, resume, daemon restart). The system prompt file is
-        # authoritative when present; CLAUDE.md provides resilience when it's not.
+        # Write a slim CEO identity to .claude/CLAUDE.md so it survives session
+        # transitions (background via ←, resume, daemon restart). The full prompt
+        # is delivered via --append-system-prompt-file; CLAUDE.md only needs enough
+        # to re-orient the CEO on resume.
         cwd = Path(request.cwd)
         claude_dir = cwd / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
 
         claude_md_path = claude_dir / "CLAUDE.md"
-        claude_md_path.write_text(request.prompt)
+        backup_path = claude_dir / "CLAUDE.md.factory-backup"
+        if claude_md_path.exists():
+            import shutil
+
+            shutil.copy2(claude_md_path, backup_path)
+
+        claude_md_content = request.prompt_core if request.prompt_core else request.prompt
+        claude_md_path.write_text(claude_md_content)
         temp_files.append(claude_md_path)
 
         # Write disallowedTools to settings.local.json so it survives session
@@ -316,10 +324,21 @@ class ClaudeRunner:
         cmd, env, temp_files = self.build_interactive_command(request)
         if not env.get("FACTORY_TRACE_ID"):
             env["TELEMETRY_PLATFORM"] = ""
+        cwd = Path(request.cwd)
+        backup_path = cwd / ".claude" / "CLAUDE.md.factory-backup"
+        claude_md_path = cwd / ".claude" / "CLAUDE.md"
         try:
             log.info("claude_interactive", cwd=str(request.cwd))
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
             for f in temp_files:
+                if f == claude_md_path:
+                    continue
                 f.unlink(missing_ok=True)
+            if backup_path.exists():
+                import shutil
+
+                shutil.move(str(backup_path), str(claude_md_path))
+            else:
+                claude_md_path.unlink(missing_ok=True)

@@ -32,6 +32,9 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+hooks:
+  - hooks/link_rewrite.py
+
 extra_css:
   - stylesheets/extra.css
 
@@ -64,8 +67,10 @@ nav:
       - Configuration: configuration.md
   - Concepts:
       - Architecture: architecture.md
+      - Plugins — Build Your Own Factory: plugins.md
       - Eval System: eval.md
       - Self-Improvement Loop: self-improvement.md
+      - Outer Loop: outer-loop.md
       - ACE Playbook Evolution: ace.md
   - Contained Runtimes: contained/index.md
   - Benchmarks: benchmarks.md

@@ -65,6 +65,29 @@ The same graph definition produces two execution formats:
 - **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
 - **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
+### Layer 2b: Outer Loop — Evolutionary Workflow Search (`factory/outer_loop/`)
+
+The outer loop evolves workflow *topologies* via MAP-Elites quality-diversity search. Given a base workflow (e.g. the single-builder FeatureBench seed), it produces a population of structurally diverse candidates, evaluates each via an inner loop (one full CEO cycle per candidate), and uses contrastive reflection to guide mutations toward higher fitness.
+
+**Pipeline:** `calibrate → evolve → reflect → evaluate` (repeats until budget exhaustion, plateau, or target score).
+
+**Key modules:**
+- `engine.py` — `SwarmEngine` orchestrates the evolutionary loop: seeding, tournament selection, mutation, evaluation, convergence detection (plateau, diversity collapse, early stop)
+- `evaluator.py` — `SwarmEvaluator` with `FitnessCache` (structural-hash dedup) and `CycleRecordCache` (content-hash dedup). Supports both `EvaluatorFn` protocol and `FeatureBenchInnerLoop` evaluation with git worktree isolation
+- `mutations.py` — 7 structured graph mutation operators (`NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`) with `WeightedRandomStrategy` and reflection-guided selection
+- `population.py` — `Population` (collection management) and `MAPElitesArchive` (4D grid: depth × fork_degree × agent_count × gate_count)
+- `similarity.py` — `structural_hash`, `graph_edit_distance`, `compute_features`, `NoveltyFilter`
+- `reflector.py` — `OuterLoopReflector` performs two-stage contrastive reflection (top-K vs bottom-K) to identify failure/success patterns and generate mutation suggestions
+- `mode_registry.py` — `EphemeralModeRegistry` registers candidate workflows as temporary modes (`evolve-gen{N}-{id[:8]}`) with content-hash integrity checking, target-dir mirroring, and promotion to permanent modes
+- `designer.py` — `DesignerAgent` generates from-scratch workflow designs (minimal, thorough, custom variants)
+- `models.py` — Pydantic models: `SwarmConfig`, `Individual`, `EvalResult`, `GenerationSummary`, `OuterLoopResult`, `HyperparameterRecord`, `MutationRecord`, `OuterLoopState`, `AuditResult`
+- `overfit.py` — `OverfitDetector` compares training vs holdout scores to flag overfitting
+- `subset.py` — `SubsetSelector` protocol and `FixedSubsetSelector` for training instance selection
+- `filesystem.py` — Outer loop directory initialization, config/checkpoint persistence
+- `featurebench_inner_loop.py` — Bridges outer loop evaluation to a full CEO cycle on a FeatureBench instance
+
+**E2E finding:** On simple FeatureBench tasks, a single-builder topology (1 AgentNode, no fork/join) wins on parsimony + cost. The outer loop's value emerges on harder multi-agent problems where topology diversity matters.
+
 ### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
 
 The CEO prompt is split into two parts:
@@ -108,6 +131,18 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 │   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
 ├── adversarial_state.json    # Adversarial loop state (phase, streaks, history)
+├── outer_loop/               # Evolutionary workflow search state
+│   ├── config.json           # SwarmConfig for the current run
+│   ├── state.json            # OuterLoopState for crash recovery
+│   ├── population/           # Serialized Population (population.json)
+│   ├── archive/              # Serialized MAPElitesArchive (grid.json)
+│   ├── modes/                # Ephemeral mode JSONs (evolve-gen{N}-{id}.json)
+│   ├── results/              # Per-generation eval results (gen{N}.json)
+│   ├── reflections/          # Contrastive reflection reports (gen{N}.json, gen{N}.md)
+│   ├── events.jsonl          # Per-generation best/mean/diversity metrics
+│   ├── costs.jsonl           # Per-individual cost tracking
+│   └── trajectory.jsonl      # Score trajectory over generations
+├── workflows/                # Ephemeral .py wrappers for WorkflowRegistry discovery
 ├── archive/                  # Long-term knowledge store (Archivist notes)
 │   ├── experiments/          # Per-experiment learnings and decision rationale
 │   ├── patterns/             # Recurring patterns and anti-patterns
@@ -118,6 +153,8 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ### Models
 
 All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
+
+Outer loop models live in `factory/outer_loop/models.py`: `SwarmConfig` (evolutionary search configuration — benchmark, budget, population_size, mutation_rate, frozen_node_ids, training/holdout instances, convergence thresholds), `Individual` (candidate with workflow_data, score, features, lineage), `EvalResult` (benchmark_score + hygiene_score + cost + complexity), `GenerationSummary` (per-generation stats), `OuterLoopResult` (final run result with trajectory, pareto front, hyperparameter history), `HyperparameterRecord` (per-generation mutation_rate, operator_weights, diversity), `MutationRecord` (operator + target_node + before/after), `MutationType` (enum: 7 mutation operators), `OuterLoopState` (checkpoint for crash recovery), `AuditResult` (overfit detection).
 
 ## Environment
 
@@ -143,66 +180,38 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 - `factory config edit` — open `~/.factory/config.toml` in `$EDITOR`
 - `factory config migrate` — create starter config from current env vars (requires `tomli_w`)
 
-**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys are injected into `os.environ`.
+**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys **override** existing env vars (explicit `--profile` opt-in means the profile is authoritative). CLI flags still win via 5-tier precedence.
+
+**Env overlay features:**
+- **Override:** Profile keys are set via `os.environ[k] = v`, not `setdefault` — the profile wins over shell env vars
+- **Unset:** Add a `[credentials.<name>.unset]` sub-table with `vars = ["VAR1", "VAR2"]` to remove env vars before injection. Unsets are processed before sets.
+- **Protected vars:** The following env vars cannot be set or unset via profiles — a `ValueError` is raised if attempted: `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, `TERM`, `PWD` (shell fundamentals); `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES` (code execution vectors); `PYTHONPATH`, `GOPATH`, `CLASSPATH`, `NODE_PATH` (language path injection); `IFS` (shell parsing); `FACTORY_TRACE_ID`, `FACTORY_PARENT_SPAN_ID` (factory observability internals).
+- **Unset vars validation:** The `[credentials.<name>.unset].vars` field must be a list — a `ValueError` is raised if it is a string or other non-list type.
+- **Override warnings:** When a profile overrides an existing env var with a different value, a `log.warning("profile_override", key=k, profile=profile)` is emitted (values are not logged to avoid leaking secrets).
+
+**Custom endpoint example** (e.g. a LiteLLM proxy):
+
+You can use profiles to point the factory at a custom model endpoint:
+```toml
+[credentials.litellm-proxy]
+FACTORY_RUNNER = "claude"
+FACTORY_MODEL = "your-model-name"
+ANTHROPIC_BASE_URL = "https://your-litellm-proxy.example.com"
+ANTHROPIC_API_KEY = "your-api-key-here"
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+
+[credentials.litellm-proxy.unset]
+vars = ["CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_VERTEX_PROJECT_ID"]
+```
+Usage: `factory ceo /path --profile litellm-proxy`
 
 **Implementation:** `factory/user_config.py` — `load_config()`, `resolve()`, `show_config()`, `migrate_env_to_config()`.
 
 ## Runners
 
-The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI). Bob Shell (`bob` CLI) and OpenAI Codex (`codex` CLI) are also supported as switchable alternatives.
+The factory uses Claude Code (`claude` CLI) as its agent backend. The runner abstraction (`factory/runners/`) supports this via `ClaudeRunner` in `factory/runners/claude.py`. The runner protocol (`factory/runners/protocol.py`) defines the interface.
 
-**Runner selection:** Set `FACTORY_RUNNER=codex` (or `bob`) to switch backends, or pass `--runner codex` to individual commands. Default is `claude`.
-
-**Bob Shell specifics:**
-- Requires `BOBSHELL_API_KEY` environment variable to be set
-- Uses 'code' mode; agent role definitions are injected via the prompt
-- Model selection is not configurable (Bob Shell uses its default model)
-
-**Dry-run mode:** Set `FACTORY_BOB_DRY_RUN=1` to test Bob Shell integration without spending tokens. The factory returns stub responses and logs usage. This is automatically set in tests via `tests/conftest.py`.
-
-**Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8)
-- All invocations are logged to `.factory/bob_usage.jsonl`
-- When ≤2 invocations remain before the ceiling, a warning is logged and emitted to `.factory/events.jsonl` (type: `bob.ceiling_warning`)
-- Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
-
-**Codex specifics:**
-- Requires `CODEX_API_KEY` (or `OPENAI_API_KEY`) environment variable (or set via config.toml profile)
-- `CODEX_API_KEY` is auto-mapped to `OPENAI_API_KEY` in subprocess env if needed
-- Headless mode uses `codex exec` with `--sandbox workspace-write --ask-for-approval never`
-- Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`)
-- Progress streams to stderr, final message to stdout (matches factory capture model)
-- Install: `npm install -g @openai/codex`
-
-**Codex dry-run mode:** Set `FACTORY_CODEX_DRY_RUN=1` to test Codex integration without spending tokens.
-
-**Codex config profile example** (`~/.factory/config.toml`):
-```toml
-[credentials.codex]
-FACTORY_RUNNER = "codex"
-CODEX_API_KEY = "..."
-```
-Then run: `factory ceo /path/to/project --profile codex`
-
-**OpenCode specifics:**
-- The factory targets `anomalyco/opencode` v1.x (TypeScript/Bun). Install via: `curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`
-- Auth: run `opencode auth login` (interactive), or set a provider env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AWS_ACCESS_KEY_ID`, etc.)
-- Headless mode uses `opencode run '<prompt>' --format json --dir <cwd> --auto`
-- Model selection via `--model` flag (e.g., `anthropic/claude-sonnet-4-20250514`)
-- Session management: `--title <name>` (name a session), `--session <id>` (resume by ID), `--continue` (continue last session)
-- Dry-run mode: `FACTORY_OPENCODE_DRY_RUN=1`
-- Token guardrails: `FACTORY_OPENCODE_MAX_INVOCATIONS_PER_CYCLE` (default: 8), logged to `.factory/opencode_usage.jsonl`
-- Unsupported: `--bg` (no background mode), `--tmux-persist` (returns explicit error), CEO message events (no JSON streaming equivalent)
-
-**OpenCode config profile example** (`~/.factory/config.toml`):
-```toml
-[credentials.opencode]
-FACTORY_RUNNER = "opencode"
-ANTHROPIC_API_KEY = "sk-ant-..."
-```
-Then run: `factory ceo /path/to/project --profile opencode`
-
-**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
+**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data and usage logs to this directory. These are project-local artifacts that should not be committed to version control.
 
 ## Running the factory
 
@@ -223,6 +232,8 @@ factory ceo /path/to/project --mode design --from-plan 'auth dashboard'  # Fuzzy
 factory ceo "SWE-bench solver" --mode research            # Research ideation → build
 factory ceo /path/to/factory --mode create --focus "mode description"  # Create a new factory mode
 factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"  # Update existing mode
+factory ceo /path/to/factory --mode create --focus 'approval workflow' --plugin                           # Plugin package → ./approval-workflow-plugin/
+factory ceo /path/to/factory --mode create --focus 'approval workflow' --plugin --folder ~/plugins/approval  # Explicit output dir
 factory ceo /path/to/project --mode design --just-plan                    # Research + strategy, no implementation
 factory ceo "distributed eval runner" --mode design --just-plan            # Plan a new idea
 factory ceo /path/to/project --mode design --just-plan --focus "auth"      # Focused planning
@@ -266,6 +277,18 @@ factory backlog-remove /path "item text"        # Remove a completed backlog ite
 factory adversarial-state /path/to/project           # Inspect adversarial loop state
 factory adversarial-state /path/to/project --reset   # Reset to defaults
 
+# Outer loop — evolutionary workflow search
+factory outer-loop calibrate /path --benchmark featurebench --budget 50 --population-size 4
+factory outer-loop calibrate /path --training-instances t1 t2 --holdout-instances h1
+factory outer-loop calibrate /path --project-dir /path/to/target  # Evaluate on a different project
+factory outer-loop evaluate /path --generation 0                  # Evaluate current generation
+factory outer-loop evaluate /path --generation 0 --project-dir /path/to/target
+factory outer-loop reflect /path --generation 0                   # Contrastive reflection
+factory outer-loop evolve /path --generation 0                    # Produce next generation
+factory outer-loop status /path                                   # Show progress and metrics
+factory outer-loop status /path --check-converge                  # Exit 0 if converged, 1 if not
+factory outer-loop promote /path --mode-name evolve-gen5-abc12345 --permanent-name best-evolved
+
 # Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 factory export /path/to/project                 # Dump full project snapshot as JSON
@@ -275,7 +298,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Multiple issues can be specified in a single `--focus` string using commas, spaces, or "and" (e.g., `--focus "111 and 112"`, `--focus "issue 42, issue 43"`, `--focus "#111 #112"`). Each issue is fetched independently and added as a separate backlog item. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on, then continues to implementation automatically after approval. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless` unless `--auto-approve` is used. `--auto-approve` lifts the headless restriction for design mode, forcing headless execution and auto-approving user gates (e.g. strategy review) — useful for CI/CD and automated pipelines. `--from-plan <source>` loads an existing plan into design mode, skipping the research phase. Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string (searches GitHub issues with the `plan` label). Requires `--mode design`; mutually exclusive with `--focus` and `--prompt`. When fetching from a GitHub issue, includes both the issue body and all comments. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`. `--just-plan` (requires `--mode design`) enters planning-only mode — research + strategy + optional GitHub publishing with no implementation. Three parallel researchers investigate domain, practices, and constraints. The Strategist synthesizes a phased plan. Single user gate: keep the plan? Approval auto-publishes to GitHub as an issue with the `plan` label and seeds the backlog with plan phases. Terminal mode — does not chain to other modes. Compatible with `--focus`. Mutually exclusive with `--from-plan` and `--prompt`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the Claude Code runner. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Multiple issues can be specified in a single `--focus` string using commas, spaces, or "and" (e.g., `--focus "111 and 112"`, `--focus "issue 42, issue 43"`, `--focus "#111 #112"`). Each issue is fetched independently and added as a separate backlog item. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve, research, and create modes; mutually exclusive with `--loop`. In create mode, `--focus` provides the mode description; use `--focus "mode_name: change description"` to update an existing registered mode instead of creating a new one. `--mode design` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode design`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Strategist through user feedback, producing a phased build plan before building. For existing projects (e.g. `factory ceo /path/to/project --mode design`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on, then continues to implementation automatically after approval. `--mode interactive` is accepted as a backward-compatible alias for `--mode design`. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless` unless `--auto-approve` is used. `--auto-approve` lifts the headless restriction for design mode, forcing headless execution and auto-approving user gates (e.g. strategy review) — useful for CI/CD and automated pipelines. `--from-plan <source>` loads an existing plan into design mode, skipping the research phase. Accepts a local file path, GitHub issue URL, issue number, or fuzzy search string (searches GitHub issues with the `plan` label). Requires `--mode design`; mutually exclusive with `--focus` and `--prompt`. When fetching from a GitHub issue, includes both the issue body and all comments. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Strategist collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`. `--refine "<request>"` enters refinement mode — routes a single change request through the Refiner → Builder → full review pipeline. Mutually exclusive with `--mode`, `--prompt`, and `--focus`. Requires an existing project directory. In foreground mode, the CEO also enters the refinement loop automatically after completing a build/improve cycle, staying active for follow-up requests without `--refine`. `--mode founder` enters rapid prototyping mode — a stripped-down pipeline (Study → Strategist → Builder → health gate → record) with 2 agent calls and 1 test run. Skips research, code review, adversarial QA, and eval scoring. Designed for fast hypothesis iteration: test an idea, see if it works, pivot. Terminal mode — does not chain to other modes. Not for production use; run `--mode improve` afterward to harden what works. Compatible with `--focus` and `--loop`. `--just-plan` (requires `--mode design`) enters planning-only mode — research + strategy + optional GitHub publishing with no implementation. Three parallel researchers investigate domain, practices, and constraints. The Strategist synthesizes a phased plan. Single user gate: keep the plan? Approval auto-publishes to GitHub as an issue with the `plan` label and seeds the backlog with plan phases. Terminal mode — does not chain to other modes. Compatible with `--focus`. Mutually exclusive with `--from-plan` and `--prompt`.
 
 ## Contained runtimes
 

@@ -49,9 +49,7 @@ class TestEnvVarWhitelist:
         env = {
             "FACTORY_MODEL": "opus",
             "ANTHROPIC_API_KEY": "sk-ant-xxx",
-            "BOBSHELL_API_KEY": "bob-key",
             "OPENAI_API_KEY": "sk-xxx",
-            "CODEX_API_KEY": "codex-key",
             "CLAUDE_CODE_USE_VERTEX": "1",
             "CLOUD_ML_REGION": "us-central1",
             "HOME": "/home/user",
@@ -106,9 +104,7 @@ class TestEnvVarWhitelist:
             assert "ANTHROPIC_API_KEY=" in shell_cmd
             assert "CLAUDE_CODE_USE_VERTEX=" in shell_cmd
             assert "CLOUD_ML_REGION=" in shell_cmd
-            assert "BOBSHELL_API_KEY=" in shell_cmd
             assert "OPENAI_API_KEY=" in shell_cmd
-            assert "CODEX_API_KEY=" in shell_cmd
             assert "UNRELATED_VAR" not in shell_cmd
             assert "HOME=" not in shell_cmd
             assert "export PATH=" in shell_cmd
@@ -128,7 +124,7 @@ class TestBuildTmuxRunArgs:
             focus="dashboard UI",
             refine="fix login",
             clean_pr=True,
-            runner="bob",
+            runner="claude",
             prompt="/path/to/spec.md",
             branch="develop",
             min_growth=3,

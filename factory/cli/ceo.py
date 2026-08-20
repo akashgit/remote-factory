@@ -72,6 +72,24 @@ def cmd_ceo(args: argparse.Namespace) -> int:
      deferred_spec, needs_materialize, design_existing, create_description,
      update_existing_mode) = resolved
 
+    plugin_mode = getattr(args, "plugin", False)
+    plugin_folder = getattr(args, "folder", None)
+
+    if plugin_mode and mode != "create":
+        print(
+            "Error: --plugin requires --mode create. "
+            "Usage: factory ceo /path --mode create --focus 'my mode' --plugin",
+            file=sys.stderr,
+        )
+        return 1
+
+    if plugin_folder and not plugin_mode:
+        print(
+            "Warning: --folder is ignored without --plugin.",
+            file=sys.stderr,
+        )
+        plugin_folder = None
+
     no_github = getattr(args, "no_github", False)
     issue_number: int | None = None
     issue_url: str | None = None
@@ -140,6 +158,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         research_ideation=research_ideation,
         create_description=create_description,
         update_existing_mode=update_existing_mode,
+        plugin_mode=plugin_mode,
+        plugin_folder=plugin_folder,
         deferred_spec=deferred_spec,
         needs_materialize=needs_materialize,
         refine_request=refine_request,
