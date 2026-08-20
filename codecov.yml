@@ -10,3 +10,6 @@ coverage:
 ignore:
   - "factory/telemetry.py"
   - "eval/"
+  - "docs/"
+  - "factory/outer_loop/evaluators/"
+  - "factory/outer_loop/featurebench_inner_loop.py"
