@@ -63,6 +63,8 @@ asyncio_mode = "auto"
 markers = [
     "real_worktree: use real git worktree functions instead of mocks",
     "slow: tests that make real API calls (deselect with -m 'not slow')",
+    "smoke: fast smoke tests for core factory modes (detect, discover, study, design, create, agent, refactory)",
+    "e2e: end-to-end tests that exercise full CLI pipelines",
 ]
 
 [tool.coverage.run]
