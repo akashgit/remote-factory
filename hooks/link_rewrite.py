@@ -2,27 +2,35 @@
 
 README.md body content is included into docs/index.md via pymdownx.snippets.
 Links in that content use docs/foo.md so GitHub resolves them from the repo
-root. This hook strips the docs/ prefix in the rendered HTML so MkDocs
-resolves them relative to the docs directory.
+root. This hook expands the snippet include and strips the docs/ prefix BEFORE
+MkDocs markdown processing, so link validation sees the corrected paths.
 
-Uses on_page_content (post-render) because pymdownx.snippets expands the
-include during markdown processing, after on_page_markdown has already fired.
+Uses on_page_markdown (pre-render) and manually expands the snippet to run
+ahead of both pymdownx.snippets and MkDocs link validation.
 """
 
 import re
+from pathlib import Path
 
 
-def on_page_content(html: str, page, config, files, **kwargs) -> str:
+def on_page_markdown(markdown: str, page, config, files, **kwargs) -> str:
     if page.file.src_path != "index.md":
-        return html
+        return markdown
 
-    # Rewrite href="docs/foo.md" → href="foo/" (and with anchors)
-    def _rewrite(m):
-        path = m.group(1)
-        # docs/foo.md#anchor → foo/#anchor
-        path = re.sub(r'\.md(#|$)', r'/\1', path)
-        return f'href="{path}"'
+    readme = Path(config["docs_dir"]).parent / "README.md"
+    if not readme.exists():
+        return markdown
 
-    html = re.sub(r'href="docs/([^"]+)"', _rewrite, html)
+    content = readme.read_text()
+    start_marker = "<!-- --8<-- [start:body] -->"
+    end_marker = "<!-- --8<-- [end:body] -->"
+    start = content.find(start_marker)
+    end = content.find(end_marker)
+    if start == -1 or end == -1:
+        return markdown
 
-    return html
+    body = content[start + len(start_marker) : end].strip()
+    body = re.sub(r"\]\(docs/([^)]+)\)", r"](\1)", body)
+
+    markdown = markdown.replace('--8<-- "README.md:body"', body)
+    return markdown
