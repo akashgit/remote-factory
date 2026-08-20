@@ -7,12 +7,15 @@ Environment: Uses uv virtual environment (default: factory/lumen/.venv)
 Override via: LUMEN_PYTHON environment variable
 
 Usage:
-    python3 -m factory.lumen.preflight --project-path /path
-    python3 -m factory.lumen.preflight --project-path /path --task-dir benchmarks/einsteinarena/circle-packing
+    # Mode A: explicit task argument
+    python3 -m factory.lumen.preflight --project-path /path --task circle-packing
+
+    # Mode B: infer task from directory name
+    python3 -m factory.lumen.preflight --project-path /path/to/circle-packing
 
 Reads:
-    - .factory/lumen/config.json                   (task_name + user overrides)
-    - benchmarks/einsteinarena/{task}/config.json   (per-task defaults)
+    - .factory/lumen/config.json                          (task_name + user overrides)
+    - benchmarks/einsteinarena/{task}/default_config.json  (per-task defaults)
 
 Writes:
     - .factory/lumen/.running/config.json    (resolved config, cleared each run)
