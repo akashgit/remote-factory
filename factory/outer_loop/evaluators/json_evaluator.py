@@ -33,7 +33,7 @@ class JSONEvaluator:
             return EvalResult(score=0.0, valid=False)
 
         try:
-            score = float(value)
+            score = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return EvalResult(score=0.0, valid=False)
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import structlog
 
 from factory.cycle_analyzer import CycleRecord
-from factory.inner_loop import InnerLoop
+from factory.inner_loop import Evaluator, InnerLoop
 from factory.outer_loop.featurebench_evaluator import FeatureBenchEvaluator
 from factory.workflow.primitives import Workflow
 
@@ -37,11 +37,13 @@ class FeatureBenchInnerLoop:
         test_format: str = "pytest",
         metric_path: str = "score",
     ) -> None:
+        evaluator: Evaluator
         if test_format == "pytest":
-            self._evaluator = FeatureBenchEvaluator()
+            evaluator = FeatureBenchEvaluator()
         else:
             from factory.outer_loop.evaluators import get_evaluator
-            self._evaluator = get_evaluator(test_format, metric_path=metric_path)
+            evaluator = get_evaluator(test_format, metric_path=metric_path)
+        self._evaluator = evaluator
         self._inner_loop = InnerLoop(
             project_dir=project_dir,
             mode=mode,
