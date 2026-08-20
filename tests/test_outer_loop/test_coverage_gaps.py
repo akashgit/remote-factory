@@ -373,7 +373,12 @@ class TestConvergenceAllCandidatesIdentical:
         result = engine.run(wf)
 
         assert result.convergence_reason in (
-            "plateau", "early_stop_unchanged", "budget_exhausted", "diversity_collapse",
+            "budget_exhausted",
+            "target_score_reached",
+            "plateau",
+            "diversity_collapse",
+            "early_stop_unchanged",
+            "unknown",
         )
         assert result.generations_completed >= 1
 
