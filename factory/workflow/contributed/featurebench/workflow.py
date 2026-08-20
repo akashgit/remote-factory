@@ -39,7 +39,8 @@ meta = {
 }
 
 _ast_scanner_script = """\
-import ast, os
+import ast, os, subprocess
+blanks = []
 for root, dirs, files in os.walk('.'):
     dirs[:] = [d for d in dirs if d not in ('.git','.factory','__pycache__','test','tests')]
     for f in files:
@@ -62,7 +63,29 @@ for root, dirs, files in os.walk('.'):
                 code = src[node.lineno:node.end_lineno]
                 non_empty = [l for l in code if l.strip() and not l.strip().startswith(('#','def ','class '))]
                 is_empty = len(non_empty) == 0
-            if is_empty: print(f'{path}:{node.lineno} {node.name}')
+            if is_empty:
+                blanks.append((path, node.lineno, node.name))
+                print(f'{path}:{node.lineno} {node.name}')
+
+print(f'\\nDetected {len(blanks)} blank/masked function bodies')
+print('\\n=== USAGE CONTEXT (how each blank function is called) ===')
+for path, lineno, name in blanks:
+    try:
+        r = subprocess.run(['grep','-rn','--include=*.py',f'.{name}','.'],
+                           capture_output=True, text=True, timeout=5)
+        usages = []
+        for line in r.stdout.split('\\n'):
+            if not line.strip(): continue
+            if f'{path}:{lineno}' in line: continue
+            if 'def ' + name in line: continue
+            if '.factory/' in line: continue
+            usages.append(line)
+            if len(usages) >= 3: break
+        if usages:
+            print(f'\\n{path}:{lineno} {name}')
+            for u in usages:
+                print(f'  CALLED: {u}')
+    except: pass
 """
 
 
@@ -164,9 +187,7 @@ def workflow() -> Workflow:
             + "PYEOF\n"
             "python3 /tmp/_scan_stubs.py "
             "> {project_path}/.factory/reviews/blank-stubs.txt 2>&1; "
-            "COUNT=$(wc -l < {project_path}/.factory/reviews/blank-stubs.txt | tr -d ' '); "
-            "echo \"Detected $COUNT blank/masked function bodies\" >> {project_path}/.factory/reviews/blank-stubs.txt; "
-            "echo \"scan_stubs: found $COUNT blank function bodies\""
+            "echo \"scan_stubs: completed\""
         ),
         writes={".factory/reviews/blank-stubs.txt"},
     )
@@ -176,7 +197,7 @@ def workflow() -> Workflow:
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
-        timeout=1800,
+        timeout=3600,
         max_iterations=3,
         prompt_template=(
             "CRITICAL: Your job is to implement or modify SOURCE CODE only. Do NOT create, "
@@ -198,35 +219,37 @@ def workflow() -> Workflow:
             "   naming conventions.\n\n"
             "4. MASKED FUNCTION BODIES — CRITICAL:\n"
             "   The benchmark masks code by replacing function bodies with blank lines.\n"
-            "   A list of ALL detected blank/masked functions is at:\n"
-            "   .factory/reviews/blank-stubs.txt\n\n"
+            "   .factory/reviews/blank-stubs.txt contains:\n"
+            "   - A list of ALL blank/masked functions (file:line name)\n"
+            "   - A USAGE CONTEXT section showing how each function is called elsewhere\n\n"
             "   You MUST read this file and implement EVERY function listed there.\n"
             "   These are hidden dependencies — if you leave them empty, downstream code\n"
             "   that calls them will fail silently or produce wrong results.\n\n"
+            "   The USAGE CONTEXT section is critical for getting names right:\n"
+            "   - It shows how callers reference attributes and methods\n"
+            "   - Use the EXACT attribute names shown in the usage (e.g., if callers\n"
+            "     use self._precision_input, name your attribute _precision_input)\n"
+            "   - Match return types and signatures to what callers expect\n\n"
             "   For each masked function:\n"
-            "   - Study how it is called elsewhere in the codebase\n"
-            "   - Look at similar non-masked functions for patterns\n"
+            "   - Check the USAGE CONTEXT to see how it is called\n"
             "   - Read the docstring for behavioral hints\n"
+            "   - Look at similar non-masked functions for patterns\n"
             "   - Implement REAL working logic, not minimal stubs\n\n"
             "5. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
             "   - Do NOT access /usr/local/lib/python* paths (gold solution location)\n"
             "   - Do NOT fetch from any blacklisted URLs\n"
             "   - Do NOT read or reference any test files to reverse-engineer expected outputs\n"
             "   - Implement from the problem statement and interface specs ONLY\n\n"
-            "6. If this is a RELOOP from gate_tests (test loop):\n"
-            "   - Read .factory/reviews/gate-pytest-output.txt for the pytest failure output.\n"
-            "     Each failure has a test name, error type, and traceback. Fix the root cause\n"
-            "     and recommit.\n"
-            "   - For each failure, READ THE FULL STACK TRACE. Follow it to the exact file\n"
-            "     and line that errors. Open that file — if you find an empty/stub function\n"
-            "     body (blank lines where code should be), IMPLEMENT IT.\n"
-            "   - Common masked dependencies: model methods, utility classes, threading\n"
-            "     helpers, storage backends. AttributeError/NameError usually means a masked\n"
-            "     function you haven't implemented yet.\n"
-            "   - Do not rewrite working code — only fix what the stack traces point to.\n\n"
+            "6. VERIFY ALL STUBS FILLED — before committing, go through blank-stubs.txt\n"
+            "   line by line and verify you implemented every single function listed.\n"
+            "   Open each file and confirm the function body is no longer empty.\n"
+            "   This is especially important for functions in helper/utility files that\n"
+            "   may seem unrelated to the main feature but are called by the main code.\n\n"
             "7. Commit all changes with: git add -A && git commit -m 'implement feature'\n"
             "   The FeatureBench harness extracts changes via git diff, so commits are required.\n\n"
-            "Write a summary of what was implemented to .factory/reviews/builder-latest.md."
+            "Write a summary of what was implemented to .factory/reviews/builder-latest.md.\n"
+            "Include a checklist of every function from blank-stubs.txt and whether you\n"
+            "implemented it."
         ),
         reads={
             ".factory/strategy/current.md",
@@ -292,7 +315,7 @@ def workflow() -> Workflow:
     nodes["builder_fix"] = AgentNode(
         id="builder_fix",
         role=AgentRole.BUILDER,
-        timeout=1800,
+        timeout=3600,
         max_iterations=2,
         prompt_template=(
             "CRITICAL: Your job is to FIX source code based on pytest failure output. "
@@ -308,13 +331,17 @@ def workflow() -> Workflow:
             "   and line that errors. Open that file — if you find an empty/stub function\n"
             "   body (blank lines where code should be), IMPLEMENT IT.\n\n"
             "3. Common root causes:\n"
-            "   - AttributeError/NameError → a masked function you haven't implemented yet\n"
+            "   - AttributeError/NameError → a masked function you haven't implemented yet.\n"
+            "     Check .factory/reviews/blank-stubs.txt for the full list and USAGE CONTEXT\n"
+            "     showing how each function is called (correct attribute names, arguments).\n"
             "   - ImportError → missing module or wrong import path in source code\n"
             "   - TypeError → wrong function signature or return type\n"
             "   - AssertionError → logic bug in your implementation\n\n"
             "4. Do NOT rewrite working code — only fix what the stack traces point to.\n"
             "   Do NOT modify test files. Fix the SOURCE CODE to pass the tests.\n\n"
-            "5. Read problem_statement.md if you need to check interface specifications.\n\n"
+            "5. Read problem_statement.md if you need to check interface specifications.\n"
+            "   Read .factory/reviews/blank-stubs.txt for the usage context of any\n"
+            "   masked function — it shows how callers reference attributes and methods.\n\n"
             "6. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
             "   - Do NOT access /usr/local/lib/python* paths (gold solution location)\n"
             "   - Do NOT fetch from any blacklisted URLs\n"

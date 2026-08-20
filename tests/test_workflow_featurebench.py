@@ -128,13 +128,13 @@ class TestNodeProperties:
         assert featurebench_wf.nodes["builder_fix"].max_iterations == 2
 
     def test_builder_fix_timeout(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["builder_fix"].timeout == 1800
+        assert featurebench_wf.nodes["builder_fix"].timeout == 3600
 
     def test_builder_max_iterations(self, featurebench_wf) -> None:
         assert featurebench_wf.nodes["builder"].max_iterations == 3
 
     def test_builder_timeout(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["builder"].timeout == 1800
+        assert featurebench_wf.nodes["builder"].timeout == 3600
 
     def test_adversarial_tester_timeout(self, featurebench_wf) -> None:
         assert featurebench_wf.nodes["adversarial_tester"].timeout == 1800
