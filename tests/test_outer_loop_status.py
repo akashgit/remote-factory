@@ -94,9 +94,9 @@ class TestGetLastAgentPhase:
         events_dir = tmp_path / ".factory"
         events_dir.mkdir(parents=True)
         lines = [
-            json.dumps({"type": "agent.started", "role": "researcher"}),
-            json.dumps({"type": "agent.completed", "role": "researcher"}),
-            json.dumps({"type": "agent.started", "role": "builder"}),
+            json.dumps({"type": "agent.started", "agent": "researcher"}),
+            json.dumps({"type": "agent.completed", "agent": "researcher"}),
+            json.dumps({"type": "agent.started", "agent": "builder"}),
         ]
         (events_dir / "events.jsonl").write_text("\n".join(lines) + "\n")
         assert _get_last_agent_phase(tmp_path) == "builder"
@@ -106,7 +106,7 @@ class TestGetLastAgentPhase:
         events_dir.mkdir(parents=True)
         lines = [
             json.dumps({"type": "cycle.started"}),
-            json.dumps({"type": "agent.completed", "role": "builder"}),
+            json.dumps({"type": "agent.completed", "agent": "builder"}),
         ]
         (events_dir / "events.jsonl").write_text("\n".join(lines) + "\n")
         assert _get_last_agent_phase(tmp_path) is None
@@ -115,9 +115,9 @@ class TestGetLastAgentPhase:
         events_dir = tmp_path / ".factory"
         events_dir.mkdir(parents=True)
         lines = [
-            json.dumps({"type": "agent.started", "role": "researcher"}),
+            json.dumps({"type": "agent.started", "agent": "researcher"}),
             "this is not json{{{",
-            json.dumps({"type": "agent.started", "role": "builder"}),
+            json.dumps({"type": "agent.started", "agent": "builder"}),
         ]
         (events_dir / "events.jsonl").write_text("\n".join(lines) + "\n")
         assert _get_last_agent_phase(tmp_path) == "builder"
@@ -126,7 +126,7 @@ class TestGetLastAgentPhase:
         events_dir = tmp_path / ".factory"
         events_dir.mkdir(parents=True)
         content = (
-            json.dumps({"type": "agent.started", "role": "strategist"})
+            json.dumps({"type": "agent.started", "agent": "strategist"})
             + "\n\n\n"
         )
         (events_dir / "events.jsonl").write_text(content)
@@ -185,7 +185,7 @@ class TestStatusClassification:
         events_dir = wt / ".factory"
         events_dir.mkdir(parents=True)
         (events_dir / "events.jsonl").write_text(
-            json.dumps({"type": "agent.started", "role": "builder"}) + "\n"
+            json.dumps({"type": "agent.started", "agent": "builder"}) + "\n"
         )
 
         worktrees = _scan_eval_worktrees(project)

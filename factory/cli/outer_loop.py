@@ -476,7 +476,7 @@ def _get_last_agent_phase(wt_path: Path) -> str | None:
         except json.JSONDecodeError:
             continue
         if event.get("type") == "agent.started":
-            last_role = event.get("role")
+            last_role = event.get("agent")
     return last_role
 
 
