@@ -3,16 +3,35 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from factory.mempalace.helpers import (
     get_palace_path,
     get_project_name,
 )
+
+
+class _FakeEmbeddingFunction:
+    """Deterministic embedding function that requires no ONNX runtime or network access."""
+
+    def __call__(self, input: list[str]) -> list[np.ndarray]:
+        return [self._hash_to_vector(text) for text in input]
+
+    @staticmethod
+    def _hash_to_vector(text: str) -> np.ndarray:
+        digest = hashlib.sha256(text.encode()).digest()
+        rng = np.random.Generator(np.random.PCG64(int.from_bytes(digest[:8], "little")))
+        return rng.standard_normal(384).astype(np.float32)
+
+    @staticmethod
+    def name() -> str:
+        return "default"
 
 
 @pytest.fixture()
@@ -27,6 +46,18 @@ def isolated_palace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("factory.mempalace.helpers.get_palace_path", _fake)
     monkeypatch.setattr("factory.mempalace.writer.get_palace_path", _fake)
     monkeypatch.setattr("factory.mempalace.reader.get_palace_path", _fake)
+
+    import mempalace.embedding
+
+    assert hasattr(mempalace.embedding, "get_embedding_function"), (
+        "mempalace.embedding.get_embedding_function no longer exists — "
+        "update the monkeypatch target"
+    )
+    monkeypatch.setattr(
+        "mempalace.embedding.get_embedding_function",
+        lambda *a, **kw: _FakeEmbeddingFunction(),
+    )
+
     return str(palace_dir)
 
 
