@@ -360,7 +360,11 @@ class WorkflowExecutor:
         )
 
         try:
+            if self.pre_node_hook:
+                await self.pre_node_hook(node_id, node)
             verdict = await self._evaluate_gate(node)
+            if self.post_node_hook:
+                await self.post_node_hook(node_id, node)
         except Exception as exc:
             self._emit(
                 "node.failed",
@@ -377,6 +381,7 @@ class WorkflowExecutor:
             return
 
         self.result.nodes_executed += 1
+        self.completed_files |= node.writes
 
         self._emit(
             "gate.verdict",
@@ -408,11 +413,22 @@ class WorkflowExecutor:
             self.iteration_counts[key] = count
 
             if count > verdict.max_iterations:
-                self.result.halted = True
-                self.result.halt_reason = (
-                    f"max iterations ({verdict.max_iterations}) exhausted "
-                    f"for gate '{node_id}' -> '{target}'"
+                log.warning(
+                    "max_iterations_exhausted_proceeding",
+                    gate=node_id,
+                    target=target,
+                    count=count,
+                    max_iterations=verdict.max_iterations,
                 )
+                proceed_id = self._next_conditional(node_id, VerdictType.PROCEED)
+                if proceed_id:
+                    await self._execute_from(proceed_id)
+                else:
+                    self.result.halted = True
+                    self.result.halt_reason = (
+                        f"max iterations ({verdict.max_iterations}) exhausted "
+                        f"for gate '{node_id}' -> '{target}' and no PROCEED edge"
+                    )
                 return
 
             if verdict.feedback:
@@ -1012,8 +1028,18 @@ class WorkflowExecutor:
                 cmd = self._expand_templates(node.evaluator_command)
                 try:
                     output = await self._run_shell(cmd)
-                    return self._parse_fn_verdict(output, node.id)
-                except RuntimeError:
+                    verdict = self._parse_fn_verdict(output, node.id)
+                    log.info(
+                        "gate.fn_verdict",
+                        gate_id=node.id,
+                        verdict_type=verdict.type.value,
+                        target=verdict.target,
+                        feedback=verdict.feedback[:200] if verdict.feedback else None,
+                        output_preview=output.strip()[-200:] if output else "(empty)",
+                    )
+                    return verdict
+                except RuntimeError as exc:
+                    log.error("gate.fn_failed", gate_id=node.id, error=str(exc)[:300])
                     return Verdict.halt(reason=f"gate command failed: {cmd}")
             return Verdict.proceed()
 
@@ -1093,7 +1119,8 @@ class WorkflowExecutor:
             if not target:
                 return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
-            return Verdict.reloop(target=target, feedback=feedback)
+            max_iter = self._target_max_iterations(target)
+            return Verdict.reloop(target=target, feedback=feedback, max_iterations=max_iter)
 
         return Verdict.proceed()
 
@@ -1112,22 +1139,30 @@ class WorkflowExecutor:
         except (json.JSONDecodeError, TypeError):
             pass
 
-        first_line = text.split("\n")[0].strip().lower()
-        if first_line.startswith("pass") or first_line.startswith("proceed"):
+        last_line = ""
+        raw_last = ""
+        for line in reversed(text.split("\n")):
+            if line.strip():
+                last_line = line.strip().lower()
+                raw_last = line.strip()
+                break
+        if not last_line:
+            last_line = text.split("\n")[0].strip().lower()
+            raw_last = text.split("\n")[0].strip()
+        if last_line.startswith("pass") or last_line.startswith("proceed"):
             return Verdict.proceed()
-        if first_line.startswith("halt"):
-            raw_line = text.split("\n")[0].strip()
-            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+        if last_line.startswith("halt"):
+            after_prefix = raw_last.split(":", 1)[1].strip() if ":" in raw_last else ""
             return Verdict.halt(reason=after_prefix if after_prefix else "gate halted")
-        if first_line.startswith("fail") or first_line.startswith("revert"):
+        if last_line.startswith("fail") or last_line.startswith("revert"):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
-        if first_line.startswith("reloop"):
+        if last_line.startswith("reloop"):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
-            raw_line = text.split("\n")[0].strip()
-            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+            after_prefix = raw_last.split(":", 1)[1].strip() if ":" in raw_last else ""
             feedback = after_prefix if after_prefix else "fn gate requested reloop"
             if target:
-                return Verdict.reloop(target=target, feedback=feedback)
+                max_iter = self._target_max_iterations(target)
+                return Verdict.reloop(target=target, feedback=feedback, max_iterations=max_iter)
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
@@ -1189,6 +1224,13 @@ class WorkflowExecutor:
             if edge.condition == verdict_type:
                 return edge.target
         return None
+
+    def _target_max_iterations(self, target_id: str) -> int:
+        """Read max_iterations from the target AgentNode, defaulting to 3."""
+        node = self.workflow.nodes.get(target_id)
+        if isinstance(node, AgentNode) and node.max_iterations is not None:
+            return node.max_iterations
+        return 3
 
     def _emit(self, event_type: str, event: Any) -> None:
         """Emit a workflow event."""
