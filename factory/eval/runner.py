@@ -138,6 +138,10 @@ async def _run_project_eval(
 
     # Clean environment
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    venv_path = project_path / ".venv"
+    if (venv_path / "bin" / "python").exists():
+        env["VIRTUAL_ENV"] = str(venv_path)
+        env["PATH"] = str(venv_path / "bin") + os.pathsep + env.get("PATH", "")
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -173,6 +177,10 @@ async def _run_single_project_dimension(
     """Run a single user-defined project eval dimension."""
     parts = dim.command.split()
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    venv_path = project_path / ".venv"
+    if (venv_path / "bin" / "python").exists():
+        env["VIRTUAL_ENV"] = str(venv_path)
+        env["PATH"] = str(venv_path / "bin") + os.pathsep + env.get("PATH", "")
 
     try:
         proc = await asyncio.create_subprocess_exec(

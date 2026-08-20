@@ -9,6 +9,13 @@ from pathlib import Path
 from factory.eval.languages.base import EvalFragment, _run_cmd
 
 
+def _resolve_python(project_path: Path) -> str:
+    venv_python = project_path / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        return str(venv_python)
+    return sys.executable
+
+
 class PythonEvaluator:
     @property
     def name(self) -> str:
@@ -33,7 +40,7 @@ class PythonEvaluator:
         cov_target = self._detect_cov_target(project_path)
         rc, stdout, stderr = _run_cmd(
             [
-                sys.executable, "-m", "pytest",
+                _resolve_python(project_path), "-m", "pytest",
                 f"--cov={cov_target}", "--cov-report=term",
                 "-v", "--tb=no", "-q",
             ],
@@ -78,7 +85,7 @@ class PythonEvaluator:
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
-            [sys.executable, "-m", "ruff", "check", "."], project_path
+            [_resolve_python(project_path), "-m", "ruff", "check", "."], project_path
         )
         output = stdout + stderr
         if rc == 0:
@@ -94,7 +101,7 @@ class PythonEvaluator:
                 src_dirs.append(child.name)
         target = src_dirs[0] if src_dirs else "."
         rc, stdout, stderr = _run_cmd(
-            [sys.executable, "-m", "mypy", target], project_path
+            [_resolve_python(project_path), "-m", "mypy", target], project_path
         )
         output = stdout + stderr
         if rc == 0:
