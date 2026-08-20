@@ -213,3 +213,76 @@ class TestStatusClassification:
 
         worktrees = _scan_eval_worktrees(project)
         assert len(worktrees) == 0
+
+    def test_multi_mode_single_worktree_consume_match(self, tmp_path: Path) -> None:
+        """One worktree must match at most one mode; unmatched modes stay pending."""
+        import time
+
+        project = self._setup_project(tmp_path)
+        runs_dir = project / ".factory" / "outer_loop" / "runs"
+
+        modes = [
+            "evolve-gen0-aaa11111",
+            "evolve-gen0-bbb22222",
+            "evolve-gen0-ccc33333",
+        ]
+
+        # ccc33333 is completed (has cycle_summary)
+        (runs_dir / modes[2]).mkdir(parents=True)
+        (runs_dir / modes[2] / "cycle_summary.json").write_text(
+            json.dumps({"score": 0.75})
+        )
+        # aaa11111 and bbb22222 have no cycle_summary
+        (runs_dir / modes[0]).mkdir(parents=True)
+        (runs_dir / modes[1]).mkdir(parents=True)
+
+        # One worktree whose label is "evolve-gen0" — shared prefix for all 3 modes
+        wt_base = tmp_path / ".eval-worktrees"
+        wt_base.mkdir()
+        wt = wt_base / "wt-evolve-gen0-deadbeef"
+        wt.mkdir()
+        events_dir = wt / ".factory"
+        events_dir.mkdir(parents=True)
+        (events_dir / "events.jsonl").write_text(
+            json.dumps({"type": "agent.started", "agent": "builder"}) + "\n"
+        )
+
+        # Reproduce the classification logic from _cmd_status
+        worktrees = _scan_eval_worktrees(project)
+        assert len(worktrees) == 1
+
+        completed: list[str] = []
+        in_progress: list[tuple[str, str | None, float, str]] = []
+        pending: list[str] = []
+        now = time.time()
+
+        for mode_name in modes:
+            summary_path = runs_dir / mode_name / "cycle_summary.json"
+            if summary_path.exists():
+                completed.append(mode_name)
+                continue
+            matched_wt: str | None = None
+            for label, wt_path in worktrees.items():
+                if mode_name.startswith(label) or label.startswith(mode_name[:12]):
+                    matched_wt = label
+                    break
+            if matched_wt is not None:
+                wt_path = worktrees[matched_wt]
+                del worktrees[matched_wt]
+                phase = _get_last_agent_phase(wt_path)
+                try:
+                    elapsed = now - wt_path.stat().st_mtime
+                except OSError:
+                    elapsed = 0.0
+                wt_dir_name = wt_path.name
+                in_progress.append((mode_name, phase, elapsed, wt_dir_name))
+            else:
+                pending.append(mode_name)
+
+        assert len(completed) == 1, f"Expected 1 completed, got {completed}"
+        assert completed[0] == "evolve-gen0-ccc33333"
+        assert len(in_progress) == 1, f"Expected 1 in-progress, got {in_progress}"
+        assert in_progress[0][0] == "evolve-gen0-aaa11111"
+        assert in_progress[0][1] == "builder"
+        assert len(pending) == 1, f"Expected 1 pending, got {pending}"
+        assert pending[0] == "evolve-gen0-bbb22222"

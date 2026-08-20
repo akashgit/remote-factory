@@ -545,6 +545,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
                 break
         if matched_wt is not None:
             wt_path = worktrees[matched_wt]
+            del worktrees[matched_wt]
             phase = _get_last_agent_phase(wt_path)
             try:
                 elapsed = now - wt_path.stat().st_mtime
