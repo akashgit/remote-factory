@@ -15,6 +15,7 @@ from factory.worktree import (
     _preserve_telemetry,
     _seed_experiment_factory,
     _sync_backlog_to_main,
+    _sync_bootstrap_to_main,
     create_experiment_worktree,
     create_worktree,
     detect_default_branch,
@@ -1274,6 +1275,63 @@ class TestSelectiveWorktreeIsolation:
         _sync_backlog_to_main(wt, main)
 
         assert main_backlog.read_text() == "original"
+
+    def test_sync_bootstrap_copies_fresh_files(self, tmp_path: Path) -> None:
+        wt = tmp_path / "worktree"
+        main = tmp_path / "main"
+        wt_factory = wt / ".factory"
+        wt_factory.mkdir(parents=True)
+        main.mkdir()
+
+        (wt_factory / "config.json").write_text('{"goal": "test"}')
+        (wt_factory / "eval_profile.json").write_text('{"dims": []}')
+        (wt / "factory.md").write_text("# Factory")
+
+        _sync_bootstrap_to_main(wt, main)
+
+        assert (main / ".factory" / "config.json").read_text() == '{"goal": "test"}'
+        assert (main / ".factory" / "eval_profile.json").read_text() == '{"dims": []}'
+        assert (main / "factory.md").read_text() == "# Factory"
+
+    def test_sync_bootstrap_skips_symlinks(self, tmp_path: Path) -> None:
+        wt = tmp_path / "worktree"
+        main = tmp_path / "main"
+        wt_factory = wt / ".factory"
+        wt_factory.mkdir(parents=True)
+        main_factory = main / ".factory"
+        main_factory.mkdir(parents=True)
+
+        (main_factory / "config.json").write_text("original")
+        (wt_factory / "config.json").symlink_to(main_factory / "config.json")
+
+        _sync_bootstrap_to_main(wt, main)
+
+        assert (main_factory / "config.json").read_text() == "original"
+
+    def test_sync_bootstrap_skips_existing_main_files(self, tmp_path: Path) -> None:
+        wt = tmp_path / "worktree"
+        main = tmp_path / "main"
+        wt_factory = wt / ".factory"
+        wt_factory.mkdir(parents=True)
+        main_factory = main / ".factory"
+        main_factory.mkdir(parents=True)
+
+        (wt_factory / "config.json").write_text("new")
+        (main_factory / "config.json").write_text("existing")
+
+        _sync_bootstrap_to_main(wt, main)
+
+        assert (main_factory / "config.json").read_text() == "existing"
+
+    def test_sync_bootstrap_noop_without_factory_dir(self, tmp_path: Path) -> None:
+        wt = tmp_path / "worktree"
+        main = tmp_path / "main"
+        wt.mkdir()
+        main.mkdir()
+
+        _sync_bootstrap_to_main(wt, main)
+
+        assert not (main / ".factory").exists()
 
     def test_two_worktrees_get_independent_dirs(self, git_project: Path) -> None:
         strategy_dir = git_project / ".factory" / "strategy"
