@@ -200,7 +200,7 @@ def validate_cli_params(params: dict[str, Any]) -> tuple[bool, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lumen preflight check")
     parser.add_argument("--project-path", required=True, help="Project root")
-    parser.add_argument("--task", required=True, help="Task name (e.g., circle-packing)")
+    parser.add_argument("--task", required=False, default=None, help="Task name (e.g., circle-packing). If omitted, inferred from project directory name.")
     parser.add_argument("--config", default=None, help="Custom config file path (highest priority)")
     parser.add_argument("--mock", action="store_true", help="Mock mode (skip venv/GPU checks)")
 
@@ -222,7 +222,24 @@ def main() -> None:
     args = parser.parse_args()
 
     project_path = Path(args.project_path).resolve()
-    task_name = args.task
+
+    # ── Dual-mode task detection ────────────────────────────────
+    # Mode A: explicit --task argument
+    # Mode B: infer task name from project directory name
+    task_from_dir = False
+    if args.task is not None:
+        task_name = args.task
+    else:
+        candidate = project_path.name
+        ok, _ = validate_task(candidate)
+        if ok:
+            task_name = candidate
+            task_from_dir = True
+        else:
+            print("[FAIL] --task not provided and directory name "
+                  f"{candidate!r} is not a supported task.\n"
+                  f"Supported tasks:\n" + "\n".join(f"  - {t}" for t in SUPPORTED_TASKS))
+            sys.exit(1)
 
     print("=== Lumen Preflight ===")
     print(f"Task: {task_name}")
@@ -252,13 +269,17 @@ def main() -> None:
     cleanup_gpu_processes()
 
     # ── Resolve task_dir ─────────────────────────────────────────
-    task_dir = project_path / "benchmarks" / "einsteinarena" / task_name
-    if not task_dir.exists():
-        # Try without benchmarks/ prefix
-        task_dir = project_path / task_name
+    if task_from_dir:
+        # Mode B: project_path IS the instance directory
+        task_dir = project_path
+    else:
+        # Mode A: project_path is the factory root, look up task subdirectory
+        task_dir = project_path / "benchmarks" / "einsteinarena" / task_name
         if not task_dir.exists():
-            print(f"[FAIL] Task directory not found: {task_dir}")
-            sys.exit(1)
+            task_dir = project_path / task_name
+            if not task_dir.exists():
+                print(f"[FAIL] Task directory not found: {task_dir}")
+                sys.exit(1)
 
     # 1. Check uv venv (skip in mock mode)
     if args.mock:

@@ -334,3 +334,56 @@ factory outer-loop calibrate <project> \
   --test-command "pytest -xvs" \    # override test command
   --population-size 4
 ```
+
+## EinsteinArena + Lumen Integration
+
+EinsteinArena is a scientific optimization benchmark with RL-based training via the Lumen workflow. Each task directory contains an optimization problem with a verifier, instruction file, and default training config.
+
+### Benchmark Config
+
+The benchmark config lives at `benchmarks/configs/einsteinarena.toml`. It uses the `json` test format with `metric_extraction` scoring — the existing `JSONEvaluator` extracts the score via `metric_path = "score"`, so no custom evaluator class is needed.
+
+### Dual-Mode Invocation
+
+Lumen's preflight supports two invocation modes:
+
+- **Mode A (explicit task):** `--task circle-packing` — the project path points to the factory root and the task is passed as an argument. This is the standard mode for interactive use.
+- **Mode B (directory inference):** No `--task` argument — preflight infers the task from the project directory name (e.g., `/path/to/circle-packing`). This supports the outer loop's worktree isolation, where each instance directory is named after the task.
+
+Both modes validate against the same `SUPPORTED_TASKS` list (tasks that have a `default_config.json`).
+
+### Score Extraction
+
+The score extractor (`benchmarks/einsteinarena/tools/extract_lumen_score.py`) scans `.factory/lumen/.running/iteration_*/evaluation_results.json` for the global best score and outputs:
+
+```json
+{"score": 0.85, "valid": true}
+```
+
+If no evaluation results exist (e.g., the Lumen workflow failed before producing any), it outputs `{"score": 0.0, "valid": false}`.
+
+### Example: Calibrate
+
+```bash
+factory outer-loop calibrate /path/to/factory \
+  --benchmark einsteinarena \
+  --population-size 3 \
+  --project-dir /path/to/benchmarks/einsteinarena/circle-packing
+```
+
+### Supported Tasks
+
+Only tasks with `default_config.json` are supported:
+
+| Task | Description |
+|------|-------------|
+| `circle-packing` | Pack circles to maximize density |
+| `first-autocorrelation-inequality` | Optimize first autocorrelation bound |
+| `second-autocorrelation-inequality` | Optimize second autocorrelation bound |
+| `erdos-min-overlap` | Minimize overlap in Erdos problem |
+
+### Known Limitations
+
+- Lumen requires a GPU environment with vLLM, verl, and PyTorch — the outer loop evaluation nodes must have GPU access or run in `--mock` mode.
+- Evaluation is sequential (one candidate at a time) in the current MVP. Parallel evaluation across GPU nodes is planned for v2.
+- The score extractor reads only from `.factory/lumen/.running/` — it does not aggregate across multiple Lumen runs.

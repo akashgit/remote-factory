@@ -1,0 +1,18 @@
+[meta]
+name = "einsteinarena"
+description = "EinsteinArena — RL-based scientific optimization with Lumen workflow"
+
+[test]
+format = "json"
+command = "python benchmarks/einsteinarena/tools/extract_lumen_score.py"
+timeout = 1800
+metric_path = "score"
+
+[instances]
+format = "directory"
+
+[seed_workflow]
+name = "lumen"
+
+[scoring]
+method = "metric_extraction"
