@@ -13,9 +13,9 @@ Usage:
     # Mode B: infer task from directory name
     python3 -m factory.lumen.preflight --project-path /path/to/circle-packing
 
-Reads:
-    - .factory/lumen/config.json                          (task_name + user overrides)
-    - benchmarks/einsteinarena/{task}/default_config.json  (per-task defaults)
+Reads (in priority order):
+    - benchmarks/einsteinarena/{task}/config.json          (per-task custom config, if exists)
+    - benchmarks/einsteinarena/{task}/default_config.json  (per-task defaults, fallback)
 
 Writes:
     - .factory/lumen/.running/config.json    (resolved config, cleared each run)
@@ -315,15 +315,17 @@ def main() -> None:
             print(f"[OK] {gpu_info['gpu_count']}x {gpu_info['gpu_type']} "
                   f"({gpu_info['gpu_memory_mb']} MB each)")
 
-    # 3. Load per-task default config
-    task_config_path = task_dir / "default_config.json"
+    # 3. Load per-task config (prefer config.json, fallback to default_config.json)
+    task_config_path = task_dir / "config.json"
     if not task_config_path.exists():
-        print(f"[FAIL] Task default config not found: {task_config_path}")
-        sys.exit(1)
+        task_config_path = task_dir / "default_config.json"
+        if not task_config_path.exists():
+            print(f"[FAIL] Task config not found: {task_dir}/config.json or {task_dir}/default_config.json")
+            sys.exit(1)
 
     with open(task_config_path) as f:
         task_defaults = json.load(f)
-    print(f"[OK] Task default config loaded: {task_config_path}")
+    print(f"[OK] Task config loaded: {task_config_path}")
 
     # 4. Load custom config (if provided via --config)
     custom_config = {}
