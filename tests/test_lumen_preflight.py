@@ -65,11 +65,9 @@ class TestPreflightCli:
     def test_mock_creates_run_dir(self, tmp_path: Path) -> None:
         task_dir = tmp_path / "benchmarks" / "einsteinarena" / "circle-packing"
         task_dir.mkdir(parents=True)
-        (task_dir / "config.json").write_text(json.dumps({
+        (task_dir / "default_config.json").write_text(json.dumps({
             "num_gpus": 8, "rollout_tp": 4, "model_path": "Qwen/Qwen3-8B",
         }))
-        (task_dir / "instruction.md").write_text("# Test\n")
-        (task_dir / "verifier.py").write_text("def evaluate(d): return 1.0\n")
 
         from factory.lumen.preflight import main
         import sys
@@ -77,14 +75,14 @@ class TestPreflightCli:
         with patch.object(sys, "argv", [
             "preflight",
             "--project-path", str(tmp_path),
-            "--task-dir", str(task_dir),
+            "--task", "circle-packing",
             "--mock",
         ]):
             main()
 
         lumen_dir = tmp_path / ".factory" / "lumen"
-        run_dir = self._find_run_dir(lumen_dir)
-        assert (lumen_dir / "current_run").is_symlink()
+        run_dir = lumen_dir / ".running"
+        assert run_dir.is_dir()
 
         config = json.loads((run_dir / "config.json").read_text())
         assert config["task_name"] == "circle-packing"
@@ -93,19 +91,12 @@ class TestPreflightCli:
         state = json.loads((run_dir / "state.json").read_text())
         assert state["iteration"] == 0
 
-    def test_reads_task_from_launch_config(self, tmp_path: Path) -> None:
-        """Preflight reads task_name from .factory/lumen/config.json when --task-dir omitted."""
-        task_dir = tmp_path / "benchmarks" / "einsteinarena" / "my-task"
-        task_dir.mkdir(parents=True)
-        (task_dir / "config.json").write_text(json.dumps({
+    def test_infers_task_from_directory_name(self, tmp_path: Path) -> None:
+        """Preflight infers task_name from directory name when --task is omitted."""
+        project_dir = tmp_path / "circle-packing"
+        project_dir.mkdir()
+        (project_dir / "default_config.json").write_text(json.dumps({
             "num_gpus": 4, "rollout_tp": 2, "model_path": "Qwen/Qwen3-8B",
-        }))
-
-        lumen_dir = tmp_path / ".factory" / "lumen"
-        lumen_dir.mkdir(parents=True)
-        (lumen_dir / "config.json").write_text(json.dumps({
-            "task_name": "my-task",
-            "mock": True,
         }))
 
         from factory.lumen.preflight import main
@@ -113,13 +104,15 @@ class TestPreflightCli:
 
         with patch.object(sys, "argv", [
             "preflight",
-            "--project-path", str(tmp_path),
+            "--project-path", str(project_dir),
+            "--mock",
         ]):
             main()
 
-        run_dir = self._find_run_dir(lumen_dir)
+        lumen_dir = project_dir / ".factory" / "lumen"
+        run_dir = lumen_dir / ".running"
         config = json.loads((run_dir / "config.json").read_text())
-        assert config["task_name"] == "my-task"
+        assert config["task_name"] == "circle-packing"
         assert config["mock"] is True
 
     def test_no_task_dir_no_config_exits(self, tmp_path: Path) -> None:
@@ -134,11 +127,11 @@ class TestPreflightCli:
             with pytest.raises(SystemExit, match="1"):
                 main()
 
-    def test_current_symlink_updates(self, tmp_path: Path) -> None:
-        """Running preflight twice creates two run dirs; current points to the latest."""
-        task_dir = tmp_path / "task"
-        task_dir.mkdir()
-        (task_dir / "config.json").write_text(json.dumps({"num_gpus": 4, "rollout_tp": 2}))
+    def test_running_twice_recreates_run_dir(self, tmp_path: Path) -> None:
+        """Running preflight twice clears and recreates the .running directory."""
+        task_dir = tmp_path / "benchmarks" / "einsteinarena" / "circle-packing"
+        task_dir.mkdir(parents=True)
+        (task_dir / "default_config.json").write_text(json.dumps({"num_gpus": 4, "rollout_tp": 2}))
 
         from factory.lumen.preflight import main
         import sys
@@ -146,24 +139,22 @@ class TestPreflightCli:
 
         with patch.object(sys, "argv", [
             "preflight", "--project-path", str(tmp_path),
-            "--task-dir", str(task_dir), "--mock",
+            "--task", "circle-packing", "--mock",
         ]):
             main()
 
         lumen_dir = tmp_path / ".factory" / "lumen"
-        first_run = self._find_run_dir(lumen_dir)
+        run_dir = lumen_dir / ".running"
+        first_config = json.loads((run_dir / "config.json").read_text())
+        first_tag = first_config["run_started"]
 
         time.sleep(1.1)
 
         with patch.object(sys, "argv", [
             "preflight", "--project-path", str(tmp_path),
-            "--task-dir", str(task_dir), "--mock",
+            "--task", "circle-packing", "--mock",
         ]):
             main()
 
-        runs = sorted(
-            d for d in lumen_dir.iterdir() if d.is_dir() and RUN_DIR_RE.match(d.name)
-        )
-        assert len(runs) == 2
-        assert runs[0] == first_run
-        assert (lumen_dir / "current_run").resolve().name == runs[1].name
+        second_config = json.loads((run_dir / "config.json").read_text())
+        assert second_config["run_started"] != first_tag

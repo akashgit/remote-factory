@@ -21,6 +21,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - templates/**
 - README.md
 - docs/**
+- benchmarks/**
 - .github/workflows/*.yml
 - factory.md
 - CLAUDE.md
