@@ -90,7 +90,7 @@ def workflow() -> Workflow:
             f"TASK=$({_LUMEN_PYTHON} -c \""
             "import json, sys; print(json.load(open(sys.argv[1]))['task_name'])"
             '" {run_dir}/config.json) && '
-            f"{_LUMEN_PYTHON} ../tools/add_sota_to_instruction.py $TASK || true"
+            f"(cd {{project_path}}/.. && {_LUMEN_PYTHON} tools/add_sota_to_instruction.py $TASK)"
         ),
         writes={"{run_dir}/config.json", "{run_dir}/state.json"},
         transcript_dir="{run_dir}/logs",
@@ -111,6 +111,9 @@ def workflow() -> Workflow:
         role=AgentRole.LUMEN_CONTEXT_AGENT,
         model="opus",
         timeout=1800,
+        disallowed_tools=["WebFetch", "WebSearch"],
+        safe_mode=True,
+        effort="max",
         prompt_template=(
             "You are the Lumen Context Agent. Generate 8 optimization prompts.\n\n"
             f"Read the run config at {_CFG} to find task_name and iteration.\n"

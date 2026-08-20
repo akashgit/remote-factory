@@ -2,12 +2,17 @@
 
 Evaluates model output by extracting code, executing it in a sandbox,
 and running the task's verifier to produce a score.
+
+Follows the Discover pattern: the model defines a `run()` function that
+returns the solution dict. We call it via subprocess + pickle, then pass
+the result to verifier.evaluate(data).
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -16,20 +21,39 @@ from pathlib import Path
 
 
 def extract_last_code_block(text: str) -> str | None:
-    """Extract the last fenced code block from model output."""
-    pattern = r"```(?:[Pp]ython|[Pp]y)?\s*\n(.*?)```"
+    """Extract the last fenced code block from model output.
+
+    Language-agnostic: matches ```python, ```py, ```cpp, bare ```, etc.
+    """
+    pattern = r"```\w*\s*\n(.*?)```"
     matches = re.findall(pattern, text, re.DOTALL)
     if not matches:
         return None
     return matches[-1].strip()
 
 
-def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> tuple[float, dict]:
-    """Execute code in a sandbox and evaluate with the task's verifier.
+_RUNNER_TEMPLATE = """\
+import sys
+import pickle
+import importlib.util
 
-    1. Write code to a temp file
-    2. Execute it (produces solution.json in workspace)
-    3. Load verifier.py and score the solution
+spec = importlib.util.spec_from_file_location("solution", {code_path!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+result = module.run()
+
+with open({results_path!r}, "wb") as f:
+    pickle.dump(result, f)
+"""
+
+
+def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> tuple[float, dict]:
+    """Execute code's run() function and evaluate with the task's verifier.
+
+    The code must define a `run()` function that returns the solution dict.
+    A runner script imports the code, calls run(), and pickles the return
+    value. The result is then scored by verifier.py's evaluate(data).
 
     Returns:
         (score, solution) tuple. solution is {} if execution failed.
@@ -39,16 +63,21 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> tupl
         return 0.0, {}
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        workspace = Path(tmpdir) / "workspace"
-        workspace.mkdir()
-
-        code_file = Path(tmpdir) / "run.py"
+        code_file = Path(tmpdir) / "solution.py"
         code_file.write_text(code)
+
+        results_file = Path(tmpdir) / "results.pkl"
+
+        runner_code = _RUNNER_TEMPLATE.format(
+            code_path=str(code_file), results_path=str(results_file),
+        )
+        runner_file = Path(tmpdir) / "runner.py"
+        runner_file.write_text(runner_code)
 
         try:
             subprocess.run(
-                ["python3", str(code_file)],
-                cwd=str(workspace),
+                ["python3", str(runner_file)],
+                cwd=tmpdir,
                 capture_output=True,
                 timeout=timeout,
                 check=False,
@@ -58,14 +87,15 @@ def evaluate_code_solution(code: str, task_dir: Path, timeout: int = 60) -> tupl
         except Exception:
             return 0.0, {}
 
-        solution_file = workspace / "solution.json"
-        if not solution_file.exists():
+        if not results_file.exists():
             return 0.0, {}
 
         try:
-            import json
-            with open(solution_file) as f:
-                data = json.load(f)
+            with open(results_file, "rb") as f:
+                data = pickle.load(f)
+
+            if not isinstance(data, dict):
+                data = {"result": data}
 
             spec = importlib.util.spec_from_file_location("verifier", verifier_path)
             module = importlib.util.module_from_spec(spec)

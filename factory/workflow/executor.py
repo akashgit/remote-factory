@@ -923,6 +923,11 @@ class WorkflowExecutor:
             model=model or None,
             timeout=float(timeout) if timeout is not None else 600.0,
             transcript_dir=transcript_dir,
+            tools=node.tools or None,
+            allowed_tools=node.allowed_tools or None,
+            disallowed_tools=node.disallowed_tools or None,
+            effort=node.effort,
+            safe_mode=node.safe_mode,
         )
 
         if code != 0:

@@ -608,6 +608,11 @@ class AgentRunRequest(BaseModel):
     session_id: str | None = None
     resume_session_id: str | None = None
     project_path: Path | None = None
+    tools: list[str] = []
+    allowed_tools: list[str] = []
+    disallowed_tools: list[str] = []
+    effort: str | None = None
+    safe_mode: bool = False
     extras: dict[str, object] = {}
 
 

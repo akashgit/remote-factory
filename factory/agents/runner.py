@@ -258,6 +258,11 @@ async def invoke_agent(
     settings_file: str | None = None,
     prompt_override: str | None = None,
     transcript_dir: Path | None = None,
+    tools: list[str] | None = None,
+    allowed_tools: list[str] | None = None,
+    disallowed_tools: list[str] | None = None,
+    effort: str | None = None,
+    safe_mode: bool = False,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -313,6 +318,11 @@ async def invoke_agent(
         session_id=session_id,
         resume_session_id=resume_session_id,
         project_path=project_path,
+        tools=tools or [],
+        allowed_tools=allowed_tools or [],
+        disallowed_tools=disallowed_tools or [],
+        effort=effort,
+        safe_mode=safe_mode,
         extras={
             "tmux_persist": tmux_persist,
             "background": background,

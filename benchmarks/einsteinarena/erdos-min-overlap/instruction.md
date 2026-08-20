@@ -30,3 +30,11 @@ The verifier will evaluate your solution and return a numerical score.
 ## Minimum Improvement
 
 To claim a better score on the leaderboard, your solution must improve upon the current best by at least **1e-07**.
+
+
+## State of the Art
+
+**Current best score:** 0.3808585748578584
+**Updated:** 2026-08-20
+
+**Minimum improvement:** Your score must improve by at least 1e-07 to be considered meaningful.

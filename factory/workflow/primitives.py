@@ -138,6 +138,10 @@ class AgentNode(Node):
     model: str = ""
     prompt_template: str = ""
     tools: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    disallowed_tools: list[str] = Field(default_factory=list)
+    effort: str | None = None
+    safe_mode: bool = False
     timeout: int | None = None
     max_iterations: int = 1
     post_checks: list[ArtifactCheck] = Field(default_factory=list)

@@ -116,9 +116,19 @@ class ClaudeRunner:
             "--output-format",
             "stream-json",
             "--verbose",
-            "--disallowedTools",
-            "Agent",
         ]
+        if request.safe_mode:
+            cmd.append("--safe-mode")
+        if request.tools:
+            cmd.extend(["--tools", *request.tools])
+        disallowed = list(request.disallowed_tools) if request.disallowed_tools else []
+        if "Agent" not in disallowed:
+            disallowed.append("Agent")
+        cmd.extend(["--disallowedTools", *disallowed])
+        if request.allowed_tools:
+            cmd.extend(["--allowedTools", *request.allowed_tools])
+        if request.effort:
+            cmd.extend(["--effort", request.effort])
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
