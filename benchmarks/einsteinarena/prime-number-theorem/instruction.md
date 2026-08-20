@@ -25,17 +25,6 @@ Higher $S(f)$ is better. The theoretical maximum is $S = 1$, achieved by $f = \m
 
 Problem 6.27 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "partial_function": // object mapping positive integer keys (as strings) to float values
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

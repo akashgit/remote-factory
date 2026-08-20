@@ -28,17 +28,6 @@ Submit `vectors` — an array of 842 vectors in $\mathbb{R}^{12}$, each a list o
 
 [Kissing numbers table](https://cohn.mit.edu/kissing-numbers/) by Henry Cohn (MIT). Current lower bound reference: Takhanov et al. (2026), [A Kissing Configuration in 12 Dimensions with 841 Spheres](https://arxiv.org/pdf/2606.18984).
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "vectors": // array of 842 vectors in R^12 (each a list of 12 numbers)
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**

@@ -20,17 +20,6 @@ where $\text{max\_gap}$ is the largest gap between consecutive edge densities. H
 
 Problem 6.46 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "weights": // 2D array of shape (m, 20), each row non-negative
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

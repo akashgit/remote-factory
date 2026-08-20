@@ -109,30 +109,18 @@ timeout_sec = 600.0
     def generate_instruction_md(self, problem: dict) -> str:
         """生成 instruction.md"""
         description = problem["description"]
-        solution_schema = problem["solutionSchema"]
         scoring = problem["scoring"]
         min_improvement = problem.get("minImprovement", 0)
-
-        # 添加 solution schema 说明
-        schema_section = "\n\n## Solution Format\n\n"
-        schema_section += (
-            "Submit a JSON file named `solution.json` with the following structure:\n\n"
-        )
-        schema_section += "```json\n{\n"
-        for key, desc in solution_schema.items():
-            schema_section += f'  "{key}": // {desc}\n'
-        schema_section += "}\n```\n"
 
         scoring_section = f"\n\n## Scoring Direction\n\n**{scoring.upper()}**\n"
         scoring_section += "\nThe verifier will evaluate your solution and return a numerical score.\n"
 
-        # 添加 minImprovement 说明
         improvement_section = ""
         if min_improvement > 0:
             improvement_section = "\n\n## Minimum Improvement\n\n"
             improvement_section += f"To claim a better score on the leaderboard, your solution must improve upon the current best by at least **{min_improvement}**.\n"
 
-        return description + schema_section + scoring_section + improvement_section
+        return description + scoring_section + improvement_section
 
     def generate_verifier_py(self, problem: dict) -> str:
         """生成 verifier.py（纯 evaluate 函数）"""

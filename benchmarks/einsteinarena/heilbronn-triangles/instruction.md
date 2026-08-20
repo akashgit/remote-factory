@@ -14,17 +14,6 @@ Submit `points` — an array of exactly 11 points $[x, y]$. The score is the min
 
 Problem 6.48 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864).
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "points": // array of 11 [x, y] coordinate pairs inside the unit equilateral triangle
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

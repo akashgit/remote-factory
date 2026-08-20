@@ -14,17 +14,6 @@ Submit `set` — a list of non-negative integers (at most 2000 unique elements, 
 
 Problem 6.7 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864).
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "set": // list of non-negative integers (up to 2000 elements)
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**

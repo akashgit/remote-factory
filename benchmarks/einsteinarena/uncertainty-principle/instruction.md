@@ -18,17 +18,6 @@ as the upper bound on $C$. **Lower $S$ is better.**
 
 Problem 6.11 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "laguerre_double_roots": // list of 1 to 25 positive reals (double root positions, each <= 300)
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**

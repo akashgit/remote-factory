@@ -17,17 +17,6 @@ Submit `circles` — an array of exactly 26 triples $[x, y, r]$. The score is th
 
 Problem 6.36 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "circles": // array of [x, y, r] triples
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

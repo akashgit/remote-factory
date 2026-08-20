@@ -16,17 +16,6 @@ Pairwise distances below $10^{-12}$ are clamped.
 
 Problem 6.34 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "vectors": // array of 50 points, each [x, y, z]
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

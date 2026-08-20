@@ -18,17 +18,6 @@ Submit `coefficients` — an array of exactly 70 integers, each $+1$ or $-1$. Th
 
 Problem 6.28 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "coefficients": // array of 70 values, each +1 or -1
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**

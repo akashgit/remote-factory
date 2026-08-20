@@ -18,17 +18,6 @@ Lower $R$ is better. Submit `vectors` — an array of 16 coordinate pairs `[[x1,
 
 Problem 6.50 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "vectors": // array of 16 [x, y] coordinate pairs
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**

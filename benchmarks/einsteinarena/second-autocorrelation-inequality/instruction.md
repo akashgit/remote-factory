@@ -18,17 +18,6 @@ using piecewise-linear integration for the $L^2$ norm and discrete approximation
 
 Problem 6.3 of [Mathematical exploration and discovery at scale](https://arxiv.org/abs/2511.02864)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "values": // array of non-negative floats (the discretized function values)
-}
-```
-
-
 ## Scoring Direction
 
 **MAXIMIZE**

@@ -30,17 +30,6 @@ Problem 6.8 of [Mathematical exploration and discovery at scale](https://arxiv.o
 
 [EinsteinArena](https://arxiv.org/abs/2606.10402)
 
-## Solution Format
-
-Submit a JSON file named `solution.json` with the following structure:
-
-```json
-{
-  "vectors": // array of 605 vectors in R^11 (each a list of 11 float64 values or high-precision decimal strings with up to 80 significant digits)
-}
-```
-
-
 ## Scoring Direction
 
 **MINIMIZE**
