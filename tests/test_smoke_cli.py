@@ -483,3 +483,157 @@ class TestRefactory:
 
         sid3 = get_session_id(project, reset=True)
         assert sid3 != sid1
+
+
+# ── h) Deletion safety tests ──────────────────────────────────
+
+
+DELETED_SYMBOLS = [
+    "BobRunner",
+    "CodexRunner",
+    "OpenCodeRunner",
+    "is_dry_run",
+    "is_codex_dry_run",
+    "is_opencode_dry_run",
+    "FACTORY_BOB_DRY_RUN",
+    "FACTORY_CODEX_DRY_RUN",
+    "FACTORY_OPENCODE_DRY_RUN",
+]
+
+
+class TestPackageImports:
+    """Verify the full package import chain works."""
+
+    def test_import_factory(self) -> None:
+        import factory  # noqa: F401
+
+    def test_build_parser_loads_all_subparsers(self) -> None:
+        from factory.cli._main import build_parser
+
+        parser = build_parser()
+        assert parser is not None
+        assert parser._subparsers is not None
+
+
+CLI_COMMANDS = [
+    "ceo",
+    "run",
+    "agent",
+    "detect",
+    "discover",
+    "init",
+    "study",
+    "precheck",
+    "graph",
+    "spec",
+    "workflow",
+    "outer-loop",
+    "config",
+    "refactory",
+    "install",
+    "tmux",
+    "serve-mcp",
+    "guard",
+    "contained",
+    "eval",
+    "log",
+    "emit",
+]
+
+
+class TestCommandHelp:
+    """Run 'factory <cmd> --help' for every surviving CLI command."""
+
+    @pytest.mark.parametrize("cmd", CLI_COMMANDS)
+    def test_command_help(self, cmd: str) -> None:
+        result = subprocess.run(
+            ["factory", cmd, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, (
+            f"'factory {cmd} --help' exited {result.returncode}: {result.stderr}"
+        )
+
+
+class TestRegistryInstantiation:
+    """Instantiate every registered workflow mode and verify it has nodes."""
+
+    def test_all_registered_modes_instantiate(self) -> None:
+        from factory.workflow.registry import WorkflowRegistry
+
+        WorkflowRegistry.reset()
+        entries = WorkflowRegistry.discover()
+        assert len(entries) > 0, "No workflows discovered"
+
+        for name, entry in entries.items():
+            if entry._workflow_fn is None:
+                continue
+            wf = entry._workflow_fn()
+            assert wf is not None, f"Mode '{name}' returned None"
+            assert len(wf.nodes) > 0, f"Mode '{name}' has no nodes"
+
+
+AGENT_ROLES_WITH_PROMPTS = [
+    "researcher",
+    "strategist",
+    "builder",
+    "health_checker",
+    "code_reviewer",
+    "adversarial_tester",
+    "archivist",
+    "ceo",
+    "refactory",
+]
+
+
+class TestPromptResolution:
+    """Verify resolve_prompt returns a non-empty string for every kept role."""
+
+    @pytest.mark.parametrize("role", AGENT_ROLES_WITH_PROMPTS)
+    def test_prompt_resolves(self, role: str) -> None:
+        from factory.agents.runner import resolve_prompt
+
+        prompt = resolve_prompt(role)
+        assert isinstance(prompt, str)
+        assert len(prompt) > 100, (
+            f"Prompt for '{role}' is suspiciously short ({len(prompt)} chars)"
+        )
+
+
+class TestSuiteCollects:
+    """Verify 'pytest --collect-only' succeeds (no broken conftest fixtures)."""
+
+    def test_collect_only(self) -> None:
+        result = subprocess.run(
+            ["pytest", "--collect-only", "-q", "--ignore=tests/test_mcp_server.py"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, (
+            f"pytest --collect-only failed (rc={result.returncode}): {result.stderr[-500:]}"
+        )
+
+
+class TestNoDanglingReferences:
+    """Verify deleted symbols have no remaining references in production code.
+
+    Symbols in DELETED_SYMBOLS are scheduled for removal. Tests are xfail
+    until the code is actually deleted — they become safety nets that pass
+    once the symbol is gone, and would fail loudly if re-introduced.
+    """
+
+    @pytest.mark.parametrize("symbol", DELETED_SYMBOLS)
+    @pytest.mark.xfail(reason="symbols scheduled for deletion, not yet removed", strict=False)
+    def test_no_reference(self, symbol: str) -> None:
+        result = subprocess.run(
+            ["grep", "-rn", symbol, "factory/", "--include=*.py"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.stdout == "", (
+            f"Deleted symbol '{symbol}' still referenced in production code:\n{result.stdout}"
+        )
