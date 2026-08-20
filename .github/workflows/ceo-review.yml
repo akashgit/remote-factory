@@ -67,7 +67,10 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          # Run postinstall manually in case optional native binary was skipped
+          node "$(npm prefix -g)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" || true
 
       - name: Verify Claude Code on PATH
         run: |
