@@ -25,8 +25,8 @@ def wf():
 
 def test_plan_workflow_structure(wf):
     """Verify node and edge counts match the expected topology."""
-    assert len(wf.nodes) == 18
-    assert len(wf.edges) == 23
+    assert len(wf.nodes) == 21
+    assert len(wf.edges) == 27
     assert wf.name == "plan"
     assert wf.start_node == "gate_has_factory"
     assert wf.terminal is True
@@ -63,7 +63,11 @@ def test_plan_workflow_edge_coverage(wf):
         ("graph_explorer", "concat_study", None),
         ("gate_has_factory", "graph_update", VerdictType.PROCEED),
         ("gate_has_factory", "discover", VerdictType.HALT),
-        ("discover", "graph_update", None),
+        ("discover", "gate_factory_md_exists", None),
+        ("gate_factory_md_exists", "factory_init", VerdictType.PROCEED),
+        ("gate_factory_md_exists", "create_factory_md", VerdictType.HALT),
+        ("create_factory_md", "factory_init", None),
+        ("factory_init", "graph_update", None),
         ("concat_study", "check_prior_plans", None),
         ("check_prior_plans", "gate_prior_plans", VerdictType.PROCEED),
         ("check_prior_plans", "fork_research", VerdictType.HALT),

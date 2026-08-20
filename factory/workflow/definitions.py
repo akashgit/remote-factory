@@ -626,7 +626,6 @@ def design_workflow(just_plan: bool = False) -> Workflow:
             'print("PROCEED" if exists else "HALT")'
             '"'
         ),
-        reads={".factory/config.json"},
     )
 
     wf.nodes["discover"] = FnNode(
