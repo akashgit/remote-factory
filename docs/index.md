@@ -4,7 +4,7 @@
 </p>
 
 <p align="center" markdown>
-[![CI](https://img.shields.io/github/actions/workflow/status/akashgit/remote-factory/ci.yml?style=flat-square&label=CI)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/akashgit/remote-factory/blob/main/LICENSE) [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude%20Code-cc785c?style=flat-square&logo=claude&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+[![CI](https://img.shields.io/github/actions/workflow/status/akashgit/remote-factory/ci.yml?style=flat-square&label=CI)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/akashgit/remote-factory/blob/main/LICENSE) [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude%20Code-cc785c?style=flat-square&logo=claude&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code) [![Docs](https://img.shields.io/badge/docs-akashgit.github.io-blue?style=flat-square)](https://akashgit.github.io/remote-factory/)
 </p>
 
 <p align="center">
