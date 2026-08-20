@@ -8,7 +8,7 @@ import pytest
 
 from factory.models import ProjectState
 from factory.workflow.executor import WorkflowExecutor
-from factory.workflow.primitives import AgentNode, AgentRole, GateNode, VerdictType
+from factory.workflow.primitives import AgentNode, AgentRole, FnNode, GateNode, VerdictType
 from factory.workflow.registry import WorkflowRegistry, _load_workflow_file
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,13 +47,15 @@ class TestGraphValidation:
         assert issues == [], f"Graph validation errors: {issues}"
 
     def test_node_count(self, featurebench_wf) -> None:
-        assert len(featurebench_wf.nodes) == 6
+        assert len(featurebench_wf.nodes) == 8
         assert set(featurebench_wf.nodes.keys()) == {
             "researcher",
             "strategist",
+            "scan_stubs",
             "builder",
-            "health_checker",
+            "adversarial_tester",
             "gate_tests",
+            "builder_fix",
             "archivist",
         }
 
@@ -61,7 +63,7 @@ class TestGraphValidation:
         assert featurebench_wf.start_node == "researcher"
 
     def test_edge_count(self, featurebench_wf) -> None:
-        assert len(featurebench_wf.edges) == 6
+        assert len(featurebench_wf.edges) == 8
 
     def test_workflow_name(self, featurebench_wf) -> None:
         assert featurebench_wf.name == "featurebench"
@@ -96,42 +98,46 @@ class TestNodeTypes:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.STRATEGIST
 
+    def test_scan_stubs_is_fn(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["scan_stubs"]
+        assert isinstance(node, FnNode)
+
     def test_builder_is_agent(self, featurebench_wf) -> None:
         node = featurebench_wf.nodes["builder"]
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
 
-    def test_health_checker_is_agent(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["health_checker"]
+    def test_adversarial_tester_is_agent(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["adversarial_tester"]
         assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.HEALTH_CHECKER
+        assert node.role == AgentRole.ADVERSARIAL_TESTER
 
     def test_gate_tests_is_fn_gate(self, featurebench_wf) -> None:
         node = featurebench_wf.nodes["gate_tests"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
 
-    def test_archivist_is_agent(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["archivist"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.ARCHIVIST
-
 
 class TestNodeProperties:
+    def test_builder_fix_is_agent(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["builder_fix"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.BUILDER
+
+    def test_builder_fix_max_iterations(self, featurebench_wf) -> None:
+        assert featurebench_wf.nodes["builder_fix"].max_iterations == 2
+
+    def test_builder_fix_timeout(self, featurebench_wf) -> None:
+        assert featurebench_wf.nodes["builder_fix"].timeout == 1800
+
     def test_builder_max_iterations(self, featurebench_wf) -> None:
         assert featurebench_wf.nodes["builder"].max_iterations == 3
 
     def test_builder_timeout(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["builder"].timeout == 1200
+        assert featurebench_wf.nodes["builder"].timeout == 1800
 
-    def test_health_checker_timeout(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["health_checker"].timeout == 600
-
-    def test_archivist_non_blocking(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["archivist"].blocking is False
-
-    def test_archivist_model(self, featurebench_wf) -> None:
-        assert featurebench_wf.nodes["archivist"].model == "haiku"
+    def test_adversarial_tester_timeout(self, featurebench_wf) -> None:
+        assert featurebench_wf.nodes["adversarial_tester"].timeout == 1800
 
     def test_no_user_gates(self, featurebench_wf) -> None:
         """Workflow is fully autonomous — no user approval gates."""
@@ -144,57 +150,49 @@ class TestNodeProperties:
 
 
 class TestContainerMetadata:
-    def test_builder_has_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["builder"]
-        assert node.metadata.get("execution_context") == "container"
-
-    def test_health_checker_has_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["health_checker"]
-        assert node.metadata.get("execution_context") == "container"
-
-    def test_researcher_no_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["researcher"]
-        assert node.metadata.get("execution_context") is None
-
-    def test_strategist_no_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["strategist"]
-        assert node.metadata.get("execution_context") is None
-
-    def test_archivist_no_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["archivist"]
-        assert node.metadata.get("execution_context") is None
-
-    def test_gate_no_container_metadata(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["gate_tests"]
-        assert node.metadata.get("execution_context") is None
+    def test_all_agent_nodes_run_on_host(self, featurebench_wf) -> None:
+        """All agent nodes run on host — gate handles container via docker exec."""
+        for node_id, node in featurebench_wf.nodes.items():
+            if isinstance(node, AgentNode):
+                assert node.metadata.get("execution_context") is None, (
+                    f"Node {node_id} should run on host"
+                )
 
 
 class TestEdgeCoverage:
     def test_reloop_edge(self, featurebench_wf) -> None:
-        """Test loop has RELOOP edge back to builder."""
+        """Gate RELOOP routes to builder_fix (not adversarial_tester)."""
         reloop_edges = [e for e in featurebench_wf.edges if e.condition == VerdictType.RELOOP]
         reloop_pairs = {(e.source, e.target) for e in reloop_edges}
-        assert ("gate_tests", "builder") in reloop_pairs
+        assert ("gate_tests", "builder_fix") in reloop_pairs
         assert len(reloop_edges) == 1
 
-    def test_proceed_edge_gate_tests(self, featurebench_wf) -> None:
+    def test_builder_fix_goes_to_gate(self, featurebench_wf) -> None:
+        """builder_fix routes directly to gate_tests, skipping adversarial_tester."""
+        builder_fix_edges = [e for e in featurebench_wf.edges if e.source == "builder_fix"]
+        assert len(builder_fix_edges) == 1
+        assert builder_fix_edges[0].target == "gate_tests"
+        assert builder_fix_edges[0].condition is None
+
+    def test_proceed_edge(self, featurebench_wf) -> None:
+        """Gate PROCEED routes to archivist."""
         proceed = [
-            e
-            for e in featurebench_wf.edges
-            if e.source == "gate_tests"
-            and e.target == "archivist"
-            and e.condition == VerdictType.PROCEED
+            e for e in featurebench_wf.edges
+            if e.condition == VerdictType.PROCEED
         ]
         assert len(proceed) == 1
+        assert proceed[0].source == "gate_tests"
+        assert proceed[0].target == "archivist"
 
     def test_unconditional_pipeline(self, featurebench_wf) -> None:
         """Unconditional edges form the main pipeline spine."""
         unconditional = [e for e in featurebench_wf.edges if e.condition is None]
         pairs = {(e.source, e.target) for e in unconditional}
         assert ("researcher", "strategist") in pairs
-        assert ("strategist", "builder") in pairs
-        assert ("builder", "health_checker") in pairs
-        assert ("health_checker", "gate_tests") in pairs
+        assert ("strategist", "scan_stubs") in pairs
+        assert ("scan_stubs", "builder") in pairs
+        assert ("builder", "adversarial_tester") in pairs
+        assert ("adversarial_tester", "gate_tests") in pairs
 
 
 class TestMeta:
@@ -205,8 +203,8 @@ class TestMeta:
         assert "description" in featurebench_meta
         assert "FeatureBench" in featurebench_meta["description"]
 
-    def test_meta_mentions_hybrid(self, featurebench_meta) -> None:
-        assert "hybrid" in featurebench_meta["description"].lower()
+    def test_meta_mentions_gate(self, featurebench_meta) -> None:
+        assert "gate" in featurebench_meta["description"].lower()
 
 
 class TestRegistryDiscovery:
@@ -264,19 +262,11 @@ class TestAdapterModule:
         content = adapter_path.read_text()
         assert 'return "factory"' in content
 
-    def test_install_script_no_nodejs(self) -> None:
-        """Minimal install — no Node.js or Claude Code needed in container."""
-        adapter_path = PROJECT_ROOT / "factory" / "featurebench" / "agent.py"
-        content = adapter_path.read_text()
-        assert "nvm" not in content
-        assert "claude-code" not in content
-
     def test_adapter_has_file_sync_methods(self) -> None:
         adapter_path = PROJECT_ROOT / "factory" / "featurebench" / "agent.py"
         content = adapter_path.read_text()
-        assert "_sync_to_container" in content
+        assert "_sync_workspace_to_container" in content
         assert "_sync_from_container" in content
-        assert "_extract_problem_statement" in content
 
     def test_adapter_has_problem_statement(self) -> None:
         adapter_path = PROJECT_ROOT / "factory" / "featurebench" / "agent.py"
@@ -326,13 +316,16 @@ class TestExecutorContainerRouting:
             Path("/tmp/test"),
             context={},
         )
-        builder = featurebench_wf.nodes["builder"]
+        container_node = AgentNode(
+            id="test_container",
+            role=AgentRole.BUILDER,
+            metadata={"execution_context": "container"},
+        )
         with pytest.raises(RuntimeError, match="container_name"):
-            await executor._run_agent_in_container(builder)
+            await executor._run_agent_in_container(container_node)
 
     async def test_fn_container_routing_requires_container_name(self, featurebench_wf) -> None:
         """Container fn node raises when no container_name in context."""
-        from factory.workflow.primitives import FnNode
         fn_node = FnNode(
             id="test_fn",
             command="echo hello",

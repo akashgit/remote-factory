@@ -1,13 +1,15 @@
 """FeatureBench mode — hybrid host/container execution pipeline.
 
-8-node pipeline with two RELOOP gates:
-  researcher → strategist → stub_filler ⇄ gate_stubs → adversarial_tester → builder ⇄ gate_tests → archivist
+8-node pipeline with one RELOOP gate:
+  researcher → strategist → scan_stubs (FnNode) → builder → adversarial_tester → gate_tests ⇄ builder_fix → archivist
 
-The stub_filler uses an AST scanner to find all masked/blank function bodies,
-fills them, then gate_stubs verifies none remain (RELOOP max 2). Then the
-adversarial_tester writes validation tests from the spec, and the builder
-implements the main features. gate_tests runs the pre-written tests inside
-the container via docker exec (RELOOP max 3).
+scan_stubs mechanically detects all blank/masked function bodies via AST and
+writes the list for the builder. The builder implements the feature AND fills
+stubs with full context. After the builder, the adversarial_tester reads the
+problem statement AND the built code to write spec-compliance tests (one-shot).
+gate_tests runs them inside the container. On RELOOP, builder_fix reads the
+pytest output and fixes source code directly — adversarial_tester is NOT
+re-run, so the test suite stays stable across iterations.
 """
 
 from typing import Any
@@ -18,6 +20,7 @@ from factory.workflow.primitives import (
     AgentRole,
     ArtifactCheck,
     Edge,
+    FnNode,
     GateNode,
     VerdictType,
     Workflow,
@@ -28,13 +31,39 @@ meta = {
     "description": (
         "FeatureBench mode — TDD pipeline for implementing features from interface specifications. "
         "Reads problem_statement.md, analyzes repo structure, creates an implementation plan, "
-        "writes validation tests from the spec FIRST (adversarial_tester), then the builder "
-        "implements until the tests pass. Uses hybrid host/container execution: adversarial_tester "
-        "writes tests on the host before implementation, gate_tests runs them inside the container "
-        "via docker exec. Supports iterative refinement (max 3 builder loops via gate_tests). "
+        "scans for masked function bodies, builds the feature, then the adversarial_tester "
+        "writes spec-compliance tests against the built code. gate_tests runs them inside the "
+        "container via docker exec, RELOOPing to builder if they fail. "
         "Use when invoked with --mode featurebench."
     ),
 }
+
+_ast_scanner_script = """\
+import ast, os
+for root, dirs, files in os.walk('.'):
+    dirs[:] = [d for d in dirs if d not in ('.git','.factory','__pycache__','test','tests')]
+    for f in files:
+        if not f.endswith('.py'): continue
+        path = os.path.join(root, f)
+        try: tree = ast.parse(open(path).read())
+        except: continue
+        src = open(path).readlines()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): continue
+            if not hasattr(node, 'end_lineno'): continue
+            body = node.body
+            is_empty = False
+            if len(body)==1 and isinstance(body[0], ast.Expr) and isinstance(body[0].value, (ast.Constant,)):
+                after = src[body[0].end_lineno:node.end_lineno] if hasattr(body[0],'end_lineno') else []
+                is_empty = all(l.strip()=='' for l in after)
+            elif all(isinstance(s, ast.Pass) for s in body):
+                is_empty = True
+            else:
+                code = src[node.lineno:node.end_lineno]
+                non_empty = [l for l in code if l.strip() and not l.strip().startswith(('#','def ','class '))]
+                is_empty = len(non_empty) == 0
+            if is_empty: print(f'{path}:{node.lineno} {node.name}')
+"""
 
 
 def workflow() -> Workflow:
@@ -124,168 +153,30 @@ def workflow() -> Workflow:
         ],
     )
 
-    # ── Stub filler: fill all masked function bodies (HOST) ─────────
+    # ── Scan stubs: detect all blank function bodies (FnNode, HOST) ──
 
-    nodes["stub_filler"] = AgentNode(
-        id="stub_filler",
-        role=AgentRole.BUILDER,
-        timeout=600,
-        max_iterations=2,
-        reads={".factory/reviews/researcher-latest.md", ".factory/strategy/current.md"},
-        writes={".factory/reviews/stub-filler-latest.md"},
-        post_checks=[
-            ArtifactCheck(path=".factory/reviews/stub-filler-latest.md", must_exist=True),
-        ],
-        prompt_template=(
-            "You are a stub filler for the FeatureBench benchmark. Your ONLY job is to\n"
-            "find and fill ALL masked/blank function bodies in the codebase.\n\n"
-            "The benchmark masks code by replacing function bodies with blank lines.\n"
-            "These empty functions break the entire dependency chain and cause cascading\n"
-            "failures in downstream code that calls them.\n\n"
-            "Steps:\n"
-            "1. First, mechanically find ALL masked functions. Run this command:\n"
-            "   python3 -c \"\n"
-            "   import ast, os, sys\n"
-            "   for root, dirs, files in os.walk('.'):\n"
-            "       dirs[:] = [d for d in dirs if d not in ('.git','.factory','__pycache__','test','tests')]\n"
-            "       for f in files:\n"
-            "           if not f.endswith('.py'): continue\n"
-            "           path = os.path.join(root, f)\n"
-            "           try:\n"
-            "               tree = ast.parse(open(path).read())\n"
-            "           except: continue\n"
-            "           src_lines = open(path).readlines()\n"
-            "           for node in ast.walk(tree):\n"
-            "               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):\n"
-            "                   start = node.end_lineno if hasattr(node,'end_lineno') else node.lineno\n"
-            "                   body = node.body\n"
-            "                   if len(body)==1 and isinstance(body[0], ast.Expr) and isinstance(body[0].value, (ast.Constant, ast.Str)):\n"
-            "                       body_after_doc = src_lines[body[0].end_lineno:node.end_lineno] if hasattr(body[0],'end_lineno') and hasattr(node,'end_lineno') else []\n"
-            "                       if all(l.strip()=='' for l in body_after_doc):\n"
-            "                           print(f'{path}:{node.lineno} {node.name} (docstring only)')\n"
-            "                   elif all(isinstance(s, ast.Pass) for s in body):\n"
-            "                       print(f'{path}:{node.lineno} {node.name} (pass only)')\n"
-            "                   elif len(body)>=1 and isinstance(body[-1], ast.Expr) and isinstance(body[-1].value, (ast.Constant, ast.Str)):\n"
-            "                       pass\n"
-            "                   else:\n"
-            "                       code_lines = src_lines[node.lineno:node.end_lineno] if hasattr(node,'end_lineno') else []\n"
-            "                       non_empty = [l for l in code_lines if l.strip() and not l.strip().startswith('#') and not l.strip().startswith('def ')]\n"
-            "                       if len(non_empty) <= 1:\n"
-            "                           print(f'{path}:{node.lineno} {node.name} (empty body)')\n"
-            "   \"\n"
-            "   This prints every function with a blank/stub body. Save the output.\n\n"
-            "2. For EACH masked function found in step 1, open the file and implement\n"
-            "   a minimal working version:\n"
-            "   - Infer behavior from: function name, parameter names/types, docstring,\n"
-            "     how it's called elsewhere in the codebase, similar non-masked functions\n"
-            "   - Keep implementations small (5-15 lines) — just enough to not break callers\n"
-            "   - Do NOT over-engineer — the main builder will handle spec features\n\n"
-            "3. If this is a RELOOP from gate_stubs, read\n"
-            "   .factory/reviews/gate-stubs-output.txt for the list of functions still\n"
-            "   empty. Focus on filling THOSE specifically.\n\n"
-            "4. Commit: git add -A && git commit -m 'fill masked function stubs'\n\n"
-            "ANTI-CHEATING COMPLIANCE:\n"
-            "- Do NOT access /usr/local/lib/python* paths\n"
-            "- Do NOT read test files\n"
-            "- Infer behavior from context only\n\n"
-            "Write a list of all functions you filled to .factory/reviews/stub-filler-latest.md."
-        ),
-    )
-
-    # ── Gate stubs: check if any blank function bodies remain (HOST) ──
-
-    _ast_scanner = (
-        "import ast, os\\n"
-        "for root, dirs, files in os.walk('.'):\\n"
-        "    dirs[:] = [d for d in dirs if d not in ('.git','.factory','__pycache__','test','tests')]\\n"
-        "    for f in files:\\n"
-        "        if not f.endswith('.py'): continue\\n"
-        "        path = os.path.join(root, f)\\n"
-        "        try: tree = ast.parse(open(path).read())\\n"
-        "        except: continue\\n"
-        "        src = open(path).readlines()\\n"
-        "        for node in ast.walk(tree):\\n"
-        "            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): continue\\n"
-        "            if not hasattr(node, 'end_lineno'): continue\\n"
-        "            body = node.body\\n"
-        "            is_empty = False\\n"
-        "            if len(body)==1 and isinstance(body[0], ast.Expr) and isinstance(body[0].value, (ast.Constant,)):\\n"
-        "                after = src[body[0].end_lineno:node.end_lineno] if hasattr(body[0],'end_lineno') else []\\n"
-        "                is_empty = all(l.strip()=='' for l in after)\\n"
-        "            elif all(isinstance(s, ast.Pass) for s in body):\\n"
-        "                is_empty = True\\n"
-        "            else:\\n"
-        "                code = src[node.lineno:node.end_lineno]\\n"
-        "                non_empty = [l for l in code if l.strip() and not l.strip().startswith(('#','def ','class '))]\\n"
-        "                is_empty = len(non_empty) <= 1\\n"
-        "            if is_empty: print(f'{path}:{node.lineno} {node.name}')\\n"
-    )
-
-    nodes["gate_stubs"] = GateNode(
-        id="gate_stubs",
-        evaluator_type="fn",
-        evaluator_command=(
+    nodes["scan_stubs"] = FnNode(
+        id="scan_stubs",
+        command=(
             "cd {project_path} && "
-            "python3 -c \"" + _ast_scanner + "\" "
-            "> {project_path}/.factory/reviews/gate-stubs-output.txt 2>&1; "
-            "COUNT=$(wc -l < {project_path}/.factory/reviews/gate-stubs-output.txt | tr -d ' '); "
-            "if [ \"$COUNT\" -eq 0 ] || [ \"$COUNT\" -le 3 ]; then "
-            "echo \"pass: $COUNT blank stubs remaining (acceptable)\"; "
-            "else echo \"reloop: $COUNT blank function bodies still empty — see .factory/reviews/gate-stubs-output.txt\"; fi"
+            "cat > /tmp/_scan_stubs.py << 'PYEOF'\n"
+            + _ast_scanner_script
+            + "PYEOF\n"
+            "python3 /tmp/_scan_stubs.py "
+            "> {project_path}/.factory/reviews/blank-stubs.txt 2>&1; "
+            "COUNT=$(wc -l < {project_path}/.factory/reviews/blank-stubs.txt | tr -d ' '); "
+            "echo \"Detected $COUNT blank/masked function bodies\" >> {project_path}/.factory/reviews/blank-stubs.txt; "
+            "echo \"scan_stubs: found $COUNT blank function bodies\""
         ),
-        reads={".factory/reviews/stub-filler-latest.md"},
+        writes={".factory/reviews/blank-stubs.txt"},
     )
 
-    # ── Adversarial tester: write validation tests from spec (HOST) ──
-
-    nodes["adversarial_tester"] = AgentNode(
-        id="adversarial_tester",
-        role=AgentRole.ADVERSARIAL_TESTER,
-        timeout=1800,
-        reads={".factory/reviews/researcher-latest.md"},
-        writes={".factory/reviews/adversarial-qa.md", ".factory/validation_tests/test_spec_compliance.py"},
-        post_checks=[
-            ArtifactCheck(path=".factory/reviews/adversarial-qa.md", must_exist=True),
-        ],
-        prompt_template=(
-            "You are a TDD validation test writer for the FeatureBench benchmark.\n\n"
-            "Your job is to READ the problem statement and WRITE comprehensive pytest tests\n"
-            "BEFORE any code is implemented. The builder will use these tests as a target.\n"
-            "You do NOT run the tests — the gate_tests node runs them inside the container\n"
-            "via docker exec.\n\n"
-            "Steps:\n"
-            "1. Read problem_statement.md for interface specs (function signatures, import\n"
-            "   paths, types, expected behavior). This is your ONLY source of truth for\n"
-            "   what the implementation should do.\n"
-            "2. Read .factory/reviews/researcher-latest.md for repo structure understanding\n"
-            "   (existing packages, module layout, naming conventions).\n"
-            "3. mkdir -p .factory/validation_tests/\n"
-            "4. Write .factory/validation_tests/test_spec_compliance.py with as many\n"
-            "   comprehensive pytest tests as possible covering EVERY interface spec\n"
-            "   from problem_statement.md:\n"
-            "   - Import paths matching the interface specs exactly\n"
-            "   - test_ prefix for all test functions\n"
-            "   - Function signature tests (correct parameters, return types)\n"
-            "   - Happy-path tests for each specified interface\n"
-            "   - Edge-case tests (empty input, None, boundary values)\n"
-            "   - Type checking tests where specs define types\n"
-            "   - Self-contained tests (no fixtures depending on external state)\n\n"
-            "IMPORTANT:\n"
-            "- Do NOT run pytest — the gate runs tests inside the container\n"
-            "- Do NOT modify any source code — you are writing tests only\n"
-            "- Do NOT reference builder code, git diff, or builder-latest.md\n"
-            "  (the builder has NOT run yet — this is TDD)\n\n"
-            "Write a summary to .factory/reviews/adversarial-qa.md listing the tests\n"
-            "written and what interface spec each validates."
-        ),
-    )
-
-    # ── Builder: implement the feature (HOST) ───────────────────────
+    # ── Builder: implement the feature + fill stubs (HOST) ─────────
 
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
-        timeout=1200,
+        timeout=1800,
         max_iterations=3,
         prompt_template=(
             "CRITICAL: Your job is to implement or modify SOURCE CODE only. Do NOT create, "
@@ -305,39 +196,136 @@ def workflow() -> Workflow:
             "3. Multi-file implementation is expected (~15 files average). Do not try to\n"
             "   put everything in one file. Follow the repo's existing structure and\n"
             "   naming conventions.\n\n"
-            "4. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
+            "4. MASKED FUNCTION BODIES — CRITICAL:\n"
+            "   The benchmark masks code by replacing function bodies with blank lines.\n"
+            "   A list of ALL detected blank/masked functions is at:\n"
+            "   .factory/reviews/blank-stubs.txt\n\n"
+            "   You MUST read this file and implement EVERY function listed there.\n"
+            "   These are hidden dependencies — if you leave them empty, downstream code\n"
+            "   that calls them will fail silently or produce wrong results.\n\n"
+            "   For each masked function:\n"
+            "   - Study how it is called elsewhere in the codebase\n"
+            "   - Look at similar non-masked functions for patterns\n"
+            "   - Read the docstring for behavioral hints\n"
+            "   - Implement REAL working logic, not minimal stubs\n\n"
+            "5. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
             "   - Do NOT access /usr/local/lib/python* paths (gold solution location)\n"
             "   - Do NOT fetch from any blacklisted URLs\n"
             "   - Do NOT read or reference any test files to reverse-engineer expected outputs\n"
             "   - Implement from the problem statement and interface specs ONLY\n\n"
-            "5. The adversarial_tester has already written validation tests at\n"
-            "   .factory/validation_tests/test_spec_compliance.py. The gate_tests node\n"
-            "   will run them after you commit. Focus on making your implementation pass\n"
-            "   these tests.\n\n"
-            "6. The stub_filler has already filled masked function bodies across the\n"
-            "   codebase. Check .factory/reviews/stub-filler-latest.md for what was filled.\n"
-            "   If any filled stubs are too minimal, improve them as needed.\n\n"
-            "7. If this is a RELOOP from gate_tests (test loop):\n"
+            "6. If this is a RELOOP from gate_tests (test loop):\n"
             "   - Read .factory/reviews/gate-pytest-output.txt for the pytest failure output.\n"
             "     Each failure has a test name, error type, and traceback. Fix the root cause\n"
             "     and recommit.\n"
             "   - For each failure, READ THE FULL STACK TRACE. Follow it to the exact file\n"
             "     and line that errors. Open that file — if you find an empty/stub function\n"
-            "     body (blank lines where code should be), IMPLEMENT IT. The benchmark masks\n"
-            "     helper functions throughout the codebase, not just the described interfaces.\n"
+            "     body (blank lines where code should be), IMPLEMENT IT.\n"
             "   - Common masked dependencies: model methods, utility classes, threading\n"
             "     helpers, storage backends. AttributeError/NameError usually means a masked\n"
             "     function you haven't implemented yet.\n"
             "   - Do not rewrite working code — only fix what the stack traces point to.\n\n"
-            "8. Commit all changes with: git add -A && git commit -m 'implement feature'\n"
+            "7. Commit all changes with: git add -A && git commit -m 'implement feature'\n"
             "   The FeatureBench harness extracts changes via git diff, so commits are required.\n\n"
             "Write a summary of what was implemented to .factory/reviews/builder-latest.md."
         ),
         reads={
             ".factory/strategy/current.md",
-            ".factory/validation_tests/test_spec_compliance.py",
-            ".factory/reviews/adversarial-qa.md",
-            ".factory/reviews/stub-filler-latest.md",
+            ".factory/reviews/blank-stubs.txt",
+        },
+        writes={".factory/reviews/builder-latest.md"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/builder-latest.md", must_exist=True),
+        ],
+    )
+
+    # ── Adversarial tester: write spec-compliance tests AFTER build (HOST) ──
+
+    nodes["adversarial_tester"] = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.ADVERSARIAL_TESTER,
+        timeout=1800,
+        reads={
+            ".factory/reviews/researcher-latest.md",
+            ".factory/reviews/builder-latest.md",
+        },
+        writes={".factory/reviews/adversarial-qa.md", ".factory/validation_tests/test_spec_compliance.py"},
+        post_checks=[
+            ArtifactCheck(path=".factory/reviews/adversarial-qa.md", must_exist=True),
+        ],
+        prompt_template=(
+            "You are a spec-compliance auditor for the FeatureBench benchmark.\n\n"
+            "The builder has ALREADY implemented the feature. Your job is to compare\n"
+            "the problem statement against the built code and write tests that verify\n"
+            "the implementation matches the spec.\n\n"
+            "Steps:\n"
+            "1. Read problem_statement.md for the authoritative interface specs\n"
+            "   (function signatures, import paths, types, expected behavior).\n"
+            "2. Read .factory/reviews/builder-latest.md for what was built.\n"
+            "3. Read .factory/reviews/researcher-latest.md for repo structure.\n"
+            "4. CRITICALLY: Browse the ACTUAL source files the builder created/modified.\n"
+            "   Find the real import paths, class names, and function signatures.\n"
+            "   Your tests MUST use the actual imports that exist in the code.\n\n"
+            "5. mkdir -p .factory/validation_tests/\n"
+            "6. Write .factory/validation_tests/test_spec_compliance.py with pytest tests\n"
+            "   that verify EVERY interface spec from problem_statement.md:\n"
+            "   - Use the REAL import paths from the built code (not guesses)\n"
+            "   - test_ prefix for all test functions\n"
+            "   - Function signature tests (correct parameters, return types)\n"
+            "   - Happy-path tests for each specified interface\n"
+            "   - Edge-case tests (empty input, None, boundary values)\n"
+            "   - Tests for spec requirements the builder may have missed\n"
+            "   - Self-contained tests (no fixtures depending on external state)\n"
+            "   - Do NOT reference test data files unless you verify they exist\n\n"
+            "IMPORTANT:\n"
+            "- Do NOT run pytest — the gate runs tests inside the container\n"
+            "- Do NOT modify any source code — you are writing tests only\n"
+            "- Use REAL import paths from the actual code, not from the spec description\n"
+            "  (the spec describes interfaces but the actual module paths may differ)\n\n"
+            "Write a summary to .factory/reviews/adversarial-qa.md listing the tests\n"
+            "written, what spec requirement each validates, and any gaps you found\n"
+            "between the spec and the implementation."
+        ),
+    )
+
+    # ── Builder fix: reloop-only builder that fixes source from pytest output (HOST) ──
+
+    nodes["builder_fix"] = AgentNode(
+        id="builder_fix",
+        role=AgentRole.BUILDER,
+        timeout=1800,
+        max_iterations=2,
+        prompt_template=(
+            "CRITICAL: Your job is to FIX source code based on pytest failure output. "
+            "Do NOT create, modify, or recreate test files (tests/*). Do NOT modify the "
+            "validation tests in .factory/validation_tests/ — those are written by the "
+            "adversarial tester and must stay as-is.\n\n"
+            "The working directory is {project_path} — a git-tracked repository.\n"
+            "You MUST commit all changes so the FeatureBench harness can extract your git diff.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Read .factory/reviews/gate-pytest-output.txt for the pytest failure output.\n"
+            "   Each failure has a test name, error type, and traceback.\n\n"
+            "2. For each failure, READ THE FULL STACK TRACE. Follow it to the exact file\n"
+            "   and line that errors. Open that file — if you find an empty/stub function\n"
+            "   body (blank lines where code should be), IMPLEMENT IT.\n\n"
+            "3. Common root causes:\n"
+            "   - AttributeError/NameError → a masked function you haven't implemented yet\n"
+            "   - ImportError → missing module or wrong import path in source code\n"
+            "   - TypeError → wrong function signature or return type\n"
+            "   - AssertionError → logic bug in your implementation\n\n"
+            "4. Do NOT rewrite working code — only fix what the stack traces point to.\n"
+            "   Do NOT modify test files. Fix the SOURCE CODE to pass the tests.\n\n"
+            "5. Read problem_statement.md if you need to check interface specifications.\n\n"
+            "6. ANTI-CHEATING COMPLIANCE (MANDATORY):\n"
+            "   - Do NOT access /usr/local/lib/python* paths (gold solution location)\n"
+            "   - Do NOT fetch from any blacklisted URLs\n"
+            "   - Do NOT read or reference any test files to reverse-engineer expected outputs\n\n"
+            "7. Commit all changes with: git add -A && git commit -m 'fix implementation'\n\n"
+            "Write a summary of what was fixed to .factory/reviews/builder-latest.md."
+        ),
+        reads={
+            ".factory/reviews/gate-pytest-output.txt",
+            ".factory/strategy/current.md",
+            ".factory/reviews/blank-stubs.txt",
         },
         writes={".factory/reviews/builder-latest.md"},
         post_checks=[
@@ -367,6 +355,7 @@ def workflow() -> Workflow:
             ".factory/validation_tests/test_spec_compliance.py",
             ".factory/reviews/adversarial-qa.md",
         },
+        writes={".factory/reviews/gate-pytest-output.txt"},
     )
 
     # ── Archivist: record learnings (HOST, async) ──────────────────
@@ -380,7 +369,7 @@ def workflow() -> Workflow:
             "Read:\n"
             "- .factory/strategy/current.md (implementation plan)\n"
             "- .factory/reviews/builder-latest.md (what was built)\n"
-            "- .factory/reviews/adversarial-qa.md (pre-written validation tests)\n\n"
+            "- .factory/reviews/adversarial-qa.md (spec-compliance audit)\n\n"
             "Record:\n"
             "1. Task outcome: resolved or not, number of builder iterations needed\n"
             "2. Successful strategies: what worked well\n"
@@ -398,14 +387,13 @@ def workflow() -> Workflow:
 
     edges = [
         Edge(source="researcher", target="strategist"),
-        Edge(source="strategist", target="stub_filler"),
-        Edge(source="stub_filler", target="gate_stubs"),
-        Edge(source="gate_stubs", target="adversarial_tester", condition=VerdictType.PROCEED),
-        Edge(source="gate_stubs", target="stub_filler", condition=VerdictType.RELOOP),
-        Edge(source="adversarial_tester", target="builder"),
-        Edge(source="builder", target="gate_tests"),
+        Edge(source="strategist", target="scan_stubs"),
+        Edge(source="scan_stubs", target="builder"),
+        Edge(source="builder", target="adversarial_tester"),
+        Edge(source="adversarial_tester", target="gate_tests"),
         Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
-        Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="gate_tests", target="builder_fix", condition=VerdictType.RELOOP),
+        Edge(source="builder_fix", target="gate_tests"),
     ]
 
     # ── Trigger ───────────────────────────────────────────────────
