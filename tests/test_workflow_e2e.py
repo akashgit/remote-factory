@@ -32,6 +32,8 @@ from factory.workflow.definitions import (
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import DEFAULT_AGENT_POOL
 
+pytestmark = [pytest.mark.e2e]
+
 e2e = pytest.mark.skipif(
     os.environ.get("FACTORY_RUN_E2E", "0") != "1",
     reason="E2E tests require FACTORY_RUN_E2E=1 and a working Claude Code CLI",

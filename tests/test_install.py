@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _uv_available = shutil.which("uv") is not None
 
 pytestmark = [
+    pytest.mark.slow,
     pytest.mark.skipif(not _uv_available, reason="uv not available"),
 ]
 
