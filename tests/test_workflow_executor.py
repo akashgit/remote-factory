@@ -558,6 +558,27 @@ class TestGateVerdictFailClosed:
         assert verdict.target == "a"
         assert verdict.feedback == "redo it"
 
+    def test_agent_proceed_first_line_fallback(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            "PROCEED\n\nAll checks pass.", "gate"
+        )
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_halt_first_line_fallback(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            'HALT reason="broken"\n\nSee details above.', "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+        assert verdict.reason == "broken"
+
+    def test_agent_reloop_first_line_fallback(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            'RELOOP target="a" feedback="try again"\n\nNeeds work.', "gate"
+        )
+        assert verdict.type == VerdictType.RELOOP
+        assert verdict.target == "a"
+        assert verdict.feedback == "try again"
+
     def test_fn_pass_proceeds(self) -> None:
         verdict = _make_gate_executor()._parse_fn_verdict("pass", "gate")
         assert verdict.type == VerdictType.PROCEED

@@ -982,6 +982,42 @@ class WorkflowExecutor:
         if text.startswith("PROCEED") or re.match(r"^PROCEED\b", text):
             return Verdict.proceed()
 
+        first_line = ""
+        for line in lines:
+            if line.strip():
+                first_line = line.strip()
+                break
+
+        if first_line and first_line != last_line:
+            ft = first_line.upper()
+
+            if ft.startswith("HALT") or re.match(r"^HALT\b", ft):
+                reason_match = re.search(r'REASON="([^"]+)"', first_line, re.IGNORECASE)
+                reason = reason_match.group(1) if reason_match else "gate halted"
+                return Verdict.halt(reason=reason)
+
+            if ft.startswith("RELOOP") or re.match(r"^RELOOP\b", ft):
+                target_match = re.search(r'TARGET="([^"]+)"', first_line, re.IGNORECASE)
+                feedback_match = re.search(r'FEEDBACK="([^"]+)"', first_line, re.IGNORECASE)
+                target = target_match.group(1) if target_match else None
+
+                if target and target not in self.workflow.nodes:
+                    matches = [nid for nid in self.workflow.nodes if target in nid]
+                    if len(matches) == 1:
+                        target = matches[0]
+                    else:
+                        target = self._next_conditional(gate_id, VerdictType.RELOOP)
+
+                if not target:
+                    target = self._next_conditional(gate_id, VerdictType.RELOOP)
+                if not target:
+                    return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
+                feedback = feedback_match.group(1) if feedback_match else "needs improvement"
+                return Verdict.reloop(target=target, feedback=feedback)
+
+            if ft.startswith("PROCEED") or re.match(r"^PROCEED\b", ft):
+                return Verdict.proceed()
+
         return Verdict.halt(
             reason=(
                 f"gate '{gate_id}' returned unparseable verdict "
