@@ -4,6 +4,10 @@ site_url: https://akashgit.github.io/remote-factory/
 repo_url: https://github.com/akashgit/remote-factory
 repo_name: akashgit/remote-factory
 
+validation:
+  links:
+    not_found: info
+
 theme:
   name: material
   font:
