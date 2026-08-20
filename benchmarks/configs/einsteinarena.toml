@@ -12,7 +12,7 @@ metric_path = "score"
 format = "directory"
 
 [seed_workflow]
-name = "lumen"
+name = "einsteinarena-lumen"
 
 [scoring]
 method = "metric_extraction"

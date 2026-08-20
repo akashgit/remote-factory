@@ -4228,6 +4228,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "lumen": lambda **kwargs: __import__(
             "factory.workflow.contributed.lumen", fromlist=["workflow"]
         ).workflow(**kwargs),
+        "einsteinarena-lumen": lambda **kwargs: __import__(
+            "factory.workflow.contributed.einsteinarena_lumen", fromlist=["workflow"]
+        ).workflow(**kwargs),
         "outer-loop": lambda: __import__(
             "factory.workflow.contributed.outer_loop", fromlist=["workflow"]
         ).workflow(),

@@ -337,15 +337,15 @@ factory outer-loop calibrate <project> \
 
 ## EinsteinArena + Lumen Integration
 
-EinsteinArena is a scientific optimization benchmark with RL-based training via the Lumen workflow. Each task directory contains an optimization problem with a verifier, instruction file, and default training config.
+EinsteinArena is a scientific optimization benchmark with RL-based training via the EinsteinArena-Lumen workflow. Each task directory contains an optimization problem with a verifier, instruction file, and default training config.
 
 ### Benchmark Config
 
-The benchmark config lives at `benchmarks/configs/einsteinarena.toml`. It uses the `json` test format with `metric_extraction` scoring — the existing `JSONEvaluator` extracts the score via `metric_path = "score"`, so no custom evaluator class is needed.
+The benchmark config lives at `benchmarks/configs/einsteinarena.toml`. It uses the `json` test format with `metric_extraction` scoring and references the `einsteinarena-lumen` seed workflow. The existing `JSONEvaluator` extracts the score via `metric_path = "score"`, so no custom evaluator class is needed.
 
 ### Dual-Mode Invocation
 
-Lumen's preflight supports two invocation modes:
+The EinsteinArena-Lumen workflow's preflight supports two invocation modes:
 
 - **Mode A (explicit task):** `--task circle-packing` — the project path points to the factory root and the task is passed as an argument. This is the standard mode for interactive use.
 - **Mode B (directory inference):** No `--task` argument — preflight infers the task from the project directory name (e.g., `/path/to/circle-packing`). This supports the outer loop's worktree isolation, where each instance directory is named after the task.
