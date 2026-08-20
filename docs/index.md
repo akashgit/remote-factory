@@ -1,18 +1,12 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/akashgit/remote-factory/main/docs/assets/refactory_logo.png" alt="re:factory" width="480">
+  <img src="assets/logo-light.png#only-light" alt="re:factory" width="480">
+  <img src="assets/logo-dark.png#only-dark" alt="re:factory" width="480">
 </p>
 
+<p align="center" markdown>
+[![CI](https://img.shields.io/github/actions/workflow/status/akashgit/remote-factory/ci.yml?style=flat-square&label=CI)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/akashgit/remote-factory/blob/main/LICENSE) [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude%20Code-cc785c?style=flat-square&logo=claude&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+</p>
 
-[![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/akashgit/remote-factory/blob/main/LICENSE)
-[![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
-[![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
-[![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
-[![Docs](https://img.shields.io/badge/docs-akashgit.github.io-blue)](https://akashgit.github.io/remote-factory/)
-
-<p align="center"><b><a href="https://akashgit.github.io/remote-factory/">Full Documentation</a></b></p>
 
 **Describe what you want — re:factory designs and builds it.** Brainstorm an idea from scratch, refine a plan for an existing project, or create entirely new factory modes.
 

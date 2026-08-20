@@ -6,9 +6,81 @@
  * white surface and disable any inherited image filter so the diagrams
  * display with their intended contrast on dark pages.
  */
-[data-md-color-scheme="slate"] .md-typeset img[src$=".svg"] {
+[data-md-color-scheme="slate"] .md-typeset img[src*="diagrams/"][src$=".svg"] {
   background-color: #ffffff;
   border-radius: 6px;
   padding: 0.75rem;
   filter: none;
 }
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 220;
+  --md-default-bg-color: #0B1220;
+  --md-code-bg-color: #121D35;
+  --md-default-fg-color--lightest: #1A2A4B;
+}
+[data-md-color-scheme="slate"] .md-sidebar {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: #0B1220;
+  color: #E6EDF7;
+}
+
+.md-header { background-color: #0B1220 !important; }
+
+[data-md-color-scheme="slate"] .md-nav__title {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.md-header, .md-tabs {
+  box-shadow: none;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .admonition, .md-typeset details {
+  border: none;
+  border-left: 2px solid var(--md-default-fg-color--light);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: 0.75rem;
+}
+.md-typeset .admonition-title, .md-typeset summary {
+  background: transparent !important;
+  font-weight: 600;
+}
+.md-typeset .admonition-title::before, .md-typeset summary::before { display: none; }
+.md-typeset .admonition-title, .md-typeset summary { padding-left: 0.8rem; }
+
+.md-grid { max-width: 1180px; }
+.md-typeset { font-size: 0.78rem; line-height: 1.65; }
+
+.md-typeset img[src*="logo-light"],
+.md-typeset img[src*="logo-dark"] {
+  max-width: 480px;
+  display: block;
+  margin: 0 auto;
+}
+
+[data-md-color-scheme="default"] {
+  --md-accent-fg-color: #0B6BDE;
+  --md-typeset-a-color: #0B6BDE;
+  --md-code-bg-color: #F4F7FB;
+}
+
+.md-header__button.md-logo { display: none; }
+
+.md-header__topic .md-ellipsis { font-size: 0; }
+.md-header__topic .md-ellipsis::before {
+  content: "re"; font-size: 1.125rem; font-weight: 700; color: #2B8CFF;
+}
+.md-header__topic .md-ellipsis::after {
+  content: ":factory"; font-size: 1.125rem; font-weight: 700; color: #E6EDF7;
+}
+
+/* Light/dark logo toggle */
+[data-md-color-scheme="default"] img[src*="#only-dark"] { display: none; }
+[data-md-color-scheme="slate"] img[src*="#only-light"] { display: none; }
