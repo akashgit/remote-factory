@@ -32,7 +32,7 @@ class TestBuiltinRegistry:
             "discover", "review", "refine", "create", "founder",
             "deep-qa", "swebench", "legacybench", "featurebench",
             "programbench", "terminalbench", "tomswe", "salitrap",
-            "skill-refine", "doc-generate", "doc-update",
+            "doc-generate", "doc-update",
             "spec-generate", "spec-update", "parallel-improve",
             "frontend-design", "frontend-design-discover",
             "frontend-design-scan", "plan", "evolve",

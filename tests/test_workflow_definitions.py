@@ -302,7 +302,6 @@ class TestAgentPool:
             "ceo": "opus",
             "archivist": "haiku",
             "refiner": "opus",
-            "skill_reviewer": "opus",
         }
 
         for role, model in expected.items():
@@ -331,7 +330,6 @@ class TestRegisterAll:
             "review",
             "refine",
             "create",
-            "skill-refine",
             "spec-generate",
             "spec-update",
             "founder",

@@ -1,1 +1,1 @@
-"""SkillOpt — benchmark-driven SKILL.md optimization loop."""
+"""YAML annotation surface for SkillOpt — prompt slots as the optimization target."""

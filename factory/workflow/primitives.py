@@ -24,7 +24,6 @@ class AgentRole(str, Enum):
     CEO = "ceo"
     ARCHIVIST = "archivist"
     REFINER = "refiner"
-    SKILL_REVIEWER = "skill_reviewer"
 
 
 class AgentConfig(BaseModel):
@@ -50,7 +49,6 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
     "refiner": AgentConfig(role=AgentRole.REFINER, model="opus", timeout=600),
-    "skill_reviewer": AgentConfig(role=AgentRole.SKILL_REVIEWER, model="opus", timeout=600),
 }
 
 

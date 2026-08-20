@@ -178,14 +178,6 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path> --prompt /tmp/task-instruction.md",
     },
-    "skill-refine": {
-        "description": (
-            "Verified skill generation pipeline — templatize, review, guard, split. "
-            "Converts Pydantic workflow graphs into verified SKILL.md files with "
-            "annotations. Use to regenerate skills after workflow definition changes."
-        ),
-        "argument_hint": "<project_path>",
-    },
     "frontend-design": {
         "description": (
             "Feature-to-UI pipeline that enforces a design system on every new "
