@@ -71,16 +71,19 @@ print(f'\\nDetected {len(blanks)} blank/masked function bodies')
 print('\\n=== USAGE CONTEXT (how each blank function is called) ===')
 for path, lineno, name in blanks:
     try:
-        r = subprocess.run(['grep','-rn','--include=*.py',f'.{name}','.'],
+        r = subprocess.run(['grep','-rn','--include=*.py',
+                           '--exclude-dir=test','--exclude-dir=tests',
+                           '--exclude-dir=__pycache__','--exclude-dir=.factory',
+                           name,'.'],
                            capture_output=True, text=True, timeout=5)
         usages = []
         for line in r.stdout.split('\\n'):
             if not line.strip(): continue
             if f'{path}:{lineno}' in line: continue
-            if 'def ' + name in line: continue
+            if 'def ' + name + '(' in line: continue
             if '.factory/' in line: continue
             usages.append(line)
-            if len(usages) >= 3: break
+            if len(usages) >= 5: break
         if usages:
             print(f'\\n{path}:{lineno} {name}')
             for u in usages:
