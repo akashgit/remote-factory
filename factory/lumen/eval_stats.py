@@ -60,8 +60,14 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
         }
 
     scoring_direction = prompts_data.get("scoring_direction", "maximize")
-    best_fn = max if scoring_direction == "maximize" else min
-    best_idx = int(np.argmax(scores) if scoring_direction == "maximize" else np.argmin(scores))
+
+    if scoring_direction == "minimize":
+        # For minimize: 0.0 means evaluation failure, not a perfect score.
+        # Find best among successful rollouts only.
+        valid = [(i, s) for i, s in enumerate(scores) if s > 0]
+        best_idx = min(valid, key=lambda x: x[1])[0] if valid else 0
+    else:
+        best_idx = int(np.argmax(scores))
 
     stats = {
         "num_rollouts": len(rollouts),
@@ -92,12 +98,17 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
                 continue
             group_scores = groups[i]
             strategy = prompts[i].get("strategy", "") if i < len(prompts) else ""
+            if scoring_direction == "minimize":
+                valid_group = [s for s in group_scores if s > 0]
+                group_best = float(min(valid_group)) if valid_group else 0.0
+            else:
+                group_best = float(max(group_scores))
             per_prompt_stats.append({
                 "prompt_idx": i,
                 "strategy": strategy,
                 "mean": float(np.mean(group_scores)),
                 "std": float(np.std(group_scores)),
-                "best": float(best_fn(group_scores)),
+                "best": group_best,
             })
 
         stats["per_prompt_stats"] = per_prompt_stats
@@ -176,7 +187,11 @@ def main() -> None:
         sys.exit(1)
 
     scoring_direction = prompts_data.get("scoring_direction", "maximize")
-    overall_best_idx = int(np.argmax(all_scores) if scoring_direction == "maximize" else np.argmin(all_scores))
+    if scoring_direction == "minimize":
+        valid = [(i, s) for i, s in enumerate(all_scores) if s > 0]
+        overall_best_idx = min(valid, key=lambda x: x[1])[0] if valid else 0
+    else:
+        overall_best_idx = int(np.argmax(all_scores))
 
     # Determine best_source
     if overall_best_idx < len(sm_rollouts):

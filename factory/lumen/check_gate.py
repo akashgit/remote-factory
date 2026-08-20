@@ -24,7 +24,7 @@ def main():
     # Find global best across all iterations
     task_dir = cfg.get("task_dir", f"benchmarks/einsteinarena/{task_name}")
     md = open(f"{task_dir}/instruction.md").read()
-    dir_match = re.search(r"Scoring Direction.*?(MAXIMIZE|MINIMIZE)", md)
+    dir_match = re.search(r"Scoring Direction.*?(MAXIMIZE|MINIMIZE)", md, re.DOTALL)
     direction = dir_match.group(1) if dir_match else "MAXIMIZE"
 
     global_best_score = None

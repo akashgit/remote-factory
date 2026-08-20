@@ -84,8 +84,8 @@ def build_verl_overrides(args: argparse.Namespace, output_dir: Path) -> list[str
         "trainer.nnodes=1",
         "trainer.save_freq=0",
         "trainer.test_freq=-1",
-        "trainer.total_epochs=1",
-        f"trainer.rollout_data_dir={args.checkpoint_dir}/rollouts",
+        f"trainer.total_epochs={args.iteration + 1}",
+        f"trainer.rollout_data_dir={output_dir}/rollouts",
         "trainer.val_before_train=False",
         f"trainer.resume_mode={resume_mode}",
     ]
@@ -129,13 +129,15 @@ def post_process_results(
                 "rollout_idx": rollout_idx,
                 "global_idx": idx,
                 "prompt": entry.get("input", ""),
-                "thinking": "",
-                "code": "",
+                "output": entry.get("output", ""),
+                "code": entry.get("code", ""),
                 "solution": entry.get("solution", {}),
-                "score": entry["score"],
-                "gen_case": "A",
-                "p1_len": 0,
-                "p2_len": 0,
+                "score": entry.get("score", 0.0),
+                "eval_msg": entry.get("eval_msg", ""),
+                "gen_case": entry.get("gen_case", ""),
+                "p1_len": entry.get("p1_len", 0),
+                "p2_len": entry.get("p2_len", 0),
+                "gen_time_s": entry.get("gen_time_s", 0.0),
             }
             f.write(json.dumps(record) + "\n")
 
@@ -215,7 +217,7 @@ def main() -> None:
     result = subprocess.run(cmd, check=False)
 
     # Step 4: Post-process results — VERL names files {global_steps}.jsonl (1-based)
-    rollout_dir = Path(args.checkpoint_dir) / "rollouts"
+    rollout_dir = output_dir / "rollouts"
     rollout_files = sorted(rollout_dir.glob("*.jsonl")) if rollout_dir.exists() else []
 
     if result.returncode != 0:
