@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <b><a href="https://akashgit.github.io/remote-factory/">Documentation</a></b> · <b><a href="https://akashgit.github.io/remote-factory/getting-started/">Getting Started</a></b> · <b><a href="https://akashgit.github.io/remote-factory/configuration/">Configuration</a></b>
+  <b><a href="https://akashgit.github.io/remote-factory/">Documentation</a></b> · <b><a href="docs/getting-started.md">Getting Started</a></b> · <b><a href="docs/configuration.md">Configuration</a></b>
 </p>
 
 <!-- --8<-- [start:body] -->
@@ -32,7 +32,7 @@ factory ceo ~/my-project
 factory ceo ~/my-project --focus "add WebSocket support"
 ```
 
-All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](https://akashgit.github.io/remote-factory/architecture/) for the full deep-dive.
+All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
 ---
 
@@ -140,7 +140,7 @@ Beyond the core Design and Create modes, re:factory ships with a growing set of 
 
 ### Community-Contributed Benchmarks
 
-These benchmark workflows live in `factory/workflow/contributed/` and follow a standard 4-node pipeline pattern (study → solver → gate → merge). See [Contributing Benchmarks](https://akashgit.github.io/remote-factory/contributing-benchmarks/) for how to add your own.
+These benchmark workflows live in `factory/workflow/contributed/` and follow a standard 4-node pipeline pattern (study → solver → gate → merge). See [Contributing Benchmarks](docs/contributing-benchmarks.md) for how to add your own.
 
 | Workflow | What it solves |
 |----------|---------------|
@@ -186,7 +186,7 @@ factory ceo "my idea" --mode design
 factory ceo /path/to/project --mode design --focus "issue # or area to improve"
 ```
 
-See the [full setup guide](https://akashgit.github.io/remote-factory/setup/) for authentication, environment variables, and justification for why we install globally.
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
 
 ---
 
@@ -205,7 +205,7 @@ This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anth
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
 
-See [ACE Playbook Evolution](https://akashgit.github.io/remote-factory/ace/) for the playbook mechanics.
+See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
 
 ---
 
@@ -219,7 +219,7 @@ Every change is measured by a composite score across three tiers:
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability, research effectiveness |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
-On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. The weighted composite of all dimensions determines whether each experiment is kept or reverted. See [Eval System](https://akashgit.github.io/remote-factory/eval/) for scoring details, weights, and guards.
+On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. The weighted composite of all dimensions determines whether each experiment is kept or reverted. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
 
 ---
 
@@ -235,7 +235,7 @@ factory outer-loop calibrate ~/my-factory \
 factory ceo ~/my-factory --mode outer-loop --headless
 ```
 
-The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](https://akashgit.github.io/remote-factory/outer-loop/) for full architecture and CLI reference.
+The outer loop evolves the factory's own workflow DAGs against benchmarks. Starting from a simple seed (e.g. builder-only), it mutates workflow structure (adding nodes, changing edges, tweaking prompts), evaluates each candidate on a real benchmark instance, and selects for higher test pass rates. See the [Outer Loop guide](docs/outer-loop.md) for full architecture and CLI reference.
 
 ---
 
@@ -298,7 +298,7 @@ FACTORY_RUNNER = "bob"
 BOBSHELL_API_KEY = "..."
 ```
 
-Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](https://akashgit.github.io/remote-factory/setup/) for full details.
+Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
 
 ---
 
@@ -420,14 +420,14 @@ A regression test (`test_annotations_match_source`) runs in CI to catch drift be
 
 | Doc | What's in it |
 |-----|-------------|
-| [Setup Guide](https://akashgit.github.io/remote-factory/setup/) | Installation, authentication, environment variables |
-| [Getting Started](https://akashgit.github.io/remote-factory/getting-started/) | Lifecycle walkthrough, research mode details, factory.md config |
-| [Architecture](https://akashgit.github.io/remote-factory/architecture/) | Three-layer system, agent roles, state machine, data flow |
-| [Eval System](https://akashgit.github.io/remote-factory/eval/) | Hygiene/growth/project tiers, scoring, guards, precheck |
-| [Configuration](https://akashgit.github.io/remote-factory/configuration/) | `factory.md` reference — all sections and options |
-| [ACE Self-Improvement](https://akashgit.github.io/remote-factory/ace/) | How re:factory evolves its own agent playbooks |
-| [Contributing](https://akashgit.github.io/remote-factory/contributing/) | Dev setup, code style, testing, PR workflow |
-| [Contributing Benchmarks](https://akashgit.github.io/remote-factory/contributing-benchmarks/) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
+| [Setup Guide](docs/setup.md) | Installation, authentication, environment variables |
+| [Getting Started](docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md config |
+| [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow |
+| [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
+| [Configuration](docs/configuration.md) | `factory.md` reference — all sections and options |
+| [ACE Self-Improvement](docs/ace.md) | How re:factory evolves its own agent playbooks |
+| [Contributing](docs/contributing.md) | Dev setup, code style, testing, PR workflow |
+| [Contributing Benchmarks](docs/contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
 
 ## Development
 
