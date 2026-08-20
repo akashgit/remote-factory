@@ -606,14 +606,17 @@ class TestSuiteCollects:
     """Verify 'pytest --collect-only' succeeds (no broken conftest fixtures)."""
 
     def test_collect_only(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             ["pytest", "--collect-only", "-q", "--ignore=tests/test_mcp_server.py"],
             capture_output=True,
             text=True,
             timeout=60,
+            cwd=repo_root,
         )
         assert result.returncode == 0, (
-            f"pytest --collect-only failed (rc={result.returncode}): {result.stderr[-500:]}"
+            f"pytest --collect-only failed (rc={result.returncode}): "
+            f"stdout={result.stdout[-300:]}, stderr={result.stderr[-300:]}"
         )
 
 
