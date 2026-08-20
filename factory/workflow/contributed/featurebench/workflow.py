@@ -70,20 +70,24 @@ for root, dirs, files in os.walk('.'):
 print(f'\\nDetected {len(blanks)} blank/masked function bodies')
 print('\\n=== USAGE CONTEXT (how each blank function is called) ===')
 for path, lineno, name in blanks:
+    if name.startswith('__') and name.endswith('__'): continue
+    if len(name) < 4: continue
     try:
-        r = subprocess.run(['grep','-rn','--include=*.py',
+        pat = f'\\\\.{name}\\\\b|\\\\b{name}\\\\s*\\\\('
+        r = subprocess.run(['grep','-rn','-E','--include=*.py',
                            '--exclude-dir=test','--exclude-dir=tests',
                            '--exclude-dir=__pycache__','--exclude-dir=.factory',
-                           name,'.'],
+                           '--exclude-dir=.git','--exclude-dir=examples',
+                           '--exclude-dir=docs',
+                           pat,'.'],
                            capture_output=True, text=True, timeout=5)
         usages = []
         for line in r.stdout.split('\\n'):
             if not line.strip(): continue
             if f'{path}:{lineno}' in line: continue
             if 'def ' + name + '(' in line: continue
-            if '.factory/' in line: continue
             usages.append(line)
-            if len(usages) >= 5: break
+            if len(usages) >= 3: break
         if usages:
             print(f'\\n{path}:{lineno} {name}')
             for u in usages:
