@@ -58,6 +58,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     name = args.name
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
+    trace = getattr(args, "trace", False)
     from_yaml = getattr(args, "from_yaml", None)
 
     yaml_b64 = os.environ.get("FACTORY_WORKFLOW_YAML_B64")
@@ -85,7 +86,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         project_path,
         agent_pool=DEFAULT_AGENT_POOL,
         dry_run=dry_run,
+        trace=trace,
     )
+    print(f"Run directory: {executor.run_dir}")
+    if trace:
+        print(f"Trace enabled: {executor.trace_dir}")
 
     from factory.agents.runner import begin_cycle_session, complete_cycle_session
     cycle_span_id = begin_cycle_session(project_path, cycle_id=name)
@@ -93,7 +98,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         result = asyncio.run(executor.execute())
 
-        print(json.dumps({
+        summary = {
             "workflow": name,
             "success": result.success,
             "halted": result.halted,
@@ -101,7 +106,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
             "nodes_executed": result.nodes_executed,
             "duration_ms": round(result.duration_ms, 1),
             "files_produced": sorted(result.completed_files),
-        }, indent=2))
+        }
+        print(json.dumps(summary, indent=2))
+
+        if executor.run_dir:
+            (executor.run_dir / "_summary.json").write_text(
+                json.dumps(summary, indent=2),
+            )
 
         return 0 if result.success else 1
     finally:
@@ -346,6 +357,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("name", help="Workflow name (build, design, improve, research, meta)")
     p.add_argument("project_path", help="Path to the project")
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
+    p.add_argument(
+        "--trace", action="store_true",
+        help="Save full execution logs for all nodes to .factory/<workflow>/run_<ts>/logs/",
+    )
     p.add_argument(
         "--from-yaml", default=None, metavar="PATH",
         help="Load workflow from YAML annotations file (overrides slot values on base workflow)",

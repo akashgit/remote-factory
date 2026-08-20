@@ -1,9 +1,11 @@
-"""Finalize a LUMEN run — archive iteration data and optionally model checkpoint.
+"""Finalize a LUMEN run — clean up checkpoint if SOTA was not beaten.
 
-Always archives: config, state, verdict, iteration data (prompts, rollouts, eval results), transcripts.
-Only archives checkpoint/ when SOTA was beaten (verdict.outcome == "sota_beaten").
+The run directory is created by the workflow executor, so all data is already
+in the right place. Finalize only handles selective checkpoint cleanup:
+checkpoint/ is kept when SOTA was beaten, deleted otherwise to save disk space.
 """
 
+import argparse
 import json
 import shutil
 import sys
@@ -11,44 +13,31 @@ from pathlib import Path
 
 
 def main():
-    run_dir = Path(".factory/lumen/.running")
-    if not run_dir.exists():
-        print("[FAIL] No .running directory found")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Finalize LUMEN run")
+    parser.add_argument("--run-dir", default=None, help="Run directory path")
+    args = parser.parse_args()
 
-    cfg = json.load(open(run_dir / "config.json"))
-    run_tag = cfg.get("run_started", "unknown")
+    run_dir = Path(args.run_dir) if args.run_dir else Path(".factory/lumen/.running")
+    if not run_dir.exists():
+        print(f"[FAIL] Run directory not found: {run_dir}")
+        sys.exit(1)
 
     verdict_path = run_dir / "verdict.json"
     if not verdict_path.exists():
-        print("[WARN] No verdict.json found — archiving without checkpoint")
+        print("[WARN] No verdict.json found")
         verdict = {"outcome": "unknown"}
     else:
         verdict = json.load(open(verdict_path))
 
-    sota_beaten = verdict.get("outcome") == "sota_beaten"
-
-    lumen_dir = run_dir.parent
-    archive_dir = lumen_dir / f"run-{run_tag}"
-    if archive_dir.exists():
-        shutil.rmtree(archive_dir)
-    archive_dir.mkdir()
-
-    for item in run_dir.iterdir():
-        dest = archive_dir / item.name
-        if item.name == "checkpoint":
-            if sota_beaten:
-                shutil.copytree(item, dest)
-                print("[OK] Checkpoint archived (SOTA beaten)")
-            else:
-                print("[SKIP] Checkpoint not archived (SOTA not beaten)")
-            continue
-        if item.is_dir():
-            shutil.copytree(item, dest)
+    checkpoint_dir = run_dir / "checkpoint"
+    if checkpoint_dir.exists():
+        if verdict.get("outcome") == "sota_beaten":
+            print("[OK] Checkpoint kept (SOTA beaten)")
         else:
-            shutil.copy2(item, dest)
+            shutil.rmtree(checkpoint_dir)
+            print("[OK] Checkpoint removed (SOTA not beaten)")
 
-    print(f"[OK] Run archived to {archive_dir}")
+    print(f"[OK] Run finalized: {run_dir}")
 
 
 if __name__ == "__main__":

@@ -17,9 +17,9 @@ Reads (in priority order):
     - benchmarks/einsteinarena/{task}/config.json          (per-task custom config, if exists)
     - benchmarks/einsteinarena/{task}/default_config.json  (per-task defaults, fallback)
 
-Writes:
-    - .factory/lumen/.running/config.json    (resolved config, cleared each run)
-    - .factory/lumen/.running/state.json     (iteration state, cleared each run)
+Writes (to --run-dir, or .factory/lumen/.running/ if not specified):
+    - {run_dir}/config.json    (resolved config)
+    - {run_dir}/state.json     (iteration state)
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 
 def cleanup_gpu_processes():
@@ -171,14 +170,6 @@ SUPPORTED_TASKS = [
     "erdos-min-overlap",
 ]
 
-# Supported CLI parameters
-SUPPORTED_CLI_PARAMS = [
-    "model_path", "num_gpus", "rollout_tp", "num_rollouts_per_prompt",
-    "lora_rank", "learning_rate", "kl_coef", "temperature",
-    "phase1_max_tokens", "eval_timeout", "max_iterations",
-    "groups_per_batch", "group_size", "mock", "reward",
-]
-
 
 def validate_task(task_name: str) -> tuple[bool, str]:
     """Validate task name."""
@@ -190,38 +181,13 @@ def validate_task(task_name: str) -> tuple[bool, str]:
     return True, ""
 
 
-def validate_cli_params(params: dict[str, Any]) -> tuple[bool, str]:
-    """Validate CLI parameter names."""
-    invalid = [k for k in params if k not in SUPPORTED_CLI_PARAMS and k != "config"]
-    if invalid:
-        return False, (
-            f"Unknown parameters: {', '.join(invalid)}\n"
-            f"Supported parameters:\n" + "\n".join(f"  --{p.replace('_', '-')}" for p in SUPPORTED_CLI_PARAMS)
-        )
-    return True, ""
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lumen preflight check")
     parser.add_argument("--project-path", required=True, help="Project root")
+    parser.add_argument("--run-dir", default=None, help="Run directory (created by executor). Falls back to .factory/lumen/.running/")
     parser.add_argument("--task", required=False, default=None, help="Task name (e.g., circle-packing). If omitted, inferred from project directory name.")
     parser.add_argument("--config", default=None, help="Custom config file path (highest priority)")
     parser.add_argument("--mock", action="store_true", help="Mock mode (skip venv/GPU checks)")
-
-    # CLI parameter overrides
-    parser.add_argument("--model-path", default=None, help="Model path override")
-    parser.add_argument("--num-gpus", type=int, default=None, help="Number of GPUs")
-    parser.add_argument("--rollout-tp", type=int, default=None, help="Rollout tensor parallel size")
-    parser.add_argument("--num-rollouts-per-prompt", type=int, default=None, help="Rollouts per prompt")
-    parser.add_argument("--lora-rank", type=int, default=None, help="LoRA rank")
-    parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate")
-    parser.add_argument("--kl-coef", type=float, default=None, help="KL coefficient")
-    parser.add_argument("--temperature", type=float, default=None, help="Sampling temperature")
-    parser.add_argument("--phase1-max-tokens", type=int, default=None, help="Phase 1 max tokens")
-    parser.add_argument("--eval-timeout", type=int, default=None, help="Eval timeout in seconds")
-    parser.add_argument("--max-iterations", type=int, default=None, help="Maximum iterations")
-    parser.add_argument("--groups-per-batch", type=int, default=None, help="Groups per batch")
-    parser.add_argument("--group-size", type=int, default=None, help="Group size")
 
     args = parser.parse_args()
 
@@ -254,20 +220,6 @@ def main() -> None:
         print(f"[FAIL] {msg}")
         sys.exit(1)
     print(f"[OK] Task name validated: {task_name}")
-
-    # ── Validation Step 2: CLI parameters ────────────────────────
-    cli_overrides = {}
-    for param in SUPPORTED_CLI_PARAMS:
-        value = getattr(args, param.replace("-", "_"), None)
-        if value is not None:
-            cli_overrides[param] = value
-
-    ok, msg = validate_cli_params(cli_overrides)
-    if not ok:
-        print(f"[FAIL] {msg}")
-        sys.exit(1)
-    if cli_overrides:
-        print(f"[OK] CLI overrides: {', '.join(cli_overrides.keys())}")
 
     # Clean up any lingering GPU processes from previous runs
     cleanup_gpu_processes()
@@ -338,11 +290,9 @@ def main() -> None:
             custom_config = json.load(f)
         print(f"[OK] Custom config loaded: {custom_config_path}")
 
-    # 5. Merge: task defaults ← custom config ← CLI overrides ← GPU detection
-    # Priority: CLI > custom config > task defaults
+    # 5. Merge: task defaults ← custom config ← GPU detection
     resolved = dict(task_defaults)
     resolved.update(custom_config)
-    resolved.update(cli_overrides)
     resolved = derive_training_params(gpu_info, resolved)
 
     # Add metadata
@@ -350,14 +300,17 @@ def main() -> None:
     resolved["task_dir"] = str(task_dir)
     resolved["gpu_info"] = gpu_info
 
-    # 6. Create .running directory (clear previous run if exists)
-    lumen_dir = project_path / ".factory" / "lumen"
-    lumen_dir.mkdir(parents=True, exist_ok=True)
-    run_dir = lumen_dir / ".running"
-    if run_dir.exists():
-        import shutil
-        shutil.rmtree(run_dir)
-    run_dir.mkdir()
+    # 6. Resolve run directory
+    if args.run_dir:
+        run_dir = Path(args.run_dir).resolve()
+    else:
+        lumen_dir = project_path / ".factory" / "lumen"
+        lumen_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = lumen_dir / ".running"
+        if run_dir.exists():
+            import shutil
+            shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     # Write resolved config
     resolved["run_started"] = make_run_tag()

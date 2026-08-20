@@ -106,8 +106,12 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
 
 
 def main() -> None:
-    # Read config
-    run_dir = Path(".factory/lumen/.running")
+    import argparse
+    parser = argparse.ArgumentParser(description="Aggregate eval stats")
+    parser.add_argument("--run-dir", default=None, help="Run directory path")
+    args = parser.parse_args()
+
+    run_dir = Path(args.run_dir) if args.run_dir else Path(".factory/lumen/.running")
     config_path = run_dir / "config.json"
     state_path = run_dir / "state.json"
 

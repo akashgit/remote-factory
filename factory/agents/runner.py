@@ -579,17 +579,16 @@ def _save_transcript(
     try:
         from datetime import datetime, timezone
 
-        # Try to detect iteration from state.json (LUMEN workflow)
         iteration_suffix = ""
-        if ".factory/lumen/" in str(transcript_dir):
-            state_file = transcript_dir.parent / "state.json"
-            if state_file.exists():
-                try:
-                    state = json.loads(state_file.read_text())
-                    iteration = state.get("iteration", 0)
+        state_file = transcript_dir.parent / "state.json"
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text())
+                iteration = state.get("iteration")
+                if iteration is not None:
                     iteration_suffix = f"_iteration_{iteration}"
-                except Exception:
-                    pass  # Silently ignore state.json read failures
+            except Exception:
+                pass
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         run_dir = transcript_dir / f"{role}{iteration_suffix}_{ts}"

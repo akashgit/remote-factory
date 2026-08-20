@@ -5,7 +5,7 @@ LUMEN: Learning-based Universal Modeling and Evolution eNgine
 RL training system for scientific discovery tasks.
 
 Usage:
-    python3 -m factory.lumen.train --config .factory/lumen/.running/config.json
+    python3 -m factory.lumen.train --config .factory/lumen/run_YYYYMMDD-HHMMSS/config.json
 """
 
 import argparse
@@ -78,7 +78,7 @@ def main() -> None:
 
     task_name = cfg["task_name"]
     task_dir = Path(cfg["task_dir"])
-    project_path = config_path.parents[2]  # .factory/lumen/run-NNN/config.json → project root
+    project_path = config_path.parents[3]  # .factory/lumen/run_YYYYMMDD-HHMMSS/config.json → project root
     mock = cfg.get("mock", False)
     model_path = cfg.get("model_path", "Qwen/Qwen3-8B")
     num_rollouts_per_prompt = cfg.get("num_rollouts_per_prompt", 64)

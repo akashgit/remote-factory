@@ -8,8 +8,14 @@ from pathlib import Path
 
 def main():
     """Check if training should continue or halt."""
-    cfg = json.load(open(".factory/lumen/.running/config.json"))
-    state = json.load(open(".factory/lumen/.running/state.json"))
+    import argparse
+    parser = argparse.ArgumentParser(description="LUMEN check gate")
+    parser.add_argument("--run-dir", default=None, help="Run directory path")
+    args = parser.parse_args()
+
+    run_dir = Path(args.run_dir) if args.run_dir else Path(".factory/lumen/.running")
+    cfg = json.load(open(run_dir / "config.json"))
+    state = json.load(open(run_dir / "state.json"))
 
     task_name = cfg["task_name"]
     current_it = state["iteration"]
@@ -26,7 +32,7 @@ def main():
     global_best_iteration = None
 
     for it in range(current_it + 1):
-        eval_file = Path(f".factory/lumen/.running/iteration_{it}/evaluation_results.json")
+        eval_file = run_dir / f"iteration_{it}" / "evaluation_results.json"
         if not eval_file.exists():
             continue
 
@@ -90,8 +96,8 @@ def main():
             print("reloop: Need more iterations")
 
     # Write updated state (with global best_score and best_iteration)
-    json.dump(state, open(".factory/lumen/.running/state.json", "w"))
-    json.dump(verdict, open(".factory/lumen/.running/verdict.json", "w"), indent=2)
+    json.dump(state, open(run_dir / "state.json", "w"))
+    json.dump(verdict, open(run_dir / "verdict.json", "w"), indent=2)
 
 
 if __name__ == "__main__":

@@ -84,12 +84,24 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        trace: bool = False,
     ) -> None:
+        from datetime import datetime, timezone
+
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        self.run_dir = project_path / ".factory" / workflow.name / f"run_{ts}"
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+
+        self.trace_dir: Path | None = None
+        if trace:
+            self.trace_dir = self.run_dir / "logs"
+            self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -208,6 +220,11 @@ class WorkflowExecutor:
         if isinstance(node, JoinNode):
             self.result.nodes_executed += 1
             self.completed_files |= node.writes
+            if self.trace_dir:
+                await self._save_node_log(
+                    node.id, "JoinNode",
+                    f"Sources: {', '.join(node.sources)}\n",
+                )
             next_id = self._next_unconditional(node_id)
             if next_id:
                 await self._execute_from(next_id)
@@ -470,6 +487,13 @@ class WorkflowExecutor:
 
         await asyncio.gather(*(run_branch(t) for t in node.targets))
 
+        if self.trace_dir:
+            await self._save_node_log(
+                node.id, "ForkNode",
+                f"Targets: {', '.join(node.targets)}\n"
+                f"Halted: {self.result.halted}\n",
+            )
+
         if self.result.halted:
             return
 
@@ -594,6 +618,16 @@ class WorkflowExecutor:
                 })
             else:
                 branch_results.append(r)  # type: ignore[arg-type]
+
+        if self.trace_dir:
+            await self._save_node_log(
+                node.id, "SubgraphForkNode",
+                f"Parallelism: {node.parallelism}\n"
+                f"Subgraph: {node.subgraph_entry} -> {node.subgraph_exit}\n"
+                f"Branches: {branch_count}\n\n"
+                "=== BRANCH RESULTS ===\n"
+                + json.dumps(branch_results, indent=2, default=str),
+            )
 
         elapsed = (time.monotonic() - start) * 1000
         self.result.node_outputs[node.id] = json.dumps(branch_results)
@@ -758,6 +792,13 @@ class WorkflowExecutor:
             "total_branches": len(branches),
             "successful_branches": len(successful),
         }
+
+        if self.trace_dir:
+            await self._save_node_log(
+                node.id, "SelectionNode",
+                json.dumps(selection_result, indent=2),
+            )
+
         self.result.node_outputs[node.id] = json.dumps(selection_result)
         self.completed_files |= node.writes
 
@@ -804,9 +845,9 @@ class WorkflowExecutor:
             cmd += f' --focus "{node.focus}"'
         stdout, stderr, returncode = await self._run_shell(cmd)
 
-        # Save transcript if transcript_dir is specified
-        if node.transcript_dir:
-            await self._save_fn_transcript(node.id, stdout, stderr, returncode, node.transcript_dir)
+        effective_dir = node.transcript_dir or (str(self.trace_dir) if self.trace_dir else None)
+        if effective_dir:
+            await self._save_fn_transcript(node.id, stdout, stderr, returncode, effective_dir)
 
         # Raise error if command failed
         if returncode != 0:
@@ -820,12 +861,16 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
-        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
+        cmd = node.command.replace(
+            "{project_path}", shlex.quote(str(self.project_path)),
+        ).replace(
+            "{run_dir}", shlex.quote(str(self.run_dir)),
+        )
         stdout, stderr, returncode = await self._run_shell(cmd)
 
-        # Save transcript if transcript_dir is specified
-        if node.transcript_dir:
-            await self._save_fn_transcript(node.id, stdout, stderr, returncode, node.transcript_dir)
+        effective_dir = node.transcript_dir or (str(self.trace_dir) if self.trace_dir else None)
+        if effective_dir:
+            await self._save_fn_transcript(node.id, stdout, stderr, returncode, effective_dir)
 
         # Raise error if command failed
         if returncode != 0:
@@ -841,6 +886,8 @@ class WorkflowExecutor:
 
         task = node.prompt_template.replace(
             "{project_path}", str(self.project_path),
+        ).replace(
+            "{run_dir}", str(self.run_dir),
         )
         context = self.node_context.get(node.id, "")
         if context:
@@ -862,8 +909,12 @@ class WorkflowExecutor:
         if node.transcript_dir:
             resolved = node.transcript_dir.replace(
                 "{project_path}", str(self.project_path),
+            ).replace(
+                "{run_dir}", str(self.run_dir),
             )
             transcript_dir = Path(resolved)
+        elif self.trace_dir:
+            transcript_dir = self.trace_dir
 
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
@@ -900,6 +951,14 @@ class WorkflowExecutor:
             timeout=float(node.timeout),
         )
 
+        if self.trace_dir:
+            await self._save_node_log(
+                node.id, "LLMNode",
+                f"Model: {node.model}\nProvider: {node.provider}\n"
+                f"Max Turns: {node.max_turns}\nTemperature: {node.temperature}\n\n"
+                "=== OUTPUT ===\n" + output,
+            )
+
         output_path = self.project_path / ".factory" / "reviews" / "builder-latest.md"
         if node.writes:
             first_write = next(iter(node.writes))
@@ -914,50 +973,73 @@ class WorkflowExecutor:
         if self.dry_run:
             return Verdict.proceed()
 
+        evaluator_output = ""
+        evaluator_stderr = ""
+
         if node.evaluator_type == "user":
             if self.auto_approve:
                 log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
-            return Verdict.proceed()
+            evaluator_output = "auto-approved" if self.auto_approve else "user-approved"
+            verdict = Verdict.proceed()
 
-        if node.evaluator_type == "fn":
+        elif node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
                     "{project_path}", shlex.quote(str(self.project_path)),
+                ).replace(
+                    "{run_dir}", shlex.quote(str(self.run_dir)),
                 )
                 try:
                     stdout, stderr, returncode = await self._run_shell(cmd)
+                    evaluator_output = stdout
+                    evaluator_stderr = stderr
                     if returncode != 0:
-                        return Verdict.halt(reason=f"gate command failed: {cmd}\n{stderr[:500]}")
-                    return self._parse_fn_verdict(stdout, node.id)
+                        verdict = Verdict.halt(reason=f"gate command failed: {cmd}\n{stderr[:500]}")
+                    else:
+                        verdict = self._parse_fn_verdict(stdout, node.id)
                 except RuntimeError as exc:
-                    return Verdict.halt(reason=f"gate command failed: {exc}")
-            return Verdict.proceed()
+                    verdict = Verdict.halt(reason=f"gate command failed: {exc}")
+            else:
+                verdict = Verdict.proceed()
 
-        prompt = self._build_gate_prompt(node)
-        from factory.agents.runner import invoke_agent
+        else:
+            prompt = self._build_gate_prompt(node)
+            from factory.agents.runner import invoke_agent
 
-        model = "opus"
-        pool_entry = self.agent_pool.get("ceo")
-        if pool_entry:
-            model = pool_entry.model
+            model = "opus"
+            pool_entry = self.agent_pool.get("ceo")
+            if pool_entry:
+                model = pool_entry.model
 
-        stdout, code = await invoke_agent(
-            "ceo",
-            prompt,
-            self.project_path,
-            model=model,
-        )
+            stdout, code = await invoke_agent(
+                "ceo",
+                prompt,
+                self.project_path,
+                model=model,
+                transcript_dir=self.trace_dir,
+            )
+            evaluator_output = stdout
 
-        if code != 0:
-            return Verdict.halt(reason=f"CEO gate agent exited with code {code}")
+            if code != 0:
+                verdict = Verdict.halt(reason=f"CEO gate agent exited with code {code}")
+            else:
+                verdict = self._parse_agent_verdict(stdout, node.id)
 
-        return self._parse_agent_verdict(stdout, node.id)
+        if self.trace_dir:
+            await self._save_gate_transcript(
+                node.id, node.evaluator_type,
+                evaluator_output, evaluator_stderr, verdict,
+            )
+
+        return verdict
 
     def _build_gate_prompt(self, node: GateNode) -> str:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
             return node.gate_prompt.replace(
                 "{project_path}", str(self.project_path),
+            ).replace(
+                "{run_dir}", str(self.run_dir),
             )
 
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
@@ -1073,22 +1155,24 @@ class WorkflowExecutor:
         try:
             # Resolve transcript_dir template
             resolved_dir = transcript_dir.replace(
-                "{project_path}", str(self.project_path)
+                "{project_path}", str(self.project_path),
+            ).replace(
+                "{run_dir}", str(self.run_dir),
             )
             transcript_path = Path(resolved_dir)
             transcript_path.mkdir(parents=True, exist_ok=True)
 
-            # Try to detect iteration from state.json (LUMEN workflow)
+            # Try to detect iteration from state.json in parent directory
             iteration_suffix = ""
-            if ".factory/lumen/" in resolved_dir:
-                state_file = self.project_path / ".factory/lumen/.running/state.json"
-                if state_file.exists():
-                    try:
-                        state = json.loads(state_file.read_text())
-                        iteration = state.get("iteration", 0)
+            state_file = transcript_path.parent / "state.json"
+            if state_file.exists():
+                try:
+                    state = json.loads(state_file.read_text())
+                    iteration = state.get("iteration")
+                    if iteration is not None:
                         iteration_suffix = f"_iteration_{iteration}"
-                    except Exception:
-                        pass  # Silently ignore state.json read failures
+                except Exception:
+                    pass
 
             # Generate timestamped filename
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -1115,6 +1199,56 @@ class WorkflowExecutor:
         except Exception as exc:
             # Never block execution on transcript save failure
             log.warning("fn_transcript_save_failed", node=node_id, error=str(exc))
+
+    async def _save_node_log(
+        self, node_id: str, node_type: str, content: str,
+    ) -> None:
+        """Save a text log for any node type to the trace directory."""
+        if not self.trace_dir:
+            return
+        try:
+            from datetime import datetime, timezone
+
+            self.trace_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            log_file = self.trace_dir / f"{node_id}_{ts}.log"
+
+            header = (
+                f"# {node_type} Transcript: {node_id}\n"
+                f"# Timestamp: {datetime.now(timezone.utc).isoformat()}\n"
+                f"# Run ID: {self.run_id}\n\n"
+            )
+            log_file.write_text(header + content)
+            log.debug("node_trace_saved", node=node_id, file=str(log_file))
+        except Exception as exc:
+            log.warning("node_trace_save_failed", node=node_id, error=str(exc))
+
+    async def _save_gate_transcript(
+        self,
+        node_id: str,
+        evaluator_type: str,
+        stdout: str,
+        stderr: str,
+        verdict: Verdict,
+    ) -> None:
+        """Save GateNode evaluation transcript to trace directory."""
+        parts = [f"Evaluator Type: {evaluator_type}", ""]
+        if stdout:
+            parts.extend(["=== EVALUATOR OUTPUT ===", stdout, ""])
+        if stderr:
+            parts.extend(["=== STDERR ===", stderr, ""])
+        parts.extend([
+            "=== VERDICT ===",
+            f"Type: {verdict.type.value}",
+        ])
+        if verdict.target:
+            parts.append(f"Target: {verdict.target}")
+        if verdict.feedback:
+            parts.append(f"Feedback: {verdict.feedback}")
+        if verdict.reason:
+            parts.append(f"Reason: {verdict.reason}")
+
+        await self._save_node_log(node_id, "GateNode", "\n".join(parts))
 
     async def _wait_for_reads(self, node: NodeType) -> None:
         """Wait until all files in node.reads are available in completed_files."""
