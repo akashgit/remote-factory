@@ -4225,12 +4225,12 @@ def _get_builtin_registry() -> dict[str, Any]:
         "devopsgym": lambda: __import__(
             "factory.workflow.contributed.devopsgym", fromlist=["workflow"]
         ).workflow(),
-        "lumen": lambda **kwargs: __import__(
+        "lumen": lambda: __import__(
             "factory.workflow.contributed.lumen", fromlist=["workflow"]
-        ).workflow(**kwargs),
-        "einsteinarena-lumen": lambda **kwargs: __import__(
+        ).workflow(),
+        "einsteinarena-lumen": lambda: __import__(
             "factory.workflow.contributed.einsteinarena_lumen", fromlist=["workflow"]
-        ).workflow(**kwargs),
+        ).workflow(),
         "outer-loop": lambda: __import__(
             "factory.workflow.contributed.outer_loop", fromlist=["workflow"]
         ).workflow(),
