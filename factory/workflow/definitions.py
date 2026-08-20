@@ -646,6 +646,18 @@ def design_workflow(just_plan: bool = False) -> Workflow:
             update={"reads": (node.reads or set()) | {".factory/strategy/study-combined.md"}},
         )
 
+    _strat = wf.nodes["strategist"]
+    wf.nodes["strategist"] = _strat.model_copy(
+        update={"post_checks": [
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+                must_contain=["### Phase 1", "### Hypotheses"],
+            )
+        ]},
+    )
+
     wf.edges.extend(
         [
             *s_edges,
