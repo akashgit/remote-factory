@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from factory.runners._tmux_persist import (
+    _check_claude_agents_state,
     _generate_settings,
+    _parse_sentinel,
     _strip_ansi,
+    _tmux_send_enter,
     _wait_for_exitcode,
     _wait_for_sentinel,
     _window_exists,
@@ -90,16 +94,18 @@ class TestGenerateSettings:
         assert "Stop" in data["hooks"]
         assert "StopFailure" in data["hooks"]
 
-    def test_hooks_touch_sentinel_path(self, tmp_path: Path) -> None:
+    def test_hooks_write_to_sentinel_path(self, tmp_path: Path) -> None:
         sentinel = tmp_path / "sentinel"
         project = tmp_path / "proj"
         project.mkdir()
         settings_file = _generate_settings(sentinel, tmp_path, project)
         data = json.loads(settings_file.read_text())
         stop_cmd = data["hooks"]["Stop"][0]["hooks"][0]["command"]
-        assert f"touch {sentinel}" in stop_cmd
+        assert str(sentinel) in stop_cmd
+        assert "completion_reason" in stop_cmd
         fail_cmd = data["hooks"]["StopFailure"][0]["hooks"][0]["command"]
-        assert f"touch {sentinel}" in fail_cmd
+        assert str(sentinel) in fail_cmd
+        assert "completion_reason" in fail_cmd
 
     def test_hook_structure(self, tmp_path: Path) -> None:
         sentinel = tmp_path / "sentinel"
@@ -133,7 +139,7 @@ class TestGenerateSettings:
         assert data["permissions"] == {"allow": ["Read"]}
         assert len(data["hooks"]["Stop"]) == 2
         assert data["hooks"]["Stop"][0]["hooks"][0]["command"] == "echo existing-stop"
-        assert "touch" in data["hooks"]["Stop"][1]["hooks"][0]["command"]
+        assert "completion_reason" in data["hooks"]["Stop"][1]["hooks"][0]["command"]
 
     def test_handles_missing_project_settings(self, tmp_path: Path) -> None:
         sentinel = tmp_path / "sentinel"
@@ -252,11 +258,9 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session succeeds
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -278,18 +282,24 @@ class TestRunInTmux:
         project_path = tmp_path / "my-project"
         project_path.mkdir()
 
+        call_count = 0
+
+        def side_effect_fn(cmd, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MagicMock(returncode=1, stderr=b"duplicate session")
+            return MagicMock(returncode=0, stdout="pane content")
+
         with (
             patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=1, stderr=b"duplicate session"),  # new-session fails
-                MagicMock(returncode=0),  # new-window fallback succeeds
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.side_effect = side_effect_fn
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -311,18 +321,24 @@ class TestRunInTmux:
         project_path = tmp_path / "my-project"
         project_path.mkdir()
 
+        call_count = 0
+
+        def side_effect_fn(cmd, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return MagicMock(returncode=1, stderr=b"duplicate session: factory-persist-my-project-abc123")
+            return MagicMock(returncode=0, stdout="pane content")
+
         with (
             patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=1, stderr=b"duplicate session: factory-persist-my-project-abc123"),
-                MagicMock(returncode=0),  # new-window fallback
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.side_effect = side_effect_fn
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -335,10 +351,10 @@ class TestRunInTmux:
 
             assert code == 0
             assert "race condition output" in stdout
-            assert len(mock_run.call_args_list) == 3
             assert "new-session" in mock_run.call_args_list[0][0][0]
             assert "new-window" in mock_run.call_args_list[1][0][0]
-            assert "send-keys" in mock_run.call_args_list[2][0][0]
+            send_keys_calls = [c for c in mock_run.call_args_list if "send-keys" in c[0][0]]
+            assert len(send_keys_calls) >= 2
 
     async def test_wrapper_script_includes_settings_and_trap(self, tmp_path: Path) -> None:
         """Verify the wrapper script has --settings flag and trap EXIT."""
@@ -359,14 +375,11 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
             patch.object(Path, "write_text", spy_write_text),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -401,14 +414,11 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
             patch.object(Path, "write_text", spy_write_text),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -478,13 +488,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -499,7 +506,7 @@ class TestRunInTmux:
             assert "\x1b" not in stdout
 
     async def test_sends_exit_after_sentinel(self, tmp_path: Path) -> None:
-        """After sentinel detection, /exit is sent to the tmux pane."""
+        """After sentinel detection, /exit is sent via two-step hex approach."""
         project_path = tmp_path / "my-project"
         project_path.mkdir()
 
@@ -508,13 +515,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -525,10 +529,13 @@ class TestRunInTmux:
                     "prompt", "task", project_path, "builder", project_path,
                 )
 
-            send_keys_call = mock_run.call_args_list[1]
-            cmd = send_keys_call[0][0]
-            assert "send-keys" in cmd
-            assert "/exit" in cmd
+            send_calls = [c for c in mock_run.call_args_list if "send-keys" in c[0][0]]
+            assert len(send_calls) >= 2
+            text_call = send_calls[0]
+            assert "/exit" in text_call[0][0]
+            enter_call = send_calls[1]
+            assert "-H" in enter_call[0][0]
+            assert "0d" in enter_call[0][0]
 
     async def test_fallback_kill_window_when_window_still_alive(self, tmp_path: Path) -> None:
         """After /exit + poll, if window still exists, kill-window is called."""
@@ -540,14 +547,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=True),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-                MagicMock(returncode=0),  # kill-window fallback
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -559,9 +562,8 @@ class TestRunInTmux:
                 )
 
             assert code == 0
-            kill_call = mock_run.call_args_list[2]
-            cmd = kill_call[0][0]
-            assert "kill-window" in cmd
+            kill_calls = [c for c in mock_run.call_args_list if "kill-window" in c[0][0]]
+            assert len(kill_calls) >= 1
 
     async def test_tmux_command_references_wrapper_script(self, tmp_path: Path) -> None:
         """Verify the tmux new-session/new-window command references the wrapper script path."""
@@ -573,13 +575,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -616,13 +615,10 @@ class TestRunInTmux:
             patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
             patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
             patch("factory.runners._tmux_persist._wait_for_exitcode", side_effect=mock_wait_for_exitcode),
-
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._POST_SEND_VERIFY_DELAY", 0),
         ):
-            mock_run.side_effect = [
-                MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0),  # send-keys /exit
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="pane content")
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -677,6 +673,166 @@ class TestRunInTmux:
 
         assert kill_window_called, "kill-window should have been called on cancellation"
         assert not tmpdir.exists(), "tmpdir should have been cleaned up"
+
+
+class TestTmuxSendEnter:
+    def test_sends_text_then_hex_enter(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            _tmux_send_enter("mysession:mywindow", "/exit")
+            assert mock_run.call_count == 2
+            text_call = mock_run.call_args_list[0]
+            assert text_call[0][0] == ["tmux", "send-keys", "-t", "mysession:mywindow", "/exit"]
+            enter_call = mock_run.call_args_list[1]
+            assert enter_call[0][0] == ["tmux", "send-keys", "-t", "mysession:mywindow", "-H", "0d"]
+
+    def test_sends_arbitrary_text(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            _tmux_send_enter("sess:win", "hello world")
+            text_call = mock_run.call_args_list[0]
+            assert text_call[0][0] == ["tmux", "send-keys", "-t", "sess:win", "hello world"]
+
+
+class TestGenerateSettingsJsonSentinel:
+    def test_stop_hook_writes_json(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        project = tmp_path / "proj"
+        project.mkdir()
+        settings_file = _generate_settings(sentinel, tmp_path, project, session_id="test-session")
+        data = json.loads(settings_file.read_text())
+        stop_cmd = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "completion_reason" in stop_cmd
+        assert "normal" in stop_cmd
+        assert "test-session" in stop_cmd
+
+    def test_stop_failure_hook_writes_json(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        project = tmp_path / "proj"
+        project.mkdir()
+        settings_file = _generate_settings(sentinel, tmp_path, project, session_id="test-session")
+        data = json.loads(settings_file.read_text())
+        fail_cmd = data["hooks"]["StopFailure"][0]["hooks"][0]["command"]
+        assert "completion_reason" in fail_cmd
+        assert "stop_failure" in fail_cmd
+
+    def test_hook_command_targets_sentinel_path(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "my-sentinel"
+        project = tmp_path / "proj"
+        project.mkdir()
+        settings_file = _generate_settings(sentinel, tmp_path, project)
+        data = json.loads(settings_file.read_text())
+        stop_cmd = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert str(sentinel) in stop_cmd
+
+    def test_default_session_id_is_empty(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        project = tmp_path / "proj"
+        project.mkdir()
+        settings_file = _generate_settings(sentinel, tmp_path, project)
+        data = json.loads(settings_file.read_text())
+        stop_cmd = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "completion_reason" in stop_cmd
+
+
+class TestParseSentinel:
+    def test_parses_json_content(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text('{"completion_reason":"normal","timestamp":"2026-01-01T00:00:00Z","session_id":"s1"}')
+        result = _parse_sentinel(sentinel)
+        assert isinstance(result, dict)
+        assert result["completion_reason"] == "normal"
+        assert result["session_id"] == "s1"
+
+    def test_returns_true_for_empty_sentinel(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("")
+        result = _parse_sentinel(sentinel)
+        assert result is True
+
+    def test_returns_true_for_whitespace_only(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("   \n  ")
+        result = _parse_sentinel(sentinel)
+        assert result is True
+
+    def test_returns_true_for_invalid_json(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("not valid json {{{")
+        result = _parse_sentinel(sentinel)
+        assert result is True
+
+    def test_parses_stop_failure_reason(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text('{"completion_reason":"stop_failure","timestamp":"2026-01-01T00:00:00Z","session_id":"s2"}')
+        result = _parse_sentinel(sentinel)
+        assert isinstance(result, dict)
+        assert result["completion_reason"] == "stop_failure"
+
+
+class TestWaitForSentinelJson:
+    async def test_returns_dict_for_json_sentinel(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text('{"completion_reason":"normal","timestamp":"2026-01-01T00:00:00Z","session_id":"s1"}')
+        result = await _wait_for_sentinel(sentinel, timeout=5.0)
+        assert isinstance(result, dict)
+        assert result["completion_reason"] == "normal"
+
+    async def test_returns_true_for_empty_sentinel(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        sentinel.touch()
+        result = await _wait_for_sentinel(sentinel, timeout=5.0)
+        assert result is True
+
+    async def test_returns_false_on_timeout(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / "sentinel"
+        with patch("factory.runners._tmux_persist._SENTINEL_POLL_INITIAL", 0.01):
+            result = await _wait_for_sentinel(sentinel, timeout=0.03)
+        assert result is False
+
+
+class TestCheckClaudeAgentsState:
+    def test_returns_state_for_matching_session(self) -> None:
+        agents_json = json.dumps([
+            {"session_id": "factory-persist-myproject-abc123:researcher-def456", "state": "busy", "name": "test"},
+        ])
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=agents_json)
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result == "busy"
+
+    def test_returns_none_when_no_match(self) -> None:
+        agents_json = json.dumps([
+            {"session_id": "other-session", "state": "idle", "name": "other"},
+        ])
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=agents_json)
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result is None
+
+    def test_returns_none_on_command_failure(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result is None
+
+    def test_returns_none_on_file_not_found(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result is None
+
+    def test_returns_none_on_invalid_json(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="not json")
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result is None
+
+    def test_returns_none_on_timeout(self) -> None:
+        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired("claude", 10)
+            result = _check_claude_agents_state("factory-persist-myproject")
+            assert result is None
 
 
 class TestClaudeRunnerTmuxPersist:

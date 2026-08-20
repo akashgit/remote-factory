@@ -69,16 +69,60 @@ def _window_exists(session: str, window: str) -> bool:
 
 
 _DEFAULT_TMUX_TIMEOUT = 86400.0  # 24 hours — interactive sessions are user-driven
+_POST_SEND_VERIFY_DELAY = 15.0
 
 
-def _generate_settings(sentinel_path: Path, tmpdir: Path, project_path: Path) -> Path:
+def _tmux_send_enter(session_window: str, text: str) -> None:
+    """Send text to a tmux pane, then send Enter as hex 0d. Two-step approach
+    avoids silent failures with C-m in interactive applications like Claude Code."""
+    subprocess.run(
+        ["tmux", "send-keys", "-t", session_window, text],
+        capture_output=True,
+    )
+    subprocess.run(
+        ["tmux", "send-keys", "-t", session_window, "-H", "0d"],
+        capture_output=True,
+    )
+
+
+def _verify_post_send(session_window: str) -> bool:
+    """Capture pane content after key submission and check if a response appeared."""
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-t", session_window, "-p"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        logger.warning("post_send_verify_failed session_window=%s rc=%d", session_window, result.returncode)
+        return False
+    content = result.stdout.strip()
+    has_response = bool(content)
+    logger.info("post_send_verify session_window=%s has_response=%s", session_window, has_response)
+    return has_response
+
+
+def _generate_settings(
+    sentinel_path: Path, tmpdir: Path, project_path: Path, *, session_id: str = "",
+) -> Path:
     """Generate a settings.json with Stop/StopFailure hooks merged with existing project settings."""
+    sentinel_q = shlex.quote(str(sentinel_path))
+    sid_escaped = session_id.replace('"', '\\"')
+
+    stop_cmd = (
+        f'printf \'{{"completion_reason":"normal","timestamp":"%s","session_id":"{sid_escaped}"}}\''
+        f' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > {sentinel_q}'
+    )
+    stop_fail_cmd = (
+        f'printf \'{{"completion_reason":"stop_failure","timestamp":"%s","session_id":"{sid_escaped}"}}\''
+        f' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > {sentinel_q}'
+    )
+
     factory_hooks = {
         "Stop": [
-            {"hooks": [{"type": "command", "command": f"touch {shlex.quote(str(sentinel_path))}", "timeout": 5}]}
+            {"hooks": [{"type": "command", "command": stop_cmd, "timeout": 5}]}
         ],
         "StopFailure": [
-            {"hooks": [{"type": "command", "command": f"touch {shlex.quote(str(sentinel_path))}", "timeout": 5}]}
+            {"hooks": [{"type": "command", "command": stop_fail_cmd, "timeout": 5}]}
         ],
     }
 
@@ -100,16 +144,37 @@ def _generate_settings(sentinel_path: Path, tmpdir: Path, project_path: Path) ->
     return settings_file
 
 
-async def _wait_for_sentinel(sentinel_path: Path, timeout: float) -> bool:
-    """Poll for sentinel file creation with exponential backoff. Returns True if found, False on timeout."""
+async def _wait_for_sentinel(sentinel_path: Path, timeout: float) -> bool | dict:
+    """Poll for sentinel file creation with exponential backoff.
+
+    Returns a dict with completion metadata if the sentinel contains valid JSON,
+    True if the sentinel exists but is empty (backward compat), or False on timeout.
+    """
     deadline = time.monotonic() + timeout
     interval = _SENTINEL_POLL_INITIAL
     while time.monotonic() < deadline:
         if sentinel_path.exists():
-            return True
+            return _parse_sentinel(sentinel_path)
         await asyncio.sleep(max(0, min(interval, deadline - time.monotonic())))
         interval = min(interval * 2, _SENTINEL_POLL_CAP)
-    return sentinel_path.exists()
+    if sentinel_path.exists():
+        return _parse_sentinel(sentinel_path)
+    return False
+
+
+def _parse_sentinel(sentinel_path: Path) -> bool | dict:
+    """Parse a sentinel file. Returns metadata dict if JSON, True if empty (backward compat)."""
+    try:
+        content = sentinel_path.read_text().strip()
+    except OSError:
+        return True
+    if not content:
+        return True
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        logger.warning("sentinel_parse_failed path=%s", sentinel_path)
+        return True
 
 
 async def _wait_for_exitcode(exitcode_file: Path) -> int:
@@ -167,7 +232,7 @@ async def run_in_tmux(
     prompt_file = tmpdir / "prompt.md"
     prompt_file.write_text(prompt)
 
-    settings_file = _generate_settings(sentinel_file, tmpdir, project_path)
+    settings_file = _generate_settings(sentinel_file, tmpdir, project_path, session_id=f"{session}:{window}")
 
     cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file),
            "--disallowedTools", "Agent"]
@@ -220,8 +285,8 @@ async def run_in_tmux(
     print("  /exit or Ctrl-d to finish   # factory resumes when you exit", file=sys.stderr)
 
     try:
-        found = await _wait_for_sentinel(sentinel_file, timeout)
-        if not found:
+        sentinel_result = await _wait_for_sentinel(sentinel_file, timeout)
+        if not sentinel_result:
             subprocess.run(
                 ["tmux", "kill-window", "-t", f"{session}:{window}"],
                 capture_output=True,
@@ -230,10 +295,15 @@ async def run_in_tmux(
             _cleanup(tmpdir)
             return f"Agent timed out after {timeout}s", 1, None
 
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "C-m"],
-            capture_output=True,
-        )
+        if isinstance(sentinel_result, dict):
+            logger.info(
+                "sentinel_metadata session=%s reason=%s",
+                session, sentinel_result.get("completion_reason", "unknown"),
+            )
+
+        _tmux_send_enter(f"{session}:{window}", "/exit")
+        await asyncio.sleep(min(_POST_SEND_VERIFY_DELAY, timeout))
+        _verify_post_send(f"{session}:{window}")
         await _wait_for_window_exit(session, window)
         if _window_exists(session, window):
             subprocess.run(
@@ -260,6 +330,35 @@ async def run_in_tmux(
             )
         _cleanup(tmpdir)
         raise
+
+
+def _check_claude_agents_state(session_name: str) -> str | None:
+    """Query claude agents --json for a session's state. Returns 'busy', 'waiting',
+    'idle', or None if the session is not found or the command fails."""
+    try:
+        result = subprocess.run(
+            ["claude", "agents", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        agents = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(agents, list):
+        return None
+    for agent in agents:
+        if not isinstance(agent, dict):
+            continue
+        agent_session = agent.get("session_id", "") or agent.get("name", "")
+        if session_name in str(agent_session):
+            return agent.get("state")
+    return None
 
 
 def _cleanup(tmpdir: Path) -> None:
