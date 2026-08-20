@@ -897,7 +897,7 @@ class WorkflowExecutor:
                     return self._parse_fn_verdict(output, node.id)
                 except RuntimeError:
                     return Verdict.halt(reason=f"gate command failed: {cmd}")
-            return Verdict.proceed()
+            return Verdict.halt(reason=f"gate '{node.id}' has no evaluator_command configured")
 
         prompt = self._build_gate_prompt(node)
         from factory.agents.runner import invoke_agent
@@ -979,7 +979,16 @@ class WorkflowExecutor:
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
             return Verdict.reloop(target=target, feedback=feedback)
 
-        return Verdict.proceed()
+        if text.startswith("PROCEED") or re.match(r"^PROCEED\b", text):
+            return Verdict.proceed()
+
+        return Verdict.halt(
+            reason=(
+                f"gate '{gate_id}' returned unparseable verdict "
+                f"(expected PROCEED | RELOOP target=... | HALT reason=...): "
+                f"{output.strip()[:200]}"
+            )
+        )
 
     def _parse_fn_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse function output into a Verdict."""
@@ -997,7 +1006,7 @@ class WorkflowExecutor:
             pass
 
         first_line = text.split("\n")[0].strip().lower()
-        if first_line.startswith("pass"):
+        if first_line.startswith("pass") or first_line.startswith("proceed"):
             return Verdict.proceed()
         if first_line.startswith("fail") or first_line.startswith("revert"):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
@@ -1009,7 +1018,13 @@ class WorkflowExecutor:
             if target:
                 return Verdict.reloop(target=target, feedback=feedback)
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
-        return Verdict.proceed()
+        return Verdict.halt(
+            reason=(
+                f"gate '{gate_id}' returned unparseable verdict "
+                f"(expected pass | fail | revert | reloop | {{\"passed\": bool}}): "
+                f"{text[:200]}"
+            )
+        )
 
     async def _run_shell(self, cmd: str) -> str:
         """Run a shell command and return stdout."""

@@ -479,3 +479,153 @@ class TestAutoApprove:
         assert result.success
         auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
         assert len(auto_approved) == 0
+
+
+# ── Gate verdict parsing fails closed (issue #1250) ──────────────
+
+
+def _make_gate_executor() -> WorkflowExecutor:
+    """Build a bare WorkflowExecutor with a workflow + edge index for gate parsing."""
+    wf = Workflow(
+        name="gate_fail_closed",
+        nodes={
+            "a": FnNode(id="a", command="echo a"),
+            "gate": GateNode(id="gate", evaluator_type="fn", evaluator_command="echo pass"),
+            "b": FnNode(id="b", command="echo b"),
+        },
+        edges=[
+            Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            Edge(source="gate", target="a", condition=VerdictType.RELOOP),
+        ],
+        start_node="a",
+    )
+    executor = WorkflowExecutor.__new__(WorkflowExecutor)
+    executor.workflow = wf
+    executor.project_path = Path("/fake")
+    executor._edge_index = {}
+    for edge in wf.edges:
+        executor._edge_index.setdefault(edge.source, []).append(edge)
+    return executor
+
+
+class TestGateVerdictFailClosed:
+    """Unrecognized gate output halts instead of proceeding (issue #1250)."""
+
+    def test_agent_proceed_recognized(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_proceed_last_nonempty_line(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            "all good\n\nPROCEED\n", "gate"
+        )
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_empty_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("", "gate")
+        assert verdict.type == VerdictType.HALT
+        assert "unparseable" in (verdict.reason or "")
+
+    def test_agent_whitespace_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("   \n  \n", "gate")
+        assert verdict.type == VerdictType.HALT
+
+    def test_agent_apology_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            "sorry, I could not determine the result", "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+        assert "could not determine" in (verdict.reason or "")
+
+    def test_agent_ambiguous_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            "GATE RESULT: maybe proceed?", "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+
+    def test_agent_halt_parsed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            'HALT reason="tests broke"', "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+        assert verdict.reason == "tests broke"
+
+    def test_agent_reloop_parsed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            'RELOOP target="a" feedback="redo it"', "gate"
+        )
+        assert verdict.type == VerdictType.RELOOP
+        assert verdict.target == "a"
+        assert verdict.feedback == "redo it"
+
+    def test_fn_pass_proceeds(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict("pass", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_fn_proceed_text_proceeds(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict("PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_fn_json_passed_true_proceeds(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict('{"passed": true}', "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_fn_json_passed_false_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict('{"passed": false}', "gate")
+        assert verdict.type == VerdictType.HALT
+
+    def test_fn_fail_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict(
+            "fail: compilation error", "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+
+    def test_fn_revert_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict("revert", "gate")
+        assert verdict.type == VerdictType.HALT
+
+    def test_fn_reloop_parsed(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict(
+            "reloop: redo the build", "gate"
+        )
+        assert verdict.type == VerdictType.RELOOP
+        assert verdict.feedback == "redo the build"
+
+    def test_fn_empty_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict("", "gate")
+        assert verdict.type == VerdictType.HALT
+        assert "unparseable" in (verdict.reason or "")
+
+    def test_fn_apology_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict(
+            "I ran the check but cannot tell if it passed", "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+
+    def test_fn_malformed_json_halts(self) -> None:
+        verdict = _make_gate_executor()._parse_fn_verdict('{"passed": false', "gate")
+        assert verdict.type == VerdictType.HALT
+
+    async def test_fn_gate_without_command_halts(self, tmp_project: Path) -> None:
+        """An fn gate with no evaluator_command halts instead of proceeding."""
+        wf = Workflow(
+            name="no_cmd_gate",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="fn", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+        result = await executor.execute()
+
+        assert result.halted
+        assert not result.success
+        assert "no evaluator_command" in result.halt_reason
+        assert result.nodes_executed == 2
