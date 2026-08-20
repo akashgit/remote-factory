@@ -352,6 +352,17 @@ The EinsteinArena-Lumen workflow's preflight supports two invocation modes:
 
 Both modes validate against the same `SUPPORTED_TASKS` list (tasks that have a `default_config.json`).
 
+### Configuration Priority
+
+The preflight loads task configuration with the following priority (later sources override earlier ones):
+
+1. **`{task_dir}/default_config.json`** — Base defaults (required, must exist)
+2. **`{task_dir}/config.json`** — Task-specific overrides (optional, checked first)
+3. **`--config <path>`** — Explicit custom config via CLI flag
+4. **CLI parameters** — Direct overrides (e.g., `--num-gpus 4`)
+
+This allows you to place a `config.json` in a task directory to customize training parameters without using the `--config` flag. If `config.json` doesn't exist, it falls back to `default_config.json`.
+
 ### Score Extraction
 
 The score extractor (`benchmarks/einsteinarena/tools/extract_lumen_score.py`) scans `.factory/lumen/.running/iteration_*/evaluation_results.json` for the global best score and outputs:
