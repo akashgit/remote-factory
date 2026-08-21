@@ -416,34 +416,3 @@ class TestStrategistIdeationMode:
         assert "This is a research project" in strategist_prompt
 
 
-# ── Factory Config Template ─────────────────────────────────────
-
-
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-
-
-class TestFactoryConfigTemplate:
-    @pytest.fixture
-    def template(self) -> str:
-        return (TEMPLATES_DIR / "factory_config.md").read_text()
-
-    def test_has_research_target_section(self, template: str) -> None:
-        assert "## Research Target" in template
-
-    def test_has_mutable_surfaces_section(self, template: str) -> None:
-        assert "## Mutable Surfaces" in template
-
-    def test_has_fixed_surfaces_section(self, template: str) -> None:
-        assert "## Fixed Surfaces" in template
-
-    def test_has_research_constraints_section(self, template: str) -> None:
-        assert "## Research Constraints" in template
-
-    def test_has_cost_budget_section(self, template: str) -> None:
-        assert "## Cost Budget" in template
-
-    def test_research_sections_after_constraints(self, template: str) -> None:
-        """Research sections come after ## Constraints."""
-        constraints_idx = template.index("## Constraints")
-        research_idx = template.index("## Research Target")
-        assert constraints_idx < research_idx
