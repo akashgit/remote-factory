@@ -126,11 +126,12 @@ Periodically trigger playbook evolution via `factory ace` to distill experiment 
 
 ### Input Submission
 
-Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+Always use the two-step hex approach when sending keys to tmux sessions running Claude Code:
 ```bash
-tmux send-keys -t <session> "your input" C-m
+tmux send-keys -t <session> "your input"
+tmux send-keys -t <session> -H 0d
 ```
-`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return and works consistently.
+Send text first, then send Enter as hex byte `0d` via `-H`. The `-H 0d` approach is more reliable than `C-m` — `C-m` fails silently with interactive applications like Claude Code, especially when vi mode is active.
 
 ### Post-Dispatch Verification
 
@@ -156,6 +157,38 @@ Never characterize CEO behavior (e.g., "going rogue", "deviated from instruction
 ### Proactive Monitoring
 
 After dispatching CEO sessions, set up periodic monitoring using `ScheduleWakeup` to check session status every 5–10 minutes until completion. Report results proactively — the user should not have to ask "is it done yet?"
+
+## Completion Detection
+
+Three methods to check whether a CEO session is done, in priority order:
+
+### 1. Sentinel File (Primary)
+
+The factory writes a structured JSON sentinel file when the CEO session completes. Check the sentinel for content:
+```bash
+cat /tmp/factory-tmux-*/sentinel 2>/dev/null
+```
+JSON content includes:
+- `completion_reason`: `"normal"` (clean exit) or `"stop_failure"` (abnormal exit)
+- `timestamp`: ISO-8601 completion time
+- `session_id`: tmux session:window identifier
+
+An empty sentinel (backward compat) means the session completed but metadata is unavailable.
+
+### 2. Claude Agents API (Advisory)
+
+Query running Claude sessions via `claude agents --json`:
+```bash
+claude agents --json
+```
+Returns a JSON array of active sessions. Check the `state` field for the matching session — `"busy"`, `"waiting"`, or `"idle"`. If the session is absent from the list, it has exited.
+
+### 3. Tmux Session Check (Fallback)
+
+```bash
+tmux has-session -t <session_name> 2>/dev/null && echo "alive" || echo "dead"
+```
+If the tmux session itself is gone, the CEO has exited. This is the least informative method — it cannot distinguish normal from abnormal exit.
 
 ## Hierarchy
 

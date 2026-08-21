@@ -20,11 +20,12 @@ If the session exists but the CEO process has exited, the session is stale — s
 
 ### Sending Input to Sessions
 
-Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+Always use the two-step hex approach when sending keys to tmux sessions running Claude Code:
 ```bash
-tmux send-keys -t <session_name> "your input" C-m
+tmux send-keys -t <session_name> "your input"
+tmux send-keys -t <session_name> -H 0d
 ```
-`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return.
+Send text first, then send Enter as hex byte `0d` via `-H`. The `-H 0d` approach is more reliable than `C-m` — `C-m` fails silently with interactive applications like Claude Code.
 
 ### Capturing Output
 
@@ -42,6 +43,26 @@ tmux attach -t <session_name>
 ```
 - `Ctrl-b d` to detach without stopping the session
 - `Ctrl-c` inside the session will interrupt the CEO — warn the user
+
+## Session Lifecycle via Claude Agents API
+
+Use `claude agents --json` to query active Claude sessions programmatically:
+
+```bash
+# List all active Claude agent sessions as JSON
+claude agents --json
+
+# Check if a specific session is still running (by name substring)
+claude agents --json | python3 -c "
+import json, sys
+agents = json.load(sys.stdin)
+for a in agents:
+    if 'factory-persist' in str(a.get('session_id', '') or a.get('name', '')):
+        print(f\"{a.get('name', 'unknown')}: {a.get('state', 'unknown')}\")
+"
+```
+
+Session states: `"busy"` (actively processing), `"waiting"` (awaiting input), `"idle"` (inactive). If a session is absent from the list, it has exited.
 
 ## Post-Completion Review
 
