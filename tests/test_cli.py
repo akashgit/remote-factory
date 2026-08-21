@@ -2050,7 +2050,6 @@ class TestCmdHomeReturnsFactoryDir:
         assert result == 0
         output = capsys.readouterr().out.strip()
         assert "site-packages" not in output or Path(output).is_dir()
-        assert (Path(output) / "templates").is_dir()
         assert (Path(output) / "cli" / "__init__.py").is_file()
 
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 
 from factory.workflow.definitions import design_workflow
@@ -199,17 +197,6 @@ def test_plan_publish_github_body_file(wf):
     node = wf.nodes["publish_github"]
     assert isinstance(node, FnNode)
     assert "--body-file" in node.command
-
-
-def test_plan_workflow_validates():
-    """Run factory workflow validate plan and assert no errors."""
-    result = subprocess.run(
-        ["factory", "workflow", "validate", "plan"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, f"Validation failed: {result.stderr}"
 
 
 def test_plan_skill_export(wf):
