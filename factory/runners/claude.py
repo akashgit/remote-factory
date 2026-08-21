@@ -77,6 +77,7 @@ class ClaudeRunner:
     """Runner implementation for Claude Code CLI."""
 
     name: str = "claude"
+    _safe_mode_supported: bool | None = None
 
     @classmethod
     def metadata(cls) -> RunnerMeta:
@@ -118,7 +119,10 @@ class ClaudeRunner:
             "--verbose",
         ]
         if request.safe_mode:
-            cmd.append("--safe-mode")
+            if ClaudeRunner._safe_mode_supported is not False:
+                cmd.append("--safe-mode")
+            else:
+                cmd.extend(["--disable-slash-commands", "--strict-mcp-config"])
         if request.tools:
             cmd.extend(["--tools", *request.tools])
         disallowed = list(request.disallowed_tools) if request.disallowed_tools else []
@@ -206,6 +210,30 @@ class ClaudeRunner:
                 on_line=on_line,
                 sanitize=True,
             )
+
+            stderr = result.metadata.get("stderr", "") if result.metadata else ""
+            if (
+                result.return_code != 0
+                and request.safe_mode
+                and ClaudeRunner._safe_mode_supported is not False
+                and "--safe-mode" in stderr
+            ):
+                ClaudeRunner._safe_mode_supported = False
+                log.warning("safe_mode_fallback", reason="--safe-mode not supported, retrying with fine-grained options")
+                cmd = [a for a in cmd if a != "--safe-mode"]
+                cmd.extend(["--disable-slash-commands", "--strict-mcp-config"])
+                result = await run_subprocess(
+                    cmd,
+                    cwd=str(request.cwd),
+                    env=env,
+                    timeout=request.timeout,
+                    runner_name="claude",
+                    role=request.role,
+                    on_line=on_line,
+                    sanitize=True,
+                )
+            elif request.safe_mode and ClaudeRunner._safe_mode_supported is None and result.return_code == 0:
+                ClaudeRunner._safe_mode_supported = True
 
             usage = None
             result_text = result.stdout

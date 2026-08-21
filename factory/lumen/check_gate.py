@@ -93,7 +93,7 @@ def main():
         else:
             verdict["outcome"] = "reloop"
             state["iteration"] = current_it + 1
-            print("reloop: Need more iterations")
+            print(f"reloop({max_iterations}): Need more iterations")
 
     # Write updated state (with global best_score and best_iteration)
     json.dump(state, open(run_dir / "state.json", "w"))

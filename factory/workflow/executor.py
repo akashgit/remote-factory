@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shlex
 import time
 import uuid
@@ -1133,10 +1134,16 @@ class WorkflowExecutor:
         if first_line.startswith("reloop"):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
             raw_line = text.split("\n")[0].strip()
+            # Parse optional max_iterations: "reloop(20): feedback"
+            max_iter = 3
+            prefix_part = raw_line.split(":", 1)[0]
+            m = re.match(r"reloop\((\d+)\)", prefix_part, re.IGNORECASE)
+            if m:
+                max_iter = int(m.group(1))
             after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
             feedback = after_prefix if after_prefix else "fn gate requested reloop"
             if target:
-                return Verdict.reloop(target=target, feedback=feedback)
+                return Verdict.reloop(target=target, feedback=feedback, max_iterations=max_iter)
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
