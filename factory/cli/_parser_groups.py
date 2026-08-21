@@ -369,8 +369,7 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
         "--mode",
         metavar="MODE",
         default="auto",
-        help="Operating mode. Built-in: auto, design, create, improve, research, "
-             "build, discover, founder, meta, plan, evolve. "
+        help="Operating mode. Built-in: auto, design, create. "
              "Project-local: project:<name> (loads from .factory/workflows/<name>.py)",
     )
     p.add_argument(
@@ -471,8 +470,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
         "--mode",
         metavar="MODE",
         default="auto",
-        help="Operating mode. Built-in: auto, improve, research, build, discover, "
-             "founder, meta. Project-local: project:<name>",
+        help="Operating mode. Built-in: auto, design, create. "
+             "Project-local: project:<name>",
     )
     p.add_argument(
         "--focus", default=None,

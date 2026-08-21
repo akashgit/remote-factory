@@ -26,68 +26,17 @@ PHASES = [
 
 # Mode-specific phase definitions: (display_name, builder_key, is_loop_phase)
 MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
-    "improve": [
-        ("Observe", "research", False),
-        ("Hypothesize", "strategize", False),
-        ("Build", "build", True),
-        ("Review", "review", True),
-        ("Eval", "eval", True),
-        ("Archive", "archive", False),
-    ],
-    "research": [
-        ("Baseline", "eval", False),
-        ("Analyze", "research", False),
-        ("Research", "research", False),
-        ("Hypothesize", "strategize", False),
-        ("Build", "build", True),
-        ("Run", "eval", True),
-        ("Archive", "archive", False),
-    ],
-    "build": [
+    "design": [
         ("Research", "research", False),
         ("Plan", "strategize", False),
         ("Build", "build", True),
         ("Verify", "eval", False),
         ("Archive", "archive", False),
     ],
-    "discover": [
-        ("Detect", "detect", False),
-        ("Discover", "discover", False),
-    ],
-    "meta": [
-        ("Observe", "research", False),
-        ("Hypothesize", "strategize", False),
-        ("Build", "build", True),
-        ("Review", "review", True),
-        ("Eval", "eval", True),
-        ("Archive", "archive", False),
-        ("ACE", "archive", False),
-    ],
 }
 
 MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
-        "researcher": "Observe",
-        "strategist": "Hypothesize",
-        "builder": "Build",
-        "qa": "Review",
-        "health_checker": "Review",
-        "code_reviewer": "Review",
-        "adversarial_tester": "Review",
-        "archivist": "Archive",
-    },
-    "research": {
-        "failure_analyst": "Analyze",
-        "researcher": "Research",
-        "strategist": "Hypothesize",
-        "builder": "Build",
-        "qa": "Run",
-        "health_checker": "Run",
-        "code_reviewer": "Run",
-        "adversarial_tester": "Run",
-        "archivist": "Archive",
-    },
-    "build": {
+    "design": {
         "researcher": "Research",
         "strategist": "Plan",
         "builder": "Build",
@@ -97,63 +46,15 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "adversarial_tester": "Verify",
         "archivist": "Archive",
     },
-    "discover": {
-        "researcher": "Discover",
-    },
-    "meta": {
-        "researcher": "Observe",
-        "strategist": "Hypothesize",
-        "builder": "Build",
-        "qa": "Review",
-        "health_checker": "Review",
-        "code_reviewer": "Review",
-        "adversarial_tester": "Review",
-        "archivist": "Archive",
-    },
 }
 
 MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
-        "study.started": "Observe",
-        "study.completed": "Observe",
-        "insights.started": "Observe",
-        "insights.completed": "Observe",
-        "eval.started": "Eval",
-        "eval.completed": "Eval",
-        "guard.completed": "Eval",
-        "archive.completed": "Archive",
-        "ace.started": "Archive",
-        "ace.completed": "Archive",
-    },
-    "research": {
-        "eval.started": "Run",
-        "eval.completed": "Run",
-        "guard.completed": "Run",
-        "archive.completed": "Archive",
-    },
-    "build": {
+    "design": {
         "study.started": "Research",
         "study.completed": "Research",
         "eval.started": "Verify",
         "eval.completed": "Verify",
         "archive.completed": "Archive",
-    },
-    "discover": {
-        "detect": "Detect",
-        "discover.started": "Discover",
-        "discover.completed": "Discover",
-    },
-    "meta": {
-        "study.started": "Observe",
-        "study.completed": "Observe",
-        "insights.started": "Observe",
-        "insights.completed": "Observe",
-        "eval.started": "Eval",
-        "eval.completed": "Eval",
-        "guard.completed": "Eval",
-        "archive.completed": "Archive",
-        "ace.started": "ACE",
-        "ace.completed": "ACE",
     },
 }
 

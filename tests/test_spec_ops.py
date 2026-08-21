@@ -12,11 +12,7 @@ from factory.spec.ops import (
     _parse_verdict,
     validate_spec,
 )
-from factory.workflow.definitions import (
-    improve_workflow,
-    spec_update_workflow,
-)
-from factory.workflow.primitives import AgentNode, AgentRole, FnNode, GateNode
+from factory.workflow.primitives import FnNode
 
 
 # ── Fixtures ────────────────────────────────────────────────────
@@ -385,91 +381,6 @@ class TestGetImpactErrors:
             await get_impact("models", tmp_path)
 
 
-# ── W₁₀ Spec Update workflow ───────────────────────────────────
-
-
-class TestSpecUpdateWorkflow:
-    def test_validates(self) -> None:
-        wf = spec_update_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"spec-update workflow has issues: {issues}"
-
-    def test_name(self) -> None:
-        assert spec_update_workflow().name == "spec-update"
-
-    def test_start_node(self) -> None:
-        assert spec_update_workflow().start_node == "graph_update"
-
-    def test_has_required_nodes(self) -> None:
-        wf = spec_update_workflow()
-        expected = {
-            "graph_update",
-            "diff_scope",
-            "patch",
-            "gate_patch",
-            "revalidate",
-            "gate_revalidate",
-        }
-        assert expected == set(wf.nodes.keys())
-
-    def test_graph_update_is_fn(self) -> None:
-        node = spec_update_workflow().nodes["graph_update"]
-        assert isinstance(node, FnNode)
-        assert "factory graph update" in node.command
-
-    def test_diff_scope_is_fn(self) -> None:
-        node = spec_update_workflow().nodes["diff_scope"]
-        assert isinstance(node, FnNode)
-        assert "factory spec scope" in node.command
-
-    def test_patch_is_opus_agent(self) -> None:
-        node = spec_update_workflow().nodes["patch"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.RESEARCHER
-        assert node.model == "opus"
-
-    def test_gates_are_ceo(self) -> None:
-        wf = spec_update_workflow()
-        for gate_id in ("gate_patch", "gate_revalidate"):
-            gate = wf.nodes[gate_id]
-            assert isinstance(gate, GateNode)
-            assert gate.evaluator_role == AgentRole.CEO
-
-    def test_revalidate_is_fn(self) -> None:
-        node = spec_update_workflow().nodes["revalidate"]
-        assert isinstance(node, FnNode)
-        assert "factory spec validate" in node.command
-
-    def test_reloop_from_gate_revalidate_to_patch(self) -> None:
-        wf = spec_update_workflow()
-        reloop_edges = [
-            e for e in wf.edges if e.source == "gate_revalidate" and e.target == "patch"
-        ]
-        assert len(reloop_edges) == 1
-
-
-# ── Improve workflow integration ────────────────────────────────
-
-
-class TestImproveWorkflowSpecUpdate:
-    def test_has_spec_update_node(self) -> None:
-        assert "spec_update" in improve_workflow().nodes
-
-    def test_spec_update_is_non_blocking_fn(self) -> None:
-        node = improve_workflow().nodes["spec_update"]
-        assert isinstance(node, FnNode)
-        assert node.blocking is False
-
-    def test_archivist_to_spec_update_edge(self) -> None:
-        wf = improve_workflow()
-        edges = [e for e in wf.edges if e.source == "archivist" and e.target == "spec_update"]
-        assert len(edges) == 1
-
-    def test_improve_still_validates(self) -> None:
-        issues = improve_workflow().validate_graph()
-        assert issues == [], f"improve workflow has issues: {issues}"
-
-
 # ── _run_spec_workflow ──────────────────────────────────────────
 
 
@@ -484,15 +395,11 @@ class TestRunSpecWorkflow:
         assert rc == 0
         assert reason == ""
 
-    @patch("factory.workflow.executor.WorkflowExecutor")
-    def test_update_success(self, mock_cls: MagicMock, tmp_path: Path) -> None:
+    def test_update_returns_error(self, tmp_path: Path) -> None:
         from factory.cli.spec import _run_spec_workflow
 
-        mock_result = MagicMock(success=True)
-        mock_cls.return_value.execute = AsyncMock(return_value=mock_result)
         rc, reason = _run_spec_workflow("spec-update", tmp_path)
-        assert rc == 0
-        assert reason == ""
+        assert rc == 1
 
     @patch("factory.workflow.executor.WorkflowExecutor")
     def test_failure_returns_1_with_reason(self, mock_cls: MagicMock, tmp_path: Path) -> None:

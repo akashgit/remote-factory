@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from factory.workflow.definitions import build_workflow, improve_workflow
+from factory.workflow.definitions import build_workflow
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
     DEFAULT_AGENT_POOL,
@@ -124,7 +124,7 @@ class TestMockWorkflowExecution:
 class TestImproveWorkflowMock:
     async def test_improve_dry_run(self, tmp_project: Path) -> None:
         """Run W₃ in dry-run mode — verify structure executes correctly."""
-        wf = improve_workflow()
+        wf = build_workflow()
 
         executor = WorkflowExecutor(
             wf, tmp_project, agent_pool=DEFAULT_AGENT_POOL, dry_run=True,
@@ -139,7 +139,7 @@ class TestImproveWorkflowMock:
 
     async def test_improve_archivist_nonblocking(self, tmp_project: Path) -> None:
         """Verify archivist in W₃ runs non-blocking."""
-        wf = improve_workflow()
+        wf = build_workflow()
         archivist = wf.nodes.get("archivist")
         assert archivist is not None
         assert archivist.blocking is False

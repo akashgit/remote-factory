@@ -309,30 +309,22 @@ factory detect "$PROJECT_PATH"
 
 | State                  | Meaning                                       | Route to       |
 |------------------------|-----------------------------------------------|----------------|
-| `no_repo`              | No git repo at path                           | Build mode     |
-| `incomplete`           | Repo exists, open plan/implementation issues  | Build mode     |
-| `no_factory`           | Repo exists, no factory setup                 | Discover mode  |
-| `evals_pending_review` | Eval profile exists, not yet reviewed         | Review mode    |
-| `has_factory`          | Factory fully initialized, evals reviewed     | Improve mode   |
+| `no_repo`              | No git repo at path                           | Design mode    |
+| `incomplete`           | Repo exists, open plan/implementation issues  | Design mode    |
+| `no_factory`           | Repo exists, no factory setup                 | Design mode    |
+| `evals_pending_review` | Eval profile exists, not yet reviewed         | Design mode    |
+| `has_factory`          | Factory fully initialized, evals reviewed     | Design mode    |
 
 ### Step 2: Route to Mode via Skills
 
 Each mode's full instructions live in a workflow skill under `skills/workflow-<name>/SKILL.md`. After detecting project state, select and invoke the appropriate skill.
 
 **Default routing:**
-- `no_repo` or `incomplete` → read `skills/workflow-build/SKILL.md`
-- `no_factory` → read `skills/workflow-discover/SKILL.md`
-- `evals_pending_review` → read `skills/workflow-review/SKILL.md`
-- `has_factory` → read `skills/workflow-improve/SKILL.md`
+- All states → read `skills/workflow-design/SKILL.md`
 
 **Mode overrides (from task directives):**
 - `--mode design` or `## Plan Loop (Interactive)` → read `skills/workflow-design/SKILL.md`
-- `--mode research` (with `research_target` configured) → read `skills/workflow-research/SKILL.md`
-- `--mode meta` → read `skills/workflow-meta/SKILL.md`
-- `--refine "<request>"` → read `skills/workflow-refine/SKILL.md`
 - `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
-- `--mode founder` → read `skills/workflow-founder/SKILL.md`
-- `--mode study` → read `skills/workflow-study/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 

@@ -162,10 +162,10 @@ class TestRoundTrip:
         with the same prose content (minus markers and annotations)."""
         import re as _re
 
-        from factory.workflow.definitions import improve_workflow
+        from factory.workflow.definitions import build_workflow
         from factory.workflow.skill_export import workflow_to_skill_md
 
-        wf = improve_workflow()
+        wf = build_workflow()
         templatized = workflow_to_skill_md(wf)
         clean, annotations = split_skill(templatized)
 

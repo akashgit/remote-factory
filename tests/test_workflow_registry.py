@@ -23,20 +23,20 @@ def _reset_registry():
 class TestDiscovery:
     def test_discovers_builtins(self) -> None:
         entries = WorkflowRegistry.discover()
-        assert "improve" in entries
-        assert "build" in entries
-        assert entries["improve"].source == "builtin"
+        assert "design" in entries
+        assert "create" in entries
+        assert entries["design"].source == "builtin"
 
     def test_discovers_from_project_path(self, tmp_path: Path) -> None:
         wf_dir = tmp_path / ".factory" / "workflows"
         wf_dir.mkdir(parents=True)
         (wf_dir / "local.py").write_text(
-            "from factory.workflow.definitions import improve_workflow\n"
+            "from factory.workflow.definitions import design_workflow\n"
             "\n"
             'meta = {"name": "local", "description": "Project-local"}\n'
             "\n"
             "def workflow():\n"
-            "    wf = improve_workflow()\n"
+            "    wf = design_workflow()\n"
             '    wf.name = "local"\n'
             "    return wf\n"
         )
@@ -54,9 +54,9 @@ class TestGetWorkflow:
         assert wf is None
 
     def test_returns_builtin(self) -> None:
-        wf = WorkflowRegistry.get_workflow("improve")
+        wf = WorkflowRegistry.get_workflow("design")
         assert wf is not None
-        assert wf.name == "improve"
+        assert wf.name == "design"
 
 
 # ── list_workflows ───────────────────────────────────────────────
@@ -66,9 +66,9 @@ class TestListWorkflows:
     def test_returns_sorted_entries(self) -> None:
         workflows = WorkflowRegistry.list_workflows()
         names = [w.name for w in workflows]
-        assert len(names) >= 11  # at least the built-ins
-        assert "improve" in names
-        assert "build" in names
+        assert len(names) >= 3
+        assert "design" in names
+        assert "create" in names
 
 
 # ── reset ────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ from factory.spec.apply_diff import (
     apply_spec_diff,
     extract_spec_diff,
 )
-from factory.workflow.definitions import improve_workflow
+from factory.workflow.definitions import build_workflow
 from factory.workflow.primitives import FnNode
 
 
@@ -261,28 +261,3 @@ class TestApplySpecDiff:
         assert "New behavior" in spec_text
 
 
-# ── Improve workflow integration ───────────────────────────────
-
-
-class TestImproveWorkflowIntegration:
-    def test_apply_spec_diff_node_exists(self) -> None:
-        wf = improve_workflow()
-        assert "apply_spec_diff" in wf.nodes
-        node = wf.nodes["apply_spec_diff"]
-        assert isinstance(node, FnNode)
-        assert "apply-diff" in node.command
-
-    def test_apply_spec_diff_wired_after_gate_strategy(self) -> None:
-        wf = improve_workflow()
-        gate_strategy_targets = [e.target for e in wf.edges if e.source == "gate_strategy"]
-        assert "apply_spec_diff" in gate_strategy_targets
-
-    def test_apply_spec_diff_wired_before_begin(self) -> None:
-        wf = improve_workflow()
-        apply_targets = [e.target for e in wf.edges if e.source == "apply_spec_diff"]
-        assert "begin" in apply_targets
-
-    def test_improve_workflow_still_valid(self) -> None:
-        wf = improve_workflow()
-        issues = wf.validate_graph()
-        assert issues == [], f"improve workflow has issues: {issues}"

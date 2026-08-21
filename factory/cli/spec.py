@@ -16,11 +16,13 @@ def _run_spec_workflow(name: str, project_path: Path) -> tuple[int, str]:
     """
     import asyncio
 
-    from factory.workflow.definitions import spec_generate_workflow, spec_update_workflow
+    from factory.workflow.definitions import spec_generate_workflow
     from factory.workflow.executor import WorkflowExecutor
     from factory.workflow.primitives import DEFAULT_AGENT_POOL
 
-    wf = spec_generate_workflow() if name == "spec-generate" else spec_update_workflow()
+    if name != "spec-generate":
+        return (1, f"unknown spec workflow: {name}")
+    wf = spec_generate_workflow()
     executor = WorkflowExecutor(wf, project_path, agent_pool=DEFAULT_AGENT_POOL)
     result = asyncio.run(executor.execute())
 

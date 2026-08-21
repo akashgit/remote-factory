@@ -41,15 +41,6 @@ log = structlog.get_logger()
 
 
 WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
-    "build": {
-        "description": (
-            "Build a new project from scratch. Runs parallel research, strategy "
-            "synthesis, implementation, QA verification, and archival. Use when "
-            "the user says 'build X', 'create X', or the project state is no_repo "
-            "or incomplete."
-        ),
-        "argument_hint": "<project_path> [idea or spec]",
-    },
     "design": {
         "description": (
             "Interactive design mode — build with a user approval gate at strategy, "
@@ -60,80 +51,6 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "With --just-plan, runs plan-only (research + strategy + GitHub publish, NO implementation)."
         ),
         "argument_hint": "<project_path> [idea or spec] [--from-plan <path_or_url>] [--just-plan]",
-    },
-    "improve": {
-        "description": (
-            "Improve an existing project through systematic experimentation. "
-            "Runs study, research, hypothesis generation, build/eval loop, and archival. "
-            "Use when the user says 'improve X', 'make X better', or the project "
-            "state is has_factory."
-        ),
-        "argument_hint": "<project_path> [--focus <target>]",
-    },
-    "parallel-improve": {
-        "description": (
-            "Parallel improve mode — runs N hypotheses concurrently in isolated "
-            "worktrees, then selects the best result. Use when the user says "
-            "'parallel improve', 'try multiple hypotheses', or wants tournament-style "
-            "experimentation."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "deep-qa": {
-        "description": (
-            "Deep-QA mode — run the 3-specialist verification pipeline against a PR. "
-            "Spawns health_checker, code_reviewer, and adversarial_tester agents "
-            "with sequential gates, precheck, and posts verdict as GitHub PR review."
-        ),
-        "argument_hint": "<project_path> --pr <number>",
-        "preamble": (
-            "**Output constraint:** Your ONLY GitHub output artifact is the "
-            "`factory review` command in the final step. Do NOT run `gh pr comment`, "
-            "`gh issue comment`, or post any other comments on the PR. "
-            "All analysis stays in .factory/reviews/ files."
-        ),
-    },
-    "research": {
-        "description": (
-            "Research mode — extends improve with baseline measurement, failure analysis, "
-            "research-command eval, and plateau detection. Use when the project has "
-            "research_target configured and the user says 'research X' or wants "
-            "metric-driven optimization."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "meta": {
-        "description": (
-            "Meta mode — cross-project insights, playbook evolution, and test pruning. "
-            "Use when the user says 'meta', 'self-improve', 'evolve playbooks', "
-            "or wants to improve the factory's own agents."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "discover": {
-        "description": (
-            "Discover mode — auto-discover eval dimensions and generate the eval harness. "
-            "Use when the project state is no_factory (repo exists but no factory setup). "
-            "Runs factory discover, verifies the eval profile, and re-detects state."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "review": {
-        "description": (
-            "Review mode — verify eval dimensions work, create factory.md, and run baseline eval. "
-            "Use when the project state is evals_pending_review. Tests all dimensions, marks "
-            "the profile as reviewed, initializes the factory store, and runs E2E verification."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "refine": {
-        "description": (
-            "Refine mode — lightweight pipeline for user-directed refinements. "
-            "Use when the user says 'refine X', passes --refine, or wants a targeted change "
-            "without the overhead of research and multi-hypothesis cycles. Classifies the request, "
-            "implements with Builder, verifies with QA, and archives."
-        ),
-        "argument_hint": '<project_path> --refine "<request>"',
     },
     "create": {
         "description": (
@@ -146,28 +63,6 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
-    "plan": {
-        "description": (
-            "Plan-only workflow — truncated design workflow (triggered via --mode design --just-plan). "
-            "Prior plan check + research + strategy + single approval gate, "
-            "with NO implementation. Checks for prior plans on GitHub issues (plan label) and "
-            "local archive before researching. Produces a phased plan at .factory/strategy/current.md. "
-            "Single approval gate: 'Keep this plan?' — approval auto-publishes to GitHub and seeds backlog. "
-            "RELOOP re-runs Strategist with feedback. HALT exits without publishing. "
-            "Terminal — does not chain to build or improve."
-        ),
-        "argument_hint": "<project_path> --mode design --just-plan [--focus <topic>]",
-    },
-    "founder": {
-        "description": (
-            "Founder mode — rapid prototyping pipeline for fast hypothesis iteration. "
-            "Use when you want to test ideas quickly without full QA overhead. "
-            "Picks one hypothesis, builds a prototype, runs tests once, records the result. "
-            "No research, no code review, no adversarial QA, no eval scoring. "
-            "Terminal — does not chain to other modes. Run --mode improve to harden."
-        ),
-        "argument_hint": "<project_path>",
-    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
@@ -177,95 +72,6 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "inside a Harbor benchmark container."
         ),
         "argument_hint": "<project_path> --prompt /tmp/task-instruction.md",
-    },
-    "frontend-design": {
-        "description": (
-            "Feature-to-UI pipeline that enforces a design system on every new "
-            "feature. If a design system already exists on disk (from a prior "
-            "discover run), skips the research phase and goes straight to spec "
-            "writing with a lightweight staleness check. If no design system "
-            "exists, runs the full 5-researcher pipeline first. Produces a UI "
-            "spec constrained by the baseline, gets user approval, builds with "
-            "discovered design rules enforced, then runs design-specific QA with "
-            "a two-tier gate (hard failures auto-revert, soft warnings surface "
-            "for review). Works on any frontend project with a defined "
-            "token/component system. Use when the user says 'frontend-design', "
-            "'design UI for X', or wants design-consistent frontend implementation."
-        ),
-        "argument_hint": "<project_path> --focus <feature description>",
-    },
-    "frontend-design-discover": {
-        "description": (
-            "Design system extraction — discovers the project's design system "
-            "and produces human-readable, editable artifacts. Runs 5 parallel "
-            "researchers (tokens, components, patterns, UX, infrastructure) then "
-            "synthesizes into design-baseline.json and rules.md. Run this once "
-            "to establish the design system, review and edit the output, then "
-            "use frontend-design (build) mode for each new feature without "
-            "re-running researchers. Supports external design system URLs via "
-            "--focus for cross-referencing (e.g., 'https://ux.redhat.com/'). "
-            "Use when the user says 'discover design system', 'extract design "
-            "system', or wants to establish design rules before building features."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "frontend-design-scan": {
-        "description": (
-            "Continuous design health monitoring — scans the entire codebase for "
-            "design system drift without building anything. Researches tokens, "
-            "components, patterns, and UX quality, then runs all design check "
-            "scripts against every source file. Produces a structured health "
-            "report with per-dimension scores and trend data. Designed for use "
-            "with --loop for hourly continuous scanning. Use when the user says "
-            "'scan for design drift', 'check design health', or wants passive "
-            "design consistency monitoring."
-        ),
-        "argument_hint": "<project_path>",
-    },
-    "evolve": {
-        "description": (
-            "Evolve mode — iterative code evolution via external MCP evaluation. "
-            "Optimizes a single scalar metric by mutating code within EVOLVE-BLOCK "
-            "boundaries and evaluating via an MCP server. Use when the project has "
-            "an MCP evaluator configured and the user says 'evolve', 'optimize', "
-            "or wants evolutionary code search on a benchmark."
-        ),
-        "argument_hint": "<project_path> --mode evolve",
-        "preamble": (
-            "**MCP Evaluation Mode:** This workflow evaluates code via an external MCP server, "
-            "NOT via local tests/lint/types. The CEO must have access to the MCP tools "
-            "`get_benchmark_info()` and `evaluate_solution()`. All code modifications "
-            "MUST stay within EVOLVE-BLOCK-START/END markers."
-        ),
-    },
-    "deep-research": {
-        "description": (
-            "Deep research mode — decompose-then-research with built-in "
-            "faithfulness checking and coverage evaluation. A decomposer generates "
-            "3-5 research directions; the researcher executes them with multiple "
-            "rounds of WebSearch/WebFetch, following an inside-out protocol: "
-            "internal project state first, then external search shaped by internal "
-            "findings. Includes structural faithfulness checks (relevance, grounding, "
-            "drift detection) every iteration. "
-            "Runs study → decomposer → deep_researcher → CEO coverage gate. "
-            "The coverage gate checks per-direction coverage. "
-            "Outputs research-combined.md only. "
-            "Use when the user says 'deep research X', 'research X thoroughly', or wants "
-            "comprehensive, faithful research with iterative deepening. "
-            "Terminal mode — does not chain to build or improve."
-        ),
-        "argument_hint": "<project_path> [--focus <research topic>]",
-    },
-    "study": {
-        "description": (
-            "Codebase structure and dependency graph analysis. "
-            "Updates the code knowledge graph, runs factory study for observations, "
-            "then explores the graph for structural insights via an agent. "
-            "Terminal mode — does not chain to other modes. "
-            "Use when the user says 'study', 'analyze codebase', or wants a structural "
-            "understanding of the project before planning work."
-        ),
-        "argument_hint": "<project_path>",
     },
     "outer-loop": {
         "description": (

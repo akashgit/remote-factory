@@ -25,9 +25,6 @@ import pytest
 from factory.workflow.definitions import (
     build_workflow,
     design_workflow,
-    improve_workflow,
-    meta_workflow,
-    research_workflow,
 )
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import DEFAULT_AGENT_POOL
@@ -185,122 +182,6 @@ class TestDesignE2E:
 
 
 @e2e
-class TestImproveE2E:
-    async def test_improve_full_cycle(self, tmp_path: Path) -> None:
-        """W₃: Full improve cycle on a project with .factory/ setup."""
-        project = _init_test_project(
-            tmp_path / "improve-test", with_factory=True,
-        )
-
-        wf = improve_workflow()
-        executor = WorkflowExecutor(
-            wf, project, agent_pool=DEFAULT_AGENT_POOL,
-        )
-        result = await executor.execute()
-
-        assert result.nodes_executed > 0
-
-        event_types = [e["type"] for e in result.events]
-        assert "workflow.started" in event_types
-        assert "node.started" in event_types
-
-    async def test_improve_archivist_async(self, tmp_path: Path) -> None:
-        """Verify archivist runs non-blocking in W₃."""
-        _init_test_project(
-            tmp_path / "improve-async", with_factory=True,
-        )
-
-        wf = improve_workflow()
-        archivist = wf.nodes.get("archivist")
-        assert archivist is not None
-        assert archivist.blocking is False
-
-
-# ── W₄ Research E2E ──────────────────────────────────────────────
-
-
-@e2e
-class TestResearchE2E:
-    async def test_research_structure(self, tmp_path: Path) -> None:
-        """W₄: Verify research workflow has correct structural delta from W₃."""
-        project = _init_test_project(
-            tmp_path / "research-test", with_factory=True,
-        )
-
-        config_path = project / ".factory" / "config.json"
-        config = json.loads(config_path.read_text())
-        config["research_target"] = {
-            "objective": "test accuracy",
-            "metric": "accuracy",
-            "target": 0.95,
-            "run_command": "echo 0.8",
-            "result_path": "results.json",
-        }
-        config_path.write_text(json.dumps(config, indent=2))
-
-        wf = research_workflow()
-
-        assert "baseline" in wf.nodes
-        assert "failure_analyst" in wf.nodes
-        assert "plateau_gate" in wf.nodes
-        assert "study" not in wf.nodes
-        assert wf.start_node == "baseline"
-
-    async def test_research_runs(self, tmp_path: Path) -> None:
-        """W₄: Execute research workflow."""
-        project = _init_test_project(
-            tmp_path / "research-run", with_factory=True,
-        )
-
-        wf = research_workflow()
-        executor = WorkflowExecutor(
-            wf, project, agent_pool=DEFAULT_AGENT_POOL,
-        )
-        result = await executor.execute()
-
-        assert result.nodes_executed > 0
-
-
-# ── W₅ Meta E2E ──────────────────────────────────────────────────
-
-
-@e2e
-class TestMetaE2E:
-    async def test_meta_structure(self, tmp_path: Path) -> None:
-        """W₅: Verify meta workflow structure — archivist chains to test pruning."""
-        _init_test_project(
-            tmp_path / "meta-test", with_factory=True,
-        )
-
-        wf = meta_workflow()
-
-        assert "insights" in wf.nodes
-        assert "archivist" in wf.nodes
-        assert "test_collect" in wf.nodes
-        assert "test_researcher" in wf.nodes
-
-        archivist = wf.nodes.get("archivist")
-        assert archivist is not None
-        assert archivist.blocking is False
-
-        edges_from_archivist = [e for e in wf.edges if e.source == "archivist"]
-        assert any(e.target == "test_collect" for e in edges_from_archivist)
-
-    async def test_meta_runs(self, tmp_path: Path) -> None:
-        """W₅: Execute meta workflow."""
-        project = _init_test_project(
-            tmp_path / "meta-run", with_factory=True,
-        )
-
-        wf = meta_workflow()
-        executor = WorkflowExecutor(
-            wf, project, agent_pool=DEFAULT_AGENT_POOL,
-        )
-        result = await executor.execute()
-
-        assert result.nodes_executed > 0
-
-
 # ── CLI E2E ──────────────────────────────────────────────────────
 
 
@@ -377,23 +258,6 @@ class TestCLIE2E:
 
 class TestEquivalence:
     """Verify graph engine produces equivalent structure to CEO-prompt orchestration."""
-
-    def test_improve_agent_sequence(self) -> None:
-        """W₃ improvement loop has correct agent sequence."""
-        wf = improve_workflow()
-
-        node_ids = list(wf.nodes.keys())
-        assert "study" in node_ids
-        assert "researcher" in node_ids
-        assert "strategist" in node_ids
-        assert "builder" in node_ids
-        assert "health_checker" in node_ids
-        assert "code_reviewer" in node_ids
-        assert "adversarial_tester" in node_ids
-        assert "archivist" in node_ids
-
-        edges_from = {e.source: e.target for e in wf.edges if e.condition is None}
-        assert edges_from.get("study") == "researcher"
 
     def test_build_has_parallel_research(self) -> None:
         """W₁ starts with 3 parallel researchers via fork."""

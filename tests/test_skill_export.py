@@ -522,36 +522,6 @@ class TestValidateSkill:
 class TestRealWorkflowSkills:
     """Tests that real workflow definitions produce valid, exportable skills."""
 
-    def test_discover_workflow_generates_valid_skill(self) -> None:
-        from factory.workflow.definitions import discover_workflow
-
-        wf = discover_workflow()
-        content = workflow_to_skill_md(wf)
-        issues = validate_skill(content)
-        assert issues == [], f"Validation issues: {issues}"
-        assert "workflow-discover" in content
-        assert "factory discover" in content
-
-    def test_review_workflow_generates_valid_skill(self) -> None:
-        from factory.workflow.definitions import review_workflow
-
-        wf = review_workflow()
-        content = workflow_to_skill_md(wf)
-        issues = validate_skill(content)
-        assert issues == [], f"Validation issues: {issues}"
-        assert "workflow-review" in content
-        assert "eval" in content.lower()
-
-    def test_refine_workflow_generates_valid_skill(self) -> None:
-        from factory.workflow.definitions import refine_workflow
-
-        wf = refine_workflow()
-        content = workflow_to_skill_md(wf)
-        issues = validate_skill(content)
-        assert issues == [], f"Validation issues: {issues}"
-        assert "workflow-refine" in content
-        assert "refiner" in content.lower()
-
     def test_all_registered_skills_exported(self, tmp_path: Path) -> None:
         from factory.workflow.definitions import register_all
 
