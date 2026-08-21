@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from unittest.mock import patch
 
 import pytest
@@ -154,15 +155,47 @@ class TestAutoDetectMigratesDeadModes:
         from factory.cli._mode_handlers import _auto_detect_mode
         from factory.models import CycleState
 
-        factory_dir = tmp_path / ".factory"
-        factory_dir.mkdir()
+        state_dir = tmp_path / ".factory" / "state"
+        state_dir.mkdir(parents=True)
         state = CycleState(
             cycle_id="test-cycle",
             started_at=datetime.now(tz=timezone.utc),
             mode=dead_mode,
             respawns=0,
         )
-        (factory_dir / "cycle_state.json").write_text(state.model_dump_json())
+        (state_dir / "cycle.json").write_text(state.model_dump_json())
 
         mode = _auto_detect_mode(tmp_path)
         assert mode == "design"
+
+
+class TestValidateCeoFlagsModeAliases:
+    """_validate_ceo_flags migrates interactive alias and strips project: prefix."""
+
+    def _make_args(self, mode: str, path: str = "/tmp/proj"):
+        ns = argparse.Namespace()
+        ns.mode = mode
+        ns.path = path
+        ns.headless = False
+        ns.prompt = None
+        ns.from_plan = None
+        ns.just_plan = False
+        ns.focus = None
+        ns.refine = None
+        ns.auto_approve = False
+        ns.clean_pr = False
+        ns.plugin = False
+        ns.plugin_folder = None
+        return ns
+
+    def test_interactive_alias_becomes_design(self):
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        result = _validate_ceo_flags(self._make_args("interactive"))
+        assert result[0] == "design"
+
+    def test_project_prefix_stripped(self):
+        from factory.cli._ceo_helpers import _validate_ceo_flags
+
+        result = _validate_ceo_flags(self._make_args("project:design"))
+        assert result[0] == "design"

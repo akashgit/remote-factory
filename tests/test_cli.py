@@ -525,6 +525,14 @@ class TestRunAutoApprove:
         assert "--auto-approve only applies to --mode design" in capsys.readouterr().err
 
 
+class TestRunFocusIncompatibleMode:
+    def test_run_focus_rejected_with_incompatible_mode(self, capsys):
+        """cmd_run rejects --focus with a mode other than design or research."""
+        result = main(["run", "/some/path", "--mode", "founder", "--focus", "auth"])
+        assert result == 1
+        assert "only works in design or research mode" in capsys.readouterr().err
+
+
 class TestAutoApproveEvent:
     def test_execute_ceo_emits_auto_approve_event(self, tmp_path):
         """_execute_ceo calls _emit_cli_event with 'auto_approve.enabled' when flag is set."""
