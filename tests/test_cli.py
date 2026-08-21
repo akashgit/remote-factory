@@ -605,132 +605,6 @@ class TestHasResearchTarget:
         assert _has_research_target(tmp_path) is True
 
 
-class TestCmdCeoResearchIdeation:
-    def test_research_headless_new_project_incompatible(self, capsys):
-        result = main(["ceo", "swe-bench solver", "--mode", "research", "--headless"])
-        assert result == 1
-        assert "foreground" in capsys.readouterr().err.lower()
-
-    def test_research_prompt_incompatible(self, capsys):
-        result = main(["ceo", "swe-bench solver", "--mode", "research", "--prompt", "file.md"])
-        assert result == 1
-        assert "mutually exclusive" in capsys.readouterr().err.lower()
-
-    def test_research_focus_works_with_existing_project(self, tmp_path):
-        """--focus works with --mode research on existing projects with research_target."""
-        (tmp_path / ".git").mkdir()
-        factory_dir = tmp_path / ".factory"
-        factory_dir.mkdir()
-        rt = {
-            "objective": "maximize accuracy",
-            "metric": "accuracy",
-            "target": 0.9,
-            "run_command": "python run.py",
-            "result_path": "results.json",
-        }
-        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
-        with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "research", "--focus", "tokenizer"])
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "## Focus Directive" in task
-        assert "tokenizer" in task
-
-    def test_research_focus_incompatible_new_project(self, capsys):
-        """--focus with --mode research on a new idea string errors."""
-        result = main(["ceo", "swe-bench solver", "--mode", "research", "--focus", "tokenizer"])
-        assert result == 1
-        assert "focus" in capsys.readouterr().err.lower()
-
-    def test_research_file_input_not_ideation(self, tmp_path, capsys):
-        """--mode research with a file path treats it as a spec, not an idea string."""
-        spec_file = tmp_path / "spec.md"
-        spec_file.write_text("# My Research Project\n")
-        result = main(["ceo", str(spec_file), "--mode", "research"])
-        # File gets resolved as spec input, not as an idea string for ideation.
-        # Errors because the resulting project has no research_target configured.
-        assert result == 1
-        assert "research_target" in capsys.readouterr().err
-
-    def test_research_existing_dir_no_target_errors(self, tmp_path, capsys):
-        """--mode research on existing dir without research_target errors."""
-        (tmp_path / ".git").mkdir()
-        result = main(["ceo", str(tmp_path), "--mode", "research"])
-        assert result == 1
-        assert "research_target" in capsys.readouterr().err
-
-    def test_research_ideation_foreground_uses_subprocess_run(self):
-        """--mode research with idea string launches via subprocess.run."""
-        with _mock_foreground() as mock_run:
-            main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        claude_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "claude"]
-        assert len(claude_calls) == 1
-        cmd = claude_calls[0][0][0]
-        assert cmd[0] == "claude"
-
-    def test_research_ideation_task_has_plan_loop(self):
-        """--mode research with idea injects Plan Loop (Interactive) block."""
-        with _mock_foreground() as mock_run:
-            main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "## Plan Loop (Interactive)" in task
-        assert "swe-bench solver agent" in task
-
-    def test_research_ideation_task_mode_is_ideation(self):
-        """--mode research with idea sets Mode: ideation (not build) since it enters ideation first."""
-        with _mock_foreground() as mock_run:
-            main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "Mode: ideation" in task
-
-    def test_research_ideation_uses_plan_loop_not_design(self):
-        """--mode research should use Plan Loop, not a separate Design Mode block."""
-        with _mock_foreground() as mock_run:
-            main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "## Plan Loop (Interactive)" in task
-
-    def test_research_ideation_mentions_research_config(self):
-        """--mode research ideation task mentions research config fields."""
-        with _mock_foreground() as mock_run:
-            main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "Research Target" in task
-        assert "Mutable Surfaces" in task
-        assert "Fixed Surfaces" in task
-
-    def test_research_existing_project_with_target_skips_ideation(self, tmp_path):
-        """--mode research on existing project WITH research_target skips ideation."""
-        (tmp_path / ".git").mkdir()
-        factory_dir = tmp_path / ".factory"
-        factory_dir.mkdir()
-        rt = {
-            "objective": "maximize accuracy",
-            "metric": "accuracy",
-            "target": 0.9,
-            "run_command": "python run.py",
-            "result_path": "results.json",
-        }
-        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
-        with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "research"])
-        cmd = mock_run.call_args[0][0]
-        dsp_idx = cmd.index("--dangerously-skip-permissions")
-        task = cmd[dsp_idx + 1]
-        assert "## Plan Loop (Interactive)" not in task
-        assert "Mode: research" in task
-
-
 class TestCmdDetect:
     def test_detect_no_repo(self, tmp_path, capsys):
         result = main(["detect", str(tmp_path / "nonexistent")])
@@ -1987,36 +1861,17 @@ class TestResearchMode:
         assert "Research mode" in task
         assert "research_target" in task
 
-    def test_auto_detect_research_mode(self, tmp_project, sample_config):
-        """Auto-detection returns 'research' when config has research_target."""
-        from factory.models import ResearchTarget
+    def test_auto_detect_design_mode(self, tmp_project, sample_config):
+        """Auto-detection returns 'design' for all project states."""
         from factory.store import ExperimentStore
 
-        rt = ResearchTarget(
-            objective="Minimize loss",
-            metric="val_loss",
-            target=0.01,
-            run_command="python train.py",
-            result_path="metrics.json",
-        )
-        config_with_research = sample_config.model_copy(update={"research_target": rt})
-        store = ExperimentStore(tmp_project)
-        asyncio.run(store.init(config_with_research))
-
-        from factory.cli._mode_handlers import _auto_detect_mode
-
-        mode = _auto_detect_mode(tmp_project, force_fresh=True)
-        assert mode == "research"
-
-    def test_auto_detect_improve_without_research(self, tmp_project, sample_config):
-        """Auto-detection returns 'improve' when no research_target is set."""
         store = ExperimentStore(tmp_project)
         asyncio.run(store.init(sample_config))
 
         from factory.cli._mode_handlers import _auto_detect_mode
 
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
-        assert mode == "improve"
+        assert mode == "design"
 
 
 class TestBuildCeoTaskDesign:
@@ -2195,7 +2050,6 @@ class TestCmdHomeReturnsFactoryDir:
         assert result == 0
         output = capsys.readouterr().out.strip()
         assert "site-packages" not in output or Path(output).is_dir()
-        assert (Path(output) / "templates").is_dir()
         assert (Path(output) / "cli" / "__init__.py").is_file()
 
 

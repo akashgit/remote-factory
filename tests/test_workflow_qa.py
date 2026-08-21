@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from factory.workflow.definitions import improve_workflow, register_all
+from factory.workflow.definitions import build_workflow
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -21,35 +21,35 @@ from factory.workflow.primitives import (
 
 class TestSubgraph:
     def test_extracts_requested_nodes(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         assert set(sub.nodes.keys()) == {"health_checker", "code_reviewer"}
 
     def test_filters_edges(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         for edge in sub.edges:
             assert edge.source in sub.nodes
             assert edge.target in sub.nodes
 
     def test_deep_copies_nodes(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         assert sub.nodes["health_checker"] is not wf.nodes["health_checker"]
 
     def test_sets_name_and_start_node(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph({"health_checker", "code_reviewer"}, name="myname", start_node="health_checker")
         assert sub.name == "myname"
         assert sub.start_node == "health_checker"
 
     def test_missing_node_raises(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         with pytest.raises(ValueError, match="node 'nonexistent'"):
             wf.subgraph({"nonexistent"}, name="test", start_node="nonexistent")
 
     def test_preserves_edge_between_included_nodes(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph(
             {"fork_qa", "join_qa", "gate_qa"}, name="test", start_node="fork_qa",
         )
@@ -58,7 +58,7 @@ class TestSubgraph:
         assert ("join_qa", "gate_qa") in edge_pairs
 
     def test_excludes_edges_to_outside_nodes(self) -> None:
-        wf = improve_workflow()
+        wf = build_workflow()
         sub = wf.subgraph({"fork_qa", "join_qa"}, name="test", start_node="fork_qa")
         for edge in sub.edges:
             assert edge.target != "builder"
@@ -151,10 +151,6 @@ class TestDeepQaWorkflow:
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "deep-qa"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
-
-    def test_registered(self) -> None:
-        all_wf = register_all()
-        assert "deep-qa" in all_wf
 
     def test_skill_export(self) -> None:
         from factory.workflow.skill_export import validate_skill, workflow_to_skill_md

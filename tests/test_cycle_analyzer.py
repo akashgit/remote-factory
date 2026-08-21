@@ -371,7 +371,7 @@ class TestCycleAnalyzerApi:
 
 class TestCycleAnalyzerDagMapping:
     def test_node_trace_with_workflow(self, factory_dir: Path) -> None:
-        from factory.workflow.definitions import evolve_workflow
+        from factory.workflow.definitions import build_workflow
 
         events = [
             {
@@ -390,14 +390,14 @@ class TestCycleAnalyzerDagMapping:
             },
         ]
         _write_events(factory_dir, events)
-        wf = evolve_workflow()
+        wf = build_workflow()
         r = CycleAnalyzer(factory_dir, workflow=wf).latest()
         assert r is not None
         assert len(r.node_trace) > 0
-        assert "researcher" in r.node_trace
-        assert r.node_trace["researcher"].role == "researcher"
-        assert r.node_trace["researcher"].event is not None
-        assert r.node_trace["researcher"].event["cost_usd"] == 1.0
+        assert "researcher_similar" in r.node_trace
+        assert r.node_trace["researcher_similar"].role == "researcher"
+        assert r.node_trace["researcher_similar"].event is not None
+        assert r.node_trace["researcher_similar"].event["cost_usd"] == 1.0
 
     def test_node_trace_without_workflow(self, factory_dir: Path) -> None:
         events = _make_events(n_experiments=1)
@@ -407,7 +407,7 @@ class TestCycleAnalyzerDagMapping:
         assert r.node_trace == {}
 
     def test_agent_step_maps_to_node(self, factory_dir: Path) -> None:
-        from factory.workflow.definitions import evolve_workflow
+        from factory.workflow.definitions import build_workflow
 
         events = [
             {
@@ -426,7 +426,7 @@ class TestCycleAnalyzerDagMapping:
             },
         ]
         _write_events(factory_dir, events)
-        wf = evolve_workflow()
+        wf = build_workflow()
         r = CycleAnalyzer(factory_dir, workflow=wf).latest()
         assert r is not None
         assert r.steps[0].node_id == "builder"

@@ -742,8 +742,8 @@ class TestMigrateEnvToConfigMocked:
     def test_migrate_secure_permissions(
         self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import sys
         import stat
+        import sys
         from unittest.mock import MagicMock
 
         mock_tomli_w = MagicMock()

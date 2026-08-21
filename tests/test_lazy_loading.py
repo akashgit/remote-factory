@@ -28,14 +28,9 @@ class TestBuiltinRegistry:
 
         registry = _get_builtin_registry()
         required = {
-            "build", "design", "improve", "research", "meta",
-            "discover", "review", "refine", "create", "founder",
-            "deep-qa", "swebench", "legacybench", "featurebench",
+            "design", "create", "spec-generate",
+            "swebench", "legacybench", "featurebench",
             "programbench", "terminalbench", "tomswe", "salitrap",
-            "doc-generate", "doc-update",
-            "spec-generate", "spec-update", "parallel-improve",
-            "frontend-design", "frontend-design-discover",
-            "frontend-design-scan", "plan", "evolve",
         }
         assert required.issubset(set(registry.keys())), (
             f"Missing: {required - set(registry.keys())}"
@@ -68,7 +63,6 @@ class TestBuiltinRegistry:
             "factory.workflow.contributed.terminalbench",
             "factory.workflow.contributed.tomswe",
             "factory.workflow.contributed.salitrap",
-            "factory.workflow.deep_qa",
         ]
         for mod in contrib_modules:
             sys.modules.pop(mod, None)
@@ -76,7 +70,6 @@ class TestBuiltinRegistry:
         entries = WorkflowRegistry.discover()
 
         assert "swebench" in entries
-        assert "deep-qa" in entries
         assert entries["swebench"].source == "builtin"
 
         for mod in contrib_modules:
@@ -86,14 +79,14 @@ class TestBuiltinRegistry:
 
     def test_get_workflow_triggers_import(self) -> None:
         """get_workflow() for a contributed workflow should import the module."""
-        sys.modules.pop("factory.workflow.deep_qa", None)
+        sys.modules.pop("factory.workflow.contributed.swebench", None)
 
         WorkflowRegistry.discover()
-        wf = WorkflowRegistry.get_workflow("deep-qa")
+        wf = WorkflowRegistry.get_workflow("swebench")
 
         assert wf is not None
-        assert wf.name == "deep-qa"
-        assert "factory.workflow.deep_qa" in sys.modules
+        assert wf.name == "swebench"
+        assert "factory.workflow.contributed.swebench" in sys.modules
 
     def test_discover_api_unchanged(self) -> None:
         """discover() returns WorkflowEntry objects with all expected fields."""

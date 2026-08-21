@@ -80,7 +80,7 @@ class TestAgentTracking:
 class TestPhaseInference:
     def test_detect_phase(self):
         state = infer_state([_event("detect", data={"state": "new"})])
-        assert state.current_phase == "Research"
+        assert state.current_phase == "Detect"
         assert state.current_mode == "Build"
 
     def test_discover_phase(self):
@@ -180,7 +180,7 @@ class TestUpdateState:
     def test_incremental_update(self):
         state = FactoryLiveState()
         state = update_state(state, _event("detect", data={"state": "new"}))
-        assert state.current_phase == "Research"
+        assert state.current_phase == "Detect"
         assert state.current_mode == "Build"
 
         state = update_state(state, _event("agent.started", agent="builder", data={"task": "work"}))
@@ -275,45 +275,29 @@ class TestFormatElapsed:
 
 
 class TestModeAwarePhaseInference:
-    def test_improve_researcher_sets_observe(self):
+    def test_design_researcher_sets_research(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("agent.started", agent="researcher", data={"task": "study"}),
         ]
         state = infer_state(events)
-        assert state.current_phase == "Observe"
+        assert state.current_phase == "Research"
 
-    def test_improve_strategist_sets_hypothesize(self):
+    def test_design_strategist_sets_plan(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
-            _event("agent.started", agent="strategist", data={"task": "plan"}),
-        ]
-        state = infer_state(events)
-        assert state.current_phase == "Hypothesize"
-
-    def test_research_failure_analyst_sets_analyze(self):
-        events = [
-            _event("cycle.started", data={"mode": "research"}),
-            _event("agent.started", agent="failure_analyst", data={"task": "analyze"}),
-        ]
-        state = infer_state(events)
-        assert state.current_phase == "Analyze"
-
-    def test_research_health_checker_sets_run(self):
-        events = [
-            _event("cycle.started", data={"mode": "research"}),
-            _event("agent.started", agent="health_checker", data={"task": "verify"}),
-        ]
-        state = infer_state(events)
-        assert state.current_phase == "Run"
-
-    def test_build_strategist_sets_plan(self):
-        events = [
-            _event("cycle.started", data={"mode": "build"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("agent.started", agent="strategist", data={"task": "plan"}),
         ]
         state = infer_state(events)
         assert state.current_phase == "Plan"
+
+    def test_design_builder_sets_build(self):
+        events = [
+            _event("cycle.started", data={"mode": "design"}),
+            _event("agent.started", agent="builder", data={"task": "implement"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Build"
 
     def test_no_mode_uses_generic_mapping(self):
         events = [
@@ -322,17 +306,9 @@ class TestModeAwarePhaseInference:
         state = infer_state(events)
         assert state.current_phase == "Research"
 
-    def test_meta_ace_event_sets_ace_phase(self):
-        events = [
-            _event("cycle.started", data={"mode": "meta"}),
-            _event("ace.started"),
-        ]
-        state = infer_state(events)
-        assert state.current_phase == "ACE"
-
     def test_hypothesis_number_increments(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
             _event("experiment.finalize", data={"exp_id": 1, "verdict": "keep"}),
             _event("experiment.begin", data={"exp_id": 2, "hypothesis": "H2"}),
@@ -343,28 +319,21 @@ class TestModeAwarePhaseInference:
 
     def test_hypothesis_number_resets_on_new_cycle(self):
         events = [
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
             _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
-            _event("cycle.started", data={"mode": "improve"}),
+            _event("cycle.started", data={"mode": "design"}),
         ]
         state = infer_state(events)
         assert state.hypothesis_number == 0
 
     def test_to_dict_includes_mode_phases(self):
-        events = [_event("cycle.started", data={"mode": "improve"})]
+        events = [_event("cycle.started", data={"mode": "design"})]
         state = infer_state(events)
         d = state.to_dict()
-        assert d["phases"] == ["Observe", "Hypothesize", "Build", "Review", "Eval", "Archive"]
+        assert d["phases"] == ["Research", "Plan", "Build", "Verify", "Archive"]
         assert "Build" in d["loop_phases"]
-        assert "Observe" not in d["loop_phases"]
+        assert "Research" not in d["loop_phases"]
         assert d["hypothesis_number"] == 0
-
-    def test_to_dict_research_mode_phases(self):
-        events = [_event("cycle.started", data={"mode": "research"})]
-        state = infer_state(events)
-        d = state.to_dict()
-        assert d["phases"][0] == "Baseline"
-        assert "Run" in d["loop_phases"]
 
     def test_to_dict_no_mode_uses_generic(self):
         d = FactoryLiveState().to_dict()
@@ -373,21 +342,21 @@ class TestModeAwarePhaseInference:
 
 
 class TestModeAwarePhaseIndex:
-    def test_improve_observe_index(self):
-        assert phase_index("Observe", mode="improve") == 0
+    def test_design_research_index(self):
+        assert phase_index("Research", mode="design") == 0
 
-    def test_improve_hypothesize_index(self):
-        assert phase_index("Hypothesize", mode="improve") == 1
+    def test_design_plan_index(self):
+        assert phase_index("Plan", mode="design") == 1
 
-    def test_improve_research_not_found(self):
-        assert phase_index("Research", mode="improve") == -1
+    def test_design_observe_not_found(self):
+        assert phase_index("Observe", mode="design") == -1
 
     def test_generic_research_found(self):
         assert phase_index("Research", mode=None) == 2
 
     def test_completed_phases_mode_aware(self):
-        state = FactoryLiveState(current_phase="Build", current_mode="improve")
-        assert completed_phases(state) == ["Observe", "Hypothesize"]
+        state = FactoryLiveState(current_phase="Build", current_mode="design")
+        assert completed_phases(state) == ["Research", "Plan"]
 
     def test_completed_phases_generic(self):
         state = FactoryLiveState(current_phase="Build", current_mode=None)
@@ -395,15 +364,14 @@ class TestModeAwarePhaseIndex:
 
 
 class TestGetPhasesForMode:
-    def test_improve(self):
-        phases = get_phases_for_mode("improve")
-        assert phases[0] == "Observe"
+    def test_design(self):
+        phases = get_phases_for_mode("design")
+        assert phases[0] == "Research"
         assert "Archive" in phases
 
-    def test_research(self):
-        phases = get_phases_for_mode("research")
-        assert phases[0] == "Baseline"
-        assert "Run" in phases
+    def test_removed_mode_falls_back_to_generic(self):
+        assert get_phases_for_mode("improve") == PHASES
+        assert get_phases_for_mode("research") == PHASES
 
     def test_unknown_mode(self):
         assert get_phases_for_mode("unknown") == PHASES

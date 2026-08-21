@@ -66,8 +66,6 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     from factory.models import ProjectState
     from factory.state import detect_state
 
-    from factory.cli._path_resolver import _has_research_target
-
     if not force_fresh:
         cycle_state = read_cycle_state(project_path)
         if cycle_state:
@@ -80,16 +78,13 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
 
     state = detect_state(project_path)
     mode_map = {
-        ProjectState.NO_REPO: "build",
-        ProjectState.REPO_INCOMPLETE: "build",
-        ProjectState.NO_FACTORY: "build" if has_prompt else "discover",
-        ProjectState.EVALS_PENDING_REVIEW: "discover",
-        ProjectState.HAS_FACTORY: "improve",
+        ProjectState.NO_REPO: "design",
+        ProjectState.REPO_INCOMPLETE: "design",
+        ProjectState.NO_FACTORY: "design",
+        ProjectState.EVALS_PENDING_REVIEW: "design",
+        ProjectState.HAS_FACTORY: "design",
     }
     mode = mode_map[state]
-
-    if state == ProjectState.HAS_FACTORY and _has_research_target(project_path):
-        mode = "research"
 
     print(f"  State: {state.value} → mode: {mode}", file=sys.stderr)
     return mode
@@ -152,7 +147,7 @@ def handle_review_mode(
     if not headless:
         from factory.models import AgentRunRequest
 
-        prompt = resolve_prompt("ceo", project_path, workflow_mode="review")
+        prompt = resolve_prompt("ceo", project_path)
         runner = get_runner(runner_name)
         return runner.interactive_run(
             AgentRunRequest(
@@ -176,7 +171,6 @@ def handle_review_mode(
             model=model,
             timeout=7200.0,
             max_respawns=1,
-            workflow_mode="review",
         )
     )
     print(result)
@@ -250,7 +244,7 @@ def handle_deep_qa_mode(
     if not headless:
         from factory.models import AgentRunRequest
 
-        prompt = resolve_prompt("ceo", project_path, workflow_mode="deep-qa")
+        prompt = resolve_prompt("ceo", project_path)
         runner = get_runner(runner_name)
         rc = runner.interactive_run(
             AgentRunRequest(
@@ -276,7 +270,6 @@ def handle_deep_qa_mode(
             model=model,
             timeout=7200.0,
             max_respawns=1,
-            workflow_mode="deep-qa",
         )
     )
     complete_cycle_session(project_path, cycle_span_id)

@@ -99,7 +99,7 @@ def warn_deprecated_mode(mode: str) -> None:
     )
 
 
-def _run(coro):  # noqa: ANN001, ANN202
+def _run(coro):
     """Run an async coroutine synchronously."""
     return asyncio.run(coro)
 

@@ -164,14 +164,14 @@ def load_config(profile: str | None = None) -> dict:
             unset=unset_vars or None,
         )
 
-    global _cached_config  # noqa: PLW0603
+    global _cached_config
     _cached_config = data
     return data
 
 
 def _get_cached_config() -> dict:
     """Return the cached config, loading from disk on first call."""
-    global _cached_config  # noqa: PLW0603
+    global _cached_config
     if _cached_config is None:
         _cached_config = load_config()
     return _cached_config

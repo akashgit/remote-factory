@@ -751,8 +751,8 @@ class TestModeAwarePhaseDetail:
         assert "loop_phases" in state
 
     def test_mode_specific_phase_accepted(self, phase_projects_dir: Path):
-        """Improve mode phase names should be accepted by phase-detail."""
-        proj = phase_projects_dir / "proj-improve"
+        """Design mode phase names should be accepted by phase-detail."""
+        proj = phase_projects_dir / "proj-design"
         factory = proj / ".factory"
         factory.mkdir(parents=True)
         (factory / "config.json").write_text('{"goal":"test"}')
@@ -762,7 +762,7 @@ class TestModeAwarePhaseDetail:
         (factory / "reviews" / "researcher-latest.md").write_text("Output")
 
         from factory.events import emit_event
-        emit_event(proj, "cycle.started", data={"mode": "improve"})
+        emit_event(proj, "cycle.started", data={"mode": "design"})
         emit_event(proj, "agent.started", agent="researcher", data={"task": "study"})
         emit_event(proj, "agent.completed", agent="researcher")
         emit_event(proj, "agent.started", agent="strategist", data={"task": "plan"})
@@ -770,10 +770,10 @@ class TestModeAwarePhaseDetail:
         app = create_app(phase_projects_dir)
         c = TestClient(app)
 
-        resp = c.get("/api/projects/proj-improve/phase-detail/Observe")
+        resp = c.get("/api/projects/proj-design/phase-detail/Research")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["phase"] == "Observe"
+        assert body["phase"] == "Research"
         assert body["status"] == "completed"
         assert "Findings here" in body["data"]["research"]
 
