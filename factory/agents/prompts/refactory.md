@@ -126,11 +126,24 @@ Periodically trigger playbook evolution via `factory ace` to distill experiment 
 
 ### Input Submission
 
-Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+Use the two-step hex approach when sending keys to tmux sessions running Claude Code — send text first, then Enter as hex `0d`:
 ```bash
-tmux send-keys -t <session> "your input" C-m
+tmux send-keys -t <session> -- "your input"
+tmux send-keys -t <session> -H 0d
 ```
-`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return and works consistently.
+This avoids ambiguity with `C-m` and `Enter` key interpretation inside Claude Code sessions.
+
+### Vi Mode Handling
+
+When Claude Code has vi/vim editor mode enabled (`editorMode: "vim"` in `~/.claude/settings.json`), the user may be in normal mode. Send Escape → wait 100ms → `i` before text to ensure insert mode:
+```bash
+tmux send-keys -t <session> Escape
+sleep 0.1
+tmux send-keys -t <session> i
+tmux send-keys -t <session> -- "your input"
+tmux send-keys -t <session> -H 0d
+```
+`factory tmux` handles this automatically — it detects vi mode from user settings and prefixes the Escape+i sequence when needed.
 
 ### Post-Dispatch Verification
 
