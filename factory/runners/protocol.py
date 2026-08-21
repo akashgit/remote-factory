@@ -47,7 +47,7 @@ class RunnerMeta:
 
 
 class Runner(Protocol):
-    """Protocol for CLI backend implementations (claude, bob, etc.)."""
+    """Protocol for CLI backend implementations (e.g. claude)."""
 
     name: str
 

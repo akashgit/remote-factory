@@ -88,7 +88,7 @@ async def tee_stream(
         dest: Destination file-like object (e.g., sys.stdout.buffer).
         buffer: List to collect all bytes read.
         stream: If True, write to dest as data arrives. If False, only buffer.
-        prefix: Optional prefix to prepend to each line (e.g., b"[bob:researcher] ").
+        prefix: Optional prefix to prepend to each line (e.g., b"[claude:researcher] ").
         sanitize: If True, strip ANSI/VT escape sequences from the bytes written to
             dest. The buffer always receives the raw line, never sanitized. Lines
             that contained ONLY escape sequences (empty after stripping, modulo
@@ -154,7 +154,7 @@ async def stream_subprocess(
     Args:
         proc: The subprocess with PIPE for stdout and stderr.
         stream: If True, stream to sys.stdout/stderr. If False, only collect.
-        prefix: Optional prefix for each line (e.g., "[bob:researcher]").
+        prefix: Optional prefix for each line (e.g., "[claude:researcher]").
         sanitize: If True, strip ANSI/VT escape sequences from the bytes written to
             the terminal (both stdout and stderr). The returned buffers stay raw.
         inactivity_timeout: If set, kill the subprocess after this many seconds
