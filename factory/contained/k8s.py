@@ -988,44 +988,76 @@ def classify_pod(pod: dict[str, Any], *, container: str | None = None) -> PodPro
         return PodProgress(WAITING, "", "Pending", "")
     phase = str(status.get("phase", "") or "")
 
-    statuses = [
-        entry for entry in
-        (list(status.get("initContainerStatuses", []) or [])
-         + list(status.get("containerStatuses", []) or []))
+    for entry in _container_statuses(status, container):
+        verdict = _classify_container_state(entry.get("state", {}) or {}, phase)
+        if verdict is not None:
+            return verdict
+
+    # No container has a state yet — the answer is at pod level, where an unschedulable pod lives.
+    return _classify_pod_level(status, phase)
+
+
+def _container_statuses(status: dict[str, Any], container: str | None) -> list[dict[str, Any]]:
+    """The container statuses this question is about — init and app alike, in that order.
+
+    initContainers come first because they run first: the loader's window is an initContainer that
+    is still running, and an app container's state says nothing about it.
+    """
+    entries = list(status.get("initContainerStatuses", []) or []) + list(
+        status.get("containerStatuses", []) or []
+    )
+    return [
+        entry
+        for entry in entries
         if isinstance(entry, dict) and (container is None or entry.get("name") == container)
     ]
 
-    for entry in statuses:
-        state = entry.get("state", {}) or {}
-        terminated = state.get("terminated")
-        if isinstance(terminated, dict):
-            code = terminated.get("exitCode")
-            if code == 0:
-                return PodProgress(SUCCEEDED, phase, str(terminated.get("reason") or "Completed"),
-                                   str(terminated.get("message") or ""))
-            return PodProgress(
-                DOOMED, phase, str(terminated.get("reason") or "Error"),
-                str(terminated.get("message") or f"exit code {code}"),
-            )
-        if "running" in state:
-            return PodProgress(RUNNING, phase, "Running", "")
-        waiting = state.get("waiting")
-        if isinstance(waiting, dict):
-            reason = str(waiting.get("reason") or "")
-            message = str(waiting.get("message") or "")
-            if reason in DOOMED_WAITING_REASONS:
-                return PodProgress(DOOMED, phase, reason, message)
-            return PodProgress(WAITING, phase, reason or "Waiting", message)
 
-    # No container has a state yet — the answer is at pod level, where an unschedulable pod lives.
+def _classify_container_state(state: dict[str, Any], phase: str) -> PodProgress | None:
+    """What one container's state means, or `None` when it does not speak yet.
+
+    `None` is not "fine" — it means this entry carries no state at all, so the caller moves on to
+    the next container and ultimately to the pod-level question.
+    """
+    terminated = state.get("terminated")
+    if isinstance(terminated, dict):
+        code = terminated.get("exitCode")
+        if code == 0:
+            return PodProgress(
+                SUCCEEDED,
+                phase,
+                str(terminated.get("reason") or "Completed"),
+                str(terminated.get("message") or ""),
+            )
+        return PodProgress(
+            DOOMED,
+            phase,
+            str(terminated.get("reason") or "Error"),
+            str(terminated.get("message") or f"exit code {code}"),
+        )
+    if "running" in state:
+        return PodProgress(RUNNING, phase, "Running", "")
+    waiting = state.get("waiting")
+    if isinstance(waiting, dict):
+        reason = str(waiting.get("reason") or "")
+        message = str(waiting.get("message") or "")
+        if reason in DOOMED_WAITING_REASONS:
+            return PodProgress(DOOMED, phase, reason, message)
+        return PodProgress(WAITING, phase, reason or "Waiting", message)
+    return None
+
+
+def _classify_pod_level(status: dict[str, Any], phase: str) -> PodProgress:
+    """The verdict when no container has spoken — including the pod nothing will ever schedule."""
     unschedulable = _unschedulable(status)
     if unschedulable is not None:
         return PodProgress(DOOMED, phase, "Unschedulable", unschedulable)
     if phase == "Succeeded":
         return PodProgress(SUCCEEDED, phase, "Succeeded", "")
     if phase == "Failed":
-        return PodProgress(DOOMED, phase, str(status.get("reason") or "Failed"),
-                           str(status.get("message") or ""))
+        return PodProgress(
+            DOOMED, phase, str(status.get("reason") or "Failed"), str(status.get("message") or "")
+        )
     return PodProgress(WAITING, phase, phase or "Pending", "")
 
 

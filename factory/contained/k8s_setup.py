@@ -26,7 +26,7 @@ import hashlib
 import json
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import structlog
 
@@ -175,27 +175,49 @@ def verify_k8s(
         )
         return checks
 
+    for check in _namespace_inspection(
+        binary, target, division=division, probe_inference=probe_inference,
+        streaming=on_check is not None,
+    ):
+        record(check)
+    return checks
+
+
+def _namespace_inspection(
+    binary: str,
+    target: str,
+    *,
+    division: bool,
+    probe_inference: bool,
+    streaming: bool,
+) -> Iterator[Check]:
+    """Everything worth asking once a reachable cluster and a usable namespace are established.
+
+    A generator rather than a list so the caller reports each result the moment it is known. These
+    are the slow checks — an access review per verb is a round trip each, and the inference probe
+    launches a pod — and a caller that could only print at the end would show a blank screen for
+    minutes, which reads as a hang.
+    """
     with style.activity("namespace", f"looking up {target}"):
         namespace_check = _namespace_check(binary, target)
-    record(namespace_check)
+    yield namespace_check
     with style.activity("bundle", f"comparing each object against {target}"):
         object_checks = _object_checks(binary, target, division)
-    record(*object_checks)
+    yield from object_checks
     with style.activity("permissions", "posting an access review per verb the run needs"):
         verb_checks = _verb_checks(target, division)
-    record(*verb_checks)
+    yield from verb_checks
     with style.activity("credentials_secret", f"reading secret/{SECRET_NAME}"):
         secret = secret_check(binary, target)
-    record(secret)
-    record(_image_check())
+    yield secret
+    yield _image_check()
     if probe_inference:
-        record(_inference_result(binary, target, secret, announce=on_check is not None))
-    record(_gitleaks_check())
+        yield _inference_result(binary, target, secret, announce=streaming)
+    yield _gitleaks_check()
     if division:
         with style.activity("build_api", "asking the cluster which APIs it serves"):
             division_checks = _division_checks(target)
-        record(*division_checks)
-    return checks
+        yield from division_checks
 
 
 def _context_check(binary: str) -> Check:

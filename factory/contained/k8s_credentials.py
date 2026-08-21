@@ -489,8 +489,7 @@ def run_credentials_step(
             "Nobody is at the keyboard, so this step is being skipped — a credential is never "
             "chosen on your behalf. Create it with:"
         ))
-        for chunk in create_secret_command(binary, namespace).splitlines():
-            print(style.line(style.dim(chunk)))
+        _print_create_command(binary, namespace)
         return False
 
     print(style.line(style.paint(existing.detail, "yellow")))
@@ -507,10 +506,24 @@ def run_credentials_step(
     data = _choose_backend(readers)
     if data is None:
         print(style.line("Skipped. Create it yourself with:"))
-        for chunk in create_secret_command(binary, namespace).splitlines():
-            print(style.line(style.dim(chunk)))
+        _print_create_command(binary, namespace)
         return False
 
+    return _confirm_and_create(binary, namespace, data)
+
+
+def _print_create_command(binary: str, namespace: str) -> None:
+    """The command that does by hand what this step offers to do, dimmed and ready to copy."""
+    for chunk in create_secret_command(binary, namespace).splitlines():
+        print(style.line(style.dim(chunk)))
+
+
+def _confirm_and_create(binary: str, namespace: str, data: dict[str, str]) -> bool:
+    """Show the shape of what is about to be sent, then send it. Returns whether it took.
+
+    The confirmation prints *shape* — key names and value lengths — never material, so a user
+    reading it over someone's shoulder learns nothing they could reuse.
+    """
     print()
     print(style.line(f"About to create {style.value(f'secret/{SECRET_NAME}')} in "
                      f"{style.value(namespace)} with:"))
