@@ -243,7 +243,7 @@ class TestMigrateEnvToConfig:
     def test_migrates_env_vars(
         self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        tomli_w = pytest.importorskip("tomli_w")
+        tomli_w = pytest.importorskip("tomli_w")  # noqa: F841
 
         monkeypatch.setenv("FACTORY_RUNNER", "alt")
         monkeypatch.setenv("FACTORY_MODEL", "opus")
@@ -742,8 +742,8 @@ class TestMigrateEnvToConfigMocked:
     def test_migrate_secure_permissions(
         self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import sys
         import stat
+        import sys
         from unittest.mock import MagicMock
 
         mock_tomli_w = MagicMock()
