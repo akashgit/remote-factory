@@ -8,38 +8,194 @@ Your job is to create **8 diverse optimization prompts** that will guide an RL a
 
 ## File Organization
 
-You have access to two directory trees. Understanding their layout will help you find the information you need.
+You have access to two directory trees. Understanding their layout — and what each file contains — is critical for generating well-informed prompts.
 
 ### Task Directory — `benchmarks/einsteinarena/{task_name}/`
 
-This is the problem definition. Everything here is static across iterations.
+This is the problem definition. Everything here is **static across iterations** — it does not change during a run.
 
-| File | Contents |
-|------|----------|
-| `instruction.md` | Problem description, mathematical formulation, constraints, scoring direction (MAXIMIZE/MINIMIZE), current SOTA, minimum improvement threshold |
-| `verifier.py` | The `evaluate(data)` function that scores solutions — defines expected dict keys, validation rules, and the scoring formula |
-| `default_config.json` | Default training parameters: GPU count, rollout settings, model path, learning rate, reward shaping config, max iterations, eval timeout |
-| `config.json` | (Optional) User overrides that merge on top of `default_config.json` |
+#### `instruction.md`
+
+The complete problem specification. Contains:
+
+- **Problem description** — what is being optimized (e.g., "pack N circles in the unit square")
+- **Mathematical formulation** — objective function, decision variables, dimensionality
+- **Constraints** — all hard constraints (containment, non-overlap, bounds, normalization, etc.)
+- **Scoring direction** — MAXIMIZE or MINIMIZE
+- **Current SOTA** — the best known score for this problem (if available)
+- **Minimum improvement threshold** — how much better a solution must be to count as progress
+
+**Agent usage:** Read this first to understand the problem. Extract the objective, constraints, and SOTA to embed in your prompts. The small model needs this context to write correct `run()` functions.
+
+#### `verifier.py`
+
+The ground-truth scoring function. Contains:
+
+- **`evaluate(data)` function** — takes a solution dict, validates it, and returns a score
+- **Expected dict keys** — what keys the solution must contain (e.g., `data["values"]`, `data["circles"]`)
+- **Validation rules** — what causes a score of 0 (NaN values, out-of-bounds, constraint violations)
+- **Scoring formula** — the exact mathematical expression used to compute the final score
+
+**Agent usage:** Read this carefully — it defines the contract between the small model's `run()` function and the scoring system. Embed key validation logic in your prompts so the model avoids silent failures (e.g., returning wrong dict keys, violating containment constraints). Consider including the `evaluate()` source code directly in prompts.
+
+#### `default_config.json`
+
+Default training parameters for this task. Fields include:
+
+- `num_gpus` (int) — number of GPUs for distributed training
+- `rollout_tp` (int) — tensor parallelism degree for vLLM rollout
+- `num_rollouts_per_prompt` (int) — rollouts generated per prompt (typically 64)
+- `groups_per_batch` (int) — prompts per training batch
+- `lora_rank` (int) — LoRA adapter rank
+- `learning_rate` (float) — optimizer learning rate
+- `kl_coef` (float) — KL penalty coefficient
+- `temperature` (float) — sampling temperature for rollout generation
+- `phase1_max_tokens` (int) — max tokens for thinking phase
+- `eval_timeout` (int) — seconds before evaluation times out
+- `max_iterations` (int) — total RL iterations to run
+- `model_path` (str) — HuggingFace model identifier (e.g., `Qwen/Qwen3-8B`)
+- `reward` (dict) — reward shaping configuration
+
+**Agent usage:** Generally not needed for prompt generation. The resolved version in the run directory's `config.json` is more useful.
+
+#### `config.json` (optional)
+
+User overrides that merge on top of `default_config.json`. Same field names — only fields that differ from defaults need to be present.
 
 ### Run Directory — `.factory/einsteinarena-lumen/run_YYYYMMDD-HHMMSS/`
 
-This is the working state for the current training run. It lives under the task directory.
+This is the working state for the current training run. It lives under the task directory and accumulates data across iterations.
 
-| File | Contents |
-|------|----------|
-| `config.json` | Fully resolved config — includes `task_name`, `task_dir` (absolute path to task directory), `gpu_info`, `model_path`, reward config, and all training parameters |
-| `state.json` | Current iteration number, `best_score`, `best_iteration` — read this to know which iteration you are generating prompts for |
-| `iteration_N/prompts.json` | **Your output** — the 8 optimization prompts you generate for iteration N |
-| `iteration_N/evaluation_results.json` | Aggregated eval results from iteration N — contains `per_prompt_stats` (per-strategy best/mean/median scores) and `best_overall` |
-| `iteration_N/sm_rollouts.jsonl` | Raw small-model rollouts from RL training (one JSON per rollout) |
-| `iteration_N/prompts.parquet` | Parquet version of prompts (used internally by the training pipeline) |
-| `iteration_N/metrics.jsonl` | Training metrics logged during RL (loss, reward stats, etc.) |
-| `logs/` | Agent transcripts and execution logs |
+#### `config.json` (run-level)
+
+The fully resolved configuration for this run. Merges `default_config.json` + task `config.json` overrides + auto-detected runtime info. Fields:
+
+- **Training parameters** (same as `default_config.json`): `num_gpus`, `rollout_tp`, `num_rollouts_per_prompt`, `group_size`, `groups_per_batch`, `lora_rank`, `learning_rate`, `kl_coef`, `temperature`, `phase1_max_tokens`, `eval_timeout`, `max_iterations`, `model_path`, `reward`
+- **Auto-added at runtime:**
+  - `task_name` (str) — e.g., `"erdos-min-overlap"`
+  - `task_dir` (str) — absolute path to the task directory
+  - `gpu_info` (dict) — `{gpu_count, gpu_type, gpu_memory_mb}` detected at launch
+  - `run_started` (str) — ISO timestamp of when the run began
+
+**Agent usage:** Read `task_name` to locate the task directory. Read `model_path` to calibrate prompt complexity — a 0.6B model needs simpler instructions than an 8B model. Read `num_rollouts_per_prompt` to understand how many attempts the model gets per prompt.
+
+#### `state.json`
+
+Tracks overall run progress. Fields:
+
+- `iteration` (int) — the **current** iteration number (0-indexed). This is the iteration you are generating prompts for.
+- `best_score` (float) — the best score achieved across all completed iterations
+- `best_iteration` (int) — which iteration achieved the best score
+
+**Agent usage:** **Read this first** to determine which iteration you are on. If `iteration > 0`, you must read previous iteration data to inform your prompts.
+
+#### `iteration_N/prompts.json`
+
+**Your output file.** The 8 optimization prompts you generate for iteration N. Structure:
+
+```json
+{
+  "iteration": 0,
+  "problem_type": "geometry",
+  "scoring_direction": "maximize",
+  "prompts": [
+    {"prompt_idx": 0, "strategy": "strategy_name", "prompt_text": "..."},
+    ...
+  ]
+}
+```
+
+**Agent usage:** Write this file as your final output. For iteration > 0, also read `iteration_{N-1}/prompts.json` to see what prompts were used previously and avoid exact repeats.
+
+#### `iteration_N/sm_rollouts.jsonl`
+
+**The most valuable data source for iteration > 0.** Contains every small-model rollout from RL training — one JSON object per line. Each line has these fields:
+
+- `prompt_idx` (int) — which of the 8 prompts this rollout used (0–7)
+- `rollout_idx` (int) — rollout index within this prompt group (0 to `num_rollouts_per_prompt - 1`)
+- `global_idx` (int) — global sequential index across all rollouts
+- `prompt` (str) — the full input prompt text that was fed to the model
+- `output` (str) — the model's complete response including thinking/reasoning
+- `code` (str) — the extracted Python code from the response (parsed from the last ` ```python ` block)
+- `solution` (dict) — the parsed solution dictionary returned by `run()`. **Empty `{}` if execution failed** (code error, timeout, or invalid output)
+- `score` (float) — the verifier score. `0.0` means failure (execution error, constraint violation, or invalid solution)
+- `eval_msg` (str) — evaluation message or error description (e.g., `"success"`, `"timeout"`, or an error traceback)
+- `gen_case` (str) — generation case identifier (internal classification)
+- `p1_len` (int) — phase 1 (thinking/reasoning) token count
+- `p2_len` (int) — phase 2 (answer) token count
+- `gen_time_s` (float) — wall-clock time in seconds for this rollout's generation
+
+**Agent usage:** This file contains the actual solutions and constructions from the previous iteration — the `code` field has the Python implementation and `solution` has the returned dict. Use it together with `evaluation_results.json` (which gives aggregate statistics) to understand what was tried and what worked. When generating prompts for the next iteration, you may reference prior constructions as starting points if you judge that to be useful.
+
+**Reading strategy for large files:** This file can have hundreds of lines (e.g., 512 rollouts). Do NOT read the entire file. Use a targeted approach, for example:
+```bash
+python3 -c "
+import json
+entries = [json.loads(l) for l in open('iteration_0/sm_rollouts.jsonl')]
+top = sorted(entries, key=lambda x: x['score'], reverse=True)[:5]
+for e in top:
+    print(f'prompt_idx={e[\"prompt_idx\"]} score={e[\"score\"]:.4f}')
+    print(e['code'][:500])
+    print('---')
+"
+```
+
+#### `iteration_N/evaluation_results.json`
+
+Aggregated evaluation statistics for iteration N. Structure:
+
+- `iteration` (int) — which iteration these results are from
+- `sm` (dict) — small-model rollout statistics:
+  - `num_rollouts` (int) — total rollout count (e.g., 512)
+  - `scores` (list[float]) — all individual scores (length = `num_rollouts`)
+  - `best_score` (float) — maximum score achieved
+  - `best_rollout_idx` (int) — which rollout achieved the best score
+  - `best_solution` (dict) — the best solution dict (may be empty `{}` if not captured)
+  - `mean_score` (float) — average score across all rollouts
+  - `std_score` (float) — standard deviation of scores
+  - `per_prompt_stats` (list[dict]) — **per-strategy breakdown**, one entry per prompt:
+    - `prompt_idx` (int) — prompt index (0–7)
+    - `strategy` (str) — strategy name from prompts.json
+    - `mean` (float) — average score for this prompt's rollouts
+    - `std` (float) — standard deviation for this prompt's rollouts
+    - `best` (float) — best score among this prompt's rollouts
+- `fm` (dict | null) — frontier-model rollout statistics (same structure as `sm`; currently `null` — reserved for future use)
+- `overall` (dict) — combined best across sm and fm:
+  - Same fields as `sm` plus `best_source` (str) — which model produced the best result
+
+**Agent usage:** Read `per_prompt_stats` to see which strategies worked (highest `best` and `mean` scores) and which failed. Use this to decide which strategies to keep, modify, or replace. Note: this file gives you **statistics** but not the actual code — for the winning code, read `sm_rollouts.jsonl`.
+
+#### `iteration_N/metrics.jsonl`
+
+VERL training metrics logged at each training step. Each line is a JSON object with:
+
+- `step` (int) — training step number (1-indexed)
+- `data` (dict) — ~80 training metrics including:
+  - **Rewards:** `critic/score/mean`, `critic/score/max`, `critic/rewards/mean`, `critic/advantages/mean`
+  - **Actor loss:** `actor/pg_loss`, `actor/loss`, `actor/grad_norm`, `actor/lr`, `actor/entropy`
+  - **KL divergence:** `actor/ppo_kl`, `rollout_corr/kl`
+  - **Response lengths:** `response_length/mean`, `response_length/max`, `response/aborted_ratio`
+  - **Timing:** `timing_s/gen`, `timing_s/update_actor`, `perf/throughput`
+  - **Training signal:** `_has_training_signal` (bool — whether the batch had nonzero advantages)
+
+**Agent usage:** Generally not needed for prompt generation. Useful for diagnosing training issues (e.g., if `_has_training_signal` is False, all rollouts scored the same and there's no gradient signal — prompts may be too hard or too easy).
+
+#### `iteration_N/prompts.parquet`
+
+Parquet-formatted version of prompts, used internally by the VERL data pipeline. Not human-readable.
+
+**Agent usage:** Ignore this file — it's an internal artifact.
+
+#### `logs/`
+
+Agent transcripts and execution logs. Contains subdirectories with `stream.jsonl`, `meta.json`, and tool call records.
+
+**Agent usage:** Ignore — these are debug artifacts, not input for prompt generation.
 
 ### How to Use This
 
 - **Step 1** reads from the **task directory**: `instruction.md` and `verifier.py`
-- **Step 2** reads from the **run directory**: `state.json` for iteration number, then `iteration_{N-1}/evaluation_results.json` for previous results
+- **Step 2** reads from the **run directory**: `state.json` for iteration number; then for iteration > 0, `iteration_{N-1}/evaluation_results.json` for score statistics and `iteration_{N-1}/sm_rollouts.jsonl` for actual solutions and constructions
 - **Step 4** writes to the **run directory**: `iteration_{N}/prompts.json`
 - The run directory's `config.json` tells you the `task_name` (to locate the task directory) and training parameters like `model_path` (useful context for prompt difficulty calibration)
 
@@ -72,15 +228,21 @@ Understanding the verifier is essential — it tells you exactly how solutions a
 Read `.factory/lumen/state.json` to get the current iteration number.
 
 **If iteration > 0:**
-1. Read the previous iteration's results: `.factory/lumen/iteration_{N-1}/evaluation_results.json`
-2. Look at the `per_prompt_stats` field
-3. Identify which strategies performed best (highest `best` score for MAXIMIZE, lowest for MINIMIZE)
-4. Identify which strategies performed poorly
 
-**Adapt your prompts based on what worked:**
-- Keep successful strategies but with variations
-- Drop or modify unsuccessful strategies
-- Try new approaches that build on what worked
+#### 2a. Read evaluation statistics
+
+1. Read `.factory/lumen/iteration_{N-1}/evaluation_results.json`
+2. Look at the `per_prompt_stats` field — each entry has `prompt_idx`, `strategy`, `mean`, `std`, and `best`
+3. Identify which strategies performed best (highest `best` score for MAXIMIZE, lowest for MINIMIZE)
+4. Identify which strategies performed poorly (low `mean` and `best`)
+
+#### 2b. Read previous rollouts
+
+Read `.factory/lumen/iteration_{N-1}/sm_rollouts.jsonl` to see the actual solutions and constructions from the previous iteration. The file can have hundreds of lines — use a targeted read (see the reading strategy example in the File Organization section above).
+
+#### 2c. Adapt your prompts
+
+Use the statistics from `evaluation_results.json` and the actual code/solutions from `sm_rollouts.jsonl` to inform your prompt generation. You may consider referencing prior constructions as starting points in some prompts if appropriate.
 
 ---
 
@@ -113,11 +275,9 @@ A good optimization prompt gives the small model everything it needs to write ef
 
 4. **Constraints** — All hard constraints the solution must satisfy (bounds, non-overlap, normalization, etc.). Solutions violating constraints score zero, so the model must know them.
 
-5. **Historical context** (iteration > 0) — What strategies have been tried, what scores they achieved, what the current best solution looks like. This drives iterative improvement.
+5. **Historical context** (iteration > 0) — What strategies have been tried and what scores they achieved. Prior constructions from `sm_rollouts.jsonl` are available and can be referenced if useful.
 
-6. **SOTA construction** — If a current best solution exists, consider providing it as a starting point (e.g., as a numpy array or list literal). Many optimization algorithms benefit from warm-starting.
-
-7. **Improvement guidance** — Suggest a specific algorithmic approach with concrete parameters. Encourage the model to try something different from previous iterations.
+6. **Improvement guidance** — Suggest a specific algorithmic approach with concrete parameters.
 
 8. **Available libraries** — Remind the model what it can use (numpy, scipy, math, etc.).
 
@@ -289,29 +449,16 @@ Write `.factory/lumen/iteration_{current_iteration}/prompts.json` with **exactly
 When this is NOT the first iteration:
 
 **DO:**
-- Keep strategies that achieved high scores (top 3)
-- Refine successful strategies with parameter tweaks
-- Try variations on what worked (e.g., if SA worked, try SA with different cooling schedule)
-- Introduce 1-2 completely new strategies
+- Read both `evaluation_results.json` (statistics) and `sm_rollouts.jsonl` (actual code and solutions) from the previous iteration
+- Use per_prompt_stats to understand which strategies performed well and which didn't
+- Balance exploitation (refining what worked) with exploration (trying new approaches)
+- Consider referencing prior constructions as starting points where appropriate
 
 **DON'T:**
 - Repeat strategies that consistently scored poorly
 - Change all 8 prompts completely (some continuity is good)
 - Ignore the per_prompt_stats data
-
-**Example adaptation:**
-
-If iteration 0 results show:
-- Prompt 1 (simulated annealing): best=2.8, mean=2.6
-- Prompt 2 (random): best=2.1, mean=2.0
-- Prompt 3 (greedy): best=2.7, mean=2.5
-
-Then iteration 1 should:
-- Keep simulated annealing (it won)
-- Try a variant of SA with different parameters
-- Keep greedy (strong performer)
-- Drop or modify random (weak performer)
-- Add 2-3 new strategies
+- Generate prompts without reading sm_rollouts.jsonl
 
 ---
 
@@ -335,11 +482,13 @@ mkdir -p .factory/lumen/iteration_{N}
 
 ## Summary
 
-1. Read instruction.md to understand the problem
+1. Read instruction.md and verifier.py to understand the problem
 2. Read state.json to get current iteration
-3. If iteration > 0, read previous evaluation_results.json
+3. If iteration > 0:
+   a. Read previous evaluation_results.json for score statistics
+   b. Read previous sm_rollouts.jsonl for actual solutions and constructions
+   c. Use both to inform prompt generation
 4. Generate 8 diverse optimization prompts
-5. Adapt prompts based on previous results (if available)
-6. Write prompts.json to the iteration directory
+5. Write prompts.json to the iteration directory
 
 Your prompts will guide the RL training process. Make them specific, diverse, and problem-appropriate!

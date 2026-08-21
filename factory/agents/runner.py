@@ -406,7 +406,7 @@ async def invoke_agent(
         _save_review(project_path, role, stdout, return_code, review_tag=review_tag)
 
         if transcript_dir is not None:
-            _save_transcript(transcript_dir, role, result.raw_stream, task)
+            _save_transcript(transcript_dir, role, result.raw_stream, task, cwd=project_path)
 
         return stdout, return_code
     finally:
@@ -569,17 +569,41 @@ def _save_review(
         logger.debug("Failed to save review for %s", role, exc_info=True)
 
 
+def _copy_conversation(session_id: str, cwd: Path, run_dir: Path) -> None:
+    """Copy the full Claude conversation file (includes thinking text) to the transcript dir.
+
+    Claude Code stores conversations at ~/.claude/projects/<project-hash>/<session-id>.jsonl.
+    The project hash is the absolute cwd path with '/' replaced by '-'.
+    """
+    import shutil
+
+    try:
+        claude_dir = Path.home() / ".claude" / "projects"
+        project_hash = "-" + str(cwd.resolve()).replace("/", "-").lstrip("-")
+        src = claude_dir / project_hash / f"{session_id}.jsonl"
+        if src.exists():
+            shutil.copy2(src, run_dir / "conversation.jsonl")
+            logger.debug("Copied conversation for session %s", session_id)
+        else:
+            logger.debug("No conversation file at %s", src)
+    except Exception:
+        logger.debug("Failed to copy conversation file", exc_info=True)
+
+
 def _save_transcript(
     transcript_dir: Path,
     role: str,
     raw_stream: str,
     task: str,
+    *,
+    cwd: Path | None = None,
 ) -> None:
     """Save the full agent session transcript to a directory.
 
     Structure (modeled on Meta Harness's log_session):
         transcript_dir/
             stream.jsonl   — raw stream-json events (complete conversation)
+            conversation.jsonl — full conversation with thinking (from Claude internal storage)
             meta.json      — prompt, model, tokens, cost, duration
             tools/
                 001_Read.txt   — per-tool-call, human-readable
@@ -714,6 +738,10 @@ def _save_transcript(
                     parts.append(tc["output"])
 
                 (tools_dir / f"{i:03d}_{tc['name']}.txt").write_text("\n".join(parts))
+
+        # 5. Copy full conversation (includes thinking) from Claude internal storage
+        if session_id and cwd:
+            _copy_conversation(session_id, cwd, run_dir)
 
         logger.debug("Saved transcript for %s to %s", role, run_dir)
     except Exception:
