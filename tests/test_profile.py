@@ -107,7 +107,7 @@ class TestSaveProfile:
     def test_source_projects_listed(self, tmp_path: Path) -> None:
         profile_path = tmp_path / "profile.md"
         with patch("factory.profile._PROFILE_PATH", profile_path):
-            save_profile("content", ["a", "b", "c"], "bob")
+            save_profile("content", ["a", "b", "c"], "claude")
         text = profile_path.read_text()
         assert '  - "a"\n' in text
         assert '  - "b"\n' in text

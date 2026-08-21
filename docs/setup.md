@@ -116,16 +116,8 @@ re:factory inherits Claude Code's authentication. Configure whichever method you
 | `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` |
 | `FACTORY_REGISTRY_DIR` | Override global registry location | `~/.factory` |
 | `FACTORY_VAULT_PATH` | Legacy: path to Obsidian vault (optional, for Archivist) | *(unset — not needed)* |
-| `FACTORY_RUNNER` | CLI backend: `claude` or `bob` | `claude` |
+| `FACTORY_RUNNER` | CLI backend | `claude` |
 | `FACTORY_RUNNER_QUIET` | Suppress runner output (`1` to enable) | *(unset)* |
-
-### Bob Shell (alternative runner)
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `BOBSHELL_API_KEY` | Bob Shell API key | *(required if using Bob)* |
-| `FACTORY_BOB_DRY_RUN` | Test mode — no API calls (`1` to enable) | *(unset)* |
-| `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` | Per-cycle invocation ceiling | `8` |
 
 ### Notifications (optional)
 

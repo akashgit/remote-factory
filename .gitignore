@@ -27,7 +27,6 @@ factory/_version.py
 
 # Generated plugin agents (scripts/sync_agents.py)
 /agents/
-/codex-agents/
 
 # Generated workflow skills (built on-the-fly by factory skill_cache)
 skills/workflow-*/SKILL.md

@@ -5,9 +5,6 @@ import yaml
 
 from factory.agents.plugin import (
     AgentMeta,
-    _READ_ONLY_ROLES,
-    _WORKSPACE_WRITE_ROLES,
-    _sandbox_mode,
     check_agents_in_sync,
     generate_agent_content,
     load_agent_config,
@@ -183,35 +180,5 @@ class TestCmdInstall:
         assert rc == 1
 
 
-class TestSandboxMode:
-    def test_read_only_roles(self):
-        for role in _READ_ONLY_ROLES:
-            assert _sandbox_mode(role) == "read-only"
-
-    def test_workspace_write_roles(self):
-        for role in _WORKSPACE_WRITE_ROLES:
-            assert _sandbox_mode(role) == "workspace-write"
-
-    def test_all_known_roles_covered(self):
-        config = load_agent_config()
-        for role in config:
-            assert role in _READ_ONLY_ROLES or role in _WORKSPACE_WRITE_ROLES, (
-                f"{role} is not in _READ_ONLY_ROLES or _WORKSPACE_WRITE_ROLES"
-            )
-            assert not (role in _READ_ONLY_ROLES and role in _WORKSPACE_WRITE_ROLES), (
-                f"{role} is in both _READ_ONLY_ROLES and _WORKSPACE_WRITE_ROLES"
-            )
-
-    def test_unknown_role_defaults_to_read_only(self):
-        assert _sandbox_mode("nonexistent_role") == "read-only"
-
-    def test_researcher_is_read_only(self):
-        assert _sandbox_mode("researcher") == "read-only"
-
-    def test_builder_is_workspace_write(self):
-        assert _sandbox_mode("builder") == "workspace-write"
-
-    def test_ceo_is_workspace_write(self):
-        assert _sandbox_mode("ceo") == "workspace-write"
 
 

@@ -28,7 +28,7 @@ import pytest
 from factory.agents.runner import invoke_agent
 from factory.runners import get_all_runner_meta, get_available_runners, get_runner
 
-_DRY_RUN_VARS = ["FACTORY_BOB_DRY_RUN", "FACTORY_CODEX_DRY_RUN", "FACTORY_OPENCODE_DRY_RUN"]
+_DRY_RUN_VARS: list[str] = []
 
 
 @pytest.fixture(autouse=True)
@@ -591,7 +591,7 @@ def test_factory_eval_runs(sample_project: Path) -> None:
 
 
 def test_factory_runners_list_all_present() -> None:
-    """factory runners list --json shows all 4 runners with correct metadata."""
+    """factory runners list --json shows runners with correct metadata."""
     result = subprocess.run(
         ["uv", "run", "factory", "runners", "list", "--json"],
         capture_output=True,

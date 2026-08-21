@@ -33,7 +33,7 @@ from pathlib import Path
 
 from factory.contained.provenance import Probe
 
-# Mirrors the existing FACTORY_BOB_DRY_RUN / FACTORY_CODEX_DRY_RUN convention.
+# Dry-run env var for contained runtimes.
 DRY_RUN_ENV = "FACTORY_CONTAINED_DRY_RUN"
 
 IMAGE_ENV = "FACTORY_CONTAINED_IMAGE"

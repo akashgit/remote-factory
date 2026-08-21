@@ -391,7 +391,7 @@ class TestConsecutiveFailureAbort:
         assert "2 consecutive" in msg
         assert "researcher" in msg
         assert "events.jsonl" in msg
-        assert "BOBSHELL_API_KEY" in msg  # hint about the common cause
+        assert "authentication" in msg  # hint about the common cause
 
 
 class TestCeoPromptNoBackgroundSpawning:

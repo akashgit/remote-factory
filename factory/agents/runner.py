@@ -32,7 +32,7 @@ class ConsecutiveAgentFailureError(Exception):
             f"Aborting after {failure_count} consecutive agent spawn failures. "
             f"Last failed agent: {last_agent}. "
             "Check .factory/events.jsonl for details. "
-            "This usually means BOBSHELL_API_KEY is not being propagated to subprocesses."
+            "This usually means runner authentication is not configured correctly."
         )
 
 

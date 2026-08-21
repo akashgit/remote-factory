@@ -373,7 +373,7 @@ CLI flag  >  env var  >  profile credential  >  config.toml [defaults]  >  hardc
 
 ```toml
 [defaults]
-runner = "claude"                        # CLI backend: "claude" or "bob"
+runner = "claude"                        # CLI backend
 model = ""                               # Claude model for agent subprocesses
 projects_dir = "~/factory-projects"      # Root for factory-managed projects
 
@@ -382,9 +382,6 @@ CLAUDE_CODE_USE_VERTEX = "1"
 ANTHROPIC_VERTEX_PROJECT_ID = "my-gcp-project"
 CLOUD_ML_REGION = "us-east5"
 
-[credentials.bob]
-FACTORY_RUNNER = "bob"
-BOBSHELL_API_KEY = "..."
 ```
 
 ### Commands
@@ -402,7 +399,6 @@ Profiles let you switch between environments without juggling env vars:
 
 ```bash
 factory ceo ~/my-project --profile vertex
-factory run ~/my-project --profile bob --loop
 factory agent researcher --task "..." --project ~/my-project --profile vertex
 ```
 
@@ -427,8 +423,6 @@ Profile credentials are injected via `os.environ.setdefault()`, so pre-existing 
 | `registry_dir` | `FACTORY_REGISTRY_DIR` | `~/.factory` |
 | `managed_dirs` | `FACTORY_MANAGED_DIRS` | *(unset)* |
 | `runner_quiet` | `FACTORY_RUNNER_QUIET` | *(unset)* |
-| `bob_dry_run` | `FACTORY_BOB_DRY_RUN` | *(unset)* |
-| `bob_max_invocations_per_cycle` | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` | `8` |
 | `ceo_respawn_disabled` | `FACTORY_CEO_RESPAWN_DISABLED` | *(unset)* |
 | `ceo_max_respawns` | `FACTORY_CEO_MAX_RESPAWNS` | `3` |
 
@@ -442,6 +436,6 @@ All environment variables listed below can alternatively be set in `~/.factory/c
 | `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* |
 | `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` |
 | `FACTORY_REGISTRY_DIR` | Override global registry location | `~/.factory` |
-| `FACTORY_RUNNER` | CLI backend: `claude` or `bob` | `claude` |
+| `FACTORY_RUNNER` | CLI backend | `claude` |
 
-See [Setup Guide — Environment Variables](setup.md#environment-variables) for the full list, including Claude Code authentication, Bob Shell, notifications, and advanced CEO options.
+See [Setup Guide — Environment Variables](setup.md#environment-variables) for the full list, including Claude Code authentication, notifications, and advanced CEO options.

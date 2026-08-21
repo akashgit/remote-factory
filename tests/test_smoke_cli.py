@@ -498,6 +498,8 @@ DELETED_SYMBOLS = [
     "FACTORY_BOB_DRY_RUN",
     "FACTORY_CODEX_DRY_RUN",
     "FACTORY_OPENCODE_DRY_RUN",
+    "generate_codex_agent_toml",
+    "check_codex_agents_in_sync",
 ]
 
 

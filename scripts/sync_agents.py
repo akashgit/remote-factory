@@ -16,14 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from factory.agents.plugin import (
     check_agents_in_sync,
-    check_codex_agents_in_sync,
     generate_agent_content,
-    generate_codex_agent_toml,
     load_agent_config,
 )
 
 _AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
-_CODEX_AGENTS_DIR = Path(__file__).resolve().parent.parent / "codex-agents"
 
 
 def main() -> int:
@@ -31,17 +28,14 @@ def main() -> int:
 
     if check_mode:
         out_of_sync = check_agents_in_sync(_AGENTS_DIR)
-        codex_out_of_sync = check_codex_agents_in_sync(_CODEX_AGENTS_DIR)
-        all_issues = out_of_sync + [f"{r} (codex)" for r in codex_out_of_sync]
-        if all_issues:
-            print(f"Out of sync: {', '.join(all_issues)}", file=sys.stderr)
+        if out_of_sync:
+            print(f"Out of sync: {', '.join(out_of_sync)}", file=sys.stderr)
             print("Run: python scripts/sync_agents.py", file=sys.stderr)
             return 1
         print("All plugin agents are in sync.")
         return 0
 
     _AGENTS_DIR.mkdir(exist_ok=True)
-    _CODEX_AGENTS_DIR.mkdir(exist_ok=True)
 
     config = load_agent_config()
     for role in config:
@@ -50,14 +44,7 @@ def main() -> int:
         out_path.write_text(content)
         print(f"  {role} -> {out_path}")
 
-    for role in config:
-        toml_content = generate_codex_agent_toml(role)
-        toml_path = _CODEX_AGENTS_DIR / f"{role}.toml"
-        toml_path.write_text(toml_content)
-        print(f"  {role} -> {toml_path}")
-
-    print(f"\nGenerated {len(config)} agent files in {_AGENTS_DIR} (Markdown)")
-    print(f"Generated {len(config)} agent files in {_CODEX_AGENTS_DIR} (TOML)")
+    print(f"\nGenerated {len(config)} agent files in {_AGENTS_DIR}")
     return 0
 
 

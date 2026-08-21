@@ -274,12 +274,6 @@ class TestCeoPreHookCalled:
         assert call_args[0] == "improve"
 
 
-class TestSandboxModeUnknownRole:
-    def test_defaults_to_read_only(self):
-        from factory.agents.plugin import _sandbox_mode
-        assert _sandbox_mode("totally_unknown_role") == "read-only"
-
-
 class TestDeterministicLoadOrder:
     def test_sorted_by_dist_name(self):
         def plugin_c(reg: PluginRegistry):

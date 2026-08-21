@@ -416,7 +416,7 @@ def _budget_allows_respawn(runner_name: str | None, project_path: Path) -> bool:
     """Check if budget/ceiling allows another spawn.
 
     With only per-cycle limits (no daily/session limit), we can always start
-    a new cycle. The per-cycle limit is enforced within BobRunner during execution.
+    a new cycle. Per-cycle limits are enforced within the runner during execution.
     """
     # All runners can respawn - per-cycle limits are enforced within the cycle
     return True
