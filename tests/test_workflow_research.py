@@ -9,7 +9,6 @@ from factory.workflow.definitions import (
     build_workflow,
     create_workflow,
     design_workflow,
-    register_all,
 )
 from factory.workflow.primitives import (
     AgentNode,

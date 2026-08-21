@@ -12,7 +12,6 @@ from factory.spec.ops import (
     _parse_verdict,
     validate_spec,
 )
-from factory.workflow.primitives import FnNode
 
 
 # ── Fixtures ────────────────────────────────────────────────────

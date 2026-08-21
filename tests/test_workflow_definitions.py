@@ -9,9 +9,9 @@ import pytest
 from factory.models import ProjectState
 from factory.workflow.definitions import (
     DOC_FRESHNESS_GATE_PROMPT,
-    _GRAPH_EXPLORER_PROMPT,  # noqa: F401
-    _graph_explorer_prompt,  # noqa: F401
-    _study_subgraph,  # noqa: F401
+    _GRAPH_EXPLORER_PROMPT,
+    _graph_explorer_prompt,
+    _study_subgraph,
     build_workflow,
     create_workflow,
     design_workflow,

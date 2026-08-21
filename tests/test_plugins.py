@@ -108,10 +108,10 @@ class TestLoadPluginsNotCallable:
 
 class TestCollisionDetectionCommands:
     def test_same_name_twice_first_wins(self):
-        def handler_a(a):  # noqa: ANN001, ANN202
+        def handler_a(a):
             return 0
 
-        def handler_b(a):  # noqa: ANN001, ANN202
+        def handler_b(a):
             return 1
 
         def plugin_a(reg: PluginRegistry):

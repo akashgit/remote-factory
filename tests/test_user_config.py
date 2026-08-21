@@ -243,7 +243,7 @@ class TestMigrateEnvToConfig:
     def test_migrates_env_vars(
         self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        tomli_w = pytest.importorskip("tomli_w")  # noqa: F841
+        tomli_w = pytest.importorskip("tomli_w")
 
         monkeypatch.setenv("FACTORY_RUNNER", "alt")
         monkeypatch.setenv("FACTORY_MODEL", "opus")

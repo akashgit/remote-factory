@@ -282,5 +282,5 @@ def _safe_current_namespace() -> str | None:
         from factory.contained.k8s import current_namespace
 
         return current_namespace()
-    except Exception:                                        # noqa: BLE001 — see docstring
+    except Exception:
         return None

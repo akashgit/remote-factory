@@ -9,8 +9,6 @@ from factory.spec.apply_diff import (
     apply_spec_diff,
     extract_spec_diff,
 )
-from factory.workflow.definitions import build_workflow
-from factory.workflow.primitives import FnNode
 
 
 # ── extract_spec_diff ──────────────────────────────────────────

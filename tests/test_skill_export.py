@@ -22,7 +22,7 @@ from factory.workflow.skill_export import (
     _fn_to_instruction,
     _fork_to_instruction,
     _gate_to_checkpoint,
-    _study_to_instruction,  # noqa: F401
+    _study_to_instruction,
     export_all_skills,
     validate_skill,
     workflow_to_skill_md,

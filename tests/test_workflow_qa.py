@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from factory.workflow.definitions import build_workflow, register_all
+from factory.workflow.definitions import build_workflow
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
