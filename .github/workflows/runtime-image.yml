@@ -92,10 +92,17 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
+      # The digest is written as a filename with the `sha256:` prefix *stripped*, because
+      # `upload-artifact` rejects any path containing a colon — and a build job that dies here
+      # never reaches `manifest`, so the architectures are pushed by digest and no tag is ever
+      # created. The manifest step puts the prefix back.
       - name: Export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
+          set -eu
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -178,6 +185,8 @@ jobs:
           for tag in $TAGS; do
             args="$args --tag ${IMAGE}:${tag}"
           done
+          # The filenames carry no `sha256:` prefix (upload-artifact forbids the colon); the sed
+          # keeps this correct if one ever arrives with it.
           docker buildx imagetools create $args \
             --tag "${IMAGE}:${GITHUB_SHA::12}" \
             $(printf "${IMAGE}@sha256:%s " $(ls /tmp/digests | sed 's/^sha256://'))
@@ -186,11 +195,16 @@ jobs:
         env:
           TAG: ${{ steps.tags.outputs.primary }}
         run: |
+          set -eu
           tag="$TAG"
           docker buildx imagetools inspect "${IMAGE}:${tag}"
+          # Read the index with jq rather than grepping the raw bytes: whether buildx marshals the
+          # manifest list compact or indented is its business, and a whitespace change there would
+          # otherwise fail this check on an image that is perfectly good.
+          raw=$(docker buildx imagetools inspect "${IMAGE}:${tag}" --raw)
           for arch in amd64 arm64; do
-            docker buildx imagetools inspect "${IMAGE}:${tag}" --raw \
-              | grep -q "\"architecture\":\"${arch}\"" \
+            printf '%s' "$raw" \
+              | jq -e --arg a "$arch" '[.manifests[]?.platform.architecture] | index($a)' > /dev/null \
               || { echo "::error::${arch} is missing from the published manifest"; exit 1; }
           done
 
