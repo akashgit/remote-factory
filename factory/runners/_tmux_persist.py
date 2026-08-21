@@ -29,6 +29,31 @@ _WINDOW_POLL_INTERVAL = 0.1
 _WINDOW_POLL_TIMEOUT = 3.0
 
 
+def _detect_vim_mode() -> bool:
+    """Check if Claude Code has vi/vim editor mode enabled in user settings."""
+    try:
+        settings_path = Path.home() / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        return settings.get("editorMode") == "vim"
+    except (json.JSONDecodeError, OSError):
+        logger.debug("vim mode detection failed, defaulting to normal mode")
+        return False
+
+
+def _tmux_send_enter(session_window: str, text: str, *, vim_mode: bool = False) -> None:
+    """Send text followed by Enter (hex 0d) to a tmux target.
+
+    When vim_mode is True, prefix with Escape + 100ms delay + i to ensure
+    the target pane is in insert mode before sending text.
+    """
+    if vim_mode:
+        subprocess.run(["tmux", "send-keys", "-t", session_window, "Escape"], capture_output=True)
+        time.sleep(0.1)
+        subprocess.run(["tmux", "send-keys", "-t", session_window, "i"], capture_output=True)
+    subprocess.run(["tmux", "send-keys", "-t", session_window, "--", text], capture_output=True)
+    subprocess.run(["tmux", "send-keys", "-t", session_window, "-H", "0d"], capture_output=True)
+
+
 def find_project_path(cwd: Path) -> Path:
     """Find the project root by walking up from cwd looking for .factory/."""
     path = cwd.resolve()
@@ -153,6 +178,8 @@ async def run_in_tmux(
 
     Returns (stdout, return_code, None). Usage is always None for tmux mode.
     """
+    vim_mode = _detect_vim_mode()
+
     run_id = uuid.uuid4().hex[:8]
     path_hash = hashlib.sha1(str(project_path).encode()).hexdigest()[:6]
     session = f"{_SESSION_PREFIX}{project_path.name}-{path_hash}"
@@ -230,10 +257,7 @@ async def run_in_tmux(
             _cleanup(tmpdir)
             return f"Agent timed out after {timeout}s", 1, None
 
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "C-m"],
-            capture_output=True,
-        )
+        _tmux_send_enter(f"{session}:{window}", "/exit", vim_mode=vim_mode)
         await _wait_for_window_exit(session, window)
         if _window_exists(session, window):
             subprocess.run(
