@@ -56,6 +56,7 @@ def main():
     # Update state with global best
     state["best_score"] = global_best_score
     state["best_iteration"] = global_best_iteration
+    state["best_solution"] = global_best_solution
 
     # Parse SOTA thresholds
     sota_match = re.search(r"Current best score.*?(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)", md)

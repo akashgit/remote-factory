@@ -319,7 +319,7 @@ def main() -> None:
         json.dump(resolved, f, indent=2)
 
     # Write initial state
-    state = {"iteration": 0, "best_score": None, "best_iteration": None}
+    state = {"iteration": 0, "best_score": None, "best_iteration": None, "best_solution": {}}
     with open(run_dir / "state.json", "w") as f:
         json.dump(state, f, indent=2)
 
