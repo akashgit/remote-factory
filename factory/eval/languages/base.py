@@ -54,8 +54,8 @@ def _run_cmd(
 ) -> tuple[int, str, str]:
     """Run a command, return (returncode, stdout, stderr). Never raises."""
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    venv_python = cwd / ".venv" / "bin" / "python"
-    if venv_python.exists():
+    from factory.worktree import is_factory_venv
+    if is_factory_venv(cwd):
         env["VIRTUAL_ENV"] = str(cwd / ".venv")
         env["PATH"] = str(cwd / ".venv" / "bin") + os.pathsep + env.get("PATH", "")
     try:

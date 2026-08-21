@@ -47,6 +47,9 @@ _COPY_ENTRIES: Final[tuple[str, ...]] = (
 )
 
 
+WORKTREE_VENV_MARKER: Final[str] = ".factory-managed"
+
+
 def _setup_worktree_venv(worktree_path: Path) -> Path | None:
     """Create a per-worktree Python venv if pyproject.toml is present.
 
@@ -64,6 +67,7 @@ def _setup_worktree_venv(worktree_path: Path) -> Path | None:
     )
     if result.returncode == 0:
         venv_path = worktree_path / ".venv"
+        (venv_path / WORKTREE_VENV_MARKER).touch()
         log.info("worktree_venv_created", method="uv_sync", path=str(venv_path))
         return venv_path
 
@@ -89,8 +93,14 @@ def _setup_worktree_venv(worktree_path: Path) -> Path | None:
         log.warning("worktree_venv_fallback_install_failed", stderr=result.stderr[:200])
         return None
 
+    (venv_path / WORKTREE_VENV_MARKER).touch()
     log.info("worktree_venv_created", method="fallback", path=str(venv_path))
     return venv_path
+
+
+def is_factory_venv(project_path: Path) -> bool:
+    """Return True if the .venv at project_path was created by the factory."""
+    return (project_path / ".venv" / WORKTREE_VENV_MARKER).exists()
 
 
 def create_worktree(

@@ -10,9 +10,9 @@ from factory.eval.languages.base import EvalFragment, _run_cmd
 
 
 def _resolve_python(project_path: Path) -> str:
-    venv_python = project_path / ".venv" / "bin" / "python"
-    if venv_python.exists():
-        return str(venv_python)
+    from factory.worktree import is_factory_venv
+    if is_factory_venv(project_path):
+        return str(project_path / ".venv" / "bin" / "python")
     return sys.executable
 
 

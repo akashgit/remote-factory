@@ -135,8 +135,9 @@ class ClaudeRunner:
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.cwd:
-            venv_path = Path(request.cwd) / ".venv"
-            if (venv_path / "bin" / "python").exists():
+            from factory.worktree import is_factory_venv
+            if is_factory_venv(Path(request.cwd)):
+                venv_path = Path(request.cwd) / ".venv"
                 env["VIRTUAL_ENV"] = str(venv_path)
                 env["PATH"] = str(venv_path / "bin") + os.pathsep + env.get("PATH", "")
         if request.model:
@@ -317,8 +318,9 @@ class ClaudeRunner:
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.cwd:
-            venv_path = Path(request.cwd) / ".venv"
-            if (venv_path / "bin" / "python").exists():
+            from factory.worktree import is_factory_venv
+            if is_factory_venv(Path(request.cwd)):
+                venv_path = Path(request.cwd) / ".venv"
                 env["VIRTUAL_ENV"] = str(venv_path)
                 env["PATH"] = str(venv_path / "bin") + os.pathsep + env.get("PATH", "")
         if request.model:

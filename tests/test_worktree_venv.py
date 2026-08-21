@@ -8,18 +8,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 from factory.eval.languages.python import _resolve_python
-from factory.worktree import _setup_worktree_venv
+from factory.worktree import WORKTREE_VENV_MARKER, _setup_worktree_venv
 
 
 class TestSetupWorktreeVenv:
     def test_creates_venv_via_uv_sync(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        (tmp_path / ".venv").mkdir()
 
         success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with patch("factory.worktree.subprocess.run", return_value=success) as mock_run:
             result = _setup_worktree_venv(tmp_path)
 
         assert result == tmp_path / ".venv"
+        assert (tmp_path / ".venv" / WORKTREE_VENV_MARKER).exists()
         mock_run.assert_called_once_with(
             ["uv", "sync", "--directory", str(tmp_path)],
             capture_output=True,
@@ -32,6 +34,7 @@ class TestSetupWorktreeVenv:
 
     def test_fallback_on_uv_sync_failure(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        (tmp_path / ".venv").mkdir()
 
         uv_sync_fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="err")
         venv_ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -41,6 +44,7 @@ class TestSetupWorktreeVenv:
             result = _setup_worktree_venv(tmp_path)
 
         assert result == tmp_path / ".venv"
+        assert (tmp_path / ".venv" / WORKTREE_VENV_MARKER).exists()
 
     def test_graceful_degradation_on_total_failure(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
@@ -72,6 +76,7 @@ class TestResolvePython:
         python = venv_bin / "python"
         python.touch()
         python.chmod(0o755)
+        (tmp_path / ".venv" / WORKTREE_VENV_MARKER).touch()
 
         result = _resolve_python(tmp_path)
         assert result == str(python)
@@ -80,12 +85,21 @@ class TestResolvePython:
         result = _resolve_python(tmp_path)
         assert result == sys.executable
 
-
-class TestRunCmdVenvEnv:
-    def test_sets_venv_env_when_venv_exists(self, tmp_path: Path) -> None:
+    def test_ignores_non_factory_venv(self, tmp_path: Path) -> None:
         venv_bin = tmp_path / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
         (venv_bin / "python").touch()
+
+        result = _resolve_python(tmp_path)
+        assert result == sys.executable
+
+
+class TestRunCmdVenvEnv:
+    def test_sets_venv_env_when_factory_venv_exists(self, tmp_path: Path) -> None:
+        venv_bin = tmp_path / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
+        (tmp_path / ".venv" / WORKTREE_VENV_MARKER).touch()
 
         from factory.eval.languages.base import _run_cmd
 
@@ -101,6 +115,23 @@ class TestRunCmdVenvEnv:
         assert env["PATH"].startswith(str(venv_bin))
 
     def test_no_venv_env_when_no_venv(self, tmp_path: Path) -> None:
+        from factory.eval.languages.base import _run_cmd
+
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="ok", stderr=""
+            )
+            _run_cmd(["echo", "test"], tmp_path)
+
+        call_kwargs = mock_run.call_args
+        env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
+        assert "VIRTUAL_ENV" not in env
+
+    def test_no_venv_env_when_non_factory_venv(self, tmp_path: Path) -> None:
+        venv_bin = tmp_path / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
+
         from factory.eval.languages.base import _run_cmd
 
         with patch("factory.eval.languages.base.subprocess.run") as mock_run:
