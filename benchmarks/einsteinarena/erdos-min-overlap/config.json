@@ -11,7 +11,7 @@
   "phase1_max_tokens": 26000,
   "eval_timeout": 1100,
   "max_iterations": 2,
-  "model_path": "Qwen/Qwen3-0.6B",
+  "model_path": "Qwen/Qwen3-8B",
   "reward": {
     "type": "reciprocal",
     "epsilon": 1e-8

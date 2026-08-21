@@ -196,6 +196,11 @@ def main() -> None:
     # Step 3b: Set FileLogger path to iteration directory
     os.environ["VERL_FILE_LOGGER_PATH"] = str(output_dir / "metrics.jsonl")
 
+    # FSDP loads the full model onto GPU before offloading to CPU. Without
+    # expandable_segments the CUDA allocator keeps fragmented reservations,
+    # so vLLM sees almost no free memory even after offload + empty_cache().
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # CUDA runtime: PyTorch and vLLM bundle their own libcudart (CUDA 12.x).
     # Do NOT add nvidia/cu13/lib to LD_LIBRARY_PATH — it contains CUDA 13.x
     # runtime which requires a newer driver than most machines have.

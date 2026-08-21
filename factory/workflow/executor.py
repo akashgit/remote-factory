@@ -843,16 +843,20 @@ class WorkflowExecutor:
         cmd = f"factory study {shlex.quote(str(self.project_path))}"
         if node.focus:
             cmd += f' --focus "{node.focus}"'
-        stdout, stderr, returncode = await self._run_shell(cmd)
 
         effective_dir = node.transcript_dir or (str(self.trace_dir) if self.trace_dir else None)
-        if effective_dir:
+        log_path = self._resolve_log_path(node.id, effective_dir) if effective_dir else None
+
+        stdout, stderr, returncode = await self._run_shell(cmd, log_path=log_path)
+
+        if not log_path and effective_dir:
             await self._save_fn_transcript(node.id, stdout, stderr, returncode, effective_dir)
 
         # Raise error if command failed
         if returncode != 0:
+            error_context = stderr[:500] if stderr else stdout[-500:] if stdout else ""
             raise RuntimeError(
-                f"command failed (exit {returncode}): {cmd}\n{stderr[:500]}"
+                f"command failed (exit {returncode}): {cmd}\n{error_context}"
             )
 
         return stdout
@@ -866,16 +870,20 @@ class WorkflowExecutor:
         ).replace(
             "{run_dir}", shlex.quote(str(self.run_dir)),
         )
-        stdout, stderr, returncode = await self._run_shell(cmd)
 
         effective_dir = node.transcript_dir or (str(self.trace_dir) if self.trace_dir else None)
-        if effective_dir:
+        log_path = self._resolve_log_path(node.id, effective_dir) if effective_dir else None
+
+        stdout, stderr, returncode = await self._run_shell(cmd, log_path=log_path)
+
+        if not log_path and effective_dir:
             await self._save_fn_transcript(node.id, stdout, stderr, returncode, effective_dir)
 
         # Raise error if command failed
         if returncode != 0:
+            error_context = stderr[:500] if stderr else stdout[-500:] if stdout else ""
             raise RuntimeError(
-                f"command failed (exit {returncode}): {cmd}\n{stderr[:500]}"
+                f"command failed (exit {returncode}): {cmd}\n{error_context}"
             )
 
         return stdout
@@ -1132,8 +1140,43 @@ class WorkflowExecutor:
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
-    async def _run_shell(self, cmd: str) -> tuple[str, str, int]:
-        """Run a shell command and return (stdout, stderr, returncode)."""
+    async def _run_shell(
+        self, cmd: str, *, log_path: Path | None = None,
+    ) -> tuple[str, str, int]:
+        """Run a shell command and return (stdout, stderr, returncode).
+
+        When *log_path* is given, stdout+stderr stream directly to that file
+        so progress is visible in real-time via ``tail -f``.  The file content
+        is read back after the process exits and returned as *stdout*
+        (stderr is returned empty since both streams are merged).
+
+        When *log_path* is ``None``, the original PIPE behaviour is used.
+        """
+        if log_path:
+            from datetime import datetime, timezone
+
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "w") as f:
+                f.write(f"# FnNode Transcript\n")
+                f.write(f"# Timestamp: {datetime.now(timezone.utc).isoformat()}\n")
+                f.write(f"# Run ID: {self.run_id}\n")
+                f.write(f"# Command: {cmd}\n\n")
+                f.flush()
+
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=f,
+                    stderr=asyncio.subprocess.STDOUT,
+                    cwd=self.project_path,
+                )
+                await proc.wait()
+
+            content = log_path.read_text()
+            with open(log_path, "a") as f:
+                f.write(f"\n# Exit Code: {proc.returncode}\n")
+
+            return content, "", proc.returncode or 0
+
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -1146,28 +1189,18 @@ class WorkflowExecutor:
 
         return stdout, stderr, proc.returncode or 0
 
-    async def _save_fn_transcript(
-        self,
-        node_id: str,
-        stdout: str,
-        stderr: str,
-        returncode: int,
-        transcript_dir: str,
-    ) -> None:
-        """Save FnNode execution transcript (stdout + stderr) to disk."""
+    def _resolve_log_path(self, node_id: str, transcript_dir: str) -> Path | None:
+        """Compute the log file path for a FnNode/Study transcript."""
         from datetime import datetime, timezone
 
         try:
-            # Resolve transcript_dir template
             resolved_dir = transcript_dir.replace(
                 "{project_path}", str(self.project_path),
             ).replace(
                 "{run_dir}", str(self.run_dir),
             )
             transcript_path = Path(resolved_dir)
-            transcript_path.mkdir(parents=True, exist_ok=True)
 
-            # Try to detect iteration from state.json in parent directory
             iteration_suffix = ""
             state_file = transcript_path.parent / "state.json"
             if state_file.exists():
@@ -1179,11 +1212,33 @@ class WorkflowExecutor:
                 except Exception:
                     pass
 
-            # Generate timestamped filename
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            log_file = transcript_path / f"{node_id}{iteration_suffix}_{timestamp}.log"
+            return transcript_path / f"{node_id}{iteration_suffix}_{timestamp}.log"
+        except Exception as exc:
+            log.warning("log_path_resolve_failed", node=node_id, error=str(exc))
+            return None
 
-            # Write combined output
+    async def _save_fn_transcript(
+        self,
+        node_id: str,
+        stdout: str,
+        stderr: str,
+        returncode: int,
+        transcript_dir: str,
+    ) -> None:
+        """Save FnNode execution transcript (stdout + stderr) to disk.
+
+        Only used when _run_shell ran in PIPE mode (no log_path).  When
+        log_path is set, the subprocess already wrote to disk directly.
+        """
+        from datetime import datetime, timezone
+
+        try:
+            log_file = self._resolve_log_path(node_id, transcript_dir)
+            if not log_file:
+                return
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+
             content_parts = [
                 f"# FnNode Transcript: {node_id}",
                 f"# Timestamp: {datetime.now(timezone.utc).isoformat()}",
