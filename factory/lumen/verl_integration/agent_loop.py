@@ -34,6 +34,19 @@ from verl.utils.tensordict_utils import list_of_dict_to_tensordict
 logger = logging.getLogger(__name__)
 
 
+def _jsonify(obj):
+    """Recursively convert numpy types to plain Python for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    if hasattr(obj, "tolist"):
+        return obj.tolist()
+    if hasattr(obj, "item"):
+        return obj.item()
+    return obj
+
+
 @ray.remote
 class LumenAgentLoopWorkerTQ(AgentLoopWorker):
     """Agent loop worker with two-phase completion for Lumen."""
@@ -279,6 +292,7 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
         code = ""
         score = 0.0
         eval_msg = ""
+        solution: dict = {}
 
         if not validate:
             from factory.lumen.verl_integration.reward import compute_score
@@ -297,12 +311,14 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
             score = float(result.get("score", 0.0))
             code = result.get("code", "")
             eval_msg = result.get("eval_msg", "")
+            solution = _jsonify(result.get("solution", {}))
 
         output.reward_score = score
         reward_extra = {
             "acc": float(score > 0),
             "code": code,
             "eval_msg": eval_msg,
+            "solution": solution,
             "gen_case": gen_case,
             "p1_len": len(p1_tokens),
             "p2_len": p2_len,
