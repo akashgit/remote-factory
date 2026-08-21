@@ -248,6 +248,10 @@ def main() -> None:
     print(f"Best score: {results['best_score']:.6f}")
     print(f"Mean score: {results['mean_score']:.6f}")
 
+    # Clean up raw rollout files — sm_rollouts.jsonl has all the useful data
+    import shutil
+    shutil.rmtree(rollout_dir, ignore_errors=True)
+
 
 
 if __name__ == "__main__":

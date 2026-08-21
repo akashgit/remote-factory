@@ -19,9 +19,13 @@ Output structure:
     "best_score": float,
     "best_rollout_idx": int,
     "best_solution": {...},
-    "mean_score": float,
-    "std_score": float,
-    "per_prompt_stats": [...]
+    "mean_score": float,        // valid rollouts only (score > 0)
+    "std_score": float,         // valid rollouts only
+    "valid_count": int,
+    "valid_rate": float,
+    "fail_count": int,
+    "fail_rate": float,
+    "per_prompt_stats": [...]   // each entry also has valid_count/valid_rate/fail_count
   },
   "fm": {...} or null,
   "overall": {
@@ -31,8 +35,12 @@ Output structure:
     "best_source": "sm" or "fm",
     "best_rollout_idx": int,
     "best_solution": {...},
-    "mean_score": float,
-    "std_score": float
+    "mean_score": float,        // valid rollouts only
+    "std_score": float,         // valid rollouts only
+    "valid_count": int,
+    "valid_rate": float,
+    "fail_count": int,
+    "fail_rate": float
   }
 }
 """
@@ -57,13 +65,22 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
             "best_solution": {},
             "mean_score": 0.0,
             "std_score": 0.0,
+            "valid_count": 0,
+            "valid_rate": 0.0,
+            "fail_count": 0,
+            "fail_rate": 0.0,
         }
 
     scoring_direction = prompts_data.get("scoring_direction", "maximize")
 
+    # score == 0 means evaluation failure (code error, timeout, constraint
+    # violation), not a valid result.  Separate valid from failed so that
+    # mean/std reflect actual solution quality.
+    valid_scores = [s for s in scores if s > 0]
+    valid_count = len(valid_scores)
+    fail_count = len(scores) - valid_count
+
     if scoring_direction == "minimize":
-        # For minimize: 0.0 means evaluation failure, not a perfect score.
-        # Find best among successful rollouts only.
         valid = [(i, s) for i, s in enumerate(scores) if s > 0]
         best_idx = min(valid, key=lambda x: x[1])[0] if valid else 0
     else:
@@ -75,8 +92,12 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
         "best_score": float(scores[best_idx]),
         "best_rollout_idx": best_idx,
         "best_solution": rollouts[best_idx].get("solution", {}),
-        "mean_score": float(np.mean(scores)),
-        "std_score": float(np.std(scores)),
+        "mean_score": float(np.mean(valid_scores)) if valid_scores else 0.0,
+        "std_score": float(np.std(valid_scores)) if valid_scores else 0.0,
+        "valid_count": valid_count,
+        "valid_rate": valid_count / len(scores),
+        "fail_count": fail_count,
+        "fail_rate": fail_count / len(scores),
     }
 
     # Compute per_prompt_stats if rollouts have prompt_idx
@@ -98,17 +119,23 @@ def compute_stats(rollouts: list[dict], prompts_data: dict, source: str) -> dict
                 continue
             group_scores = groups[i]
             strategy = prompts[i].get("strategy", "") if i < len(prompts) else ""
+            valid_group = [s for s in group_scores if s > 0]
+            group_valid = len(valid_group)
+            group_total = len(group_scores)
             if scoring_direction == "minimize":
-                valid_group = [s for s in group_scores if s > 0]
                 group_best = float(min(valid_group)) if valid_group else 0.0
             else:
                 group_best = float(max(group_scores))
             per_prompt_stats.append({
                 "prompt_idx": i,
                 "strategy": strategy,
-                "mean": float(np.mean(group_scores)),
-                "std": float(np.std(group_scores)),
+                "mean": float(np.mean(valid_group)) if valid_group else 0.0,
+                "std": float(np.std(valid_group)) if valid_group else 0.0,
                 "best": group_best,
+                "valid_count": group_valid,
+                "valid_rate": group_valid / group_total if group_total else 0.0,
+                "fail_count": group_total - group_valid,
+                "num_rollouts": group_total,
             })
 
         stats["per_prompt_stats"] = per_prompt_stats
@@ -201,6 +228,7 @@ def main() -> None:
         best_source = "fm"
         best_solution = fm_rollouts[overall_best_idx - len(sm_rollouts)].get("solution", {})
 
+    valid_all = [s for s in all_scores if s > 0]
     overall_stats = {
         "num_rollouts": len(all_rollouts),
         "scores": all_scores,
@@ -208,8 +236,12 @@ def main() -> None:
         "best_source": best_source,
         "best_rollout_idx": overall_best_idx,
         "best_solution": best_solution,
-        "mean_score": float(np.mean(all_scores)),
-        "std_score": float(np.std(all_scores)),
+        "mean_score": float(np.mean(valid_all)) if valid_all else 0.0,
+        "std_score": float(np.std(valid_all)) if valid_all else 0.0,
+        "valid_count": len(valid_all),
+        "valid_rate": len(valid_all) / len(all_scores) if all_scores else 0.0,
+        "fail_count": len(all_scores) - len(valid_all),
+        "fail_rate": (len(all_scores) - len(valid_all)) / len(all_scores) if all_scores else 0.0,
     }
 
     # Build final result
@@ -226,10 +258,10 @@ def main() -> None:
         json.dump(result, f, indent=2)
 
     print(f"\nEvaluation results saved to {output_file}")
-    print(f"  SM:      best={sm_stats['best_score']:.6f}, mean={sm_stats['mean_score']:.6f}")
+    print(f"  SM:      best={sm_stats['best_score']:.6f}, mean={sm_stats['mean_score']:.6f} (valid: {sm_stats['valid_count']}/{sm_stats['num_rollouts']}, {sm_stats['valid_rate']:.1%})")
     if fm_stats:
-        print(f"  FM:      best={fm_stats['best_score']:.6f}, mean={fm_stats['mean_score']:.6f}")
-    print(f"  Overall: best={overall_stats['best_score']:.6f} ({best_source}), mean={overall_stats['mean_score']:.6f}")
+        print(f"  FM:      best={fm_stats['best_score']:.6f}, mean={fm_stats['mean_score']:.6f} (valid: {fm_stats['valid_count']}/{fm_stats['num_rollouts']}, {fm_stats['valid_rate']:.1%})")
+    print(f"  Overall: best={overall_stats['best_score']:.6f} ({best_source}), mean={overall_stats['mean_score']:.6f} (valid: {overall_stats['valid_count']}/{overall_stats['num_rollouts']}, {overall_stats['valid_rate']:.1%})")
 
 
 if __name__ == "__main__":

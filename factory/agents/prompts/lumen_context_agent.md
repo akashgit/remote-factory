@@ -151,19 +151,27 @@ Aggregated evaluation statistics for iteration N. Structure:
   - `best_score` (float) — maximum score achieved
   - `best_rollout_idx` (int) — which rollout achieved the best score
   - `best_solution` (dict) — the best solution dict (may be empty `{}` if not captured)
-  - `mean_score` (float) — average score across all rollouts
-  - `std_score` (float) — standard deviation of scores
+  - `mean_score` (float) — average score across **valid rollouts only** (score > 0)
+  - `std_score` (float) — standard deviation across **valid rollouts only**
+  - `valid_count` (int) — number of rollouts that produced a valid solution (score > 0)
+  - `valid_rate` (float) — fraction of rollouts that succeeded
+  - `fail_count` (int) — number of rollouts that failed (score == 0: code error, timeout, or constraint violation)
+  - `fail_rate` (float) — fraction of rollouts that failed
   - `per_prompt_stats` (list[dict]) — **per-strategy breakdown**, one entry per prompt:
     - `prompt_idx` (int) — prompt index (0–7)
     - `strategy` (str) — strategy name from prompts.json
-    - `mean` (float) — average score for this prompt's rollouts
-    - `std` (float) — standard deviation for this prompt's rollouts
-    - `best` (float) — best score among this prompt's rollouts
+    - `mean` (float) — average score for this prompt's **valid** rollouts
+    - `std` (float) — standard deviation for this prompt's **valid** rollouts
+    - `best` (float) — best score among this prompt's valid rollouts
+    - `valid_count` (int) — number of valid rollouts for this prompt
+    - `valid_rate` (float) — fraction of valid rollouts for this prompt
+    - `fail_count` (int) — number of failed rollouts for this prompt
+    - `num_rollouts` (int) — total rollouts for this prompt
 - `fm` (dict | null) — frontier-model rollout statistics (same structure as `sm`; currently `null` — reserved for future use)
 - `overall` (dict) — combined best across sm and fm:
   - Same fields as `sm` plus `best_source` (str) — which model produced the best result
 
-**Agent usage:** Read `per_prompt_stats` to see which strategies worked (highest `best` and `mean` scores) and which failed. Use this to decide which strategies to keep, modify, or replace. Note: this file gives you **statistics** but not the actual code — for the winning code, read `sm_rollouts.jsonl`.
+**Agent usage:** Read `per_prompt_stats` to see which strategies worked and which failed. A strategy with high `valid_rate` and high `mean` is genuinely strong; a strategy with low `valid_rate` may have issues worth diagnosing via `sm_rollouts.jsonl`'s `eval_msg` field. Note: this file gives you **statistics** but not the actual code — for that, read `sm_rollouts.jsonl`.
 
 #### `iteration_N/metrics.jsonl`
 
@@ -232,9 +240,9 @@ Read `.factory/lumen/state.json` to get the current iteration number.
 #### 2a. Read evaluation statistics
 
 1. Read `.factory/lumen/iteration_{N-1}/evaluation_results.json`
-2. Look at the `per_prompt_stats` field — each entry has `prompt_idx`, `strategy`, `mean`, `std`, and `best`
-3. Identify which strategies performed best (highest `best` score for MAXIMIZE, lowest for MINIMIZE)
-4. Identify which strategies performed poorly (low `mean` and `best`)
+2. Look at the `per_prompt_stats` field — each entry has `prompt_idx`, `strategy`, `mean`, `std`, `best`, `valid_count`, `valid_rate`, `fail_count`
+3. Identify which strategies performed best (high `valid_rate` and high `best`/`mean` for MAXIMIZE, low for MINIMIZE)
+4. Identify which strategies performed poorly (low `valid_rate`, or low `mean` and `best`)
 
 #### 2b. Read previous rollouts
 
