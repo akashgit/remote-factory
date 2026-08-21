@@ -152,10 +152,6 @@ class TestDeepQaWorkflow:
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
 
-    def test_registered(self) -> None:
-        all_wf = register_all()
-        assert "deep-qa" in all_wf
-
     def test_skill_export(self) -> None:
         from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
 

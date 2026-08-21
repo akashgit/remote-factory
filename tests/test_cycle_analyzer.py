@@ -394,10 +394,10 @@ class TestCycleAnalyzerDagMapping:
         r = CycleAnalyzer(factory_dir, workflow=wf).latest()
         assert r is not None
         assert len(r.node_trace) > 0
-        assert "researcher" in r.node_trace
-        assert r.node_trace["researcher"].role == "researcher"
-        assert r.node_trace["researcher"].event is not None
-        assert r.node_trace["researcher"].event["cost_usd"] == 1.0
+        assert "researcher_similar" in r.node_trace
+        assert r.node_trace["researcher_similar"].role == "researcher"
+        assert r.node_trace["researcher_similar"].event is not None
+        assert r.node_trace["researcher_similar"].event["cost_usd"] == 1.0
 
     def test_node_trace_without_workflow(self, factory_dir: Path) -> None:
         events = _make_events(n_experiments=1)

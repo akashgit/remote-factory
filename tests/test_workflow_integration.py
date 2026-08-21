@@ -140,7 +140,7 @@ class TestImproveWorkflowMock:
     async def test_improve_archivist_nonblocking(self, tmp_project: Path) -> None:
         """Verify archivist in W₃ runs non-blocking."""
         wf = build_workflow()
-        archivist = wf.nodes.get("archivist")
+        archivist = wf.nodes.get("archivist_build")
         assert archivist is not None
         assert archivist.blocking is False
 
