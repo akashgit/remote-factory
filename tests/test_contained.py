@@ -85,9 +85,58 @@ def test_trailing_yes_reaches_the_namespace() -> None:
     assert args.yes is True
 
 
-def test_flag_after_lifecycle_subcommand_is_an_error_not_a_name() -> None:
+def test_runtime_flags_work_on_either_side_of_the_subcommand() -> None:
+    """`contained verify --target k8s` is what people type; it used to be rejected.
+
+    The two orders have to produce the same namespace, not merely both be accepted — a `--target`
+    that parses but does not reach `args.target` sends a cluster command to the local runtime.
+    """
+    before = interpret(["--target", "k8s", "--namespace", "ns", "verify"])
+    after = interpret(["verify", "--target", "k8s", "--namespace", "ns"])
+    assert (before.subcommand, before.target, before.namespace) == ("verify", "k8s", "ns")
+    assert (after.subcommand, after.target, after.namespace) == ("verify", "k8s", "ns")
+
+
+def test_a_name_and_flags_can_be_mixed_after_the_subcommand() -> None:
+    args = interpret(["rm", "rta-abc123", "--target", "k8s", "--namespace", "ns"])
+    assert (args.subcommand, args.name, args.target, args.namespace) == (
+        "rm", "rta-abc123", "k8s", "ns"
+    )
+
+
+def test_a_repeatable_flag_merges_across_the_subcommand() -> None:
+    """Repeatable means repeatable; splitting one across the subcommand is not a conflict."""
+    args = interpret(["--env", "A=1", "ls", "--env", "B=2"])
+    assert args.extra_env == ["A=1", "B=2"]
+
+
+def test_the_same_flag_on_both_sides_with_different_values_is_refused() -> None:
+    """Silently letting one side win is how a bundle reaches the wrong namespace."""
     with pytest.raises(SystemExit):
-        interpret(["ls", "--target", "k8s"])
+        interpret(["--namespace", "a", "verify", "--namespace", "b"])
+
+
+def test_an_unknown_flag_after_the_subcommand_is_still_named() -> None:
+    with pytest.raises(SystemExit):
+        interpret(["ls", "--targt", "k8s"])
+
+
+def test_a_bad_flag_value_after_the_subcommand_is_reported_not_exited_silently() -> None:
+    with pytest.raises(SystemExit):
+        interpret(["verify", "--target", "nope"])
+
+
+def test_two_names_after_a_lifecycle_subcommand_are_refused() -> None:
+    """The second used to be dropped without a word, leaving the wrong runtime targeted."""
+    with pytest.raises(SystemExit):
+        interpret(["attach", "one", "two"])
+
+
+def test_the_payload_after_the_separator_is_never_parsed_as_a_runtime_flag() -> None:
+    """The whole passthrough contract: `--target` in the payload belongs to the inner factory."""
+    args = interpret(["--", "ceo", "/tmp", "--target", "k8s"])
+    assert args.target == "local"
+    assert args.factory_args == ["ceo", "/tmp", "--target", "k8s"]
 
 
 def test_local_only_flag_against_k8s_fails_at_parse_time() -> None:

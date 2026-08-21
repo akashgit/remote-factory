@@ -15,7 +15,7 @@ import yaml
 
 from factory.cli import contained as cli
 from factory.cli.contained_k8s import PACK_EXCLUDES, _build_pod_plan, _pack
-from factory.contained import k8s, k8s_setup, secrets
+from factory.contained import k8s, k8s_credentials, k8s_setup, secrets
 from factory.contained.bundle import SCC_ROLEBINDING, render_bundle
 from factory.contained.k8s import (
     FACTORY_CONTAINER,
@@ -74,7 +74,13 @@ def _no_real_kubeconfig():
          patch("factory.contained.k8s_setup.current_namespace", return_value=None), \
          patch("factory.contained.k8s_setup._namespace_status", return_value=k8s_setup.PRESENT), \
          patch("factory.contained.k8s._run", return_value=_completed("true")), \
+         patch("factory.contained.k8s_credentials._run", return_value=_completed("{}")), \
+         patch("factory.contained.k8s_setup.run_credentials_step", return_value=False), \
          patch("factory.contained.k8s_setup.access_review", return_value=True):
+        # The credentials step is stubbed for the same two reasons as the rest: it reads the
+        # cluster, and it is a conversation. A `setup_k8s` test that let it run would consume the
+        # mocked `input()` the object walk is asserting on, and would block on a prompt that never
+        # receives a valid key. `tests/test_contained_k8s_credentials.py` exercises it directly.
         # `access_review` is stubbed under the name *k8s_setup* imported, not on `k8s` itself: it
         # shells out with `subprocess.run` directly, so nothing else here catches it, and the test
         # that exercises the real function reaches it through `k8s.access_review`, untouched.
@@ -394,7 +400,11 @@ def test_a_missing_object_names_the_command_that_restores_it() -> None:
         if "current-context" in argv:
             return _completed("ctx")
         if "rolebinding" in argv and SCC_ROLEBINDING in argv:
-            return _completed(returncode=1)
+            # `NotFound` specifically: any non-zero used to count as missing, which turned an
+            # expired login into a namespace that appeared to hold nothing.
+            missing = _completed(returncode=1)
+            missing.stderr = f'Error from server (NotFound): rolebindings "{SCC_ROLEBINDING}" not found'
+            return missing
         return _completed("ok")
 
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
@@ -463,8 +473,8 @@ def test_pods_exec_being_granted_is_itself_a_failure() -> None:
 
 def test_a_secret_with_the_wrong_keys_is_reported_by_key_never_by_value() -> None:
     payload = json.dumps({"SOME_OTHER_KEY": "c2VjcmV0"})
-    with patch("factory.contained.k8s_setup._run", return_value=_completed(payload)):
-        check = k8s_setup._secret_check("oc", "ns")
+    with patch("factory.contained.k8s_credentials._run", return_value=_completed(payload)):
+        check = k8s_credentials.secret_check("oc", "ns")
     assert not check.ok
     assert "SOME_OTHER_KEY" in check.detail
     assert "c2VjcmV0" not in check.detail
@@ -473,8 +483,8 @@ def test_a_secret_with_the_wrong_keys_is_reported_by_key_never_by_value() -> Non
 
 def test_a_vertex_secret_is_accepted() -> None:
     payload = json.dumps({k: "x" for k in k8s_setup.VERTEX_KEYS})
-    with patch("factory.contained.k8s_setup._run", return_value=_completed(payload)):
-        assert k8s_setup._secret_check("oc", "ns").ok
+    with patch("factory.contained.k8s_credentials._run", return_value=_completed(payload)):
+        assert k8s_credentials.secret_check("oc", "ns").ok
 
 
 def test_setup_reports_the_current_state_before_asking(
@@ -755,12 +765,12 @@ def test_vertex_configuration_without_a_credential_is_not_enough() -> None:
         k: "x" for k in
         ("CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID")
     })
-    with patch("factory.contained.k8s_setup._run", return_value=_completed(config_only)):
-        assert not k8s_setup._secret_check("oc", "ns").ok
+    with patch("factory.contained.k8s_credentials._run", return_value=_completed(config_only)):
+        assert not k8s_credentials.secret_check("oc", "ns").ok
     # With the credential file, it passes.
     complete = json.dumps({k: "x" for k in k8s_setup.VERTEX_KEYS})
-    with patch("factory.contained.k8s_setup._run", return_value=_completed(complete)):
-        assert k8s_setup._secret_check("oc", "ns").ok
+    with patch("factory.contained.k8s_credentials._run", return_value=_completed(complete)):
+        assert k8s_credentials.secret_check("oc", "ns").ok
 
 
 def test_secret_keys_reads_names_and_never_values() -> None:
@@ -804,7 +814,7 @@ def test_the_inference_probe_is_skipped_when_the_secret_is_missing() -> None:
     """The probe pod mounts that Secret; without it the wait is 180s to learn what we know."""
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup._run", return_value=_completed("ctx")), \
-         patch("factory.contained.k8s_setup._secret_check",
+         patch("factory.contained.k8s_setup.secret_check",
                return_value=Check("credentials_secret", False, "missing", fix="oc create secret")), \
          patch("factory.contained.k8s_setup._inference_check") as probe:
         checks = k8s_setup.verify_k8s(namespace="ns")
@@ -818,7 +828,7 @@ def test_the_inference_probe_is_skipped_when_the_secret_is_missing() -> None:
 def test_the_inference_probe_still_runs_when_the_secret_is_there() -> None:
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup._run", return_value=_completed("ctx")), \
-         patch("factory.contained.k8s_setup._secret_check",
+         patch("factory.contained.k8s_setup.secret_check",
                return_value=Check("credentials_secret", True, "present")), \
          patch("factory.contained.k8s_setup._inference_check",
                return_value=Check("inference_from_cluster", True, "reached")) as probe:
@@ -968,16 +978,23 @@ def test_setup_applies_nothing_without_confirmation(capsys: pytest.CaptureFixtur
 
 
 def test_setup_says_so_when_no_cluster_is_selected(capsys: pytest.CaptureFixture[str]) -> None:
-    """"About to apply ... with your own credentials" is untrue when there are none."""
+    """"About to apply ... with your own credentials" is untrue when there are none.
+
+    The gate asks the *cluster*, not the kubeconfig: `config current-context` reads a local file
+    and passes happily for a context whose token expired hours ago, which is precisely the state
+    where every apply below it would fail.
+    """
     with patch("factory.contained.k8s_setup.cli_binary", return_value="oc"), \
          patch("factory.contained.k8s_setup.resolve_namespace", return_value="ns"), \
          patch("factory.contained.k8s_setup._run", return_value=_completed("", returncode=1)), \
+         patch("factory.contained.k8s_setup.login_status",
+               return_value=(False, "You must be logged in to the server (Unauthorized)")), \
          patch("factory.contained.k8s_setup.subprocess.run") as run:
         code = k8s_setup.setup_k8s(namespace="ns", division=False, interactive=True,
                                    assume_yes=True)
     run.assert_not_called()
     assert code == 1
-    assert "No cluster is selected" in capsys.readouterr().err
+    assert "no working credential" in capsys.readouterr().err
 
 
 def test_setup_degrades_to_printing_when_apply_is_refused(
@@ -1016,3 +1033,10 @@ def test_a_sweep_that_deleted_something_reports_a_count(
                return_value=_completed('pod "a" deleted\npod "b" deleted')):
         k8s.remove_cluster_runtime("rta-test", namespace="ns")
     assert "swept 2 pod(s)" in capsys.readouterr().out
+
+
+def test_a_plan_without_a_vertex_model_warning_adds_no_warning(tmp_path: Path) -> None:
+    """The common path: a non-Vertex backend produces no model warning, so none is appended."""
+    with patch("factory.cli.contained_k8s.vertex_model_warning", return_value=None):
+        plan = _plan(tmp_path)
+    assert not any("--model" in w for w in plan.warnings)

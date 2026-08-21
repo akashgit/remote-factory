@@ -29,7 +29,7 @@ import structlog
 
 from factory.contained import style
 from factory.contained.bundle import BundleObject
-from factory.contained.k8s import cli
+from factory.contained.k8s import cli, is_auth_error, is_not_found
 
 log = structlog.get_logger()
 
@@ -67,10 +67,21 @@ def _run(argv: list[str], *, stdin: str | None = None,
 
 
 def inspect_objects(
-    objects: list[BundleObject], namespace: str, binary: str
+    objects: list[BundleObject], namespace: str, binary: str,
+    on_object: Callable[[BundleObject], None] | None = None,
 ) -> list[ObjectState]:
-    """Compare each object against the cluster. Never raises; an unreadable object is `unknown`."""
-    return [_inspect_one(obj, namespace, binary) for obj in objects]
+    """Compare each object against the cluster. Never raises; an unreadable object is `unknown`.
+
+    `on_object` is called before each comparison, so a caller can say which one is being read. Two
+    cluster round trips per object means a six-object bundle is comfortably long enough to look
+    stopped.
+    """
+    states = []
+    for obj in objects:
+        if on_object is not None:
+            on_object(obj)
+        states.append(_inspect_one(obj, namespace, binary))
+    return states
 
 
 def _inspect_one(obj: BundleObject, namespace: str, binary: str) -> ObjectState:
@@ -79,7 +90,26 @@ def _inspect_one(obj: BundleObject, namespace: str, binary: str) -> ObjectState:
     if present is None:
         return ObjectState(obj, UNKNOWN, detail=f"could not reach the cluster to check {obj.ref}")
     if present.returncode != 0:
-        return ObjectState(obj, ABSENT, detail="not in this namespace — it would be created")
+        # **Only `NotFound` means absent.** Treating every non-zero exit as "not there" made an
+        # expired login look like an empty namespace: all five objects were offered for creation
+        # against a namespace that already had them, and the one honest line on screen — "could not
+        # confirm whether the namespace exists" — was contradicted by the five under it.
+        stderr = (present.stderr or "").strip()
+        if is_not_found(stderr):
+            return ObjectState(obj, ABSENT, detail="not in this namespace — it would be created")
+        if is_auth_error(stderr):
+            return ObjectState(
+                obj, UNKNOWN,
+                detail=f"could not be checked — not logged in to this cluster ({binary} login ...)",
+            )
+        first = stderr.splitlines()
+        return ObjectState(
+            obj, UNKNOWN,
+            detail=(
+                f"could not be checked: {first[0][:140]}" if first
+                else f"could not be checked (exit {present.returncode})"
+            ),
+        )
 
     # `diff` exits 0 for no change and 1 for a change; anything higher is a real error, and so is 1
     # with nothing on stdout (some builds report a failure that way).

@@ -15,8 +15,9 @@ halfway leaves the cluster genuinely changed, and the summary says how much. If 
 missing, the object that failed is named and the walk carries on — `verify` then reports exactly
 what is absent, so a partial apply is never dressed up as success.
 
-The credentials Secret stays outside that flow. `setup` prints the `oc create secret` command and
-never handles the material.
+The credentials Secret is settled as its own step, in `k8s_credentials`. It used to be left
+entirely to the user, which meant every freshly prepared namespace ended one check short of an
+answer — the inference probe needs that Secret to authenticate, so it could only be skipped.
 """
 
 from __future__ import annotations
@@ -25,19 +26,21 @@ import hashlib
 import json
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import structlog
 
 from factory.contained import style
 from factory.contained.bundle import BundleObject, bundle_objects, render_bundle
 from factory.contained.k8s import (
-    ADC_SECRET_KEY,
+    DOOMED,
     LABEL_CONTAINED,
     SECRET_NAME,
     SERVICE_ACCOUNT,
+    SUCCEEDED,
     ClusterContext,
     ClusterError,
+    PodProgress,
     access_review,
     build_api_resources_argv,
     cli,
@@ -45,10 +48,20 @@ from factory.contained.k8s import (
     active_context,
     cluster_context,
     current_namespace,
+    is_auth_error,
+    is_not_found,
     list_contexts,
+    login_status,
+    poll_pod,
     resolve_namespace,
     set_active_context,
     use_context,
+)
+from factory.contained.k8s_credentials import (
+    ANTHROPIC_KEYS,
+    VERTEX_KEYS,
+    run_credentials_step,
+    secret_check,
 )
 from factory.contained.k8s_review import inspect_objects, render_summary, walk
 from factory.contained.prereq import Check, format_check, summary_line
@@ -57,19 +70,15 @@ from factory.podman import resolve_image
 
 log = structlog.get_logger()
 
-# The cluster half of `setup`: choose a namespace, review-and-apply object by object, verify.
-# Three rather than four because applying is no longer a step of its own — each object is applied
-# at the moment it is accepted, so there is nothing left to batch afterwards.
-_K8S_STEPS = 3
+# The cluster half of `setup`: choose a namespace, review-and-apply object by object, settle the
+# credentials, verify. Applying is not a step of its own — each object is applied at the moment it
+# is accepted, so there is nothing left to batch afterwards.
+_K8S_STEPS = 4
 
-# The keys a credentials Secret must carry for at least one supported backend.
-ANTHROPIC_KEYS = ("ANTHROPIC_API_KEY",)
-# The three configuration variables *and* the credential file. The credential is the point: the
-# first three only say which endpoint to talk to, so a Secret carrying just those was reported as
-# "carries the Vertex configuration" while holding nothing that could authenticate.
-VERTEX_KEYS = (
-    "CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", ADC_SECRET_KEY,
-)
+# Re-exported: `ANTHROPIC_KEYS`, `VERTEX_KEYS` and the Secret checks now live in
+# `k8s_credentials`, beside the code that creates one. Imported here so the names this module has
+# always exposed keep resolving.
+__all__ = ["ANTHROPIC_KEYS", "VERTEX_KEYS", "setup_k8s", "verify_k8s"]
 
 # The verbs the pod's ServiceAccount needs. Checked as the ServiceAccount, not as the user: a
 # namespace where *you* can create pods but the pod cannot read its own logs fails on the agent's
@@ -140,11 +149,22 @@ def verify_k8s(
         )
         return checks
 
-    context = _context_check(binary)
+    with style.activity("cluster_cli", "reading the current context"):
+        context = _context_check(binary)
     record(context)
     if not context.ok:
         # Everything below needs a reachable cluster. Reporting eight further failures that all mean
         # "no context" buries the one that matters.
+        return checks
+
+    with style.activity("cluster_login", "checking the credential actually works"):
+        login = _login_check(binary)
+    record(login)
+    if not login.ok:
+        # Same reason, one level deeper. A context with an expired token passes every *local* check
+        # and fails every remote one, and the remote failures do not say "log in" — they say the
+        # namespace is unreadable and the objects are missing, which is nine lines of plausible
+        # fiction. Stopping here is the only way the user is told the one thing that is true.
         return checks
 
     try:
@@ -155,18 +175,49 @@ def verify_k8s(
         )
         return checks
 
-    record(_namespace_check(binary, target))
-    record(*_object_checks(binary, target, division))
-    record(*_verb_checks(target, division))
-    secret = _secret_check(binary, target)
-    record(secret)
-    record(_image_check())
-    if probe_inference:
-        record(_inference_result(binary, target, secret, announce=on_check is not None))
-    record(_gitleaks_check())
-    if division:
-        record(*_division_checks(target))
+    for check in _namespace_inspection(
+        binary, target, division=division, probe_inference=probe_inference,
+        streaming=on_check is not None,
+    ):
+        record(check)
     return checks
+
+
+def _namespace_inspection(
+    binary: str,
+    target: str,
+    *,
+    division: bool,
+    probe_inference: bool,
+    streaming: bool,
+) -> Iterator[Check]:
+    """Everything worth asking once a reachable cluster and a usable namespace are established.
+
+    A generator rather than a list so the caller reports each result the moment it is known. These
+    are the slow checks — an access review per verb is a round trip each, and the inference probe
+    launches a pod — and a caller that could only print at the end would show a blank screen for
+    minutes, which reads as a hang.
+    """
+    with style.activity("namespace", f"looking up {target}"):
+        namespace_check = _namespace_check(binary, target)
+    yield namespace_check
+    with style.activity("bundle", f"comparing each object against {target}"):
+        object_checks = _object_checks(binary, target, division)
+    yield from object_checks
+    with style.activity("permissions", "posting an access review per verb the run needs"):
+        verb_checks = _verb_checks(target, division)
+    yield from verb_checks
+    with style.activity("credentials_secret", f"reading secret/{SECRET_NAME}"):
+        secret = secret_check(binary, target)
+    yield secret
+    yield _image_check()
+    if probe_inference:
+        yield _inference_result(binary, target, secret, announce=streaming)
+    yield _gitleaks_check()
+    if division:
+        with style.activity("build_api", "asking the cluster which APIs it serves"):
+            division_checks = _division_checks(target)
+        yield from division_checks
 
 
 def _context_check(binary: str) -> Check:
@@ -192,6 +243,36 @@ def _context_check(binary: str) -> Check:
     )
 
 
+def _login_check(binary: str) -> Check:
+    """Is the selected context's credential still valid? One authenticated round trip.
+
+    Separate from `_context_check` because the two answer different questions and only one of them
+    used to be asked. A kubeconfig entry is a local file; a *session* is a token with an expiry, and
+    `oc login` issues one that lasts about a day. Between those two facts sits the state this
+    exists for: everything local reports fine, every cluster read fails, and none of the failures
+    say "log in" — `get namespace` becomes "could not confirm", `get serviceaccount` becomes "not in
+    this namespace". A namespace that was fully prepared reads as an empty one.
+    """
+    ok, detail = login_status(binary)
+    if ok:
+        return Check(
+            name="cluster_login",
+            ok=True,
+            detail=f"authenticated{f' as {detail}' if detail else ''}",
+        )
+    return Check(
+        name="cluster_login",
+        ok=False,
+        detail=(
+            f"the selected context has no working credential: {detail}"
+            if not is_auth_error(detail)
+            else "your session for this context has expired — every cluster read would fail, and "
+                 "the failures look like missing objects rather than like a login problem"
+        ),
+        fix=f"{binary} login --web   # or `{binary} login <server> --token=...`",
+    )
+
+
 def _inference_result(binary: str, namespace: str, secret: Check, *, announce: bool) -> Check:
     """The in-cluster probe, or the reason it was not worth running."""
     if not secret.ok:
@@ -210,12 +291,14 @@ def _inference_result(binary: str, namespace: str, secret: Check, *, announce: b
         )
     if announce:
         # Announced rather than merely slow: this one creates a pod and waits on it, and
-        # "nothing on screen for three minutes" is the report people read as a crash.
+        # "nothing on screen for three minutes" is the report people read as a crash. The status
+        # line below then keeps saying what the pod is doing; this says what is about to happen.
         print(style.note(
             "Checking inference from inside the namespace — this launches a short-lived pod "
             "and waits for it, up to three minutes."
         ))
-    return _inference_check(binary, namespace, resolve_image())
+    with style.activity("inference_from_cluster", "creating the probe pod") as act:
+        return _inference_check(binary, namespace, resolve_image(), act=act)
 
 
 def _namespace_check(binary: str, namespace: str) -> Check:
@@ -239,19 +322,32 @@ def _object_checks(binary: str, namespace: str, division: bool) -> list[Check]:
     objects while `setup` applies five, and the missing one is only found by a run that fails.
     """
     checks = []
+    apply_fix = (
+        f"factory contained --namespace {namespace}"
+        f"{' --division' if division else ''} bundle | {binary} apply -f -"
+    )
     for obj in bundle_objects(namespace=namespace, division=division):
         kind, name = obj.kind, obj.name
         result = _run(cli(binary, "get", kind, name, "-n", namespace, "-o", "name"))
         ok = result is not None and result.returncode == 0
+        # A failed read is not evidence of absence. Only `NotFound` says the object is missing;
+        # anything else means the question went unanswered, and reporting that as "is missing"
+        # sends the user to apply a bundle over objects that are already there.
+        stderr = (result.stderr or "").strip() if result is not None else ""
+        answered = ok or is_not_found(stderr)
         checks.append(
             Check(
                 name=f"bundle:{kind}/{name}",
                 ok=ok,
-                detail=f"{kind}/{name} present" if ok else f"{kind}/{name} is missing",
+                detail=(
+                    f"{kind}/{name} present" if ok
+                    else f"{kind}/{name} is missing" if answered
+                    else f"{kind}/{name} could not be checked: "
+                         f"{stderr.splitlines()[0][:120] if stderr else 'the cluster did not answer'}"
+                ),
                 fix=(
-                    None if ok else
-                    f"factory contained --namespace {namespace}"
-                    f"{' --division' if division else ''} bundle | {binary} apply -f -"
+                    None if ok else apply_fix if answered else
+                    f"{binary} login --web   # the read failed, so this is not known to be missing"
                 ),
             )
         )
@@ -341,57 +437,14 @@ def _no_exec_check(namespace: str) -> Check:
     )
 
 
-def _secret_check(binary: str, namespace: str) -> Check:
-    """The Secret must exist and carry a usable backend's keys — its *keys*, never its values."""
-    result = _run(cli(binary, "get", "secret", SECRET_NAME, "-n", namespace,
-                      "-o", "jsonpath={.data}"))
-    create_line = (
-        f"{binary} create secret generic {SECRET_NAME} -n {namespace} \\\n"
-        f"      --from-literal=ANTHROPIC_API_KEY=...\n"
-        f"  or, for Vertex:\n"
-        f"      {binary} create secret generic {SECRET_NAME} -n {namespace} \\\n"
-        f"      --from-literal=CLAUDE_CODE_USE_VERTEX=1 \\\n"
-        f"      --from-literal=CLOUD_ML_REGION=<region> \\\n"
-        f"      --from-literal=ANTHROPIC_VERTEX_PROJECT_ID=<project> \\\n"
-        f"      --from-file={ADC_SECRET_KEY}=$HOME/.config/gcloud/"
-        f"application_default_credentials.json"
-    )
-    if result is None or result.returncode != 0:
-        return Check(
-            name="credentials_secret",
-            ok=False,
-            detail=f"secret/{SECRET_NAME} is missing from {namespace}",
-            fix=create_line,
-        )
-    keys = _keys_of(result.stdout)
-    if set(ANTHROPIC_KEYS) <= keys:
-        return Check(name="credentials_secret", ok=True,
-                     detail=f"secret/{SECRET_NAME} carries the Anthropic API key")
-    if set(VERTEX_KEYS) <= keys:
-        return Check(name="credentials_secret", ok=True,
-                     detail=f"secret/{SECRET_NAME} carries the Vertex configuration")
-    return Check(
-        name="credentials_secret",
-        ok=False,
-        detail=(
-            f"secret/{SECRET_NAME} exists but carries none of the supported backends' keys "
-            f"(has: {', '.join(sorted(keys)) or 'nothing'})"
-        ),
-        fix=create_line,
-    )
+# The probe's own ceiling, once it is actually running. A pod that cannot start never reaches it —
+# `poll_pod` returns the moment the kubelet says so — so this now bounds only the request itself.
+PROBE_TIMEOUT_SECONDS = 180
 
 
-def _keys_of(raw: str) -> set[str]:
-    import json
-
-    try:
-        data = json.loads(raw or "{}")
-    except json.JSONDecodeError:
-        return set()
-    return set(data) if isinstance(data, dict) else set()
-
-
-def _inference_check(binary: str, namespace: str, image: str) -> Check:
+def _inference_check(
+    binary: str, namespace: str, image: str, act: style.Activity | None = None
+) -> Check:
     """Can a pod in this namespace actually reach inference? (spec.0 check 6)
 
     **From inside the cluster, not from here.** A host-side check proves nothing about the pod's
@@ -403,15 +456,25 @@ def _inference_check(binary: str, namespace: str, image: str) -> Check:
     the design makes deliberately: a credentials problem found here fails at launch with a named
     cause, and found any other way it fails inside an agent call, minutes in, looking like a model
     outage.
+
+    `act` is the status line. Every wait below reports into it, because this check was reported as a
+    hang: it is the only one that can legitimately take minutes, and it used to say nothing at all
+    while doing so.
     """
+    def say(detail: str) -> None:
+        if act is not None:
+            act.update(detail)
+
     # A hash rather than a slice of the namespace: a truncated name can end in a hyphen, which
     # RFC 1123 rejects and which the API server reports as an invalid *value* rather than as a
     # naming mistake. Hashing also keeps two namespaces' probes from colliding.
     pod = f"factory-inference-probe-{hashlib.sha1(namespace.encode()).hexdigest()[:8]}"
     manifest = _probe_pod_manifest(pod, namespace, image)
     try:
+        say("removing any probe pod left behind by an earlier run")
         subprocess.run(cli(binary, "delete", "pod", pod, "-n", namespace, "--ignore-not-found"),
                        capture_output=True, text=True, timeout=60)
+        say("creating the probe pod")
         created = subprocess.run(cli(binary, "apply", "-n", namespace, "-f", "-"),
                                  input=manifest, capture_output=True, text=True, timeout=60)
         if created.returncode != 0:
@@ -421,23 +484,26 @@ def _inference_check(binary: str, namespace: str, image: str) -> Check:
                 detail=f"the probe pod could not be created: {created.stderr.strip()[:160]}",
                 fix=f"factory contained --namespace {namespace} bundle | {binary} apply -f -",
             )
-        waited = subprocess.run(
-            cli(binary, "wait", f"pod/{pod}", "-n", namespace,
-                "--for=jsonpath={.status.phase}=Succeeded", "--timeout=180s"),
-            capture_output=True, text=True, timeout=240,
+        # Polled rather than `oc wait --for=...Succeeded --timeout=180s`. That flag is blind: it can
+        # only report that the condition did not hold, so an image the cluster cannot pull cost the
+        # full three minutes and was then described as "the probe produced no output" — a sentence
+        # that names neither the cause nor where to look for it.
+        progress = poll_pod(
+            pod, namespace, until=(SUCCEEDED,), timeout=PROBE_TIMEOUT_SECONDS,
+            on_progress=lambda state: say(f"probe pod: {state.describe()}"),
         )
+        say("reading the probe pod's output")
         logs = subprocess.run(cli(binary, "logs", pod, "-n", namespace),
                               capture_output=True, text=True, timeout=60)
         output = (logs.stdout or "").strip()
-        ok = waited.returncode == 0 and "PROBE_OK" in output
+        ok = progress.verdict == SUCCEEDED and "PROBE_OK" in output
         return Check(
             name="inference_from_cluster",
             ok=ok,
             detail=(
-                "a pod in this namespace reached the configured inference backend"
-                if ok
-                else "a pod in this namespace could NOT reach inference: "
-                     + (output.splitlines()[-1][:200] if output else "the probe produced no output")
+                "a pod in this namespace reached the configured inference backend" if ok
+                else f"a pod in this namespace could NOT reach inference: "
+                     f"{_probe_failure(progress, output)}"
             ),
             fix=(
                 None if ok else
@@ -455,6 +521,20 @@ def _inference_check(binary: str, namespace: str, image: str) -> Check:
     finally:
         subprocess.run(cli(binary, "delete", "pod", pod, "-n", namespace, "--ignore-not-found",
                            "--wait=false"), capture_output=True, text=True, timeout=60)
+
+
+def _probe_failure(progress: PodProgress, output: str) -> str:
+    """Why the probe failed, preferring whichever source actually knows.
+
+    A pod that never started has no logs, and reporting "no output" for it describes the symptom of
+    the previous sentence rather than the cause. The kubelet's reason is the answer in that case;
+    the probe's own last line is the answer once it has run.
+    """
+    if progress.verdict == DOOMED and not output:
+        return f"the probe pod could not run: {progress.describe()}"
+    if output:
+        return output.splitlines()[-1][:200]
+    return f"the probe produced no output ({progress.describe()})"
 
 
 def _probe_pod_manifest(name: str, namespace: str, image: str) -> str:
@@ -600,11 +680,17 @@ def setup_k8s(
     # Say the outcome before printing 80 lines of YAML that would otherwise bury it — and check the
     # blocker the user actually has. With no cluster reachable, nothing could be applied whatever
     # they answer, and "About to apply..." would be untrue.
-    reachable = _run(cli(binary, "config", "current-context"))
-    if reachable is None or reachable.returncode != 0 or not reachable.stdout.strip():
+    #
+    # This asks the cluster, not the kubeconfig. It used to run `config current-context`, which
+    # reads a local file and answers "yes, a context is selected" for a context whose token expired
+    # hours ago — so the gate passed, the walk ran, and every object in an already-prepared
+    # namespace was offered for creation because every `get` had failed.
+    authenticated, why = login_status(binary)
+    if not authenticated:
         print(
-            f"No cluster is selected, so nothing can be applied to namespace {target} from here.\n"
-            f"Log in first (`{binary} login ...`), then re-run. The manifest you will need is "
+            f"This context has no working credential, so nothing can be applied to namespace "
+            f"{target} from here: {why}\n"
+            f"Log in first (`{binary} login --web`), then re-run. The manifest you will need is "
             "below; you can also hand it to whoever owns the namespace:\n"
             f"{apply_line}\n",
             file=sys.stderr,
@@ -617,7 +703,12 @@ def setup_k8s(
     # decide is, per object that is not already right, what it is for and what would change.
     print(style.section("Review and apply", step=2, total=_K8S_STEPS))
     objects = bundle_objects(namespace=target, division=division)
-    states = inspect_objects(objects, target, binary)
+    # One server-side `oc diff` per object, so this grows with the bundle and is a round trip each.
+    with style.activity("review", f"comparing {len(objects)} objects against {target}") as act:
+        states = inspect_objects(
+            objects, target, binary,
+            on_object=lambda obj: act.update(f"comparing {obj.kind}/{obj.name}"),
+        )
     print(render_summary(states, target, cluster_context().server))
 
     # There is no separate apply step: each object is applied the moment it is accepted. Batching
@@ -658,7 +749,7 @@ def setup_k8s(
         ))
         return 1
 
-    return _finish(binary, target, division, interactive)
+    return _finish(binary, target, division, interactive, assume_yes)
 
 
 def _apply_object(obj: BundleObject, namespace: str, binary: str) -> tuple[bool, str]:
@@ -680,17 +771,20 @@ def _apply_object(obj: BundleObject, namespace: str, binary: str) -> tuple[bool,
     return False, detail[0][:200] if detail else "no detail given"
 
 
-def _finish(binary: str, target: str, division: bool, interactive: bool = False) -> int:
-    """The Secret reminder and the verify pass — reached whether or not anything was applied.
+def _finish(
+    binary: str, target: str, division: bool, interactive: bool = False, assume_yes: bool = False
+) -> int:
+    """The credentials step and the verify pass — reached whether or not anything was applied.
 
     A run where every object was already correct still has to end in `verify`'s two states, because
     "nothing to apply" is not the same claim as "this namespace is ready".
+
+    Credentials come before verify rather than after it for one reason: without them the inference
+    probe cannot run, so a setup that ends without asking always ends one check short of an answer.
     """
-    print(
-        f"\nThe credentials Secret is yours to create — the factory never handles the material:\n"
-        f"  {binary} create secret generic {SECRET_NAME} -n {target} "
-        "--from-literal=ANTHROPIC_API_KEY=...\n"
-    )
+    print(style.section("Credentials", step=3, total=_K8S_STEPS))
+    run_credentials_step(binary, target, interactive=interactive, assume_yes=assume_yes)
+
     print(style.section("Verify", step=_K8S_STEPS, total=_K8S_STEPS))
     # Streamed, not collected: the access reviews and the in-cluster inference probe take minutes
     # between them, and a step that prints nothing until they all finish is read as a hang — which

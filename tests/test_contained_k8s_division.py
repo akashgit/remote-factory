@@ -32,11 +32,17 @@ def _completed(stdout: str = "", returncode: int = 0) -> subprocess.CompletedPro
 def _no_cluster_round_trip():
     """Building a pod plan must not phone a cluster.
 
-    `_build_pod_plan` reads the namespace's allocated `fsGroup` range, which is a live `oc get
-    namespace`. On a machine logged in to a slow or unreachable cluster that is a 30-second timeout
-    per test — the difference between this file taking one second and taking two minutes.
+    `_build_pod_plan` makes *two* live reads, and both have to be stubbed. The namespace's allocated
+    `fsGroup` range is one; `secret_keys`, which decides whether a Google credential file is
+    mounted, is the other. Whichever cluster the developer's kubeconfig happens to point at answers
+    them — and when that cluster is unreachable each call waits out its full timeout, which is the
+    difference between this file taking one second and hanging for minutes.
+
+    Stubbing both is also what keeps a test run off whatever context is current. A test suite has no
+    business reaching a cluster at all, least of all one chosen by accident.
     """
-    with patch("factory.cli.contained_k8s.namespace_fs_group", return_value=None):
+    with patch("factory.cli.contained_k8s.namespace_fs_group", return_value=None), \
+         patch("factory.cli.contained_k8s.secret_keys", return_value=set()):
         yield
 
 
