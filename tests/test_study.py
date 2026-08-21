@@ -1419,7 +1419,7 @@ class TestBuildCeoTaskFocus:
     def test_focus_task_contains_targeted_mode(self, tmp_path):
         from factory.cli._task_builder import _build_ceo_task
 
-        task = _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        task = _build_ceo_task(tmp_path, "design", focus="Add caching")
         assert "Targeted Mode" in task
         assert "exactly ONE hypothesis" in task
         assert "Add caching" in task
@@ -1427,13 +1427,13 @@ class TestBuildCeoTaskFocus:
     def test_no_focus_no_targeted_mode(self, tmp_path):
         from factory.cli._task_builder import _build_ceo_task
 
-        task = _build_ceo_task(tmp_path, "improve")
+        task = _build_ceo_task(tmp_path, "design")
         assert "Targeted Mode" not in task
 
     def test_build_ceo_task_does_not_write_backlog(self, tmp_path):
         from factory.cli._task_builder import _build_ceo_task
 
-        _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        _build_ceo_task(tmp_path, "design", focus="Add caching")
         backlog_path = tmp_path / ".factory" / "strategy" / "backlog.md"
         assert not backlog_path.exists()
 
@@ -1459,7 +1459,7 @@ class TestFocusMutualExclusion:
                 "--prompt",
                 str(prompt_path),
                 "--mode",
-                "improve",
+                "design",
             ]
         )
         assert result == 1
@@ -1478,21 +1478,9 @@ class TestFocusMutualExclusion:
                 "--prompt",
                 str(prompt_path),
                 "--mode",
-                "improve",
+                "design",
             ]
         )
-        assert result == 1
-
-    def test_focus_rejected_in_build_mode(self):
-        from factory.cli import main
-
-        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "build"])
-        assert result == 1
-
-    def test_focus_rejected_in_discover_mode(self):
-        from factory.cli import main
-
-        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "discover"])
         assert result == 1
 
     def test_focus_rejected_in_meta_mode(self):

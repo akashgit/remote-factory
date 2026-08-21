@@ -252,7 +252,7 @@ class TestEvolveWorkflowTrigger:
     def test_trigger_false_for_other_modes(self):
         """Trigger does not fire for non-evolve modes."""
         wf = evolve_workflow()
-        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"}) is False
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"}) is False
         assert wf.trigger(ProjectState.HAS_FACTORY, {}) is False
 
     def test_trigger_independent_of_state(self):

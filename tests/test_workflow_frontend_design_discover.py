@@ -57,7 +57,7 @@ class TestDiscoverTrigger:
     def test_rejects_other_modes(self) -> None:
         wf = frontend_design_discover_workflow()
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "frontend-design"})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
 
 

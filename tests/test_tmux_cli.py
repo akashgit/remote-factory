@@ -115,7 +115,7 @@ class TestBuildTmuxRunArgs:
     def test_propagates_all_flags(self) -> None:
         args = argparse.Namespace(
             path="/tmp/project",
-            mode="improve",
+            mode="design",
             loop=True,
             interval=900,
             max_cycles=5,
@@ -136,7 +136,7 @@ class TestBuildTmuxRunArgs:
         )
         result = _build_tmux_run_args(args, Path("/tmp/project"), "opus-4")
 
-        assert "--mode improve" in result
+        assert "--mode design" in result
         assert "--loop" not in result
         assert "--interval" not in result
         assert "--max-cycles" not in result
@@ -158,22 +158,48 @@ class TestBuildTmuxRunArgs:
 
     def test_no_clean_pr(self) -> None:
         args = argparse.Namespace(
-            mode=None, loop=False, interval=0, max_cycles=None,
-            no_github=False, profile=None, focus=None, refine=None,
-            clean_pr=False, runner=None, prompt=None, branch=None,
-            min_growth=None, max_new=None, discover_only=False,
-            bg_agents=False, tmux_persist=False, use_profile=False,
+            mode=None,
+            loop=False,
+            interval=0,
+            max_cycles=None,
+            no_github=False,
+            profile=None,
+            focus=None,
+            refine=None,
+            clean_pr=False,
+            runner=None,
+            prompt=None,
+            branch=None,
+            min_growth=None,
+            max_new=None,
+            discover_only=False,
+            bg_agents=False,
+            tmux_persist=False,
+            use_profile=False,
         )
         result = _build_tmux_run_args(args, Path("/tmp/p"), None)
         assert "--no-clean-pr" in result
 
     def test_minimal_args(self) -> None:
         args = argparse.Namespace(
-            mode=None, loop=False, interval=0, max_cycles=None,
-            no_github=False, profile=None, focus=None, refine=None,
-            clean_pr=None, runner=None, prompt=None, branch=None,
-            min_growth=None, max_new=None, discover_only=False,
-            bg_agents=False, tmux_persist=False, use_profile=False,
+            mode=None,
+            loop=False,
+            interval=0,
+            max_cycles=None,
+            no_github=False,
+            profile=None,
+            focus=None,
+            refine=None,
+            clean_pr=None,
+            runner=None,
+            prompt=None,
+            branch=None,
+            min_growth=None,
+            max_new=None,
+            discover_only=False,
+            bg_agents=False,
+            tmux_persist=False,
+            use_profile=False,
         )
         result = _build_tmux_run_args(args, Path("/tmp/p"), None)
         assert result == "factory ceo /tmp/p"
@@ -188,7 +214,9 @@ class TestCmdTmuxStop:
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
-                returncode=0, stdout="factory-app-abc123\n", stderr="",
+                returncode=0,
+                stdout="factory-app-abc123\n",
+                stderr="",
             )
             rc = cmd_tmux_stop(args)
 
@@ -327,7 +355,7 @@ class TestTmuxSessionMapping:
 
 
 class TestTmuxModeChoices:
-    @pytest.mark.parametrize("mode", ["design", "interactive", "review", "create"])
+    @pytest.mark.parametrize("mode", ["design", "founder", "research", "create"])
     def test_tmux_accepts_ceo_only_modes(self, mode: str) -> None:
         parser = build_parser()
         args = parser.parse_args(["tmux", "/tmp/project", "--mode", mode])
@@ -367,7 +395,8 @@ class TestCmdTmuxCapture:
             patch("builtins.print") as mock_print,
         ):
             mock_run.return_value = MagicMock(
-                returncode=0, stdout="line1\nline2\n",
+                returncode=0,
+                stdout="line1\nline2\n",
             )
             rc = cmd_tmux_capture(args)
 
@@ -422,7 +451,10 @@ class TestCmdTmuxCapture:
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=True),
-            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={"factory-myproject-abc123": "/tmp/myproject"}),
+            patch(
+                "factory.cli._tmux_commands._load_tmux_session_mapping",
+                return_value={"factory-myproject-abc123": "/tmp/myproject"},
+            ),
             patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
@@ -508,7 +540,9 @@ class TestCmdTmuxPostDispatchVerification:
             mock_run.side_effect = [
                 MagicMock(returncode=1),  # has-session (not found)
                 MagicMock(returncode=0),  # new-session
-                MagicMock(returncode=0, stdout="Error: something went wrong\n", stderr=""),  # capture-pane
+                MagicMock(
+                    returncode=0, stdout="Error: something went wrong\n", stderr=""
+                ),  # capture-pane
             ]
             rc = cmd_tmux(args)
 
@@ -565,7 +599,9 @@ class TestCmdTmuxPostDispatchVerification:
 
 class TestCmdTmuxStopEdgeCases:
     def test_tmux_not_available(self) -> None:
-        args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
+        args = argparse.Namespace(
+            session="factory-app-abc123", path=None, stop_all=False, force=False
+        )
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=False),
@@ -592,7 +628,9 @@ class TestCmdTmuxStopEdgeCases:
         assert any("not found" in str(c) for c in mock_print.call_args_list)
 
     def test_session_not_found_in_tmux(self) -> None:
-        args = argparse.Namespace(session="factory-gone-abc123", path=None, stop_all=False, force=False)
+        args = argparse.Namespace(
+            session="factory-gone-abc123", path=None, stop_all=False, force=False
+        )
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=True),
@@ -608,7 +646,9 @@ class TestCmdTmuxStopEdgeCases:
 
 class TestCmdTmuxStopOwnership:
     def test_warns_and_blocks_unregistered_session(self) -> None:
-        args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=False)
+        args = argparse.Namespace(
+            session="factory-mystery-abc123", path=None, stop_all=False, force=False
+        )
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=True),
@@ -626,7 +666,9 @@ class TestCmdTmuxStopOwnership:
         assert len(kill_calls) == 0
 
     def test_force_kills_unregistered_session(self) -> None:
-        args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=True)
+        args = argparse.Namespace(
+            session="factory-mystery-abc123", path=None, stop_all=False, force=True
+        )
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=True),
@@ -640,11 +682,16 @@ class TestCmdTmuxStopOwnership:
         assert rc == 0
 
     def test_registered_session_killed_without_force(self) -> None:
-        args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
+        args = argparse.Namespace(
+            session="factory-app-abc123", path=None, stop_all=False, force=False
+        )
 
         with (
             patch("factory.cli._tmux_commands._tmux_available", return_value=True),
-            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={"factory-app-abc123": "/tmp/app"}),
+            patch(
+                "factory.cli._tmux_commands._load_tmux_session_mapping",
+                return_value={"factory-app-abc123": "/tmp/app"},
+            ),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
         ):

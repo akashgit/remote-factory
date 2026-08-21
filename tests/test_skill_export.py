@@ -374,10 +374,10 @@ class TestGateToCheckpoint:
 
 class TestWorkflowToSkillMd:
     def test_generates_valid_frontmatter(self) -> None:
-        wf = _minimal_workflow(name="build")
+        wf = _minimal_workflow(name="alpha")
         result = workflow_to_skill_md(wf)
         assert result.startswith("---")
-        assert "name: workflow-build" in result
+        assert "name: workflow-alpha" in result
         assert "description:" in result
 
     def test_contains_arguments_placeholder(self) -> None:
@@ -457,17 +457,17 @@ class TestExportAllSkills:
         assert "workflow-test_wf" in str(paths[0].parent)
 
     def test_creates_directory_structure(self, tmp_path: Path) -> None:
-        wf1 = _minimal_workflow(name="build")
-        wf2 = _minimal_workflow(name="improve")
-        paths = export_all_skills(tmp_path, workflows={"build": wf1, "improve": wf2})
+        wf1 = _minimal_workflow(name="alpha")
+        wf2 = _minimal_workflow(name="beta")
+        paths = export_all_skills(tmp_path, workflows={"alpha": wf1, "beta": wf2})
         assert len(paths) == 2
         dirs = {p.parent.name for p in paths}
-        assert "workflow-build" in dirs
-        assert "workflow-improve" in dirs
+        assert "workflow-alpha" in dirs
+        assert "workflow-beta" in dirs
 
     def test_written_content_passes_validation(self, tmp_path: Path) -> None:
-        wf = _minimal_workflow(name="build")
-        paths = export_all_skills(tmp_path, workflows={"build": wf})
+        wf = _minimal_workflow(name="alpha")
+        paths = export_all_skills(tmp_path, workflows={"alpha": wf})
         content = paths[0].read_text()
         issues = validate_skill(content)
         assert issues == [], f"Validation issues: {issues}"

@@ -150,7 +150,7 @@ class TestDeepQaWorkflow:
         assert wf.trigger is not None
         assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "deep-qa"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
 
     def test_registered(self) -> None:
         all_wf = register_all()

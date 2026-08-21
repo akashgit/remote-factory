@@ -26,7 +26,7 @@ PHASES = [
 
 # Mode-specific phase definitions: (display_name, builder_key, is_loop_phase)
 MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
-    "improve": [
+    "design": [
         ("Observe", "research", False),
         ("Hypothesize", "strategize", False),
         ("Build", "build", True),
@@ -43,17 +43,6 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
         ("Run", "eval", True),
         ("Archive", "archive", False),
     ],
-    "build": [
-        ("Research", "research", False),
-        ("Plan", "strategize", False),
-        ("Build", "build", True),
-        ("Verify", "eval", False),
-        ("Archive", "archive", False),
-    ],
-    "discover": [
-        ("Detect", "detect", False),
-        ("Discover", "discover", False),
-    ],
     "meta": [
         ("Observe", "research", False),
         ("Hypothesize", "strategize", False),
@@ -66,7 +55,7 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
 }
 
 MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
+    "design": {
         "researcher": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
@@ -87,19 +76,6 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "adversarial_tester": "Run",
         "archivist": "Archive",
     },
-    "build": {
-        "researcher": "Research",
-        "strategist": "Plan",
-        "builder": "Build",
-        "qa": "Verify",
-        "health_checker": "Verify",
-        "code_reviewer": "Verify",
-        "adversarial_tester": "Verify",
-        "archivist": "Archive",
-    },
-    "discover": {
-        "researcher": "Discover",
-    },
     "meta": {
         "researcher": "Observe",
         "strategist": "Hypothesize",
@@ -113,7 +89,7 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
 }
 
 MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
-    "improve": {
+    "design": {
         "study.started": "Observe",
         "study.completed": "Observe",
         "insights.started": "Observe",
@@ -130,18 +106,6 @@ MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
         "eval.completed": "Run",
         "guard.completed": "Run",
         "archive.completed": "Archive",
-    },
-    "build": {
-        "study.started": "Research",
-        "study.completed": "Research",
-        "eval.started": "Verify",
-        "eval.completed": "Verify",
-        "archive.completed": "Archive",
-    },
-    "discover": {
-        "detect": "Detect",
-        "discover.started": "Discover",
-        "discover.completed": "Discover",
     },
     "meta": {
         "study.started": "Observe",
@@ -206,9 +170,9 @@ def infer_mode_from_artifacts(factory_dir: Path) -> str | None:
                 return "research"
         except (json.JSONDecodeError, OSError):
             pass
-        return "improve"
+        return "design"
     if (factory_dir / "eval_profile.json").exists():
-        return "discover"
+        return "design"
     return None
 
 
@@ -271,11 +235,11 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
     if event_type == "detect":
         detected = data.get("state", "")
         mode_map = {
-            "new": "Build",
-            "init": "Build",
-            "discovered": "Improve",
-            "running": "Improve",
-            "stale": "Improve",
+            "new": "Design",
+            "init": "Design",
+            "discovered": "Design",
+            "running": "Design",
+            "stale": "Design",
         }
         inferred = mode_map.get(detected)
         if inferred and not state.current_mode:

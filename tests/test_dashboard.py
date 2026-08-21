@@ -762,7 +762,7 @@ class TestModeAwarePhaseDetail:
         (factory / "reviews" / "researcher-latest.md").write_text("Output")
 
         from factory.events import emit_event
-        emit_event(proj, "cycle.started", data={"mode": "improve"})
+        emit_event(proj, "cycle.started", data={"mode": "design"})
         emit_event(proj, "agent.started", agent="researcher", data={"task": "study"})
         emit_event(proj, "agent.completed", agent="researcher")
         emit_event(proj, "agent.started", agent="strategist", data={"task": "plan"})

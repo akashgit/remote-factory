@@ -302,12 +302,12 @@ class TestSessionPersistence:
     def test_read_ceo_session_full(self, tmp_path: Path) -> None:
         from factory.ceo_completion import read_ceo_session, write_ceo_session_id
 
-        write_ceo_session_id(tmp_path, "sid-full", interactive=False, mode="improve")
+        write_ceo_session_id(tmp_path, "sid-full", interactive=False, mode="design")
         result = read_ceo_session(tmp_path)
         assert result is not None
         assert result["session_id"] == "sid-full"
         assert result["interactive"] is False
-        assert result["mode"] == "improve"
+        assert result["mode"] == "design"
         assert "created" in result
 
     def test_read_ceo_session_nonexistent(self, tmp_path: Path) -> None:
@@ -373,7 +373,7 @@ class TestCompletionGuardSessionThreading:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
                 session_id="my-session-id",
             )
@@ -411,7 +411,7 @@ class TestCompletionGuardSessionThreading:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Initial task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
                 session_id="initial-sid",
             )
@@ -455,7 +455,7 @@ class TestCompletionGuardSessionThreading:
             await run_ceo_with_completion_guard(
                 tmp_path,
                 "Task",
-                mode="improve",
+                mode="design",
                 runner_name="claude",
                 session_id="initial",
             )
@@ -526,7 +526,7 @@ class TestCmdResume:
         """Headless sessions from session.json get a continuation prompt."""
         from factory.ceo_completion import write_ceo_session_id
 
-        write_ceo_session_id(tmp_path, "headless-sid", interactive=False, mode="improve")
+        write_ceo_session_id(tmp_path, "headless-sid", interactive=False, mode="design")
 
         import argparse
 

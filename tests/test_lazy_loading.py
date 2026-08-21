@@ -28,14 +28,37 @@ class TestBuiltinRegistry:
 
         registry = _get_builtin_registry()
         required = {
-            "build", "design", "improve", "research", "meta",
-            "discover", "review", "refine", "create", "founder",
-            "deep-qa", "swebench", "legacybench", "featurebench",
-            "programbench", "terminalbench", "tomswe", "salitrap",
-            "doc-generate", "doc-update",
-            "spec-generate", "spec-update", "parallel-improve",
-            "frontend-design", "frontend-design-discover",
-            "frontend-design-scan", "plan", "evolve",
+            "design",
+            "research",
+            "meta",
+            "review",
+            "refine",
+            "create",
+            "founder",
+            "deep-qa",
+            "swebench",
+            "legacybench",
+            "featurebench",
+            "programbench",
+            "terminalbench",
+            "tomswe",
+            "salitrap",
+            "doc-generate",
+            "doc-update",
+            "spec-generate",
+            "spec-update",
+            "frontend-design",
+            "frontend-design-discover",
+            "frontend-design-scan",
+            "plan",
+            "evolve",
+            "deep-research",
+            "study",
+            "research-standalone",
+            "swebenchifyhard",
+            "mini-swebench",
+            "devopsgym",
+            "outer-loop",
         }
         assert required.issubset(set(registry.keys())), (
             f"Missing: {required - set(registry.keys())}"
@@ -113,6 +136,7 @@ class TestTelemetryLazyImport:
     def _reset_telemetry(self):
         """Save and restore telemetry module state without reloading."""
         import factory.telemetry
+
         saved_has = factory.telemetry._HAS_LANGFUSE
         saved_client = factory.telemetry._client
         yield
@@ -122,12 +146,14 @@ class TestTelemetryLazyImport:
     def test_langfuse_not_imported_at_module_level(self) -> None:
         """_HAS_LANGFUSE starts as None (lazy — not checked at import time)."""
         import factory.telemetry
+
         factory.telemetry._HAS_LANGFUSE = None
         assert factory.telemetry._HAS_LANGFUSE is None
 
     def test_is_enabled_caches_import_result(self) -> None:
         """is_enabled() should cache the import check result."""
         import factory.telemetry
+
         factory.telemetry._HAS_LANGFUSE = None
         factory.telemetry._client = None
 
@@ -141,6 +167,7 @@ class TestTelemetryLazyImport:
     def test_is_enabled_returns_false_without_host(self) -> None:
         """is_enabled() returns False when no LANGFUSE env vars are set."""
         import factory.telemetry
+
         factory.telemetry._client = None
         factory.telemetry._HAS_LANGFUSE = None
 
@@ -177,9 +204,11 @@ class TestExecutorTimingSummary:
         captured_events: list[dict] = []
 
         with patch("factory.workflow.executor.log") as mock_log:
+
             def capture_info(*args, **kwargs):
                 if args and args[0] == "workflow.timing_summary":
                     captured_events.append(kwargs)
+
             mock_log.info = capture_info
             mock_log.debug = lambda *a, **kw: None
             mock_log.error = lambda *a, **kw: None

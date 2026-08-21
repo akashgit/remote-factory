@@ -28,7 +28,7 @@ def checkpoint_project(tmp_path: Path) -> Path:
 def sample_state() -> CheckpointState:
     """Return a sample CheckpointState for testing."""
     return CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=38,
         completed_agents=["researcher", "strategist"],
         pending_agents=["builder", "health_checker"],
@@ -46,7 +46,7 @@ def test_checkpoint_state_strict() -> None:
     """CheckpointState rejects extra fields."""
     with pytest.raises(Exception):
         CheckpointState(
-            mode="improve",
+            mode="design",
             active_experiment_id=None,
             completed_agents=[],
             pending_agents=[],
@@ -60,7 +60,7 @@ def test_checkpoint_state_strict() -> None:
 def test_checkpoint_state_nullable_fields() -> None:
     """CheckpointState allows None for optional fields."""
     state = CheckpointState(
-        mode="build",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=["researcher"],
@@ -75,7 +75,7 @@ def test_checkpoint_state_nullable_fields() -> None:
 def test_checkpoint_state_completed_hypotheses() -> None:
     """CheckpointState includes completed_hypotheses field."""
     state = CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=3,
         completed_agents=["researcher", "strategist"],
         pending_agents=["builder"],
@@ -90,7 +90,7 @@ def test_checkpoint_state_completed_hypotheses() -> None:
 def test_checkpoint_state_completed_hypotheses_default() -> None:
     """completed_hypotheses defaults to empty list for backwards compat."""
     state = CheckpointState(
-        mode="improve",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=[],
@@ -114,7 +114,7 @@ def test_save_and_load(checkpoint_project: Path, sample_state: CheckpointState) 
     loaded = load_checkpoint(checkpoint_project)
     assert loaded is not None
     assert loaded == sample_state
-    assert loaded.mode == "improve"
+    assert loaded.mode == "design"
     assert loaded.active_experiment_id == 38
     assert loaded.completed_agents == ["researcher", "strategist"]
     assert loaded.pending_agents == ["builder", "health_checker"]
@@ -156,7 +156,7 @@ def test_save_creates_factory_dir(tmp_path: Path, sample_state: CheckpointState)
 def test_format_full(sample_state: CheckpointState) -> None:
     """format_checkpoint includes all fields."""
     output = format_checkpoint(sample_state)
-    assert "improve" in output
+    assert "design" in output
     assert "38" in output
     assert "researcher" in output
     assert "builder" in output
@@ -170,7 +170,7 @@ def test_format_full(sample_state: CheckpointState) -> None:
 def test_format_empty_scores() -> None:
     """format_checkpoint omits eval scores line when empty."""
     state = CheckpointState(
-        mode="discover",
+        mode="design",
         active_experiment_id=None,
         completed_agents=[],
         pending_agents=[],
@@ -180,7 +180,8 @@ def test_format_empty_scores() -> None:
     )
     output = format_checkpoint(state)
     assert "Eval scores" not in output
-    assert "discover" in output
+    assert "design" in output
+    assert "Mode:" in output
 
 
 def test_format_completed_hypotheses(sample_state: CheckpointState) -> None:
@@ -213,7 +214,7 @@ def test_cli_checkpoint_save_and_show(
             str(checkpoint_project),
             "--save",
             "--mode",
-            "improve",
+            "design",
             "--experiment",
             "38",
             "--completed",
@@ -233,7 +234,7 @@ def test_cli_checkpoint_save_and_show(
     code = main(["checkpoint", str(checkpoint_project)])
     assert code == 0
     output = capsys.readouterr().out
-    assert "improve" in output
+    assert "design" in output
     assert "38" in output
     assert "researcher" in output
     assert "builder" in output
@@ -307,7 +308,7 @@ def test_cli_checkpoint_save_with_completed_hypotheses(
             str(checkpoint_project),
             "--save",
             "--mode",
-            "improve",
+            "design",
             "--completed",
             "researcher,strategist",
             "--pending",
@@ -351,7 +352,7 @@ def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
 
     checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
     old_data = {
-        "mode": "improve",
+        "mode": "design",
         "active_experiment_id": None,
         "completed_agents": ["researcher"],
         "pending_agents": ["strategist"],
@@ -365,3 +366,27 @@ def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
     assert loaded is not None
     assert loaded.completed_hypotheses == []
     assert loaded.completed_agents == ["researcher"]
+
+
+@pytest.mark.parametrize(
+    "dead_mode", ["build", "improve", "discover", "interactive", "parallel-improve"]
+)
+def test_load_checkpoint_migrates_dead_modes(checkpoint_project: Path, dead_mode: str) -> None:
+    """load_checkpoint migrates dead modes to 'design'."""
+    import json
+
+    checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
+    old_data = {
+        "mode": dead_mode,
+        "active_experiment_id": None,
+        "completed_agents": [],
+        "pending_agents": [],
+        "last_eval_scores": {},
+        "current_hypothesis": None,
+        "timestamp": "2026-04-26T00:00:00",
+    }
+    checkpoint_path.write_text(json.dumps(old_data))
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is not None
+    assert loaded.mode == "design"

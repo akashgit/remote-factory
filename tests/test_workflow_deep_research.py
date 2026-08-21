@@ -265,7 +265,7 @@ class TestDeepResearchTrigger:
         wf = deep_research_workflow()
         assert wf.trigger is not None
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "research"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
 

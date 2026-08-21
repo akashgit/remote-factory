@@ -1,4 +1,5 @@
 """Factory run command — single-shot and heartbeat loop execution."""
+
 from __future__ import annotations
 
 import argparse
@@ -205,7 +206,7 @@ def _chain_modes(
         if state == ProjectState.HAS_FACTORY and already_improved:
             return 0
         next_mode = _auto_detect_mode(project_path)
-        if next_mode == "improve":
+        if next_mode == "design":
             already_improved = True
         print(
             f"[factory] Chaining: state={state.value} → mode={next_mode} "
@@ -332,10 +333,7 @@ def _run_heartbeat_loop(
         signal.signal(signal.SIGINT, old_sigint)
 
     elapsed = time.monotonic() - start_time
-    print(
-        f"[factory] Shutting down gracefully after {cycle} cycles."
-        f" Total runtime: {elapsed:.0f}s"
-    )
+    print(f"[factory] Shutting down gracefully after {cycle} cycles. Total runtime: {elapsed:.0f}s")
     return 0
 
 
@@ -432,9 +430,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in ("improve", "research"):
+    if focus and mode not in ("design", "research"):
         print(
-            f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
+            f"Error: --focus (targeted mode) only works in design or research mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",
             file=sys.stderr,
         )
@@ -457,7 +455,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
-    skip_improve = mode in ("improve", "meta") or discover_only
+    skip_improve = mode in ("design", "meta") or discover_only
 
     overwrite = getattr(args, "overwrite", None)
 
