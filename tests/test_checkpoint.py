@@ -366,3 +366,27 @@ def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
     assert loaded is not None
     assert loaded.completed_hypotheses == []
     assert loaded.completed_agents == ["researcher"]
+
+
+@pytest.mark.parametrize(
+    "dead_mode", ["build", "improve", "discover", "interactive", "parallel-improve"]
+)
+def test_load_checkpoint_migrates_dead_modes(checkpoint_project: Path, dead_mode: str) -> None:
+    """load_checkpoint migrates dead modes to 'design'."""
+    import json
+
+    checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
+    old_data = {
+        "mode": dead_mode,
+        "active_experiment_id": None,
+        "completed_agents": [],
+        "pending_agents": [],
+        "last_eval_scores": {},
+        "current_hypothesis": None,
+        "timestamp": "2026-04-26T00:00:00",
+    }
+    checkpoint_path.write_text(json.dumps(old_data))
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is not None
+    assert loaded.mode == "design"

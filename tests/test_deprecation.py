@@ -142,3 +142,27 @@ class TestWarnDeprecatedMode:
             warn_deprecated_mode(mode)
         captured = capsys.readouterr()
         assert f"--mode {mode} is deprecated" in captured.err
+
+
+class TestAutoDetectMigratesDeadModes:
+    """_auto_detect_mode migrates dead modes from stale cycle state."""
+
+    @pytest.mark.parametrize("dead_mode", sorted(EXPECTED_DEAD))
+    def test_cycle_state_dead_mode_migrated(self, tmp_path, dead_mode):
+        from datetime import datetime, timezone
+
+        from factory.cli._mode_handlers import _auto_detect_mode
+        from factory.models import CycleState
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        state = CycleState(
+            cycle_id="test-cycle",
+            started_at=datetime.now(tz=timezone.utc),
+            mode=dead_mode,
+            respawns=0,
+        )
+        (factory_dir / "cycle_state.json").write_text(state.model_dump_json())
+
+        mode = _auto_detect_mode(tmp_path)
+        assert mode == "design"
