@@ -20,11 +20,24 @@ If the session exists but the CEO process has exited, the session is stale — s
 
 ### Sending Input to Sessions
 
-Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+Use the two-step hex approach when sending keys to tmux sessions running Claude Code — send text first, then Enter as hex `0d`:
 ```bash
-tmux send-keys -t <session_name> "your input" C-m
+tmux send-keys -t <session_name> -- "your input"
+tmux send-keys -t <session_name> -H 0d
 ```
-`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return.
+This avoids ambiguity with `C-m` and `Enter` key interpretation inside Claude Code sessions.
+
+### Vi Mode Handling
+
+When Claude Code has vi/vim editor mode enabled (`editorMode: "vim"` in `~/.claude/settings.json`), prefix with Escape → 100ms delay → `i` to ensure insert mode:
+```bash
+tmux send-keys -t <session_name> Escape
+sleep 0.1
+tmux send-keys -t <session_name> i
+tmux send-keys -t <session_name> -- "your input"
+tmux send-keys -t <session_name> -H 0d
+```
+`factory tmux` handles this automatically — it detects vi mode from user settings and applies the prefix when needed.
 
 ### Capturing Output
 
