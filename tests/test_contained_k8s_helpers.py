@@ -10,7 +10,9 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import patch
 
-from factory.contained import k8s_review, style
+import pytest
+
+from factory.contained import k8s, k8s_review, style
 from factory.contained.k8s_division import openshift_available
 
 
@@ -96,3 +98,314 @@ def test_a_diff_that_cannot_be_run_is_reported_as_unknown_not_as_current() -> No
     ):
         state = k8s_review._inspect_one(obj, "ns", "oc")
     assert state.status == k8s_review.UNKNOWN
+
+
+# --------------------------------------------------------------------------------------------
+# Reading a pod's state well enough to stop waiting on a hopeless one
+# --------------------------------------------------------------------------------------------
+
+
+def _pod(*, phase: str = "Pending", waiting: dict | None = None, running: bool = False,
+         terminated: dict | None = None, conditions: list | None = None,
+         name: str = "probe") -> dict:
+    state: dict = {}
+    if waiting is not None:
+        state["waiting"] = waiting
+    if running:
+        state["running"] = {"startedAt": "now"}
+    if terminated is not None:
+        state["terminated"] = terminated
+    status: dict = {"phase": phase}
+    if state:
+        status["containerStatuses"] = [{"name": name, "state": state}]
+    if conditions is not None:
+        status["conditions"] = conditions
+    return {"status": status}
+
+
+def test_an_unpullable_image_is_doomed_immediately_not_after_the_timeout() -> None:
+    """The defect this exists for: three minutes of silence, then "the probe produced no output".
+
+    `ImagePullBackOff` is the kubelet saying it has already retried and given up. Waiting past it
+    buys nothing, and the message it carries is the answer the user actually needs.
+    """
+    progress = k8s.classify_pod(_pod(waiting={
+        "reason": "ImagePullBackOff",
+        "message": 'Back-off pulling image "ghcr.io/akashgit/remote-factory/factory-runtime"',
+    }))
+    assert progress.verdict == k8s.DOOMED
+    assert progress.reason == "ImagePullBackOff"
+    assert "Back-off pulling image" in progress.describe()
+
+
+def test_a_secret_missing_a_key_is_doomed_immediately() -> None:
+    progress = k8s.classify_pod(_pod(waiting={
+        "reason": "CreateContainerConfigError", "message": "secret 'factory-credentials' not found",
+    }))
+    assert progress.verdict == k8s.DOOMED
+    assert "factory-credentials" in progress.describe()
+
+
+def test_a_first_pull_is_not_mistaken_for_a_failure() -> None:
+    """A cold `ContainerCreating` legitimately runs for minutes; capping it would break every
+    first run on a fresh node."""
+    progress = k8s.classify_pod(_pod(waiting={"reason": "ContainerCreating", "message": ""}))
+    assert progress.verdict == k8s.WAITING
+    assert progress.reason == "ContainerCreating"
+
+
+def test_a_retryable_pull_error_is_not_doomed_on_sight() -> None:
+    """`ErrImagePull` is the attempt; `ImagePullBackOff` is the verdict. Only the second is final."""
+    progress = k8s.classify_pod(_pod(waiting={"reason": "ErrImagePull", "message": "timeout"}))
+    assert progress.verdict == k8s.WAITING
+    assert progress.reason in k8s.RETRYABLE_WAITING_REASONS
+
+
+def test_a_pod_no_node_will_accept_is_doomed_with_the_schedulers_words() -> None:
+    """It sits in Pending with no container status at all, which reads as "starting"."""
+    progress = k8s.classify_pod(_pod(conditions=[{
+        "type": "PodScheduled", "status": "False", "reason": "Unschedulable",
+        "message": "0/6 nodes are available: insufficient memory",
+    }]))
+    assert progress.verdict == k8s.DOOMED
+    assert "insufficient memory" in progress.describe()
+
+
+def test_a_running_container_is_running_and_a_clean_exit_succeeded() -> None:
+    assert k8s.classify_pod(_pod(running=True)).verdict == k8s.RUNNING
+    done = k8s.classify_pod(_pod(phase="Succeeded", terminated={"exitCode": 0,
+                                                               "reason": "Completed"}))
+    assert done.verdict == k8s.SUCCEEDED
+
+
+def test_a_nonzero_exit_is_doomed_and_carries_its_code() -> None:
+    progress = k8s.classify_pod(_pod(phase="Failed", terminated={"exitCode": 7, "reason": "Error"}))
+    assert progress.verdict == k8s.DOOMED
+    assert "7" in progress.describe()
+
+
+def test_one_container_can_be_asked_about_by_name() -> None:
+    """The loader's window is "that initContainer is running", which no pod condition expresses."""
+    pod = {"status": {"phase": "Pending", "initContainerStatuses": [
+        {"name": "workspace-loader", "state": {"running": {}}},
+    ], "containerStatuses": [
+        {"name": "factory", "state": {"waiting": {"reason": "PodInitializing"}}},
+    ]}}
+    assert k8s.classify_pod(pod, container="workspace-loader").verdict == k8s.RUNNING
+    assert k8s.classify_pod(pod, container="factory").verdict == k8s.WAITING
+
+
+def test_an_unrecognized_state_waits_rather_than_giving_up() -> None:
+    """Being wrong in this direction aborts a run over a state that would have cleared."""
+    progress = k8s.classify_pod(_pod(waiting={"reason": "SomethingNewInKubernetes"}))
+    assert progress.verdict == k8s.WAITING
+
+
+def test_an_empty_or_malformed_pod_never_raises() -> None:
+    for payload in ({}, {"status": None}, {"status": {"containerStatuses": None}}):
+        assert k8s.classify_pod(payload).verdict in (k8s.WAITING, k8s.DOOMED)
+
+
+def test_polling_stops_the_moment_a_pod_is_doomed() -> None:
+    """Not after the timeout: the first poll already knew, and the user waited three minutes."""
+    doomed = _pod(waiting={"reason": "ImagePullBackOff", "message": "no such image"})
+    with patch("factory.contained.k8s.read_pod", return_value=doomed), \
+         patch("factory.contained.k8s.time.sleep") as slept:
+        progress = k8s.poll_pod("probe", "ns", timeout=180)
+    assert progress.verdict == k8s.DOOMED
+    slept.assert_not_called()
+
+
+def test_polling_reports_each_change_once() -> None:
+    states = [
+        _pod(waiting={"reason": "ContainerCreating"}),
+        _pod(waiting={"reason": "ContainerCreating"}),
+        _pod(running=True),
+    ]
+    seen: list[str] = []
+    with patch("factory.contained.k8s.read_pod", side_effect=states), \
+         patch("factory.contained.k8s.time.sleep"):
+        k8s.poll_pod("probe", "ns", timeout=180, on_progress=lambda p: seen.append(p.reason))
+    assert seen == ["ContainerCreating", "Running"]
+
+
+def test_a_wait_that_times_out_says_what_it_was_still_waiting_for() -> None:
+    with patch("factory.contained.k8s.read_pod",
+               return_value=_pod(waiting={"reason": "ContainerCreating"})), \
+         patch("factory.contained.k8s.time.sleep"):
+        progress = k8s.poll_pod("probe", "ns", timeout=0)
+    assert progress.verdict == k8s.DOOMED
+    assert progress.reason == "Timeout"
+
+
+def test_wait_for_container_names_the_reason_rather_than_reporting_a_timeout() -> None:
+    """It used to spend its full five minutes and then blame the clock."""
+    with patch("factory.contained.k8s.read_pod", return_value=_pod(
+        waiting={"reason": "ImagePullBackOff", "message": "manifest unknown"}, name="factory")), \
+         patch("factory.contained.k8s.time.sleep"), \
+         patch("factory.contained.k8s.cli_binary", return_value="oc"):
+        with pytest.raises(k8s.ClusterError) as raised:
+            k8s.wait_for_container("pod", "ns", "factory", timeout=300)
+    assert "ImagePullBackOff" in str(raised.value)
+    assert "manifest unknown" in str(raised.value)
+
+
+# --------------------------------------------------------------------------------------------
+# A failed read is not evidence of absence
+# --------------------------------------------------------------------------------------------
+
+_UNAUTHORIZED = (
+    'error: You must be logged in to the server (Unauthorized)\n'
+    'couldn\'t get current server API group list: the server has asked for the client to '
+    'provide credentials'
+)
+
+
+def _obj():
+    from factory.contained.bundle import BundleObject
+
+    return BundleObject(kind="serviceaccount", name="factory",
+                        purpose="the identity the pod runs as", manifest="kind: ServiceAccount\n")
+
+
+def test_an_expired_login_is_not_reported_as_a_missing_object() -> None:
+    """The defect: a fully prepared namespace read as an empty one.
+
+    Every `oc get` failed with Unauthorized, every failure was classified as "not there", and the
+    review offered to create five objects that already existed — directly contradicting the honest
+    "could not confirm whether the namespace exists" printed one line above.
+    """
+    with patch("factory.contained.k8s_review._run",
+               return_value=subprocess.CompletedProcess([], 1, "", _UNAUTHORIZED)):
+        state = k8s_review._inspect_one(_obj(), "factory-yi", "oc")
+    assert state.status == k8s_review.UNKNOWN
+    assert "not logged in" in state.detail
+
+
+def test_a_genuine_notfound_is_still_absent() -> None:
+    """The distinction has to cut both ways, or a first setup stops offering to create anything."""
+    stderr = 'Error from server (NotFound): serviceaccounts "factory" not found'
+    with patch("factory.contained.k8s_review._run",
+               return_value=subprocess.CompletedProcess([], 1, "", stderr)):
+        state = k8s_review._inspect_one(_obj(), "factory-yi", "oc")
+    assert state.status == k8s_review.ABSENT
+
+
+def test_any_other_read_failure_is_unknown_and_carries_its_reason() -> None:
+    stderr = "Error from server (Forbidden): serviceaccounts is forbidden"
+    with patch("factory.contained.k8s_review._run",
+               return_value=subprocess.CompletedProcess([], 1, "", stderr)):
+        state = k8s_review._inspect_one(_obj(), "factory-yi", "oc")
+    assert state.status == k8s_review.UNKNOWN
+    assert "Forbidden" in state.detail
+
+
+def test_an_auth_error_is_recognized_however_the_cli_words_it() -> None:
+    for text in (
+        "error: You must be logged in to the server (Unauthorized)",
+        "the server has asked for the client to provide credentials",
+        "Unauthorized",
+        "invalid bearer token",
+    ):
+        assert k8s.is_auth_error(text), text
+    assert not k8s.is_auth_error('serviceaccounts "factory" not found')
+
+
+def test_a_login_check_asks_the_cluster_not_the_kubeconfig() -> None:
+    """`config current-context` reads a local file and passes with an hours-dead token."""
+    with patch("factory.contained.k8s._run",
+               return_value=subprocess.CompletedProcess([], 1, "", _UNAUTHORIZED)):
+        ok, detail = k8s.login_status("oc")
+    assert ok is False
+    assert "logged in" in detail.lower() or "credentials" in detail.lower()
+
+    with patch("factory.contained.k8s._run",
+               return_value=subprocess.CompletedProcess([], 0, "yizheng@redhat.com\n", "")):
+        ok, detail = k8s.login_status("oc")
+    assert ok is True and detail == "yizheng@redhat.com"
+
+
+def test_the_login_probe_is_an_authenticated_round_trip() -> None:
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = argv
+        return subprocess.CompletedProcess([], 0, "you", "")
+
+    with patch("factory.contained.k8s._run", side_effect=fake_run):
+        k8s.login_status("oc")
+    assert "whoami" in seen["argv"]
+    with patch("factory.contained.k8s._run", side_effect=fake_run):
+        k8s.login_status("kubectl")
+    assert "auth" in seen["argv"] and "can-i" in seen["argv"]
+
+
+# --------------------------------------------------------------------------------------------
+# classify_pod / _unschedulable / login_status / poll_pod — the residual edge branches
+# --------------------------------------------------------------------------------------------
+
+
+def test_a_status_that_is_not_a_mapping_is_treated_as_still_waiting() -> None:
+    """A half-written pod document (`status` a string, not an object) must not raise in a poll."""
+    assert k8s.classify_pod({"status": "corrupt"}).verdict == k8s.WAITING
+
+
+def test_a_pod_level_succeeded_with_no_container_status_is_succeeded() -> None:
+    """The probe pod is gone by the time it Succeeds — only the pod phase remains to read."""
+    assert k8s.classify_pod({"status": {"phase": "Succeeded"}}).verdict == k8s.SUCCEEDED
+
+
+def test_a_pod_level_failed_with_no_container_status_is_doomed() -> None:
+    prog = k8s.classify_pod({"status": {"phase": "Failed", "reason": "Evicted", "message": "oom"}})
+    assert prog.verdict == k8s.DOOMED
+    assert "oom" in prog.describe()
+
+
+def test_a_container_state_matching_nothing_falls_through_to_the_pod_level() -> None:
+    """An empty container state is neither running, waiting nor terminated — keep waiting."""
+    pod = {"status": {"phase": "Pending", "containerStatuses": [{"name": "c", "state": {}}]}}
+    assert k8s.classify_pod(pod).verdict == k8s.WAITING
+
+
+def test_unschedulable_skips_a_non_dict_condition_and_reads_the_real_one() -> None:
+    pod = {"status": {"phase": "Pending", "conditions": [
+        "not-a-dict",
+        {"type": "PodScheduled", "status": "False", "reason": "Unschedulable", "message": "no room"},
+    ]}}
+    prog = k8s.classify_pod(pod)
+    assert prog.verdict == k8s.DOOMED and "no room" in prog.describe()
+
+
+def test_a_non_matching_condition_leaves_the_pod_merely_waiting() -> None:
+    """A `Ready=False` condition is not `Unschedulable`; the pod is still just starting."""
+    pod = {"status": {"phase": "Pending", "conditions": [{"type": "Ready", "status": "False"}]}}
+    assert k8s.classify_pod(pod).verdict == k8s.WAITING
+
+
+def test_login_status_reports_authenticated_even_when_whoami_prints_nothing() -> None:
+    """A 0 exit with empty stdout is still success — the detail is just blank."""
+    with patch("factory.contained.k8s._run",
+               return_value=subprocess.CompletedProcess([], 0, "", "")):
+        ok, detail = k8s.login_status("oc")
+    assert ok is True and detail == ""
+
+
+def test_polling_gives_up_on_a_retryable_error_that_never_clears() -> None:
+    """`ErrImagePull` might be a blip; if it is still there after `stuck_after`, stop waiting."""
+    stuck = _pod(waiting={"reason": "ErrImagePull", "message": "pull failed"})
+    # A monotonic clock that advances past stuck_after between the two readings. Base is non-zero so
+    # the first timestamp stored in `error_since` is truthy (0.0 would re-trigger the `or`).
+    clock = iter([1000, 1000, 1000, 1000, 1035, 1035, 1035, 1035])
+    with patch("factory.contained.k8s.read_pod", return_value=stuck), \
+         patch("factory.contained.k8s.time.sleep"), \
+         patch("factory.contained.k8s.time.monotonic", lambda: next(clock)):
+        prog = k8s.poll_pod("p", "ns", timeout=300, stuck_after=30)
+    assert prog.verdict == k8s.DOOMED
+    assert "unchanged for 30s" in prog.describe()
+
+
+def test_login_status_when_the_cli_cannot_be_run_at_all() -> None:
+    """`_run` returns None when the binary is missing or the OS refuses — reported, not raised."""
+    with patch("factory.contained.k8s._run", return_value=None):
+        ok, detail = k8s.login_status("oc")
+    assert ok is False and "could not be run" in detail

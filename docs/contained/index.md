@@ -109,8 +109,19 @@ factory contained {ls|attach|rm|sync|setup|verify|bundle|help} [name]
 | `--storage-class SC` | cluster default | Workspace PVC |
 
 A flag used against the wrong target fails at parse time naming the target it belongs to — never
-silently ignored. Runtime flags go **before** the subcommand; anything flag-shaped after it is an
-error rather than a name.
+silently ignored.
+
+Runtime flags go on **either side** of a subcommand. These are the same command:
+
+```bash
+factory contained --target k8s verify
+factory contained verify --target k8s
+```
+
+Both orders are what people type, so both work. Give the same flag on both sides with two different
+values and it stops and says so rather than picking one — `--namespace a verify --namespace b` has
+no obviously right reading, and choosing wrong applies RBAC to somebody else's namespace. Nothing
+after `--` is interpreted at all: that belongs to the factory inside the runtime.
 
 ---
 
@@ -411,7 +422,7 @@ credentials**:
 ```console
 $ factory contained --target k8s setup
 
-━━ 1/3  Cluster and namespace ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━ 1/4  Cluster and namespace ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
    Clusters in your kubeconfig:
 
@@ -438,7 +449,7 @@ Create namespace 'factory-contained' now?  [y]es  [n]o  (y/N): y
    Created factory-contained.
    `oc new-project` also made it your current project.
 
-━━ 2/3  Review and apply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━ 2/4  Review and apply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Comparing 5 object(s) against namespace 'factory-contained' on
    'https://api.my-cluster.example.com:443':
 
@@ -477,12 +488,36 @@ Apply this? (2 of 4)  [y]es  [n]o  [a]ll remaining  [q]uit  (Enter or Esc = skip
    rolebinding.rbac.authorization.k8s.io/factory-scc created
    persistentvolumeclaim/factory-workspace created
 
-The credentials Secret is yours to create — the factory never handles the material:
-  oc create secret generic factory-credentials -n factory-contained \
-      --from-literal=ANTHROPIC_API_KEY=...
+━━ 3/4  Credentials ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   secret/factory-credentials is missing from factory-contained
+   The pod reads this Secret as its environment. It stays in the namespace; the
+   factory sends the material once, here, and never reads it back.
+
+   [1]  Anthropic API key
+   [2]  Vertex AI (Google Cloud)
+   [3]  copy what this shell is configured for (anthropic)
+   [s]  skip — print the command and let me do it
+
+Which inference backend should the pod use? [1/2/3/s]: 1
+
+   [t]  type it now (hidden as you type)
+   [e]  read it from an environment variable in this shell
+   [f]  read it from a file on this machine
+   [q]  cancel
+
+Where does the Anthropic API key come from? [t/e/f/q]: t
+Anthropic API key: ***********************************************
+   ANTHROPIC_API_KEY: 108 characters, starts 'sk-ant-a', ends '9f2c'  (typed)
+Use this?  [y]es  [n]o  (Y/n): y
+
+   About to create 'secret/factory-credentials' in 'factory-contained' with:
+   ANTHROPIC_API_KEY:   108 characters, starts 'sk-ant-a', ends '9f2c'
+Create it now?  [y]es  [n]o  (Y/n): y
+   secret/factory-credentials created
 ```
 
-Six details that are deliberate.
+Seven details that are deliberate.
 
 The **cluster** is asked too, not just the namespace. A kubeconfig usually holds several, and `oc
 config use-context` is the only way most people know to move between them — so picking the wrong
@@ -555,6 +590,34 @@ There is no second, blanket "are you sure?": every object was confirmed a moment
 prompt on top of that is the friction that teaches people to hit `y` without reading. `--yes`
 applies everything pending without walking, for automation.
 
+The **credentials Secret is offered as a step**, not left as a closing reminder. It used to be
+printed as an `oc create secret` line and nothing more, which meant every freshly prepared namespace
+ended one check short of an answer — the inference probe needs that Secret to authenticate, so it
+could only be skipped. Pick a backend, pick where each value comes from, and it is created.
+
+Four rules govern the material, and each one exists because the obvious implementation breaks it:
+
+- **It never reaches an argv.** `oc create secret --from-literal=KEY=value` puts the value in the
+  process table for every user on the machine, and in the shell history of anyone who copies the
+  line. The Secret is composed as a manifest and fed to `oc apply -f -` on **stdin**.
+- **The manifest is JSON, not YAML.** A key containing `:`, a newline or a leading `%` is ordinary
+  here and is a quoting bug waiting to happen in hand-built YAML.
+- **Nothing is echoed.** Typing is masked; a value is confirmed by *shape only*
+  (`108 characters, starts 'sk-ant-a', ends '9f2c'`), which is enough to catch a paste that grabbed
+  the surrounding quotes and not enough to reuse. The command printed afterwards is redacted, and
+  anything that turns up in `oc`'s stderr is scrubbed before you see it.
+- **Nothing is logged.** Key names and value lengths; never a value.
+
+A value can be **typed**, read from an **environment variable** you name, or read from a **file** —
+and for the Google credential the required fields are printed *before* you are asked, then the file
+is parsed and any missing field named. Checking it here is the point: an unusable credential is
+accepted into a Secret without complaint and would otherwise surface as an authentication failure
+inside an agent call, minutes later, looking like a model outage.
+
+If a usable Secret is already there, the step says which backend it carries and asks nothing. With
+nobody at the keyboard it is **skipped** and the manual command printed — `--yes` means "do not stop
+to ask me", not "choose a credential for me", and there is no safe default for that question.
+
 Then `verify` checks every object, every verb the ServiceAccount needs, the Secret's **keys** (never
 its values), and that inference is reachable from a pod *inside* the namespace. Results print **as
 each one lands**, not at the end — several are a cluster round trip and the in-cluster inference
@@ -582,8 +645,35 @@ The inference check is the slow one: it creates a short-lived pod, with the same
 a real run uses, and asks it to make one request — because a host-side check proves nothing about
 the *pod's* egress. It is announced before it starts, and **skipped entirely when the credentials
 Secret is missing**, since the probe pod mounts that Secret and could only spend its 180-second
-timeout rediscovering what the check above already said. That is the state a freshly prepared
-namespace is in, because creating the Secret is deliberately left to you.
+timeout rediscovering what the check above already said.
+
+While it waits it **says what it is waiting for**. Anything that takes more than five seconds grows
+a status line that rewrites itself in place, carrying the pod's own state and a clock:
+
+```console
+⠹ inference_from_cluster — probe pod: ContainerCreating (0:47)
+```
+
+Nothing is drawn below five seconds, so a fast check looks exactly as it always did, and the line
+erases itself when the result lands. In a pipe or a CI log it degrades to one plain line per change
+rather than thousands of redraws; `FACTORY_NO_PROGRESS=1` turns it off entirely.
+
+It also **stops early when the pod cannot start**. The wait used to be `oc wait --timeout=180s`,
+which is blind by construction — it can only report that a condition did not hold, so an image the
+cluster could not pull cost the full three minutes and was then described as `the probe produced no
+output`, naming neither the cause nor where to look. Now each poll reads the pod, and a state the
+kubelet has already given up on (`ImagePullBackOff`, `CreateContainerConfigError`, a pod nothing
+will schedule) returns immediately with the kubelet's own words:
+
+```console
+[FAIL] inference_from_cluster: a pod in this namespace could NOT reach inference: the probe pod
+       could not run: ImagePullBackOff — Back-off pulling image "ghcr.io/…/factory-runtime:latest"
+```
+
+A first-ever image pull is *not* treated that way — a cold `ContainerCreating` legitimately runs for
+minutes, and capping it would trade a hang for a false failure on every new node. Only states that
+are already an error get the 30-second ceiling. The same reading now guards the workspace and
+factory containers on the real run path, which had the identical problem with a 300-second timeout.
 
 Before setup, the same command lists what is missing with the command that restores each — e.g.
 `factory contained --namespace factory-contained bundle | oc apply -f -`.

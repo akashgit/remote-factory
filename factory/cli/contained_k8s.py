@@ -26,6 +26,7 @@ from pathlib import Path
 
 import structlog
 
+from factory.contained import style
 from factory.contained.credentials import resolve_credentials, vertex_model_warning
 from factory.contained.env import CONTAINED_ENV_POLICY
 from factory.contained.errors import ContainedError
@@ -267,20 +268,34 @@ def _pack(ws: Workspace, run_id: str) -> Path:
 
 
 def _provision(plan: PodPlan, tarball: Path) -> None:
-    """Create the claim and the pod, then stream the workspace into the waiting loader."""
+    """Create the claim and the pod, then stream the workspace into the waiting loader.
+
+    Both waits report into a status line. Between them they are the longest silence in a cluster
+    run — the first cold pull of the runtime image happens inside them — and a wait that says
+    nothing is read as a hang whether or not it is one.
+    """
     apply_manifest(render_pvc(plan.namespace, plan.storage_class), plan.namespace)
     apply_manifest(render_pod(plan), plan.namespace)
     # The identifier first, before any long-running work: a run whose name the user cannot see is a
     # run they cannot manage.
     print(plan.name)
-    state = wait_for_container(plan.name, plan.namespace, LOADER_CONTAINER)
-    if state == "running":
-        stream_workspace(tarball, plan.name, plan.namespace)
-    else:
-        # Already unpacked for *this* run — the pod restarted after a successful upload. The marker
-        # is per-run, so this can never mean "a previous run's files are already here".
-        log.debug("contained_workspace_already_present", pod=plan.name)
-    wait_for_container(plan.name, plan.namespace, FACTORY_CONTAINER)
+    with style.activity("workspace", "waiting for the loader container") as act:
+        state = wait_for_container(
+            plan.name, plan.namespace, LOADER_CONTAINER,
+            on_progress=lambda p: act.update(f"loader: {p.describe()}"),
+        )
+        if state == "running":
+            act.update("streaming the workspace into the pod")
+            stream_workspace(tarball, plan.name, plan.namespace)
+        else:
+            # Already unpacked for *this* run — the pod restarted after a successful upload. The
+            # marker is per-run, so this can never mean "a previous run's files are already here".
+            log.debug("contained_workspace_already_present", pod=plan.name)
+    with style.activity("pod", "waiting for the factory container") as act:
+        wait_for_container(
+            plan.name, plan.namespace, FACTORY_CONTAINER,
+            on_progress=lambda p: act.update(f"factory container: {p.describe()}"),
+        )
 
 
 def _start(plan: PodPlan, ws: Workspace, project: Path) -> int:

@@ -61,7 +61,14 @@ def test_every_object_explains_itself() -> None:
 
 
 def test_a_missing_object_is_absent_and_never_diffed() -> None:
-    with patch("factory.contained.k8s_review._run", return_value=_completed("", 1)) as run:
+    """`NotFound` on stderr is what makes it absent — not merely a non-zero exit.
+
+    Any non-zero used to qualify, so an expired login turned a prepared namespace into an empty
+    one. The `get` has to actually say the object is not there.
+    """
+    not_found = _completed("", 1)
+    not_found.stderr = 'Error from server (NotFound): serviceaccounts "factory" not found'
+    with patch("factory.contained.k8s_review._run", return_value=not_found) as run:
         states = inspect_objects([_obj()], "ns", "oc")
     assert states[0].status == ABSENT
     # One call: `get`. Diffing something that does not exist wastes a round trip per object.

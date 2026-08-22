@@ -17,6 +17,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, NoReturn
 
 import structlog
 
@@ -25,6 +26,73 @@ from factory.contained.errors import ContainedError
 log = structlog.get_logger()
 
 LIFECYCLE_SUBCOMMANDS = ("ls", "attach", "rm", "sync", "setup", "verify", "bundle")
+
+# Every runtime flag, declared once. Both the real parser and the tail parser below are built from
+# this, because the two must accept exactly the same set: a flag added to one and forgotten in the
+# other is a flag that works on one side of the subcommand and errors on the other, which is the
+# defect this table exists to make impossible rather than merely unlikely.
+_RUNTIME_FLAGS: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("--target", {"choices": ["local", "k8s"], "default": "local"}),
+    ("--division", {"action": "store_true", "default": False}),
+    ("--name", {"default": None}),
+    ("--env", {"action": "append", "default": [], "metavar": "KEY=VALUE", "dest": "extra_env"}),
+    ("--forward", {"action": "append", "default": [], "metavar": "VAR"}),
+    ("--mount", {"action": "append", "default": [], "metavar": "PATH"}),
+    ("--namespace", {"default": None}),
+    ("--storage-class", {"default": None, "dest": "storage_class"}),
+    ("--context", {"default": None}),
+    ("--image", {"default": None}),
+    # `rm` prompts before deleting an active runtime and the cluster upload prompts on a secret-scan
+    # finding; `--yes` skips both, for automation.
+    ("--yes", {"action": "store_true", "default": False}),
+)
+
+
+def _dest_of(flag: str, options: dict[str, Any]) -> str:
+    return str(options.get("dest") or flag.lstrip("-").replace("-", "_"))
+
+
+_FLAG_DEFAULTS = {_dest_of(flag, opts): opts["default"] for flag, opts in _RUNTIME_FLAGS}
+
+# Repeatable flags. Given on both sides of the subcommand they merge rather than conflict, which is
+# what "repeatable" already means everywhere else on the command line.
+_REPEATABLE_DESTS = frozenset(
+    _dest_of(flag, opts) for flag, opts in _RUNTIME_FLAGS if opts.get("action") == "append"
+)
+
+
+def add_runtime_flags(parser: argparse.ArgumentParser, *, keep_defaults: bool = True) -> None:
+    """Add every runtime flag to `parser`.
+
+    With `keep_defaults=False` an absent flag is left out of the namespace entirely
+    (`argparse.SUPPRESS`) rather than filled in with its default. That distinction is the whole
+    mechanism behind accepting flags on either side of the subcommand: a tail parser whose defaults
+    were applied would report `--target local` for a command line that never mentioned `--target`,
+    and silently overwrite the `--target k8s` typed before the subcommand.
+
+    Every flag is hidden from argparse's own listing and described in `HELP_EPILOG` instead: a flat
+    list hides which target each flag belongs to, and printing both lists each flag twice.
+    """
+    for flag, options in _RUNTIME_FLAGS:
+        settings = dict(options, help=argparse.SUPPRESS)
+        if not keep_defaults:
+            settings["default"] = argparse.SUPPRESS
+        parser.add_argument(flag, **settings)
+
+
+class _TailError(Exception):
+    """A bad flag *value* after the subcommand — reported through the real parser, not by exiting."""
+
+
+class _TailParser(argparse.ArgumentParser):
+    """A parser for the tail that raises instead of exiting.
+
+    Left to itself argparse would print its own usage — which describes this internal parser rather
+    than `factory contained` — and call `sys.exit`. Raising lets the real parser own the message.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        raise _TailError(message)
 
 # `help` is not a lifecycle subcommand — it provisions nothing and acts on no runtime — but it is
 # what people type, and without it the word falls through to the passthrough path and fails with
@@ -61,6 +129,10 @@ Subcommands:
   rm NAME                Delete a runtime
   bundle                 Print the cluster prerequisites as YAML (k8s)
   help                   Print this text (same as --help)
+
+Runtime flags go on either side of a subcommand — `contained --target k8s verify`
+and `contained verify --target k8s` are the same command. After `--` nothing is
+interpreted: it belongs to the factory inside the runtime.
 
 Both targets:
   --target local|k8s     Which runtime                              (default: local)
@@ -145,30 +217,77 @@ def _split_positional(parser: argparse.ArgumentParser, args: argparse.Namespace)
 def _read_lifecycle_tail(
     parser: argparse.ArgumentParser, args: argparse.Namespace, tail: list[str]
 ) -> None:
-    """What may follow a lifecycle subcommand: a runtime name, and `--yes`. Nothing else."""
-    # `--yes` is the one trailing flag accepted here, because `rm <name> --yes` is the order
-    # people type it. It is documented as the exception; every other flag in this position is
-    # rejected below rather than silently dropped.
-    if "--yes" in tail:
-        args.yes = True
-        tail = [token for token in tail if token != "--yes"]
-    # Everything else that looks like a flag here is a mistake worth naming, not swallowing.
-    # The REMAINDER split means `--target k8s` typed *after* the subcommand never reaches
-    # `args.target` — it lands here as a plain string instead, so a silent absorption would
-    # leave `args.target` at its default ("local") while the user believes they asked for k8s,
-    # and would hand a lifecycle command a name like "--target" to resolve.
-    flag_like = [token for token in tail if token.startswith("-")]
-    if flag_like:
+    """What may follow a lifecycle subcommand: a runtime name and any runtime flag.
+
+    Both orders work — `contained --target k8s verify` and `contained verify --target k8s` — because
+    both are what people type, and a tool that accepts only one of them is teaching an ordering rule
+    that serves nobody. argparse cannot do this itself: the REMAINDER that carries the verbatim
+    payload swallows the tail whole, so a flag typed here never reaches `args` unless it is parsed
+    back out, which is what happens below.
+    """
+    tail_parser = _TailParser(add_help=False, allow_abbrev=False)
+    add_runtime_flags(tail_parser, keep_defaults=False)
+    try:
+        typed, leftover = tail_parser.parse_known_args(tail)
+    except _TailError as exc:
+        # A bad *value* — `--target nope`. Reported through the real parser so the usage line the
+        # user sees is `factory contained`'s, not this internal parser's.
+        parser.error(f"after `factory contained {args.subcommand}`: {exc}")
+
+    _merge_tail_flags(parser, args, typed)
+
+    # What is left is either a runtime name or a mistake. A flag reaching here is genuinely
+    # unrecognized now that every real one has been parsed, so it is named rather than swallowed:
+    # absorbing it silently would hand a lifecycle command a name like "--targt" to resolve.
+    unknown = [token for token in leftover if token.startswith("-")]
+    if unknown:
         parser.error(
-            f"unrecognized flag {flag_like[0]!r} after `factory contained "
-            f"{args.subcommand}`. Runtime flags (--target, --namespace, --name, ...) go before "
-            f"the subcommand, for example:\n"
-            f"  factory contained --target k8s {args.subcommand}"
+            f"unrecognized flag {unknown[0]!r} after `factory contained {args.subcommand}`. "
+            f"`factory contained help` lists every flag; they may go on either side of the "
+            f"subcommand."
+        )
+    names = [token for token in leftover if not token.startswith("-")]
+    if len(names) > 1:
+        parser.error(
+            f"`factory contained {args.subcommand}` takes one runtime name, but was given "
+            f"{len(names)}: {', '.join(repr(n) for n in names)}. Try `factory contained ls`."
         )
     # Only the positional overrides `--name` here, and only when one was actually given —
     # `ls` takes no name.
-    if tail:
-        args.name = tail[0]
+    if names:
+        args.name = names[0]
+
+
+def _merge_tail_flags(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, typed: argparse.Namespace
+) -> None:
+    """Fold flags parsed from the tail into `args`, refusing to guess when the two sides disagree.
+
+    Only flags actually typed after the subcommand appear in `typed` — that is what suppressed
+    defaults buy — so nothing here can overwrite a left-side flag with a default.
+
+    A flag given on *both* sides with different values is an error rather than a silent win for one
+    of them. `--namespace a verify --namespace b` has no reading that is obviously right, and the
+    cost of choosing wrong is applying RBAC to somebody else's namespace.
+
+    One gap, named because it is invisible otherwise: a left-side flag set to exactly its own
+    default cannot be told apart from one that was never typed, so `--target local verify --target
+    k8s` is accepted as `k8s` rather than reported as a conflict. Both sides agreeing on a value is
+    also not a conflict, which is the common case when a script and a user both pass `--yes`.
+    """
+    for dest, value in vars(typed).items():
+        current = getattr(args, dest, None)
+        if dest in _REPEATABLE_DESTS:
+            setattr(args, dest, list(current or []) + list(value))
+            continue
+        default = _FLAG_DEFAULTS[dest]
+        if current != default and current != value:
+            flag = f"--{dest.replace('_', '-')}"
+            parser.error(
+                f"{flag} was given twice with different values ({current!r} before "
+                f"`{args.subcommand}`, {value!r} after). Pass it once."
+            )
+        setattr(args, dest, value)
 
 
 def _reject_out_of_scope_flags(
