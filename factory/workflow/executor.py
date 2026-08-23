@@ -884,6 +884,8 @@ class WorkflowExecutor:
             pool_entry = self.agent_pool.get(node.role.value)
             if pool_entry:
                 model = pool_entry.model
+        if not model:
+            model = self.context.get("default_model")
 
         timeout = node.timeout
         if timeout is None:
@@ -927,6 +929,8 @@ class WorkflowExecutor:
             pool_entry = self.agent_pool.get(node.role.value)
             if pool_entry:
                 model = pool_entry.model
+        if not model:
+            model = self.context.get("default_model")
 
         timeout = node.timeout
         if timeout is None:

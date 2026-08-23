@@ -292,19 +292,64 @@ STATE
                 host_workspace, container_id, container_name, log_file,
             )
 
-            subprocess.run(
-                ["docker", "exec", container_id, "bash", "-c",
-                 "cd /testbed && "
-                 "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
-                 "git add -A && "
-                 "git diff --cached --quiet || "
-                 "git commit -m 'FeatureBench: implement feature'"],
-                check=False,
-                timeout=30,
-            )
+            # Final sync: copy source files (excluding .git/) from host to
+            # container so the harness can extract builder changes via git diff.
+            # Must exclude .git/ — podman's docker-cp clobbers the container's
+            # git history, making the builder's commits invisible to the harness.
+            if not self._container_exists(container_id):
+                self.logger.error(
+                    f"Container {container_id[:12]} gone before final sync — "
+                    "harness will see no patch"
+                )
+            else:
+                # Log host workspace state before final sync
+                host_status = subprocess.run(
+                    ["git", "-C", str(host_workspace), "status", "--short"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.logger.info(f"Final sync: host has {len(host_status.stdout.splitlines())} "
+                                 f"changed files: {host_status.stdout[:300]}")
+                self.logger.info("Final sync: host workspace -> container")
+                tar_result = subprocess.run(
+                    f"tar --exclude='.git' -cf - -C {host_workspace} . | "
+                    f"docker exec -i {container_id} tar --no-same-owner -xf - -C /testbed/",
+                    shell=True, check=False, timeout=120,
+                    capture_output=True, text=True,
+                )
+                self.logger.info(f"Final tar: rc={tar_result.returncode}, "
+                                 f"stderr={tar_result.stderr[:200] if tar_result.stderr else 'none'}")
+                commit_result = subprocess.run(
+                    ["docker", "exec", container_id, "bash", "-c",
+                     "git config --global --add safe.directory /testbed 2>/dev/null; "
+                     "cd /testbed && "
+                     "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
+                     "git add -A && "
+                     "echo 'Staged:' && git diff --cached --stat && "
+                     "git diff --cached --quiet || "
+                     "git commit -m 'FeatureBench: implement feature'"],
+                    check=False,
+                    timeout=30,
+                    capture_output=True, text=True,
+                )
+                self.logger.info(f"Final commit: rc={commit_result.returncode}, "
+                                 f"stdout={commit_result.stdout[:500]}")
+                # Also check full git log
+                log_result = subprocess.run(
+                    ["docker", "exec", container_id, "bash", "-c",
+                     "git config --global --add safe.directory /testbed 2>/dev/null; "
+                     "cd /testbed && git log --oneline | head -5"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.logger.info(f"Container git log: {log_result.stdout.strip()}")
 
             success_post = self.post_run_hook(container, log_file)
-            return success and success_post
+            # Return True if code changes exist, even if the workflow halted
+            # (gate max iterations exhausted). The patch is still worth evaluating.
+            if not success and success_post:
+                self.logger.info(
+                    "Workflow halted but code changes exist — reporting as success"
+                )
+            return success_post
 
         except Exception:
             self.logger.exception("Host-side workflow execution failed")
@@ -320,6 +365,7 @@ STATE
         import asyncio
 
         from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.primitives import AgentConfig, AgentRole
         from factory.workflow.registry import WorkflowRegistry
 
         wf = WorkflowRegistry.get_workflow("featurebench", project_path=host_workspace)
@@ -330,9 +376,13 @@ STATE
         async def pre_node_hook(node_id, node):
             if getattr(node, 'metadata', {}).get('execution_context') == 'container':
                 self._sync_workspace_to_container(host_workspace, container_id)
+            elif node_id == "gate_tests":
+                self._sync_workspace_to_container(host_workspace, container_id)
 
         async def post_node_hook(node_id, node):
             if getattr(node, 'metadata', {}).get('execution_context') == 'container':
+                self._sync_from_container(host_workspace, container_id)
+            elif node_id == "gate_tests":
                 self._sync_from_container(host_workspace, container_id)
 
         subprocess_env = {}
@@ -340,9 +390,22 @@ STATE
             subprocess_env["CLOUD_ML_REGION"] = self._assigned_region
             self.logger.info(f"Using Vertex AI region: {self._assigned_region}")
 
+        model = self._kwargs.get("model", "")
+        if model and "/" in model:
+            model = model.split("/")[-1]
+
+        agent_pool: dict[str, AgentConfig] = {}
+        if model:
+            for role in (AgentRole.BUILDER, AgentRole.ADVERSARIAL_TESTER, AgentRole.ARCHIVIST):
+                agent_pool[role.value] = AgentConfig(
+                    role=role, model=model, timeout=3600,
+                )
+            self.logger.info(f"WorkflowExecutor agent_pool model: {model}")
+
         executor = WorkflowExecutor(
             workflow=wf,
             project_path=host_workspace,
+            agent_pool=agent_pool,
             context={
                 "container_name": container_name,
                 "container_runtime": "docker",
@@ -365,30 +428,64 @@ STATE
 
         return result.success
 
-    def _sync_workspace_to_container(self, host_workspace: Path, container_id: str) -> None:
-        """Sync the full host workspace into the container's /testbed/.
-
-        Copies all source files and .factory/ so the container has the
-        builder's code changes before health_checker runs tests.
-        """
-        subprocess.run(
-            ["docker", "cp",
-             f"{host_workspace}/.", f"{container_id}:/testbed/"],
-            check=False, timeout=120,
+    def _container_exists(self, container_id: str) -> bool:
+        """Check if a container still exists."""
+        result = subprocess.run(
+            ["docker", "inspect", container_id],
+            capture_output=True, timeout=10,
         )
-        # Commit the synced changes inside the container so git diff works
-        subprocess.run(
+        return result.returncode == 0
+
+    def _sync_workspace_to_container(self, host_workspace: Path, container_id: str) -> None:
+        """Sync source files from host workspace into the container's /testbed/.
+
+        Uses tar with --exclude='.git' to avoid clobbering the container's
+        git history. Podman's docker-cp copies .git/ objects unreliably,
+        resetting the container's repo to the host's (pre-builder) state.
+        """
+        if not self._container_exists(container_id):
+            self.logger.warning(
+                f"Container {container_id[:12]} no longer exists — skipping sync"
+            )
+            return
+        self.logger.info(f"Sync host→container: {host_workspace} → {container_id[:12]}")
+        # Check what changed on host before syncing
+        host_diff = subprocess.run(
+            ["git", "-C", str(host_workspace), "status", "--short"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.logger.info(f"Host git status ({len(host_diff.stdout.splitlines())} files): "
+                         f"{host_diff.stdout[:500]}")
+        tar_result = subprocess.run(
+            f"tar --exclude='.git' -cf - -C {host_workspace} . | "
+            f"docker exec -i {container_id} tar --no-same-owner -xf - -C /testbed/",
+            shell=True, check=False, timeout=120,
+            capture_output=True, text=True,
+        )
+        self.logger.info(f"Tar sync: rc={tar_result.returncode}, "
+                         f"stderr={tar_result.stderr[:200] if tar_result.stderr else 'none'}")
+        commit_result = subprocess.run(
             ["docker", "exec", container_id, "bash", "-c",
+             "git config --global --add safe.directory /testbed 2>/dev/null; "
              "cd /testbed && "
              "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
              "git add -A && "
+             "git diff --cached --stat && "
              "git diff --cached --quiet || "
              "git commit -m 'sync from host builder'"],
             check=False, timeout=30,
+            capture_output=True, text=True,
         )
+        self.logger.info(f"Commit sync: rc={commit_result.returncode}, "
+                         f"stdout={commit_result.stdout[:500]}")
 
     def _sync_from_container(self, host_workspace: Path, container_id: str) -> None:
         """Sync .factory/ from container /testbed/.factory/ to host workspace."""
+        if not self._container_exists(container_id):
+            self.logger.warning(
+                f"Container {container_id[:12]} no longer exists — skipping sync-from"
+            )
+            return
         factory_dir = host_workspace / ".factory"
         factory_dir.mkdir(parents=True, exist_ok=True)
         subprocess.run(
@@ -421,6 +518,7 @@ STATE
 
         self.cm.exec_command(
             container,
+            "git config --global --add safe.directory /testbed 2>/dev/null; "
             "cd /testbed && "
             "grep -qxF '.factory/' .gitignore 2>/dev/null || echo '.factory/' >> .gitignore && "
             "git add -A && "
@@ -431,8 +529,12 @@ STATE
 
         exit_code, output = self.cm.exec_command(
             container,
-            "cd /testbed && git diff --stat HEAD~1 HEAD 2>/dev/null "
-            "| grep -v problem_statement.md | grep -v '^ [0-9]' | head -5",
+            "git config --global --add safe.directory /testbed 2>/dev/null; "
+            "cd /testbed && "
+            "INITIAL=$(git log --oneline --reverse | head -1 | cut -d' ' -f1) && "
+            "git diff --stat $INITIAL HEAD 2>/dev/null "
+            "| grep -v problem_statement.md | grep -v '^ [0-9]' "
+            "| grep -v '.factory/' | head -10",
             log_file=log_file,
         )
 
@@ -442,6 +544,7 @@ STATE
 
         exit_code, _ = self.cm.exec_command(
             container,
+            "git config --global --add safe.directory /testbed 2>/dev/null; "
             "cd /testbed && git log --oneline -1 | grep -q 'FeatureBench'",
             log_file=log_file,
         )

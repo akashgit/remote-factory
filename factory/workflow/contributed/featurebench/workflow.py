@@ -402,6 +402,9 @@ def workflow() -> Workflow:
         evaluator_type="fn",
         evaluator_command=(
             "if [ -f {project_path}/.factory/validation_tests/test_spec_compliance.py ]; then "
+            "if ! docker inspect {container_name} >/dev/null 2>&1; then "
+            "echo 'halt: container {container_name} no longer exists — cannot run tests'; "
+            "else "
             "docker exec {container_name} rm -rf /tmp/validation_tests && "
             "docker cp {project_path}/.factory/validation_tests {container_name}:/tmp/validation_tests && "
             "docker exec {container_name} bash -c "
@@ -413,6 +416,7 @@ def workflow() -> Workflow:
             "else "
             "FAILS=$(grep -E '^(FAILED|ERROR|E )' {project_path}/.factory/reviews/gate-pytest-output.txt | head -15 | tr '\\n' '; '); "
             "echo \"reloop: validation tests failed. Failures: $FAILS\"; "
+            "fi; "
             "fi; "
             "else echo 'reloop: no validation test files found'; fi"
         ),
