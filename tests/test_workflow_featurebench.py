@@ -47,10 +47,8 @@ class TestGraphValidation:
         assert issues == [], f"Graph validation errors: {issues}"
 
     def test_node_count(self, featurebench_wf) -> None:
-        assert len(featurebench_wf.nodes) == 8
+        assert len(featurebench_wf.nodes) == 6
         assert set(featurebench_wf.nodes.keys()) == {
-            "researcher",
-            "strategist",
             "scan_stubs",
             "builder",
             "adversarial_tester",
@@ -60,10 +58,10 @@ class TestGraphValidation:
         }
 
     def test_start_node(self, featurebench_wf) -> None:
-        assert featurebench_wf.start_node == "researcher"
+        assert featurebench_wf.start_node == "scan_stubs"
 
     def test_edge_count(self, featurebench_wf) -> None:
-        assert len(featurebench_wf.edges) == 8
+        assert len(featurebench_wf.edges) == 6
 
     def test_workflow_name(self, featurebench_wf) -> None:
         assert featurebench_wf.name == "featurebench"
@@ -88,16 +86,6 @@ class TestTriggerFunction:
 
 
 class TestNodeTypes:
-    def test_researcher_is_agent(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["researcher"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.RESEARCHER
-
-    def test_strategist_is_agent(self, featurebench_wf) -> None:
-        node = featurebench_wf.nodes["strategist"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.STRATEGIST
-
     def test_scan_stubs_is_fn(self, featurebench_wf) -> None:
         node = featurebench_wf.nodes["scan_stubs"]
         assert isinstance(node, FnNode)
@@ -160,8 +148,8 @@ class TestContainerMetadata:
 
 
 class TestEdgeCoverage:
-    def test_reloop_edge(self, featurebench_wf) -> None:
-        """Gate RELOOP routes to builder_fix (not adversarial_tester)."""
+    def test_reloop_edges(self, featurebench_wf) -> None:
+        """One reloop gate: gate_tests→builder_fix."""
         reloop_edges = [e for e in featurebench_wf.edges if e.condition == VerdictType.RELOOP]
         reloop_pairs = {(e.source, e.target) for e in reloop_edges}
         assert ("gate_tests", "builder_fix") in reloop_pairs
@@ -174,22 +162,20 @@ class TestEdgeCoverage:
         assert builder_fix_edges[0].target == "gate_tests"
         assert builder_fix_edges[0].condition is None
 
-    def test_proceed_edge(self, featurebench_wf) -> None:
-        """Gate PROCEED routes to archivist."""
+    def test_proceed_edges(self, featurebench_wf) -> None:
+        """One proceed gate: gate_tests→archivist."""
         proceed = [
             e for e in featurebench_wf.edges
             if e.condition == VerdictType.PROCEED
         ]
+        proceed_pairs = {(e.source, e.target) for e in proceed}
+        assert ("gate_tests", "archivist") in proceed_pairs
         assert len(proceed) == 1
-        assert proceed[0].source == "gate_tests"
-        assert proceed[0].target == "archivist"
 
     def test_unconditional_pipeline(self, featurebench_wf) -> None:
         """Unconditional edges form the main pipeline spine."""
         unconditional = [e for e in featurebench_wf.edges if e.condition is None]
         pairs = {(e.source, e.target) for e in unconditional}
-        assert ("researcher", "strategist") in pairs
-        assert ("strategist", "scan_stubs") in pairs
         assert ("scan_stubs", "builder") in pairs
         assert ("builder", "adversarial_tester") in pairs
         assert ("adversarial_tester", "gate_tests") in pairs
@@ -230,6 +216,110 @@ class TestNoFactoryInfrastructure:
         assert "begin" not in node_ids
         assert "finalize" not in node_ids
         assert "gate_precheck" not in node_ids
+
+
+class TestBuilderPrompt:
+    """Builder prompt instructs reading existing type definitions."""
+
+    def test_builder_reads_types_before_implementing(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["builder"].prompt_template
+        assert "BEFORE IMPLEMENTING ANY FUNCTION" in prompt
+        assert "class definitions" in prompt
+
+    def test_builder_implements_from_problem_statement(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["builder"].prompt_template
+        assert "problem_statement.md" in prompt
+
+
+class TestAdversarialTesterPrompt:
+    """Adversarial tester is a skeptical spec-compliance auditor."""
+
+    def test_adversarial_reads_existing_types(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["adversarial_tester"].prompt_template
+        assert "READ THE EXISTING TYPES" in prompt
+
+    def test_adversarial_checks_field_mapping(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["adversarial_tester"].prompt_template
+        assert "WRONG FIELD MAPPING" in prompt
+
+    def test_adversarial_checks_paraphrased_strings(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["adversarial_tester"].prompt_template
+        assert "PARAPHRASED STRINGS" in prompt
+
+    def test_adversarial_no_privileged_info(self, featurebench_wf) -> None:
+        """Prompt must not contain task-specific class/field names."""
+        prompt = featurebench_wf.nodes["adversarial_tester"].prompt_template
+        for term in ["mlflow", "seggpt", "astropy", "metaflow", "trl",
+                     "lightning", "liger", "Assessment", "JudgeTool",
+                     "source_type", "source_id", "_PRECISION"]:
+            assert term not in prompt, f"Privileged term {term!r} found in adversarial prompt"
+
+
+class TestBuilderFixStateful:
+    """Builder_fix has git diff context and writes to separate file."""
+
+    def test_builder_fix_writes_separate_file(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["builder_fix"]
+        assert ".factory/reviews/builder-fix-latest.md" in node.writes
+
+    def test_builder_fix_does_not_overwrite_builder(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["builder_fix"]
+        assert ".factory/reviews/builder-latest.md" not in node.writes
+
+    def test_builder_fix_prompt_has_git_log(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["builder_fix"].prompt_template
+        assert "git log" in prompt
+
+    def test_builder_fix_prompt_has_git_diff(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["builder_fix"].prompt_template
+        assert "git diff" in prompt
+
+    def test_builder_fix_no_restructure_rule(self, featurebench_wf) -> None:
+        prompt = featurebench_wf.nodes["builder_fix"].prompt_template
+        assert "Do NOT create new directory structures" in prompt
+
+    def test_builder_fix_records_failures(self, featurebench_wf) -> None:
+        """Output file should capture which failures were addressed."""
+        prompt = featurebench_wf.nodes["builder_fix"].prompt_template
+        assert "Which test failures you addressed" in prompt
+
+    def test_builder_fix_post_check_correct_file(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["builder_fix"]
+        assert any(
+            c.path == ".factory/reviews/builder-fix-latest.md"
+            for c in node.post_checks
+        )
+
+
+class TestGateFeedback:
+    """Gate reloop feedback includes actual failure details."""
+
+    def test_gate_includes_grep_failures(self, featurebench_wf) -> None:
+        cmd = featurebench_wf.nodes["gate_tests"].evaluator_command
+        assert "grep" in cmd
+        assert "FAILED" in cmd
+
+    def test_gate_feedback_not_just_pointer(self, featurebench_wf) -> None:
+        """Reloop message should include failure text, not just a file path."""
+        cmd = featurebench_wf.nodes["gate_tests"].evaluator_command
+        assert "Failures:" in cmd or "failures:" in cmd.lower()
+
+    def test_gate_failures_single_line(self, featurebench_wf) -> None:
+        """FAILS must be collapsed to one line so 'reloop:' stays the last line prefix."""
+        cmd = featurebench_wf.nodes["gate_tests"].evaluator_command
+        assert "tr '\\n'" in cmd or 'tr "\\n"' in cmd
+
+
+class TestScanStubsL2Fallback:
+    """scan_stubs script has L2 structural template fallback."""
+
+    def test_scan_stubs_has_l2_section(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["scan_stubs"]
+        assert "L2 EXPECTED SOURCE PATHS" in node.command
+
+    def test_scan_stubs_detects_test_imports(self, featurebench_wf) -> None:
+        node = featurebench_wf.nodes["scan_stubs"]
+        assert "imported by" in node.command.lower() or "MISSING" in node.command
 
 
 class TestAdapterModule:
@@ -341,5 +431,5 @@ class TestExecutorContainerRouting:
 
     def test_host_agent_uses_invoke_agent(self, featurebench_wf) -> None:
         """Host nodes (no container metadata) use standard invoke_agent path."""
-        researcher = featurebench_wf.nodes["researcher"]
-        assert researcher.metadata.get("execution_context") is None
+        builder = featurebench_wf.nodes["builder"]
+        assert builder.metadata.get("execution_context") is None

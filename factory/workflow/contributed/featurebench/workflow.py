@@ -1,19 +1,17 @@
 """FeatureBench mode — hybrid host/container execution pipeline.
 
-10-node pipeline with two RELOOP gates:
-  researcher → strategist → scan_stubs (FnNode) → builder → qa_reviewer → gate_qa ⇄ builder
-  gate_qa (PROCEED) → adversarial_tester → gate_tests ⇄ builder_fix → archivist
+6-node pipeline with one RELOOP gate:
+  scan_stubs (FnNode) → builder → adversarial_tester → gate_tests ⇄ builder_fix → archivist
 
 scan_stubs mechanically detects all blank/masked function bodies via AST and
-writes the list for the builder. The builder implements the feature AND fills
-stubs with full context. After the builder, qa_reviewer checks for consistency
-issues (naming, stubs, imports). gate_qa reads the QA report — if remaining
-unfixed issues are found, it reloops to builder. Otherwise,
-adversarial_tester reads the problem statement AND the built code to write
-spec-compliance tests (one-shot). gate_tests runs them inside the container.
-On RELOOP, builder_fix reads the pytest output and fixes source code directly
-— adversarial_tester is NOT re-run, so the test suite stays stable across
-iterations.
+writes a compact manifest for the builder. The builder reads the problem
+statement directly, explores the codebase (including existing type definitions),
+and implements the feature. The adversarial_tester then reads the existing
+type definitions and writes skeptical spec-compliance tests that probe for
+common builder mistakes (wrong field mappings, paraphrased strings, missing
+error paths). gate_tests runs them inside the container. On RELOOP, builder_fix
+reads the pytest output and fixes source code directly — adversarial_tester is
+NOT re-run, so the test suite stays stable across iterations.
 """
 
 from typing import Any
@@ -33,11 +31,11 @@ from factory.workflow.primitives import (
 meta = {
     "name": "featurebench",
     "description": (
-        "FeatureBench mode — TDD pipeline for implementing features from interface specifications. "
-        "Reads problem_statement.md, analyzes repo structure, creates an implementation plan, "
-        "scans for masked function bodies, builds the feature, then the adversarial_tester "
-        "writes spec-compliance tests against the built code. gate_tests runs them inside the "
-        "container via docker exec, RELOOPing to builder if they fail. "
+        "FeatureBench mode — lean pipeline for implementing features from interface specifications. "
+        "Scans for masked function bodies, builder implements directly from problem_statement.md "
+        "(no separate research/strategy — the spec IS the strategy), then a skeptical adversarial "
+        "tester reads existing type definitions and writes tests that catch field mapping bugs. "
+        "gate_tests runs them inside the container via docker exec, RELOOPing to builder_fix. "
         "Use when invoked with --mode featurebench."
     ),
 }
@@ -149,113 +147,6 @@ def workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Researcher: analyze problem + repo (HOST) ─────────────────
-
-    nodes["researcher"] = AgentNode(
-        id="researcher",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Analyze the FeatureBench problem statement and repository structure.\n\n"
-            "Note: the test files have been removed by the benchmark harness. Focus on "
-            "understanding what source code needs to be written/modified to implement the "
-            "described interface. Do NOT plan to recreate test files.\n\n"
-            "The problem statement is at {project_path}/problem_statement.md.\n"
-            "Repository files are available at {project_path} for analysis.\n\n"
-            "1. Read problem_statement.md thoroughly. Extract:\n"
-            "   - Core Functionality overview\n"
-            "   - Main Features and Requirements (enumerate each)\n"
-            "   - Key Challenges (mandatory components)\n"
-            "   - Interface Descriptions (file paths, import paths, function signatures, types)\n\n"
-            "2. Study the existing repository structure:\n"
-            "   - List all source files and their purposes\n"
-            "   - Identify which modules/packages exist\n"
-            "   - Map import dependencies between files\n"
-            "   - Note any existing test infrastructure\n\n"
-            "3. For L1 (incremental) tasks:\n"
-            "   - Identify the extension points in the existing codebase\n"
-            "   - Map where new code must integrate with existing code\n"
-            "   - Note existing patterns (naming, error handling, logging) to follow\n"
-            "   - CRITICAL: The benchmark masks code by replacing function bodies with blank\n"
-            "     lines. Scan ALL files referenced by the interface specs for empty/stub\n"
-            "     function bodies — these are hidden dependencies you must also implement.\n"
-            "     Trace the call chain from each interface function to find masked helpers\n"
-            "     in other files (models, utilities, threading helpers, etc.).\n\n"
-            "4. For L2 (from-scratch) tasks — THIS IS CRITICAL:\n"
-            "   - The benchmark DELETED the target source files, but the REST of the repo\n"
-            "     is intact. You have a full working codebase to study as a template.\n"
-            "   - FIND SIBLING IMPLEMENTATIONS in the same directory tree. For example,\n"
-            "     if you need to implement src/transformers/models/seggpt/, look at\n"
-            "     src/transformers/models/bert/ or src/transformers/models/vit/ as templates.\n"
-            "   - Run: ls on the parent directory to find all siblings.\n"
-            "   - Pick 1-2 siblings that are closest in functionality to the target.\n"
-            "   - For each sibling, document the EXACT file structure:\n"
-            "     * Which files exist (modeling_X.py, configuration_X.py, __init__.py, etc.)\n"
-            "     * What classes/functions each file defines (with signatures)\n"
-            "     * How __init__.py exports symbols\n"
-            "     * How the module integrates with the parent package (registration, imports)\n"
-            "   - Report this as a STRUCTURAL TEMPLATE section that the builder MUST follow.\n"
-            "   - Also check the parent package's __init__.py for registration patterns\n"
-            "     (e.g., model mappings, auto-classes, lazy imports).\n"
-            "   - Look at any configuration files, setup.py, or pyproject.toml for patterns.\n\n"
-            "5. Summarize:\n"
-            "   - Files that need to be created (with EXACT paths from interface specs)\n"
-            "   - Files that need to be modified\n"
-            "   - Structural template from sibling implementation (for L2)\n"
-            "   - Integration points and dependency order\n"
-            "   - Potential challenges or ambiguities in the spec\n\n"
-            "Write findings to .factory/reviews/researcher-latest.md."
-        ),
-        reads=set(),
-        writes={".factory/reviews/researcher-latest.md"},
-        post_checks=[
-            ArtifactCheck(path=".factory/reviews/researcher-latest.md", must_exist=True),
-        ],
-    )
-
-    # ── Strategist: create implementation plan (HOST) ──────────────
-
-    nodes["strategist"] = AgentNode(
-        id="strategist",
-        role=AgentRole.STRATEGIST,
-        prompt_template=(
-            "Create an implementation plan for this FeatureBench task.\n\n"
-            "Note: the test files have been removed by the benchmark harness. Focus on "
-            "understanding what source code needs to be written/modified to implement the "
-            "described interface. Do NOT plan to recreate test files.\n\n"
-            "The problem statement is at {project_path}/problem_statement.md.\n"
-            "All file paths in your plan must be relative to the project root.\n\n"
-            "Read the researcher's analysis at .factory/reviews/researcher-latest.md.\n"
-            "Read the problem statement at problem_statement.md.\n\n"
-            "IMPORTANT: Do NOT rely solely on the researcher's report. Browse the actual\n"
-            "code at {project_path} to verify paths, naming conventions, and integration\n"
-            "points. For L2 tasks where source files were deleted, examine sibling\n"
-            "implementations directly — ls the parent directory, open 1-2 siblings, and\n"
-            "use their file structure as a concrete template for your plan.\n\n"
-            "Produce a plan with:\n\n"
-            "1. **File Creation Order** — list EVERY file to create, in dependency order\n"
-            "   (files with no internal deps first, files that import from them later).\n"
-            "   For each file: EXACT path (verified against repo structure), what it\n"
-            "   implements, which interface spec it satisfies, and which sibling file to\n"
-            "   use as a template (if applicable).\n\n"
-            "2. **File Modification Plan** — for each existing file that needs changes:\n"
-            "   what to add/modify and why. Check the actual file content to confirm.\n\n"
-            "3. **Structural Template** (for L2 tasks) — document the sibling implementation\n"
-            "   structure the builder should follow. Include exact file names, class names,\n"
-            "   and the pattern for __init__.py exports and parent package registration.\n\n"
-            "4. **Interface Compliance Checklist** — for each interface spec in the problem\n"
-            "   statement, list: the file, the function/class signature, the expected behavior.\n"
-            "   The builder MUST match these exactly.\n\n"
-            "5. **Risk Areas** — parts of the spec that are ambiguous or could cause P2P\n"
-            "   regressions.\n\n"
-            "Write the plan to .factory/strategy/current.md."
-        ),
-        reads={".factory/reviews/researcher-latest.md"},
-        writes={".factory/strategy/current.md"},
-        post_checks=[
-            ArtifactCheck(path=".factory/strategy/current.md", must_exist=True),
-        ],
-    )
-
     # ── Scan stubs: detect all blank function bodies (FnNode, HOST) ──
 
     nodes["scan_stubs"] = FnNode(
@@ -285,16 +176,20 @@ def workflow() -> Workflow:
             "its own test files — anything you write in tests/ will be overwritten. Read the "
             "interface descriptions in problem_statement.md and implement the code that "
             "satisfies them in the appropriate source files.\n\n"
-            "Implement the FeatureBench feature according to the plan at "
-            ".factory/strategy/current.md.\n\n"
+            "Implement the FeatureBench feature described in problem_statement.md.\n\n"
             "The working directory is {project_path} — a git-tracked repository.\n"
             "You MUST commit all changes so the FeatureBench harness can extract your git diff.\n\n"
             "CRITICAL RULES:\n"
             "1. Read problem_statement.md for the authoritative interface specifications.\n"
             "   Match function signatures, class names, import paths, and types EXACTLY.\n\n"
-            "2. Follow the file creation order from the plan. Create files in dependency\n"
-            "   order — files with no internal imports first.\n\n"
-            "3. Multi-file implementation is expected (~15 files average). Do not try to\n"
+            "2. BEFORE IMPLEMENTING ANY FUNCTION, read the class definitions of all types\n"
+            "   in its signature — parameter types, return types, types in docstrings.\n"
+            "   Use grep to find each class definition and Read the file. Understand what\n"
+            "   fields each type has, their constructor signatures, and which field is\n"
+            "   which. This prevents wrong field mappings (e.g., using field_a when\n"
+            "   field_b was correct because the names are similar).\n\n"
+            "3. Create files in dependency order — files with no internal imports first.\n"
+            "   Multi-file implementation is expected (~15 files average). Do not try to\n"
             "   put everything in one file. Follow the repo's existing structure and\n"
             "   naming conventions.\n\n"
             "4. MASKED FUNCTION BODIES — CRITICAL:\n"
@@ -349,99 +244,12 @@ def workflow() -> Workflow:
             "implemented it."
         ),
         reads={
-            ".factory/strategy/current.md",
             ".factory/reviews/blank-stubs.txt",
         },
         writes={".factory/reviews/builder-latest.md"},
         post_checks=[
             ArtifactCheck(path=".factory/reviews/builder-latest.md", must_exist=True),
         ],
-    )
-
-    # ── QA reviewer: check builder output for consistency issues (HOST) ──
-
-    nodes["qa_reviewer"] = AgentNode(
-        id="qa_reviewer",
-        role=AgentRole.CODE_REVIEWER,
-        timeout=1200,
-        prompt_template=(
-            "You are a code consistency reviewer. The builder just implemented a feature.\n"
-            "Your job is to find and FIX internal inconsistencies in the code before\n"
-            "tests are written against it.\n\n"
-            "The working directory is {project_path}.\n\n"
-            "STEP 1 — Read .factory/reviews/builder-latest.md to see what was built.\n"
-            "Read .factory/reviews/blank-stubs.txt for the list of masked functions.\n\n"
-            "STEP 2 — For each file the builder modified or created, check:\n\n"
-            "  a) NAMING CONSISTENCY: Look at the file's own imports and type annotations.\n"
-            "     Do the internal attribute/variable names follow the vocabulary of the\n"
-            "     types imported in THAT file? For example, if a file imports a type\n"
-            "     called _PRECISION_INPUT, attributes storing that type should use\n"
-            "     'input' in their name (e.g., _precision_input), not a different word\n"
-            "     like 'flag' copied from a different file. Sibling/parallel\n"
-            "     implementations in other files often use different internal names —\n"
-            "     the file's own imports are the authoritative naming signal.\n\n"
-            "  b) STUB COMPLETENESS: blank-stubs.txt is a compact manifest — one line\n"
-            "     per stub (file:line  function_name(args)). Open each listed file and\n"
-            "     verify the function body is no longer empty. Flag any that are still\n"
-            "     stubs or contain only pass/raise NotImplementedError.\n\n"
-            "  c) INTERFACE COMPLIANCE: Read problem_statement.md for the interface specs.\n"
-            "     Verify that public attribute names, method signatures, and return types\n"
-            "     match the spec exactly. Check that the class exposes the attributes\n"
-            "     and methods the spec describes.\n\n"
-            "  d) CROSS-FILE CONSISTENCY: If the builder's code sets attributes that are\n"
-            "     accessed by callers in other (non-modified) files, verify the names\n"
-            "     match. grep for how other files reference the class and its attributes.\n\n"
-            "  e) IMPORT COHERENCE: Verify that modified files import everything they use\n"
-            "     and do not break existing imports that other files depend on.\n\n"
-            "  f) RUNTIME SMOKE TEST: Sync code to the container and verify key imports work:\n"
-            "     docker cp {project_path}/. {container_name}:/testbed/\n"
-            "     docker exec {container_name} bash -c 'cd /testbed && conda run -n testbed python -c \"from <module> import <Class>\"'\n"
-            "     Test at least the main modules referenced in problem_statement.md.\n"
-            "     If imports fail (ImportError, AttributeError), that reveals missing code.\n\n"
-            "STEP 3 — If you find issues, FIX them in the source files.\n"
-            "  Do NOT modify test files. Only fix source code.\n"
-            "  After fixing, run: git add -A && git commit -m 'fix consistency issues'\n\n"
-            "STEP 4 — Write a brief report to .factory/reviews/qa-review-latest.md:\n"
-            "  - Issues found and fixed (with before/after)\n"
-            "  - Remaining stubs that still need implementation\n"
-            "  - 'No issues found' if everything is consistent\n\n"
-            "STEP 5 — VERDICT (MANDATORY — must be the LAST line of the report):\n"
-            "  If all issues are resolved or no issues were found, write exactly:\n"
-            "    VERDICT: PASS\n"
-            "  If there are remaining unfixed issues (stubs still empty, naming\n"
-            "  problems you could not resolve, broken imports), write exactly:\n"
-            "    VERDICT: FAIL — <one-line description of remaining issues>\n"
-            "  The VERDICT line MUST be the very last line of the report.\n\n"
-            "ANTI-CHEATING: Do NOT access test files, gold solutions, or blacklisted URLs."
-        ),
-        reads={
-            ".factory/reviews/builder-latest.md",
-            ".factory/reviews/blank-stubs.txt",
-        },
-        writes={".factory/reviews/qa-review-latest.md"},
-        post_checks=[
-            ArtifactCheck(path=".factory/reviews/qa-review-latest.md", must_exist=True),
-        ],
-    )
-
-    # ── QA gate: reloop to builder if QA found remaining issues ──
-
-    nodes["gate_qa"] = GateNode(
-        id="gate_qa",
-        evaluator_type="fn",
-        evaluator_command=(
-            "QA_REPORT={project_path}/.factory/reviews/qa-review-latest.md; "
-            "if [ ! -f \"$QA_REPORT\" ]; then echo 'reloop: QA report missing'; "
-            "else "
-            "VERDICT=$(tail -5 \"$QA_REPORT\" | grep -i '^VERDICT:' | tail -1); "
-            "if echo \"$VERDICT\" | grep -qi 'PASS'; then echo 'pass: QA review passed'; "
-            "elif echo \"$VERDICT\" | grep -qi 'FAIL'; then "
-            "echo \"reloop: $VERDICT\"; "
-            "else echo 'pass: no explicit verdict, assuming clean'; "
-            "fi; fi"
-        ),
-        reads={".factory/reviews/qa-review-latest.md"},
-        writes=set(),
     )
 
     # ── Adversarial tester: write spec-compliance tests AFTER build (HOST) ──
@@ -451,7 +259,6 @@ def workflow() -> Workflow:
         role=AgentRole.ADVERSARIAL_TESTER,
         timeout=1800,
         reads={
-            ".factory/reviews/researcher-latest.md",
             ".factory/reviews/builder-latest.md",
         },
         writes={".factory/reviews/adversarial-qa.md", ".factory/validation_tests/test_spec_compliance.py"},
@@ -459,37 +266,66 @@ def workflow() -> Workflow:
             ArtifactCheck(path=".factory/reviews/adversarial-qa.md", must_exist=True),
         ],
         prompt_template=(
-            "You are a spec-compliance auditor for the FeatureBench benchmark.\n\n"
-            "The builder has ALREADY implemented the feature. Your job is to compare\n"
-            "the problem statement against the built code and write tests that verify\n"
-            "the implementation matches the spec.\n\n"
-            "Steps:\n"
-            "1. Read problem_statement.md for the authoritative interface specs\n"
-            "   (function signatures, import paths, types, expected behavior).\n"
-            "2. Read .factory/reviews/builder-latest.md for what was built.\n"
-            "3. Read .factory/reviews/researcher-latest.md for repo structure.\n"
-            "4. CRITICALLY: Browse the ACTUAL source files the builder created/modified.\n"
-            "   Find the real import paths, class names, and function signatures.\n"
-            "   Your tests MUST use the actual imports that exist in the code.\n\n"
-            "5. mkdir -p .factory/validation_tests/\n"
-            "6. Write .factory/validation_tests/test_spec_compliance.py with pytest tests\n"
-            "   that verify EVERY interface spec from problem_statement.md:\n"
-            "   - Use the REAL import paths from the built code (not guesses)\n"
-            "   - test_ prefix for all test functions\n"
-            "   - Function signature tests (correct parameters, return types)\n"
-            "   - Happy-path tests for each specified interface\n"
-            "   - Edge-case tests (empty input, None, boundary values)\n"
-            "   - Tests for spec requirements the builder may have missed\n"
-            "   - Self-contained tests (no fixtures depending on external state)\n"
-            "   - Do NOT reference test data files unless you verify they exist\n\n"
+            "You are a skeptical spec-compliance auditor. Your job is to find bugs in\n"
+            "the builder's implementation by writing tests that catch common mistakes.\n"
+            "Assume the builder cut corners and got details wrong.\n\n"
+            "The working directory is {project_path}.\n\n"
+            "STEP 1 — UNDERSTAND THE SPEC:\n"
+            "Read problem_statement.md for the authoritative interface descriptions.\n"
+            "For each interface function, note:\n"
+            "  - Exact parameter names and types\n"
+            "  - Exact return types\n"
+            "  - Every error condition described in Raises/Notes sections\n"
+            "  - Any specific strings, values, or behaviors described in the docstring\n\n"
+            "STEP 2 — READ THE EXISTING TYPES (THIS IS CRITICAL):\n"
+            "For every type referenced in the interface signatures (parameter types,\n"
+            "return types, types in docstrings), find and READ their class definitions\n"
+            "in the codebase. You need to understand:\n"
+            "  - What fields/attributes each type has\n"
+            "  - Constructor signatures\n"
+            "  - Which field is which (e.g., if a class has two similarly-named\n"
+            "    fields, know which one should be used where)\n"
+            "Use grep and Read to find these class definitions. This step is what\n"
+            "lets you write tests the builder can't anticipate.\n\n"
+            "STEP 3 — READ THE BUILDER'S CODE:\n"
+            "Browse the actual source files the builder created/modified.\n"
+            "Look for these common builder mistakes:\n"
+            "  a) WRONG FIELD MAPPING — builder used field_a when field_b was correct.\n"
+            "     For every conversion/factory function, verify the builder maps each\n"
+            "     source field to the correct target field by checking both class defs.\n"
+            "  b) PARAPHRASED STRINGS — builder wrote its own description/message string\n"
+            "     instead of using the exact text from the spec or existing constants.\n"
+            "     Check any method that returns a description, message, or name.\n"
+            "  c) MISSING ERROR PATHS — every Raises section in the docstring should\n"
+            "     have a corresponding error handling path. Builders often skip these.\n"
+            "  d) WRONG DEFAULTS — builder used a different default value than the spec.\n"
+            "  e) INCOMPLETE CONVERSIONS — builder handled the happy path but skipped\n"
+            "     edge cases (None values, empty lists, error objects with None fields).\n\n"
+            "STEP 4 — WRITE TARGETED TESTS:\n"
+            "mkdir -p .factory/validation_tests/\n"
+            "Write .factory/validation_tests/test_spec_compliance.py with pytest tests.\n\n"
+            "For each interface function, write tests that specifically probe the\n"
+            "mistakes above:\n"
+            "  - FIELD MAPPING TESTS: Create real objects with distinct values for each\n"
+            "    field, then assert the output has the right field in the right place.\n"
+            "    Example: if converting TypeA to TypeB, create a TypeA where each field\n"
+            "    has a unique recognizable value, then assert each TypeB field got the\n"
+            "    correct value from the correct TypeA field (not a similarly-named one).\n"
+            "  - ERROR PATH TESTS: For each Raises condition in the docstring, write a\n"
+            "    test that triggers it and asserts the correct exception.\n"
+            "  - STRING EXACTNESS TESTS: If the spec describes a description or name,\n"
+            "    check the actual value contains key phrases from the docstring.\n"
+            "  - EDGE CASE TESTS: Empty inputs, None values, boundary conditions.\n"
+            "  - Use REAL import paths from the actual code, not guesses.\n"
+            "  - Self-contained tests (no fixtures depending on external state).\n\n"
             "IMPORTANT:\n"
             "- Do NOT run pytest — the gate runs tests inside the container\n"
             "- Do NOT modify any source code — you are writing tests only\n"
-            "- Use REAL import paths from the actual code, not from the spec description\n"
-            "  (the spec describes interfaces but the actual module paths may differ)\n\n"
-            "Write a summary to .factory/reviews/adversarial-qa.md listing the tests\n"
-            "written, what spec requirement each validates, and any gaps you found\n"
-            "between the spec and the implementation."
+            "- Your tests should FAIL if the builder made the common mistakes above\n"
+            "- Write at least one test per interface function, more for complex ones\n\n"
+            "ANTI-CHEATING: Do NOT access test files, gold solutions, or blacklisted URLs.\n\n"
+            "Write a summary to .factory/reviews/adversarial-qa.md listing each test,\n"
+            "what specific builder mistake it catches, and any gaps you found."
         ),
     )
 
@@ -551,7 +387,6 @@ def workflow() -> Workflow:
         ),
         reads={
             ".factory/reviews/gate-pytest-output.txt",
-            ".factory/strategy/current.md",
             ".factory/reviews/blank-stubs.txt",
         },
         writes={".factory/reviews/builder-fix-latest.md"},
@@ -597,7 +432,6 @@ def workflow() -> Workflow:
         prompt_template=(
             "Archive learnings from this FeatureBench task.\n\n"
             "Read:\n"
-            "- .factory/strategy/current.md (implementation plan)\n"
             "- .factory/reviews/builder-latest.md (what was built)\n"
             "- .factory/reviews/adversarial-qa.md (spec-compliance audit)\n\n"
             "Record:\n"
@@ -616,13 +450,8 @@ def workflow() -> Workflow:
     # ── Edges ──────────────────────────────────────────────────────
 
     edges = [
-        Edge(source="researcher", target="strategist"),
-        Edge(source="strategist", target="scan_stubs"),
         Edge(source="scan_stubs", target="builder"),
-        Edge(source="builder", target="qa_reviewer"),
-        Edge(source="qa_reviewer", target="gate_qa"),
-        Edge(source="gate_qa", target="adversarial_tester", condition=VerdictType.PROCEED),
-        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        Edge(source="builder", target="adversarial_tester"),
         Edge(source="adversarial_tester", target="gate_tests"),
         Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
         Edge(source="gate_tests", target="builder_fix", condition=VerdictType.RELOOP),
@@ -638,7 +467,7 @@ def workflow() -> Workflow:
         name="featurebench",
         nodes=nodes,
         edges=edges,
-        start_node="researcher",
+        start_node="scan_stubs",
         terminal=True,
         trigger=trigger,
     )
