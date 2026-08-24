@@ -118,7 +118,8 @@ Tracks overall run progress. Fields:
 - `output` (str) — the model's complete response including thinking/reasoning
 - `code` (str) — the extracted Python code from the response (parsed from the last ` ```python ` block)
 - `solution` (dict) — the parsed solution dictionary returned by `run()`. **Empty `{}` if execution failed** (code error, timeout, or invalid output)
-- `score` (float) — the verifier score. `0.0` means failure (execution error, constraint violation, or invalid solution)
+- `score` (float) — the raw verifier score from the task's `evaluate()` function. `0.0` means failure (execution error, constraint violation, or invalid solution)
+- `reward` (float) — the RL training reward, derived from `score` via reward shaping (e.g., scaling, clipping, reciprocal transform). This is the signal the model was actually trained on. When no reward shaping is configured, `reward == score`
 - `eval_msg` (str) — evaluation message or error description (e.g., `"success"`, `"timeout"`, or an error traceback)
 - `gen_case` (str) — generation case identifier (internal classification)
 - `p1_len` (int) — phase 1 (thinking/reasoning) token count

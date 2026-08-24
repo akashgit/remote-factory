@@ -143,27 +143,23 @@ class TestEvaluateCodeSolution:
     def test_valid_code_gets_score(self, mock_task_dir: Path) -> None:
         from factory.lumen.verl_integration.reward import evaluate_code_solution
 
-        code = (
-            'import json\n'
-            'solution = {"value": 42}\n'
-            'with open("solution.json", "w") as f:\n'
-            '    json.dump(solution, f)\n'
-        )
-        score = evaluate_code_solution(code, mock_task_dir, timeout=10)
+        code = 'def run():\n    return {"value": 42}\n'
+        score, solution = evaluate_code_solution(code, mock_task_dir, timeout=10)
         assert score == 1.5
+        assert isinstance(solution, dict)
 
     def test_code_that_produces_no_solution(self, mock_task_dir: Path) -> None:
         from factory.lumen.verl_integration.reward import evaluate_code_solution
 
         code = "x = 1 + 1"
-        score = evaluate_code_solution(code, mock_task_dir, timeout=10)
+        score, solution = evaluate_code_solution(code, mock_task_dir, timeout=10)
         assert score == 0.0
 
     def test_timeout_returns_zero(self, mock_task_dir: Path) -> None:
         from factory.lumen.verl_integration.reward import evaluate_code_solution
 
         code = "import time; time.sleep(100)"
-        score = evaluate_code_solution(code, mock_task_dir, timeout=1)
+        score, solution = evaluate_code_solution(code, mock_task_dir, timeout=1)
         assert score == 0.0
 
 
@@ -174,9 +170,8 @@ class TestComputeScore:
         solution_str = (
             '<think>thinking</think>\n'
             '```python\n'
-            'import json\n'
-            'with open("solution.json", "w") as f:\n'
-            '    json.dump({"value": 1}, f)\n'
+            'def run():\n'
+            '    return {"value": 1}\n'
             '```'
         )
         result = compute_score(

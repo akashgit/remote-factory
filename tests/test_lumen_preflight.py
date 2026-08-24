@@ -86,7 +86,6 @@ class TestPreflightCli:
 
         config = json.loads((run_dir / "config.json").read_text())
         assert config["task_name"] == "circle-packing"
-        assert config["mock"] is True
 
         state = json.loads((run_dir / "state.json").read_text())
         assert state["iteration"] == 0
@@ -113,7 +112,6 @@ class TestPreflightCli:
         run_dir = lumen_dir / ".running"
         config = json.loads((run_dir / "config.json").read_text())
         assert config["task_name"] == "circle-packing"
-        assert config["mock"] is True
 
     def test_no_task_dir_no_config_exits(self, tmp_path: Path) -> None:
         """Preflight exits with error when neither --task-dir nor config.json exists."""

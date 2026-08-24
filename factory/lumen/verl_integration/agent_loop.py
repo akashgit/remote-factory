@@ -313,9 +313,11 @@ class LumenAgentLoopWorkerTQ(AgentLoopWorker):
             eval_msg = result.get("eval_msg", "")
             solution = _jsonify(result.get("solution", {}))
 
+        raw_score = float(result.get("raw_score", score))
         output.reward_score = score
         reward_extra = {
             "acc": float(score > 0),
+            "raw_score": raw_score,
             "code": code,
             "eval_msg": eval_msg,
             "solution": solution,
