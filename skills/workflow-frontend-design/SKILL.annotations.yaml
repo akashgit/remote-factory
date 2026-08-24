@@ -344,18 +344,18 @@ builder:
       endpoints, check infra-context.md for deployment constraints. Use only system
       tools available in the container. Use established resource access patterns (e.g.,
       K8s API client, not subprocess calls to unavailable tools). Follow the existing
-      API router registration pattern. After implementation, start the dev server
-      and verify the feature renders without error messages. Run tests. Commit and
-      open a draft PR. DATA FIDELITY: before reading ANY field from an existing data
-      structure (job config, DB record, API response), trace the write path — find
-      the code that creates that record and verify the field exists. Use grep on
-      production code (src/, lib/, app/) to confirm — test fixtures are not valid
-      evidence that a field is populated in production. If a field is not written
-      anywhere in production code AND not documented as an external source in
+      API router registration pattern. DATA FIDELITY: before reading ANY field from
+      an existing data structure (job config, DB record, API response), trace the
+      write path — find the code that creates that record and verify the field exists.
+      Use grep on production code (src/, lib/, app/) to confirm — test fixtures are
+      not valid evidence that a field is populated in production. If a field is not
+      written anywhere in production code AND not documented as an external source in
       infra-context.md Data Schemas, do NOT read it. Refer to infra-context.md Data
       Schemas for documented fields and external sources. Test fixtures for
       data-consuming endpoints must use field names and values derived from the actual
-      model definitions, not invented.
+      model definitions, not invented. After implementation, start the dev server
+      and verify the feature renders without error messages. Run tests. Commit and
+      open a draft PR.
 
       Read: .factory/design-system/design-baseline.json, .factory/design-system/infra-context.md,
       .factory/design-system/rules.md, .factory/design-system/ui-spec.md
@@ -366,8 +366,8 @@ gate_build:
   type: GateNode
   id: gate_build
   evaluator_type: fn
-  evaluator_command: cd {project_path} && npx tsc --noEmit 2>&1 && npm run lint 2>&1
-    && echo PROCEED || echo 'reloop: tsc/lint errors found'
+  evaluator_command: 'cd {project_path} && npx tsc --noEmit 2>&1 && npm run lint 2>&1
+    && echo PROCEED || echo ''reloop: tsc/lint errors found'''
   reads:
   - .factory/reviews/builder-latest.md
   edges_out:
@@ -521,7 +521,7 @@ consistency_tester:
     task_prompt_consistency_tester: 'Design consistency testing. Run all check scripts
       in .factory/design-system/checks/ then perform soft checks: spacing analysis,
       border-radius analysis, animation patterns, icon consistency, status variant
-      usage. Output both .factory/reviews/adversarial_tester-latest.md and .factory/design-system/consistency-report.json
+      usage. Output both .factory/reviews/adversarial-qa.md and .factory/design-system/consistency-report.json
       with hard_failures, soft_warnings, and summary.verdict fields.
 
       Read: .factory/design-system/design-baseline.json, .factory/design-system/rules.md,
