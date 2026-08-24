@@ -32,6 +32,10 @@ factory/_version.py
 skills/workflow-*/SKILL.md
 skills/workflow-*/SKILL.annotations.yaml
 
+# Exception: contributed workflow skills (not auto-generated)
+!skills/workflow-frontend-design/SKILL.md
+!skills/workflow-frontend-design/SKILL.annotations.yaml
+
 # Dev artifacts
 .playwright-mcp/
 screenshots/

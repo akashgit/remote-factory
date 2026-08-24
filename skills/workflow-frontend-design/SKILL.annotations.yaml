@@ -133,6 +133,11 @@ researcher_infra:
       API via in-cluster config, SSH backends, database connections, external APIs.
       Document data sources: where data comes from (K8s node resources, subprocess
       calls, database queries, external APIs) and which client libraries are available.
+      For each data source, document the actual data schemas: read the Pydantic or ORM
+      model definitions, list every field with its type, and trace the write path to
+      confirm which fields are actually populated. For fields populated by external services
+      (K8s API, database queries, third-party APIs), document the source and expected
+      shape. Include 1-2 example payloads derived from the model code, not invented.
       Write to .factory/design-system/infra-context.md.
 
       Write output to: .factory/design-system/infra-context.md'
@@ -341,7 +346,16 @@ builder:
       K8s API client, not subprocess calls to unavailable tools). Follow the existing
       API router registration pattern. After implementation, start the dev server
       and verify the feature renders without error messages. Run tests. Commit and
-      open a draft PR.
+      open a draft PR. DATA FIDELITY: before reading ANY field from an existing data
+      structure (job config, DB record, API response), trace the write path — find
+      the code that creates that record and verify the field exists. Use grep on
+      production code (src/, lib/, app/) to confirm — test fixtures are not valid
+      evidence that a field is populated in production. If a field is not written
+      anywhere in production code AND not documented as an external source in
+      infra-context.md Data Schemas, do NOT read it. Refer to infra-context.md Data
+      Schemas for documented fields and external sources. Test fixtures for
+      data-consuming endpoints must use field names and values derived from the actual
+      model definitions, not invented.
 
       Read: .factory/design-system/design-baseline.json, .factory/design-system/infra-context.md,
       .factory/design-system/rules.md, .factory/design-system/ui-spec.md
@@ -353,7 +367,7 @@ gate_build:
   id: gate_build
   evaluator_type: fn
   evaluator_command: cd {project_path} && npx tsc --noEmit 2>&1 && npm run lint 2>&1
-    && echo PROCEED || echo FAIL
+    && echo PROCEED || echo 'reloop: tsc/lint errors found'
   reads:
   - .factory/reviews/builder-latest.md
   edges_out:
@@ -444,6 +458,7 @@ code_reviewer:
   role: code_reviewer
   blocking: 'true'
   reads:
+  - .factory/design-system/infra-context.md
   - .factory/design-system/rules.md
   - .factory/reviews/builder-latest.md
   writes:
@@ -453,12 +468,21 @@ code_reviewer:
     condition: null
   slots:
     task_prompt_code_reviewer: 'Design compliance review. Read .factory/design-system/rules.md
-      first. For each changed file check: color usage against the token registry,
-      component imports (no direct primitive library imports in feature code), font
-      usage against declared families, dark mode coverage, accessibility. Use literal
-      CRITICAL_FOUND for hard rule violations. Use WARNING for soft guideline deviations.
+      and .factory/design-system/infra-context.md first. For each changed file check:
+      color usage against the token registry, component imports (no direct primitive
+      library imports in feature code), font usage against declared families, dark mode
+      coverage, accessibility. DATA FIDELITY: For every field the new code reads from
+      an existing data structure (DB record, API response, stored config), verify the
+      field exists by checking where it is written in production code (src/, lib/, app/).
+      Fields from external services (K8s API, databases) are valid if documented as
+      external sources in infra-context.md Data Schemas — only flag fields that have
+      no source, local or external. Test fixtures do not count as write paths. Use
+      CRITICAL_FOUND if a field is read but never written anywhere and not documented
+      as an external source. Use literal CRITICAL_FOUND for hard rule violations. Use
+      WARNING for soft guideline deviations.
 
-      Read: .factory/design-system/rules.md, .factory/reviews/builder-latest.md
+      Read: .factory/design-system/rules.md, .factory/design-system/infra-context.md,
+      .factory/reviews/builder-latest.md
 
       Write output to: .factory/reviews/code-review.md'
     timeout_code_reviewer: '900'
