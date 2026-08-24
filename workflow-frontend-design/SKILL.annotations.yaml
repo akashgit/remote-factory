@@ -1,0 +1,575 @@
+gate_design_system:
+  type: GateNode
+  id: gate_design_system
+  evaluator_type: fn
+  evaluator_command: 'ds={project_path}/.factory/design-system && [ -f $ds/design-baseline.json
+    ] && [ -f $ds/rules.md ] && [ -f $ds/infra-context.md ] && echo PROCEED || echo
+    ''reloop: design system not found'''
+  reads: []
+  edges_out:
+  - target: staleness_checker
+    condition: PROCEED
+  - target: fork_design_research
+    condition: RELOOP
+  slots:
+    max_iterations_gate_design_system: '3'
+fork_design_research:
+  type: ForkNode
+  id: fork_design_research
+  targets: researcher_tokens,researcher_components,researcher_patterns,researcher_ux,researcher_infra
+  edges_out:
+  - target: researcher_tokens
+    condition: null
+  - target: researcher_components
+    condition: null
+  - target: researcher_patterns
+    condition: null
+  - target: researcher_ux
+    condition: null
+  - target: researcher_infra
+    condition: null
+researcher_tokens:
+  type: AgentNode
+  id: researcher_tokens
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/token-audit.md
+  edges_out:
+  - target: join_design_research
+    condition: null
+  slots:
+    task_prompt_researcher_tokens: 'Design token research. Find the project''s main
+      CSS/theme files (index.css, globals.css, theme.ts, tailwind.config, etc.). Extract
+      every color token, CSS custom property, and theme variable with values for all
+      theme modes. Search all component files for hardcoded color values (hex, rgb,
+      hsl) that bypass the token system. Count frequencies. Document the font families,
+      spacing scale, and border-radius tiers. Write to .factory/design-system/token-audit.md.
+
+      Write output to: .factory/design-system/token-audit.md'
+    timeout_researcher_tokens: '600'
+researcher_components:
+  type: AgentNode
+  id: researcher_components
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/component-inventory.md
+  edges_out:
+  - target: join_design_research
+    condition: null
+  slots:
+    task_prompt_researcher_components: 'Component inventory research. Find the project''s
+      component library directory and catalog every shared component — names, props,
+      variant systems. Identify the primitive UI library (Radix, MUI, Chakra, Headless
+      UI, etc.) and which components wrap it. List feature-specific components. Document
+      UI dependencies from package.json. Map composition patterns. Write to .factory/design-system/component-inventory.md.
+
+      Write output to: .factory/design-system/component-inventory.md'
+    timeout_researcher_components: '600'
+researcher_patterns:
+  type: AgentNode
+  id: researcher_patterns
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/pattern-library.md
+  edges_out:
+  - target: join_design_research
+    condition: null
+  slots:
+    task_prompt_researcher_patterns: 'Layout and pattern research. Read layout.tsx,
+      router.tsx, and every page.tsx in feature modules. Document the shell structure,
+      page templates, data-fetching patterns (e.g. TanStack Query, SWR, Apollo, RTK
+      Query), state management (e.g. Zustand, Redux, Pinia, Context), error handling,
+      motion/animation vocabulary, and accessibility patterns. Write to .factory/design-system/pattern-library.md.
+
+      Write output to: .factory/design-system/pattern-library.md'
+    timeout_researcher_patterns: '600'
+researcher_ux:
+  type: AgentNode
+  id: researcher_ux
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/ux-patterns.md
+  edges_out:
+  - target: join_design_research
+    condition: null
+  slots:
+    task_prompt_researcher_ux: 'UX quality research. Analyze the project''s experiential
+      layer: animation choreography (stagger timing, easing curves, entrance sequences,
+      coordinated transitions, duration scale, exit animations, loading states), information
+      hierarchy (heading structure, visual weight, content density, progressive disclosure,
+      data presentation for non-technical users), and user-friendliness patterns (plain
+      language, contextual help, onboarding/empty states, error messages, feedback
+      patterns). Write to .factory/design-system/ux-patterns.md.
+
+      Write output to: .factory/design-system/ux-patterns.md'
+    timeout_researcher_ux: '600'
+researcher_infra:
+  type: AgentNode
+  id: researcher_infra
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/infra-context.md
+  edges_out:
+  - target: join_design_research
+    condition: null
+  slots:
+    task_prompt_researcher_infra: 'Infrastructure context research. Discover the backend
+      deployment architecture by reading Dockerfile, docker-compose.yml, k8s/ manifests,
+      and Helm charts. Identify what environment the backend runs in (container, K8s
+      pod, VM, serverless) and what system tools are available inside the container.
+      Examine the backend API architecture: framework (FastAPI, Flask, etc.), router
+      registration pattern, how new endpoints are added, existing endpoint inventory.
+      Map resource access patterns: how the backend reaches external resources — K8s
+      API via in-cluster config, SSH backends, database connections, external APIs.
+      Document data sources: where data comes from (K8s node resources, subprocess
+      calls, database queries, external APIs) and which client libraries are available.
+      Write to .factory/design-system/infra-context.md.
+
+      Write output to: .factory/design-system/infra-context.md'
+    timeout_researcher_infra: '600'
+staleness_checker:
+  type: AgentNode
+  id: staleness_checker
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/design-system/staleness-report.md
+  edges_out:
+  - target: spec_writer
+    condition: null
+  slots:
+    task_prompt_staleness_checker: 'Design system staleness check. Compare design-baseline.json
+      and rules.md against the current codebase for drift. Write verdict (STALE/DRIFT/CURRENT)
+      to .factory/design-system/staleness-report.md.
+
+      Write output to: .factory/design-system/staleness-report.md'
+    timeout_staleness_checker: '600'
+join_design_research:
+  type: JoinNode
+  id: join_design_research
+  sources: researcher_tokens,researcher_components,researcher_patterns,researcher_ux,researcher_infra
+  reads:
+  - .factory/design-system/component-inventory.md
+  - .factory/design-system/infra-context.md
+  - .factory/design-system/pattern-library.md
+  - .factory/design-system/token-audit.md
+  - .factory/design-system/ux-patterns.md
+  writes: []
+  edges_out:
+  - target: gate_research
+    condition: null
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/design-system/component-inventory.md
+  - .factory/design-system/infra-context.md
+  - .factory/design-system/pattern-library.md
+  - .factory/design-system/token-audit.md
+  - .factory/design-system/ux-patterns.md
+  edges_out:
+  - target: design_auditor
+    condition: PROCEED
+  - target: fork_design_research
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Verify all five design research artifacts exist and
+      are substantive. token-audit.md must list actual CSS custom properties. component-inventory.md
+      must list actual .tsx files with component names. pattern-library.md must describe
+      actual page layout patterns. ux-patterns.md must describe actual animation,
+      hierarchy, or UX patterns. infra-context.md must describe the deployment environment
+      and backend API architecture. RELOOP if any artifact is empty or clearly fabricated.
+      PROCEED if all five have real data.
+    max_iterations_gate_research: '3'
+design_auditor:
+  type: AgentNode
+  id: design_auditor
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/design-system/component-inventory.md
+  - .factory/design-system/infra-context.md
+  - .factory/design-system/pattern-library.md
+  - .factory/design-system/token-audit.md
+  - .factory/design-system/ux-patterns.md
+  writes:
+  - .factory/design-system/design-baseline.json
+  - .factory/design-system/rules.md
+  edges_out:
+  - target: gate_audit
+    condition: null
+  slots:
+    task_prompt_design_auditor: 'Design system auditor. Read .factory/design-system/token-audit.md,
+      component-inventory.md, pattern-library.md, ux-patterns.md, and infra-context.md.
+      Synthesize into two outputs: (1) .factory/design-system/design-baseline.json
+      — valid JSON with token_registry, component_inventory, pattern_library, ux_patterns,
+      and infrastructure keys. The infrastructure key must include: deployment (type,
+      orchestrator), container_capabilities (available and unavailable tools), resource_access
+      (how the backend reaches external resources), api_architecture (framework, router
+      pattern, existing endpoints), and data_sources (where data comes from). Extract
+      actual values from the research, do not fabricate. (2) .factory/design-system/rules.md
+      — HARD RULES section (token purity, font family, component wrappers, dark mode
+      parity, accessibility floor, infrastructure fidelity — no unavailable system
+      tools, use established resource access patterns, follow API registration pattern)
+      and SOFT GUIDELINES section (spacing, border-radius, motion choreography, icons,
+      page structure, status colors, information hierarchy, user-friendliness). If
+      previous design-baseline.json exists, merge and flag drift. Preserve any existing
+      MANUAL OVERRIDES section in rules.md.
+
+      Read: .factory/design-system/component-inventory.md, .factory/design-system/infra-context.md,
+      .factory/design-system/pattern-library.md, .factory/design-system/token-audit.md,
+      .factory/design-system/ux-patterns.md
+
+      Write output to: .factory/design-system/design-baseline.json, .factory/design-system/rules.md'
+    timeout_design_auditor: '600'
+gate_audit:
+  type: GateNode
+  id: gate_audit
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/design-system/design-baseline.json
+  - .factory/design-system/rules.md
+  edges_out:
+  - target: spec_writer
+    condition: PROCEED
+  - target: design_auditor
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_audit: Verify design-baseline.json is valid JSON with token_registry,
+      component_inventory, and pattern_library keys. Verify rules.md contains both
+      HARD RULES and SOFT GUIDELINES sections. RELOOP if malformed. PROCEED if structurally
+      valid.
+    max_iterations_gate_audit: '3'
+spec_writer:
+  type: AgentNode
+  id: spec_writer
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/design-system/design-baseline.json
+  - .factory/design-system/infra-context.md
+  - .factory/design-system/rules.md
+  writes:
+  - .factory/design-system/ui-spec.md
+  edges_out:
+  - target: gate_spec
+    condition: null
+  slots:
+    task_prompt_spec_writer: 'UI spec writer. Read .factory/design-system/design-baseline.json,
+      rules.md, and infra-context.md for design system and infrastructure constraints.
+      The feature goal is in the CEO''s task prompt (from --focus). Produce .factory/design-system/ui-spec.md
+      with sections: Feature Description, Component Plan (reference existing components,
+      justify any new ones), Token Usage (map each element to specific tokens), Layout,
+      State Management, Dark Mode (both light and dark values), Accessibility, Motion,
+      Visual Mockups, Constraints. For every data-fetching component, specify what
+      it shows when the backend API returns 404 or is unreachable — this must be a
+      designed empty state with guidance text, not an error message. List all API
+      endpoints the feature depends on and whether each already exists in the backend.
+      If an endpoint is missing, specify the backend route, data source, access method
+      (referencing infra-context.md), and response model so the Builder can implement
+      it using only tools available in the deployment environment. VISUAL MOCKUPS:
+      for each designed state (loading, populated, empty, unreachable), draw an ASCII
+      wireframe using box-drawing characters showing the card layout, labels, status
+      indicators, and content hierarchy. The user approves the spec based on these
+      mockups. Be precise — reference actual component names and token values.
+
+      Read: .factory/design-system/design-baseline.json, .factory/design-system/infra-context.md,
+      .factory/design-system/rules.md
+
+      Write output to: .factory/design-system/ui-spec.md'
+    timeout_spec_writer: '600'
+gate_spec:
+  type: GateNode
+  id: gate_spec
+  evaluator_type: user
+  reads:
+  - .factory/design-system/ui-spec.md
+  edges_out:
+  - target: builder
+    condition: PROCEED
+  - target: spec_writer
+    condition: RELOOP
+  slots:
+    max_iterations_gate_spec: '3'
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/design-system/design-baseline.json
+  - .factory/design-system/infra-context.md
+  - .factory/design-system/rules.md
+  - .factory/design-system/ui-spec.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Design-constrained builder. Read .factory/design-system/ui-spec.md
+      (the approved spec), design-baseline.json (the design system), rules.md (the
+      rules), and infra-context.md (infrastructure constraints). Implement exactly
+      what the spec describes. Constraints: only approved color tokens from the baseline,
+      only declared font families, only the project''s shared component library (no
+      direct primitive library imports in feature code), established spacing values,
+      dark mode pairs required if the project uses dark mode, aria-labels on interactive
+      elements, the project''s established icon library only. CRITICAL: every data-fetching
+      component must handle 3 states: (1) loading/skeleton, (2) populated, (3) unavailable
+      (API 404 or network error). The unavailable state must show a designed message
+      like ''Coming soon'' or ''Not yet configured'' — NEVER ''Unable to load'' or
+      ''Failed to fetch''. Treat missing backend APIs as expected. END-TO-END: if
+      the frontend calls a backend API that does not exist, implement the backend
+      endpoint too. Check the project''s API routes — the feature must work end-to-end,
+      not just render a loading spinner. INFRASTRUCTURE: when implementing backend
+      endpoints, check infra-context.md for deployment constraints. Use only system
+      tools available in the container. Use established resource access patterns (e.g.,
+      K8s API client, not subprocess calls to unavailable tools). Follow the existing
+      API router registration pattern. After implementation, start the dev server
+      and verify the feature renders without error messages. Run tests. Commit and
+      open a draft PR.
+
+      Read: .factory/design-system/design-baseline.json, .factory/design-system/infra-context.md,
+      .factory/design-system/rules.md, .factory/design-system/ui-spec.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '1200'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: fn
+  evaluator_command: cd {project_path} && npx tsc --noEmit 2>&1 && npm run lint 2>&1
+    && echo PROCEED || echo FAIL
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_render
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    max_iterations_gate_build: '3'
+gate_render:
+  type: GateNode
+  id: gate_render
+  evaluator_type: fn
+  evaluator_command: 'cd {project_path} && ( ROOT=''.''; if [ -f package.json ] &&
+    node -e "process.exit(JSON.parse(require(''fs'').readFileSync(''package.json'',''utf8'')).scripts?.dev?0:1)"
+    2>/dev/null; then ROOT=''.''; else for d in studio web app frontend client; do
+    if [ -f "$d/package.json" ] && node -e "process.exit(JSON.parse(require(''fs'').readFileSync(''$d/package.json'',''utf8'')).scripts?.dev?0:1)"
+    2>/dev/null; then ROOT="$d"; break; fi; done; fi; if [ "$ROOT" = ''.'' ] && !
+    node -e "process.exit(JSON.parse(require(''fs'').readFileSync(''package.json'',''utf8'')).scripts?.dev?0:1)"
+    2>/dev/null; then echo ''pass: no dev server script found''; exit 0; fi; cd "$ROOT"
+    && npm run dev </dev/null >/dev/null 2>&1 & DEV_PID=$!; FOUND=0; for i in $(seq
+    1 30); do for port in 5173 3000 4200 8080; do if curl -s -o /dev/null -w ''%{http_code}''
+    http://localhost:$port 2>/dev/null | grep -qE ''^(200|304)$''; then FOUND=1; break
+    2; fi; done; if ! kill -0 $DEV_PID 2>/dev/null; then echo ''reloop: dev server
+    crashed on startup''; exit 0; fi; sleep 2; done; kill $DEV_PID 2>/dev/null; wait
+    $DEV_PID 2>/dev/null; if [ "$FOUND" -eq 1 ]; then echo ''pass: dev server started
+    and responded''; else echo ''reloop: dev server did not respond within 60s'';
+    fi )'
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_ci
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    max_iterations_gate_render: '3'
+gate_ci:
+  type: GateNode
+  id: gate_ci
+  evaluator_type: fn
+  evaluator_command: 'cd {project_path} && ( PR=$(gh pr view --json number -q .number
+    2>/dev/null) || true; if [ -z "$PR" ]; then echo ''pass: no PR found''; exit 0;
+    fi; for i in $(seq 1 20); do BUCKETS=$(gh pr checks "$PR" --json bucket --jq ''.[].bucket''
+    2>/dev/null) || true; if [ -z "$BUCKETS" ]; then echo ''pass: no CI checks configured'';
+    exit 0; fi; if echo "$BUCKETS" | grep -qE ''^(fail|cancel)$''; then NAMES=$(gh
+    pr checks "$PR" --json name,bucket --jq ''[.[] | select(.bucket=="fail" or .bucket=="cancel")
+    | .name] | join(", ")'' 2>/dev/null); echo "reloop: CI failed for PR #$PR - $NAMES";
+    exit 0; fi; if ! echo "$BUCKETS" | grep -qE ''^pending$''; then echo ''pass: all
+    CI checks passed''; exit 0; fi; sleep 30; done; echo ''reloop: CI timed out after
+    10 minutes'' )'
+  reads: []
+  edges_out:
+  - target: health_checker
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    max_iterations_gate_ci: '3'
+health_checker:
+  type: AgentNode
+  id: health_checker
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - .factory/design-system/design-baseline.json
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/reviews/health-check.md
+  edges_out:
+  - target: code_reviewer
+    condition: null
+  slots:
+    task_prompt_health_checker: 'Design health check. Standard checks (tsc, lint,
+      build) plus: verify kebab-case file naming for new .tsx files, PascalCase exports,
+      no CSS custom property overrides of existing vars. Dev server smoke test: start
+      the dev server, verify it responds with HTTP 200 on a common port (5173, 3000,
+      4200, 8080). If the server crashes on startup, report as CRITICAL. If no dev
+      server command exists, skip this check.
+
+      Read: .factory/design-system/design-baseline.json, .factory/reviews/builder-latest.md
+
+      Write output to: .factory/reviews/health-check.md'
+    timeout_health_checker: '600'
+code_reviewer:
+  type: AgentNode
+  id: code_reviewer
+  role: code_reviewer
+  blocking: 'true'
+  reads:
+  - .factory/design-system/rules.md
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/reviews/code-review.md
+  edges_out:
+  - target: gate_review
+    condition: null
+  slots:
+    task_prompt_code_reviewer: 'Design compliance review. Read .factory/design-system/rules.md
+      first. For each changed file check: color usage against the token registry,
+      component imports (no direct primitive library imports in feature code), font
+      usage against declared families, dark mode coverage, accessibility. Use literal
+      CRITICAL_FOUND for hard rule violations. Use WARNING for soft guideline deviations.
+
+      Read: .factory/design-system/rules.md, .factory/reviews/builder-latest.md
+
+      Write output to: .factory/reviews/code-review.md'
+    timeout_code_reviewer: '900'
+gate_review:
+  type: GateNode
+  id: gate_review
+  evaluator_type: fn
+  evaluator_command: 'if grep -q ''CRITICAL_FOUND'' {project_path}/.factory/reviews/code-review.md;
+    then echo ''reloop: critical design violations found — builder must fix''; else
+    echo ''PROCEED''; fi'
+  reads:
+  - .factory/reviews/code-review.md
+  edges_out:
+  - target: consistency_tester
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    max_iterations_gate_review: '3'
+consistency_tester:
+  type: AgentNode
+  id: consistency_tester
+  role: adversarial_tester
+  blocking: 'true'
+  reads:
+  - .factory/design-system/design-baseline.json
+  - .factory/design-system/rules.md
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/design-system/consistency-report.json
+  - .factory/reviews/adversarial-qa.md
+  edges_out:
+  - target: gate_consistency
+    condition: null
+  slots:
+    task_prompt_consistency_tester: 'Design consistency testing. Run all check scripts
+      in .factory/design-system/checks/ then perform soft checks: spacing analysis,
+      border-radius analysis, animation patterns, icon consistency, status variant
+      usage. Output both .factory/reviews/adversarial_tester-latest.md and .factory/design-system/consistency-report.json
+      with hard_failures, soft_warnings, and summary.verdict fields.
+
+      Read: .factory/design-system/design-baseline.json, .factory/design-system/rules.md,
+      .factory/reviews/builder-latest.md
+
+      Write output to: .factory/design-system/consistency-report.json, .factory/reviews/adversarial-qa.md'
+    timeout_consistency_tester: '600'
+gate_consistency:
+  type: GateNode
+  id: gate_consistency
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/design-system/consistency-report.json
+  - .factory/reviews/adversarial-qa.md
+  edges_out:
+  - target: gate_doc_freshness
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_consistency: Read .factory/design-system/consistency-report.json.
+      If hard_failure_count > 0, RELOOP to builder with failure details. If only soft_warnings
+      exist, PROCEED (warnings surface in PR). If clean, PROCEED.
+    max_iterations_gate_consistency: '3'
+gate_doc_freshness:
+  type: GateNode
+  id: gate_doc_freshness
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/adversarial-qa.md
+  edges_out:
+  - target: gate_precheck
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_doc_freshness: Check the PR diff for documentation freshness.
+      If public APIs, CLI commands, configuration options, or architecture were changed
+      or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help
+      text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy
+      changes exist. RELOOP to builder if documentation is stale — specify exactly
+      which changes need doc updates.
+    max_iterations_gate_doc_freshness: '3'
+gate_precheck:
+  type: GateNode
+  id: gate_precheck
+  evaluator_type: fn
+  evaluator_command: factory precheck {project_path} --score-before 0 --score-after
+    0
+  reads:
+  - .factory/reviews/adversarial-qa.md
+  edges_out:
+  - target: archivist_build
+    condition: PROCEED
+  - target: archivist_build
+    condition: HALT
+archivist_build:
+  type: AgentNode
+  id: archivist_build
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/adversarial-qa.md
+  writes:
+  - .factory/archive/build.md
+  edges_out: []
+  slots:
+    task_prompt_archivist_build: 'Archive the frontend-design cycle results.
+
+      Read: .factory/reviews/adversarial-qa.md
+
+      Write output to: .factory/archive/build.md'
+    timeout_archivist_build: '300'
