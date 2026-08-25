@@ -313,31 +313,83 @@ async def run_and_eval(
     return scores, elapsed
 
 
+# ── mutation helpers ───────────────────────────────────────────────
+
+
+MODEL_CHOICES = ["haiku", "sonnet", "opus"]
+TIMEOUT_CHOICES = [300, 600, 900, 1800]
+
+
+def apply_mutations(
+    wf: Workflow,
+    frozen_nodes: set[str],
+    rng: random.Random,
+    n_mutations: int = 2,
+) -> tuple[Workflow, list[str]]:
+    """Apply n_mutations to a workflow, returning (mutated_wf, descriptions)."""
+    candidate = copy.deepcopy(wf)
+    descs: list[str] = []
+
+    for _ in range(n_mutations):
+        agent_nodes = [nid for nid, n in candidate.nodes.items()
+                       if type(n).__name__ == "AgentNode" and nid not in frozen_nodes]
+        if not agent_nodes:
+            break
+
+        mutation_type = rng.choice(["model", "prompt", "timeout"])
+        target = rng.choice(agent_nodes)
+
+        if mutation_type == "model":
+            new_model = rng.choice(MODEL_CHOICES)
+            result = mutate_params(candidate, target, {"model": new_model},
+                                   frozen_nodes=frozen_nodes)
+            if result:
+                candidate = result[0]
+                descs.append(f"model({target})={new_model}")
+
+        elif mutation_type == "prompt":
+            result = mutate_prompt(candidate, target, frozen_nodes=frozen_nodes)
+            if result:
+                candidate = result[0]
+                descs.append(f"prompt({target})")
+
+        elif mutation_type == "timeout":
+            new_timeout = rng.choice(TIMEOUT_CHOICES)
+            result = mutate_params(candidate, target, {"timeout": new_timeout},
+                                   frozen_nodes=frozen_nodes)
+            if result:
+                candidate = result[0]
+                descs.append(f"timeout({target})={new_timeout}")
+
+    return candidate, descs
+
+
 # ── main ──────────────────────────────────────────────────────────
 
 
+import random
+
+
 async def main():
-    header("PACKAGE E2E OPTIMIZATION")
-    print(f"\n  {WHITE}Project:{RESET} {PROJECT} (task queue with known bugs + gaps)")
-    print(f"  {WHITE}Goal:{RESET}    Compose packages, run factory's outer loop, tune topology + knobs\n")
+    rng = random.Random(42)
+    NUM_GENERATIONS = 4
+    CANDIDATES_PER_GEN = 2
+
+    header("PACKAGE E2E OPTIMIZATION — iterative outer loop")
+    print(f"\n  {WHITE}Project:{RESET}      {PROJECT} (task queue with known bugs + gaps)")
+    print(f"  {WHITE}Generations:{RESET}  {NUM_GENERATIONS}")
+    print(f"  {WHITE}Candidates:{RESET}   {CANDIDATES_PER_GEN} per generation (mutated from best)")
+    print(f"  {WHITE}Mutations:{RESET}    model, prompt, timeout (via factory's real operators)\n")
 
     baseline = eval_project(PROJECT)
     print(f"  {WHITE}Baseline:{RESET} {baseline['tests_passed']}/{baseline['tests_total']} tests, "
           f"{baseline['total_lines']} lines, score {baseline['composite']:.3f}")
 
-    # ── Phase 1: Seed compositions (3 different topologies) ───────
+    # ── Gen 0: Seed with the best topology ────────────────────────
 
-    header("PHASE 1 — Three seed topologies")
-    print(f"\n  Running 3 structurally different Package compositions through factory.\n")
+    header("GEN 0 — Seed composition")
 
-    # Topology A: linear pipeline with single general researcher
-    topo_a = Sequential(
-        study_pkg(), research_pkg("general"), strategy_pkg(), build_pkg(), qa_pkg(),
-        name="linear-general",
-    )
-
-    # Topology B: parallel specialized researchers (bugs + coverage) → merge → strategy → build
-    topo_b = Sequential(
+    seed = Sequential(
         study_pkg(),
         Parallel(research_pkg("bugs"), research_pkg("coverage"), name="parallel-research"),
         merge_research_pkg(),
@@ -347,148 +399,152 @@ async def main():
         name="parallel-specialized",
     )
 
-    # Topology C: linear with opus researcher (knob variant of A)
-    topo_c = Sequential(
-        study_pkg(), research_pkg("general", model="opus"), strategy_pkg(), build_pkg(), qa_pkg(),
-        name="linear-opus",
-    )
+    print(f"\n  {WHITE}Topology:{RESET} Sequential(study, Parallel(research-bugs, research-coverage),")
+    print(f"           merge, strategy, build, qa)")
+    print(f"  {DIM}9 nodes, fork/join parallel researchers, full QA{RESET}")
 
-    results: list[tuple[str, Workflow, dict, float]] = []
+    seed_wf = seed.compile()
+    seed_scores, seed_elapsed = await run_and_eval(seed_wf, PROJECT, "Gen 0: seed")
 
-    for label, pkg in [
-        ("A: linear-general", topo_a),
-        ("B: parallel-specialized (bugs + coverage)", topo_b),
-        ("C: linear-opus (knob: model=opus)", topo_c),
-    ]:
-        wf = pkg.compile()
-        scores, elapsed = await run_and_eval(wf, PROJECT, label)
-        results.append((label, wf, scores, elapsed))
+    # Track the best across all generations
+    best_wf = seed_wf
+    best_scores = seed_scores
+    best_label = "Gen 0: seed"
+    best_elapsed = seed_elapsed
 
-    # ── Phase 2: Mutate the best candidate ────────────────────────
-
-    header("PHASE 2 — Mutate the best candidate")
-
-    results.sort(key=lambda r: r[2]["composite"], reverse=True)
-    best_label, best_wf, best_scores, best_elapsed = results[0]
-    print(f"\n  {GREEN}Best seed: {best_label} (score={best_scores['composite']:.3f}){RESET}")
-    print(f"  Applying factory's real mutation operators to generate 2 variants...\n")
-
-    import random
-    rng = random.Random(42)
-
-    # Freeze non-agent nodes to protect package internal structure.
-    # Mutations can tune agent knobs (model, prompt, timeout) but
-    # must not remove ForkNodes, JoinNodes, or FnNodes that wire
-    # the composition together.
+    # Freeze package internals
     frozen_nodes = {
         nid for nid, n in best_wf.nodes.items()
         if type(n).__name__ not in ("AgentNode",)
     }
-    print(f"  {DIM}Frozen nodes (package internals): {sorted(frozen_nodes)}{RESET}\n")
 
-    mutations_applied = []
-    for i in range(2):
-        candidate_wf = copy.deepcopy(best_wf)
-        mutation_desc_parts = []
+    trajectory: list[tuple[str, float, str]] = [
+        ("Gen 0", best_scores["composite"], best_label),
+    ]
 
-        # Apply a param mutation (model change)
-        agent_nodes = [nid for nid, n in candidate_wf.nodes.items()
-                       if type(n).__name__ == "AgentNode"]
-        if agent_nodes:
-            target = rng.choice(agent_nodes)
-            new_model = rng.choice(["haiku", "sonnet", "opus"])
-            param_result = mutate_params(
-                candidate_wf, target, {"model": new_model},
-                frozen_nodes=frozen_nodes,
+    all_results: list[tuple[str, dict, float]] = [
+        (best_label, best_scores, best_elapsed),
+    ]
+
+    # ── Generations 1-N: mutate → evaluate → select ──────────────
+
+    for gen in range(1, NUM_GENERATIONS + 1):
+        header(f"GEN {gen} — mutate best, evaluate {CANDIDATES_PER_GEN} candidates")
+
+        print(f"\n  {WHITE}Parent:{RESET} {best_label} (score={best_scores['composite']:.3f})")
+        print(f"  {DIM}Frozen: {sorted(frozen_nodes)}{RESET}\n")
+
+        gen_best_wf = best_wf
+        gen_best_scores = best_scores
+        gen_best_label = best_label
+        improved = False
+
+        for c in range(CANDIDATES_PER_GEN):
+            candidate_wf, mutation_descs = apply_mutations(
+                best_wf, frozen_nodes, rng, n_mutations=rng.randint(1, 3),
             )
-            if param_result:
-                candidate_wf = param_result[0]
-                mutation_desc_parts.append(f"model({target})={new_model}")
+            desc = " + ".join(mutation_descs) if mutation_descs else "no-op"
+            label = f"Gen {gen}.{c+1}: {desc}"
 
-        # Apply a prompt mutation
-        agent_nodes = [nid for nid, n in candidate_wf.nodes.items()
-                       if type(n).__name__ == "AgentNode"]
-        if agent_nodes:
-            target = rng.choice(agent_nodes)
-            prompt_result = mutate_prompt(
-                candidate_wf, target,
-                frozen_nodes=frozen_nodes,
-            )
-            if prompt_result:
-                candidate_wf = prompt_result[0]
-                mutation_desc_parts.append(f"prompt({target})")
+            # Skip if identical to parent
+            if structural_hash(candidate_wf) == structural_hash(best_wf):
+                print(f"  {DIM}Skipped duplicate: {desc}{RESET}")
+                continue
 
-        desc = " + ".join(mutation_desc_parts) or "no-op"
-        mutations_applied.append((f"Mutant {i+1}: {desc}", candidate_wf))
-        print(f"  {DIM}Generated: {desc}{RESET}")
+            scores, elapsed = await run_and_eval(candidate_wf, PROJECT, label)
+            all_results.append((label, scores, elapsed))
 
-    for label, wf in mutations_applied:
-        scores, elapsed = await run_and_eval(wf, PROJECT, label)
-        results.append((label, wf, scores, elapsed))
+            if scores["composite"] > gen_best_scores["composite"]:
+                gen_best_wf = candidate_wf
+                gen_best_scores = scores
+                gen_best_label = label
+                improved = True
 
-    # ── Phase 3: Results ──────────────────────────────────────────
+        # Select: keep the best from this generation
+        if gen_best_scores["composite"] > best_scores["composite"]:
+            delta = gen_best_scores["composite"] - best_scores["composite"]
+            print(f"\n  {GREEN}Improved: {best_scores['composite']:.3f} → "
+                  f"{gen_best_scores['composite']:.3f} (+{delta:.3f}){RESET}")
+            best_wf = gen_best_wf
+            best_scores = gen_best_scores
+            best_label = gen_best_label
+            # Re-freeze based on new best
+            frozen_nodes = {
+                nid for nid, n in best_wf.nodes.items()
+                if type(n).__name__ not in ("AgentNode",)
+            }
+        else:
+            print(f"\n  {DIM}No improvement this generation (best remains {best_scores['composite']:.3f}){RESET}")
 
-    header("RESULTS — all candidates ranked")
+        trajectory.append((f"Gen {gen}", best_scores["composite"], best_label))
 
-    results.sort(key=lambda r: r[2]["composite"], reverse=True)
+    # ── Results ───────────────────────────────────────────────────
 
-    print(f"\n  {'#':<3} {'Score':>6} {'Tests':>8} {'Lines':>6} {'Time':>6}  Candidate")
-    print(f"  {'─' * 68}")
+    header("OPTIMIZATION COMPLETE")
 
-    for rank, (label, wf, scores, elapsed) in enumerate(results, 1):
-        depth, fork_deg, agents, _ = compute_features(wf)
+    print(f"\n  {WHITE}Score trajectory across generations:{RESET}\n")
+    min_s = min(s for _, s, _ in trajectory)
+    max_s = max(s for _, s, _ in trajectory)
+    score_range = max(max_s - min_s, 0.001)
+    for gen_label, score, candidate_label in trajectory:
+        normalized = (score - min_s) / score_range if score_range > 0.001 else 1.0
+        marker = f" {YELLOW}★{RESET}" if score == max_s and gen_label != "Gen 0" else ""
+        print(f"    {gen_label:<6} {bar(normalized)} {score:.3f}  "
+              f"{DIM}{candidate_label[:40]}{RESET}{marker}")
+
+    print(f"\n  {WHITE}All evaluated candidates:{RESET}\n")
+    print(f"  {'#':<3} {'Score':>6} {'Tests':>8} {'Lines':>6} {'Time':>6}  Candidate")
+    print(f"  {'─' * 70}")
+
+    all_results.sort(key=lambda r: r[1]["composite"], reverse=True)
+    for rank, (label, scores, elapsed) in enumerate(all_results, 1):
         marker = f" {YELLOW}★{RESET}" if rank == 1 else ""
         print(f"  {rank:<3} {scores['composite']:>6.3f} "
               f"{scores['tests_passed']:>3}/{scores['tests_total']:<3} "
               f"{scores['total_lines']:>6} {elapsed:>5.0f}s  {label}{marker}")
 
-    winner_label, winner_wf, winner_scores, _ = results[0]
-
-    # Show trajectory
-    print(f"\n  {WHITE}Score trajectory:{RESET}\n")
-    all_scores = [r[2]["composite"] for r in results]
-    max_s, min_s = max(all_scores), min(all_scores)
-    score_range = max(max_s - min_s, 0.001)
-    best_so_far = 0.0
-    for i, (label, _, scores, _) in enumerate(results):
-        s = scores["composite"]
-        best_so_far = max(best_so_far, s)
-        normalized = (best_so_far - min_s) / score_range
-        phase = "seed" if i < 3 else "mut "
-        print(f"    {DIM}{phase}{RESET} {bar(normalized)} {best_so_far:.3f}  {DIM}{label[:35]}{RESET}")
-
     # Serialize winner
-    data = winner_wf.to_dict()
+    data = best_wf.to_dict()
     restored = Workflow.from_dict(data)
 
-    print(f"\n  {GREEN}{BOLD}Winner: {winner_label}{RESET}")
-    print(f"  {GREEN}Score:{RESET}  {winner_scores['composite']:.3f} "
-          f"(tests: {winner_scores['tests_passed']}/{winner_scores['tests_total']}, "
-          f"lines: {winner_scores['total_lines']})")
+    print(f"\n  {GREEN}{BOLD}Winner: {best_label}{RESET}")
+    print(f"  {GREEN}Score:{RESET}  {best_scores['composite']:.3f} "
+          f"(tests: {best_scores['tests_passed']}/{best_scores['tests_total']}, "
+          f"lines: {best_scores['total_lines']})")
     print(f"  {GREEN}Serialized:{RESET} {len(json.dumps(data)):,} bytes, "
-          f"round-trip {'PASS' if len(restored.nodes) == len(winner_wf.nodes) else 'FAIL'}")
+          f"round-trip {'PASS' if len(restored.nodes) == len(best_wf.nodes) else 'FAIL'}")
 
-    delta = winner_scores["composite"] - baseline["composite"]
+    delta = best_scores["composite"] - baseline["composite"]
     print(f"  {GREEN}Improvement over baseline:{RESET} +{delta:.3f} "
-          f"({baseline['composite']:.3f} → {winner_scores['composite']:.3f})")
+          f"({baseline['composite']:.3f} → {best_scores['composite']:.3f})")
+
+    total_evals = len(all_results)
+    total_time = sum(e for _, _, e in all_results)
+    print(f"  {GREEN}Total evaluations:{RESET} {total_evals} "
+          f"({total_time:.0f}s / {total_time/60:.1f}min)")
 
     header("WHAT JUST HAPPENED")
     print(f"""
-  1. Three {BOLD}structurally different{RESET} Package compositions compiled to Workflows:
-     • Linear pipeline (single general researcher)
-     • Parallel specialized researchers (bugs + coverage fork/join)
-     • Knob variant (opus model on researcher)
+  The factory's outer loop ran {NUM_GENERATIONS} generations of iterative optimization:
 
-  2. Each ran through factory's {BOLD}real WorkflowExecutor{RESET} with live Claude agents
-     against a project with known bugs and test coverage gaps
+  1. {BOLD}Gen 0:{RESET} Seeded with a parallel-specialized Package composition
+     (fork/join researchers + merge + strategy + build + QA)
 
-  3. Factory's {BOLD}real mutation operators{RESET} (mutate_params, mutate_prompt)
-     generated 2 variants from the best seed, tuning model choice and prompts
+  2. {BOLD}Gens 1-{NUM_GENERATIONS}:{RESET} Each generation:
+     a) Takes the best workflow from the previous generation
+     b) Applies 1-3 of factory's {BOLD}real mutation operators{RESET}
+        (mutate_params, mutate_prompt) to generate {CANDIDATES_PER_GEN} candidates
+     c) Runs each through the {BOLD}real WorkflowExecutor{RESET} with live Claude agents
+     d) Scores on real pytest results
+     e) Selects the best as parent for the next generation
 
-  4. All 5 candidates were scored on real pytest results: tests passed,
-     code growth, and artifact completeness
+  3. {BOLD}Package boundaries enforced:{RESET} ForkNode, JoinNode, FnNode internals
+     were frozen. Only agent knobs (model, prompt, timeout) were mutated.
 
-  5. The winner was serialized to JSON — ready for the package registry
+  4. {BOLD}Winner serialized{RESET} to JSON, ready for the package registry.
+
+  This is the compile() → mutate → evaluate → select loop from the design doc,
+  running on real agents against a real codebase.
 """)
 
 

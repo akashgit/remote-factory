@@ -120,6 +120,17 @@ def validate_and_repair(workflow: Workflow) -> Workflow | None:
     for edge in workflow.edges:
         if edge.source in workflow.nodes and edge.target in workflow.nodes:
             g.add_edge(edge.source, edge.target)
+    # ForkNode.targets and JoinNode.sources declare implicit edges
+    # that nx.descendants must follow for correct reachability.
+    for nid, node in workflow.nodes.items():
+        if isinstance(node, ForkNode):
+            for target in node.targets:
+                if target in workflow.nodes:
+                    g.add_edge(nid, target)
+        elif isinstance(node, JoinNode):
+            for source in node.sources:
+                if source in workflow.nodes:
+                    g.add_edge(source, nid)
 
     if workflow.start_node not in workflow.nodes:
         return None
