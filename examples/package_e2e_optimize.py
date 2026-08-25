@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import random
 import subprocess
 import time
 from pathlib import Path
@@ -32,13 +33,8 @@ from factory.workflow.package import (
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
-    Edge,
     FnNode,
-    ForkNode,
-    GateNode,
-    JoinNode,
     Study,
-    VerdictType,
     Workflow,
 )
 
@@ -367,9 +363,6 @@ def apply_mutations(
 # ── main ──────────────────────────────────────────────────────────
 
 
-import random
-
-
 async def main():
     rng = random.Random(42)
     NUM_GENERATIONS = 4
@@ -400,7 +393,7 @@ async def main():
     )
 
     print(f"\n  {WHITE}Topology:{RESET} Sequential(study, Parallel(research-bugs, research-coverage),")
-    print(f"           merge, strategy, build, qa)")
+    print("           merge, strategy, build, qa)")
     print(f"  {DIM}9 nodes, fork/join parallel researchers, full QA{RESET}")
 
     seed_wf = seed.compile()
@@ -437,7 +430,6 @@ async def main():
         gen_best_wf = best_wf
         gen_best_scores = best_scores
         gen_best_label = best_label
-        improved = False
 
         for c in range(CANDIDATES_PER_GEN):
             candidate_wf, mutation_descs = apply_mutations(
@@ -458,7 +450,6 @@ async def main():
                 gen_best_wf = candidate_wf
                 gen_best_scores = scores
                 gen_best_label = label
-                improved = True
 
         # Select: keep the best from this generation
         if gen_best_scores["composite"] > best_scores["composite"]:
