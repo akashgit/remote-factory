@@ -84,10 +84,10 @@ class TestCmdRun:
             patch("factory.agents.runner.begin_cycle_session", return_value="span-123") as mock_begin,
             patch("factory.agents.runner.complete_cycle_session") as mock_complete,
         ):
-            result = _cmd_run(_make_args("build", str(tmp_path)))
+            result = _cmd_run(_make_args("design", str(tmp_path)))
 
         assert result == 0
-        mock_begin.assert_called_once_with(tmp_path.resolve(), cycle_id="build")
+        mock_begin.assert_called_once_with(tmp_path.resolve(), cycle_id="design")
         mock_complete.assert_called_once_with(tmp_path.resolve(), "span-123")
 
     def test_failure_returns_1(self, tmp_path: Path) -> None:
@@ -101,7 +101,7 @@ class TestCmdRun:
             patch("factory.agents.runner.begin_cycle_session", return_value=None),
             patch("factory.agents.runner.complete_cycle_session"),
         ):
-            result = _cmd_run(_make_args("build", str(tmp_path)))
+            result = _cmd_run(_make_args("design", str(tmp_path)))
 
         assert result == 1
 
@@ -117,7 +117,7 @@ class TestCmdRun:
             patch("factory.agents.runner.complete_cycle_session") as mock_complete,
         ):
             with pytest.raises(RuntimeError, match="boom"):
-                _cmd_run(_make_args("build", str(tmp_path)))
+                _cmd_run(_make_args("design", str(tmp_path)))
 
         mock_begin.assert_called_once()
         mock_complete.assert_called_once_with(tmp_path.resolve(), "span-456")
@@ -133,7 +133,7 @@ class TestCmdRun:
             patch("factory.agents.runner.begin_cycle_session", return_value=None),
             patch("factory.agents.runner.complete_cycle_session"),
         ):
-            _cmd_run(_make_args("improve", str(tmp_path), dry_run=True))
+            _cmd_run(_make_args("design", str(tmp_path), dry_run=True))
 
         mock_cls.assert_called_once_with(
             mock_wf,
@@ -196,13 +196,13 @@ class TestCmdWorkflow:
             m.assert_called_once_with(args)
 
     def test_dispatches_to_show(self) -> None:
-        args = argparse.Namespace(workflow_command="show", name="build", project_path=None)
+        args = argparse.Namespace(workflow_command="show", name="design", project_path=None)
         with patch("factory.workflow.cli._cmd_show", return_value=0) as m:
             assert cmd_workflow(args) == 0
             m.assert_called_once_with(args)
 
     def test_dispatches_to_validate(self) -> None:
-        args = argparse.Namespace(workflow_command="validate", name="build", project_path=None)
+        args = argparse.Namespace(workflow_command="validate", name="design", project_path=None)
         with patch("factory.workflow.cli._cmd_validate", return_value=0) as m:
             assert cmd_workflow(args) == 0
             m.assert_called_once_with(args)

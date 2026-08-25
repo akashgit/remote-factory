@@ -197,25 +197,25 @@ class TestCLIE2E:
             timeout=30,
         )
         assert result.returncode == 0
-        for name in ("build", "design", "improve", "research", "meta"):
+        for name in ("design", "research", "meta"):
             assert name in result.stdout
 
-    def test_workflow_show_build(self) -> None:
-        """factory workflow show build prints node/edge table."""
+    def test_workflow_show_design(self) -> None:
+        """factory workflow show design prints node/edge table."""
         result = subprocess.run(
-            ["python", "-m", "factory", "workflow", "show", "build"],
+            ["python", "-m", "factory", "workflow", "show", "design"],
             capture_output=True,
             text=True,
             timeout=30,
         )
         assert result.returncode == 0
-        assert "Workflow: build" in result.stdout
+        assert "Workflow: design" in result.stdout
         assert "Nodes:" in result.stdout
         assert "Edges:" in result.stdout
 
     def test_workflow_validate_all(self) -> None:
         """factory workflow validate passes for all workflows."""
-        for name in ("build", "design", "improve", "research", "meta"):
+        for name in ("design", "research", "meta"):
             result = subprocess.run(
                 ["python", "-m", "factory", "workflow", "validate", name],
                 capture_output=True,
@@ -241,7 +241,7 @@ class TestCLIE2E:
         result = subprocess.run(
             [
                 "python", "-m", "factory", "workflow", "run",
-                "improve", str(project), "--dry-run",
+                "design", str(project), "--dry-run",
             ],
             capture_output=True,
             text=True,

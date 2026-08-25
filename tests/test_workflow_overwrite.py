@@ -161,7 +161,7 @@ class TestOverwriteForwardedThroughTmux:
         from factory.cli._tmux_commands import _build_tmux_run_args
 
         args = argparse.Namespace(
-            mode="improve",
+            mode="design",
             no_github=False,
             profile=None,
             focus=None,

@@ -57,6 +57,7 @@ def _tool_exec_protocol(wt_path: Path) -> str:
     overview = ""
     try:
         from factory.workflow.tool import tool_overview
+
         overview = tool_overview(p, fmt="linear")
     except Exception:
         pass
@@ -69,11 +70,7 @@ def _tool_exec_protocol(wt_path: Path) -> str:
     )
 
     if overview:
-        protocol += (
-            "\n## Workflow Map\n"
-            "\n"
-            f"{overview}\n"
-        )
+        protocol += f"\n## Workflow Map\n\n{overview}\n"
 
     protocol += (
         "\n## Commands\n"
@@ -90,7 +87,7 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         '1. Run "next" to see your current task — it tells you the node type, '
         "role, and what to do\n"
         "2. Execute the task:\n"
-        "   - Agent nodes: run factory agent <role> --task \"...\" --project <path>\n"
+        '   - Agent nodes: run factory agent <role> --task "..." --project <path>\n'
         "   - Study nodes: run the study command shown\n"
         "   - Function nodes: run the command shown\n"
         '3. Run "next" again — the tool auto-detects that the previous node completed\n'
@@ -98,12 +95,12 @@ def _tool_exec_protocol(wt_path: Path) -> str:
         "4. Repeat until GATE or DONE\n"
         "5. For GATE nodes: the tool asks you to evaluate — read the artifacts, then\n"
         '   call "submit" with your verdict (PROCEED, RETRY, or HALT)\n'
-        "6. If RETRY: the tool rewinds — run \"next\" to get the retry task\n"
+        '6. If RETRY: the tool rewinds — run "next" to get the retry task\n'
         "7. If DONE: report completion\n"
         "\n"
         "## Important\n"
         "\n"
-        "- For most nodes, just run the command and call \"next\" — the tool handles tracking\n"
+        '- For most nodes, just run the command and call "next" — the tool handles tracking\n'
         '- Only call "submit" for gate verdicts (PROCEED/RETRY/HALT)\n'
         "- The tool auto-detects agent completion via .factory/reviews/ files\n"
         "- The tool auto-evaluates fn gates (precheck, guard) on your behalf\n"
@@ -144,16 +141,32 @@ def _tool_exec_protocol(wt_path: Path) -> str:
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool, str | None, bool] | int:
+) -> (
+    tuple[
+        str,
+        bool,
+        bool,
+        bool,
+        str | None,
+        str | None,
+        str | None,
+        str | None,
+        bool,
+        str | None,
+        bool,
+    ]
+    | int
+):
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
     if mode.startswith("project:"):
-        mode = mode[len("project:"):]
+        mode = mode[len("project:") :]
     all_modes = get_all_ceo_modes()
     if mode not in all_modes and mode != "auto":
         from factory.workflow.registry import WorkflowRegistry
+
         raw_path = getattr(args, "path", None)
         project_path = Path(raw_path).resolve() if raw_path else Path.cwd()
         entries = WorkflowRegistry.discover(project_path)
@@ -209,6 +222,7 @@ def _validate_ceo_flags(
     raw_path = getattr(args, "path", None)
     if not raw_path:
         from factory.plugins import get_registry
+
         plugin_registry = get_registry()
         has_pre_hooks = bool(plugin_registry.ceo_pre_hooks)
         if not has_pre_hooks:
@@ -294,7 +308,19 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve, from_plan, just_plan)
+    return (
+        mode,
+        headless,
+        bg,
+        bg_agents,
+        prompt_file,
+        focus,
+        dir_name,
+        refine_request,
+        auto_approve,
+        from_plan,
+        just_plan,
+    )
 
 
 # ── project resolution ────────────────────────────────────────
@@ -454,9 +480,23 @@ def _validate_late_flags(
         )
         return 1
 
-    if focus and mode not in ("improve", "research", "create", "evolve", "study", "frontend-design", "frontend-design-discover") and not design_existing and not just_plan:
+    if (
+        focus
+        and mode
+        not in (
+            "design",
+            "research",
+            "create",
+            "evolve",
+            "study",
+            "frontend-design",
+            "frontend-design-discover",
+        )
+        and not design_existing
+        and not just_plan
+    ):
         print(
-            f"Error: --focus (targeted mode) only works in improve, research, create, evolve, study, frontend-design, "
+            f"Error: --focus (targeted mode) only works in design, research, create, evolve, study, frontend-design, "
             f"frontend-design-discover, or design (with --just-plan) mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,
@@ -602,7 +642,7 @@ def _execute_ceo(
     elif mode == "design":
         ceo_mode = "design"
     elif interactive:
-        ceo_mode = "build"
+        ceo_mode = "design"
     else:
         ceo_mode = mode
 
@@ -746,12 +786,18 @@ def _execute_ceo(
 
         if engine == "tool":
             base_prompt = resolve_prompt(
-                "ceo", wt_path, use_profile=use_profile, workflow_mode=None,
+                "ceo",
+                wt_path,
+                use_profile=use_profile,
+                workflow_mode=None,
             )
             prompt = base_prompt + _tool_exec_protocol(wt_path)
         else:
             prompt = resolve_prompt(
-                "ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode,
+                "ceo",
+                wt_path,
+                use_profile=use_profile,
+                workflow_mode=ceo_mode,
             )
         runner = get_runner(runner_name)
         extras: dict[str, object] = {}
@@ -776,6 +822,7 @@ def _execute_ceo(
         if engine == "tool":
             try:
                 from factory.workflow.tool import tool_finalize
+
                 finalize_result = tool_finalize(wt_path)
                 log.info("tool_exec.finalized", result=finalize_result)
             except Exception:
@@ -847,13 +894,18 @@ def _run_headless(
         executor = WorkflowExecutor(wf, wt_path, agent_pool=DEFAULT_AGENT_POOL)
         try:
             exec_result = asyncio.run(executor.execute())
-            print(json.dumps({
-                "workflow": ceo_mode,
-                "engine": "deterministic",
-                "success": exec_result.success,
-                "nodes_executed": exec_result.nodes_executed,
-                "duration_ms": round(exec_result.duration_ms, 1),
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "workflow": ceo_mode,
+                        "engine": "deterministic",
+                        "success": exec_result.success,
+                        "nodes_executed": exec_result.nodes_executed,
+                        "duration_ms": round(exec_result.duration_ms, 1),
+                    },
+                    indent=2,
+                )
+            )
             code = 0 if exec_result.success else 1
             if code != 0:
                 return code
@@ -863,7 +915,7 @@ def _run_headless(
                 min_growth=min_growth,
                 max_new=max_new,
                 branch=branch,
-                already_improved=mode in ("improve", "meta") or discover_only,
+                already_improved=mode in ("design", "meta") or discover_only,
                 model=model,
                 no_github=no_github,
                 use_profile=use_profile,
@@ -916,7 +968,7 @@ def _run_headless(
             min_growth=min_growth,
             max_new=max_new,
             branch=branch,
-            already_improved=mode in ("improve", "meta") or discover_only,
+            already_improved=mode in ("design", "meta") or discover_only,
             model=model,
             no_github=no_github,
             use_profile=use_profile,
@@ -929,6 +981,7 @@ def _run_headless(
         if engine == "tool":
             try:
                 from factory.workflow.tool import tool_finalize
+
                 tool_finalize(wt_path)
             except Exception:
                 pass

@@ -300,7 +300,7 @@ class TestResearchStandaloneWorkflow:
         wf = self._get_wf()
         assert wf.trigger is not None
         assert not wf.trigger(ProjectState.HAS_FACTORY, {})
-        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "design"})
         assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "research"})
 
     def test_not_registered_after_mode_removal(self) -> None:

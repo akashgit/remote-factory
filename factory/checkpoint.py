@@ -36,6 +36,7 @@ class CheckpointState(BaseModel):
 def save_checkpoint(project_path: Path, state: CheckpointState) -> None:
     """Serialize checkpoint state to .factory/checkpoint.json."""
     from factory.store import ensure_factory_dir
+
     factory_dir = project_path / ".factory"
     ensure_factory_dir(factory_dir)
     checkpoint_path = factory_dir / _CHECKPOINT_FILE
@@ -45,6 +46,8 @@ def save_checkpoint(project_path: Path, state: CheckpointState) -> None:
 
 def load_checkpoint(project_path: Path) -> CheckpointState | None:
     """Load checkpoint from .factory/checkpoint.json, or None if absent/corrupt."""
+    from factory.cli._helpers import DEAD_MODES
+
     checkpoint_path = project_path / ".factory" / _CHECKPOINT_FILE
     if not checkpoint_path.exists():
         log.debug("checkpoint.not_found", path=str(checkpoint_path))
@@ -55,6 +58,10 @@ def load_checkpoint(project_path: Path) -> CheckpointState | None:
     except (json.JSONDecodeError, Exception) as exc:
         log.warning("checkpoint.corrupt", path=str(checkpoint_path), error=str(exc))
         return None
+    if state.mode in DEAD_MODES:
+        old_mode = state.mode
+        state.mode = DEAD_MODES[old_mode]
+        log.warning("checkpoint.mode_migrated", old=old_mode, new=state.mode)
     log.info("checkpoint.loaded", path=str(checkpoint_path))
     return state
 

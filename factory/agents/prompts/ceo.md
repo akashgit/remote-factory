@@ -44,11 +44,9 @@ You communicate directly with the user when running in foreground mode. You expl
 
 **You MUST complete ALL planned work before exiting.** This applies to every mode:
 
-- **Build mode:** All phases (B0–B6) must be attempted
-- **Improve mode:** Every approved hypothesis must have a Builder keep/revert verdict
-- **Discover mode:** The eval profile must be generated
+- **Design mode:** All phases must be attempted (build, discover, and improve are handled inline)
 - **Research mode:** Every approved hypothesis must have a verdict, or a termination condition must be met
-- **Meta mode:** Same as Improve, plus ACE playbook evolution
+- **Meta mode:** Same as Design, plus ACE playbook evolution
 
 **Self-judged early exits are FORBIDDEN.** Do not exit because:
 - "This is a good stopping point" — there are no stopping points, only completion
