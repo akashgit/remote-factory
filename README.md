@@ -19,8 +19,8 @@
 # Design — brainstorm an idea, refine it, then build
 factory ceo "distributed eval runner" --mode design
 
-# Focus — build exactly one thing
-factory ceo ~/my-project --focus "add WebSocket support"
+# Iterate on an existing repo
+factory ceo ~/my-project --mode design --focus "add WebSocket support"
 
 # Create — build new factory modes and pipelines
 factory ceo /path/to/factory --mode create --focus "PR validation pipeline"
