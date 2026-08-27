@@ -123,7 +123,10 @@ class Package(BaseModel):
 
     def compile(self) -> Workflow:
         """Lower this package to a flat, mutable Workflow IR."""
-        return self.graph.model_copy(deep=True)
+        wf = self.graph.model_copy(deep=True)
+        if self.knobs:
+            wf.knob_values = {k.name: k.default for k in self.knobs}
+        return wf
 
 
 # ── composition operators ──────────────────────────────────────────

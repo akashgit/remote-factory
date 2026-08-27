@@ -275,6 +275,7 @@ class Workflow(BaseModel):
     start_node: str
     terminal: bool = False
     trigger: TriggerFn | None = Field(default=None, exclude=True)
+    knob_values: dict[str, str | float] = Field(default_factory=dict)
 
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""

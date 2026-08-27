@@ -70,13 +70,13 @@ def graph_edit_distance(w1: Workflow, w2: Workflow) -> int:
     return dist
 
 
-def compute_features(workflow: Workflow) -> tuple[int, int, int, int]:
-    """Extract (depth, fork_degree, agent_count, gate_count) from a workflow.
+def compute_features(workflow: Workflow) -> tuple[int, ...]:
+    """Extract features from a workflow for MAP-Elites grid placement.
 
-    - depth: longest path in the DAG
-    - fork_degree: max parallelism (largest ForkNode.targets count)
-    - agent_count: number of AgentNode instances
-    - gate_count: number of GateNode instances
+    Base features: (depth, fork_degree, agent_count, gate_count).
+    If the workflow carries knob_values (from Package.compile()), each
+    categorical knob value is hashed to an integer bucket and appended,
+    giving the archive diversity pressure across the optimization surface.
     """
     g = _build_nx_graph(workflow)
 
@@ -98,7 +98,13 @@ def compute_features(workflow: Workflow) -> tuple[int, int, int, int]:
         elif tname == "GateNode":
             gate_count += 1
 
-    return (depth, fork_degree, agent_count, gate_count)
+    base = (depth, fork_degree, agent_count, gate_count)
+
+    if workflow.knob_values:
+        knob_features = tuple(hash(str(v)) % 10 for v in workflow.knob_values.values())
+        return base + knob_features
+
+    return base
 
 
 class NoveltyFilter:
