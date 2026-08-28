@@ -17,6 +17,7 @@ class MutationType(str, Enum):
     SERIALIZE = "serialize"
     PARAM_MUTATE = "param_mutate"
     PROMPT_MUTATE = "prompt_mutate"
+    KNOB_MUTATE = "knob_mutate"
 
 
 class MutationRecord(BaseModel):

@@ -48,13 +48,14 @@ class WeightedRandomStrategy:
         designer_ratio: float = 0.3,
     ) -> None:
         self.weights = weights or {
-            MutationType.NODE_INSERT.value: 0.18,
-            MutationType.NODE_REMOVE.value: 0.13,
-            MutationType.EDGE_REDIRECT.value: 0.18,
-            MutationType.PARALLELIZE.value: 0.13,
-            MutationType.SERIALIZE.value: 0.08,
-            MutationType.PARAM_MUTATE.value: 0.15,
-            MutationType.PROMPT_MUTATE.value: 0.15,
+            MutationType.NODE_INSERT.value: 0.15,
+            MutationType.NODE_REMOVE.value: 0.10,
+            MutationType.EDGE_REDIRECT.value: 0.15,
+            MutationType.PARALLELIZE.value: 0.10,
+            MutationType.SERIALIZE.value: 0.05,
+            MutationType.PARAM_MUTATE.value: 0.10,
+            MutationType.PROMPT_MUTATE.value: 0.10,
+            MutationType.KNOB_MUTATE.value: 0.25,
         }
         self._mutation_rate = mutation_rate
         self._designer_ratio = designer_ratio
@@ -86,6 +87,8 @@ class WeightedRandomStrategy:
                 op_counts[MutationType.PARAM_MUTATE] = op_counts.get(MutationType.PARAM_MUTATE, 0) + 1
             elif "PROMPT_MUTATE" in upper:
                 op_counts[MutationType.PROMPT_MUTATE] = op_counts.get(MutationType.PROMPT_MUTATE, 0) + 1
+            elif "KNOB" in upper:
+                op_counts[MutationType.KNOB_MUTATE] = op_counts.get(MutationType.KNOB_MUTATE, 0) + 1
 
         if not op_counts:
             return self.select_operator(parent, generation, {})
@@ -560,6 +563,50 @@ def mutate_prompt(
     return wf, record
 
 
+def mutate_knob(
+    workflow: Workflow,
+) -> tuple[Workflow, MutationRecord] | None:
+    """Mutate a single knob value within its declared bounds.
+
+    Reads knob_values from the workflow (populated by Package.compile()),
+    picks one at random, and changes it to a different value from the
+    corresponding OptKnob's bounds. If no knob_values are present,
+    returns None so the caller can fall back to a different operator.
+    """
+    if not workflow.knob_values:
+        return None
+
+    wf = _deep_copy_workflow(workflow)
+    knob_names = list(wf.knob_values.keys())
+    knob_name = random.choice(knob_names)
+    old_val = wf.knob_values[knob_name]
+    bounds = wf.knob_bounds.get(knob_name, [])
+
+    if bounds:
+        alternatives = [v for v in bounds if v != old_val]
+        if not alternatives:
+            return None
+        new_val: str | float = random.choice(alternatives)
+    elif isinstance(old_val, bool):
+        new_val = not old_val
+    elif isinstance(old_val, (int, float)):
+        delta = random.choice([-1, 1]) * max(1, abs(old_val) * 0.2)
+        new_val = type(old_val)(old_val + delta)
+    else:
+        return None
+
+    wf.knob_values[knob_name] = new_val
+
+    record = MutationRecord(
+        operator=MutationType.KNOB_MUTATE,
+        target_node=knob_name,
+        before={"value": str(old_val)},
+        after={"value": str(new_val)},
+        rationale=f"Mutated knob {knob_name}: {old_val} -> {new_val}",
+    )
+    return wf, record
+
+
 def apply_random_mutation(
     workflow: Workflow,
     strategy: MutationStrategy,
@@ -694,5 +741,8 @@ def _try_mutation(
             return None
         target = random.choice(agent_nodes)
         return mutate_prompt(workflow, target, frozen_nodes=frozen, prompt_hint=prompt_hint)
+
+    elif op == MutationType.KNOB_MUTATE:
+        return mutate_knob(workflow)
 
     return None

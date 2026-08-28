@@ -134,6 +134,7 @@ class Package(BaseModel):
         wf = self.graph.model_copy(deep=True)
         if self.knobs:
             wf.knob_values = {k.name: k.default for k in self.knobs}
+            wf.knob_bounds = {k.name: list(k.bounds) for k in self.knobs if k.bounds}
         return wf
 
 
