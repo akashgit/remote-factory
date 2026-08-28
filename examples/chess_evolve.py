@@ -36,16 +36,17 @@ from anthropic import AsyncAnthropicVertex
 from factory.workflow.package import (
     Conditional,
     Loop,
+    OptKnob,
     Package,
     Parallel,
     Port,
     Sequential,
     StateContract,
 )
+from factory.cycle_analyzer import CycleRecord
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
-    FnNode,
     GateNode,
     Workflow,
 )
@@ -58,7 +59,7 @@ PROMPT_REGISTRY: dict[str, dict[str, str]] = {}
 STOCKFISH_PATH = "/opt/homebrew/bin/stockfish"
 ELO_OPTIONS = [1320, 1420, 1520, 1620]
 GAMES_PER_EVAL = 1
-MAX_MOVES = 30
+MAX_MOVES = 60
 NUM_GENERATIONS = 6
 CANDIDATES_PER_GEN = 5
 WORKSPACE = Path(os.environ.get("CHESS_WORKSPACE", "/tmp/chess-factory"))
@@ -268,8 +269,8 @@ def _get_phase_hint(cfg: 'PipelineConfig', phase: str) -> str:
     key = {"opening": cfg.opening_hint, "middlegame": cfg.middlegame_hint, "endgame": cfg.endgame_hint}[phase]
     table = hints[phase]
     if "+" in key:
-        return " ".join(table[k] for k in key.split("+") if k in table)
-    return table[key]
+        return " ".join(table.get(k, k) for k in key.split("+"))
+    return table.get(key, key)
 
 
 PROMPT_TABLES: dict[str, dict[str, str]] = {}  # populated after dicts are defined
@@ -282,6 +283,15 @@ def _get_prompt(knob_name: str, value: str) -> str:
         return table[value]
     if knob_name in PROMPT_REGISTRY and value in PROMPT_REGISTRY[knob_name]:
         return PROMPT_REGISTRY[knob_name][value]
+    # Handle + combos (e.g. "theory+safety_first")
+    if "+" in value:
+        parts = [table.get(v, PROMPT_REGISTRY.get(knob_name, {}).get(v, "")) for v in value.split("+")]
+        combined = " ".join(p for p in parts if p)
+        if combined:
+            return combined
+    # Unknown value (invented prompt lost on restart) — use the value as the prompt
+    if value and value not in table:
+        return value
     return table.get(list(table.keys())[0], "") if table else ""
 
 
@@ -293,6 +303,13 @@ def _register_prompt(knob_name: str, value: str, prompt_text: str) -> None:
         if name == knob_name and value not in choices:
             choices.append(value)
             break
+    # Persist to recording so prompts survive restarts
+    LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(LIVE_DIR / "recording.jsonl", "a") as f:
+        f.write(json.dumps({
+            "t": time.monotonic(), "type": "prompt_invented",
+            "knob": knob_name, "value": value, "prompt": prompt_text,
+        }) + "\n")
 
 
 def detect_phase(fen: str) -> str:
@@ -716,9 +733,27 @@ def build_pipeline(cfg: PipelineConfig | None = None) -> Package:
     )
 
     if analysis_in_loop:
-        return select_and_verify
+        result = select_and_verify
     else:
-        return Sequential(analysis_step, select_and_verify, name="chess-pipeline")
+        result = Sequential(analysis_step, select_and_verify, name="chess-pipeline")
+
+    # Attach OptKnobs so factory's KNOB_MUTATE can see them
+    knobs = []
+    for knob_name, choices in KNOB_SPACE:
+        val = getattr(cfg, knob_name, None)
+        if val is None:
+            continue
+        # Coerce bools to strings for OptKnob (str | float only)
+        def coerce(v: object) -> str | float:
+            return str(v) if isinstance(v, bool) else v  # type: ignore[return-value]
+        kind = "prompt" if isinstance(val, str) and knob_name not in ("pipeline_mode", "verify_loop_target", "board_representation") else "threshold" if isinstance(val, (int, float)) else "topology"
+        knobs.append(OptKnob(
+            name=knob_name, kind=kind, node_id="root",
+            default=coerce(val), bounds=[coerce(c) for c in choices],
+            expandable=kind == "prompt",
+            expansion_hint=f"chess {knob_name} variant",
+        ))
+    return result.model_copy(update={"knobs": knobs})
 
 
 # ── game engine ──────────────────────────────────────────────────
@@ -1002,15 +1037,15 @@ async def get_pipeline_move(
     # Hook into executor events for live UI
     def make_hooked_emit(original_emit):
         NODE_NAME_MAP = {
-            "board_analyst": "board_analyst",
-            "tactician": "tactician + positionalist",
-            "positionalist": "tactician + positionalist",
+            "board_analyst": "analyst",
+            "tactician": "tactician",
+            "positionalist": "positionalist",
             "selector": "selector",
             "opening_analyst": "opening",
             "endgame_analyst": "endgame",
-            "phase_gate": "phase gate",
-            "verifier": "verify",
-            "verify_gate": "verify",
+            "phase_gate": "phase_gate",
+            "verifier": "verifier",
+            "verify_gate": "verifier",
         }
         def _hooked_emit(event_type, event):
             original_emit(event_type, event)
@@ -1091,7 +1126,7 @@ def broadcast_game_state(
 ) -> None:
     """Write game state to a JSON file for the live web UI."""
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = tag.replace(":", "_").replace("(", "").replace(")", "").replace(" ", "_")
+    safe_name = tag.replace(":", "_").replace("(", "").replace(")", "").replace(" ", "_")[:80]
     is_llm_turn = (board.turn == chess.WHITE) == llm_white
     data = {
         "tag": tag,
@@ -1183,8 +1218,61 @@ class EvalResult:
 
     @property
     def composite_score(self) -> float:
-        """avg_eval - 20*blunders + 8*moves. Rewards quality, stability, survival."""
-        return self.avg_eval - 20 * self.blunder_count + 8 * self.total_moves
+        """Win-oriented scoring: wins dominate, losses reward survival."""
+        base = self.avg_eval - 20 * self.blunder_count + 8 * self.total_moves
+        return base + 500 * self.wins + 200 * self.draws
+
+    def to_cycle_record(self, gen: int = 0) -> CycleRecord:
+        """Build a factory CycleRecord from chess results."""
+        from factory.cycle_analyzer import AgentStep, CycleRecord, ExperimentRecord
+        steps = []
+        experiments = []
+        order = 0
+        for i, g in enumerate(self.games):
+            curve = g.get("eval_curve", [])
+            blunders = sum(1 for j in range(1, len(curve)) if curve[j] - curve[j-1] < -200)
+            won = g.get("result") == "win"
+            drew = g.get("result") == "draw"
+            # One AgentStep per pipeline node role per game
+            for role in ["tactician", "positionalist", "selector", "verifier"]:
+                steps.append(AgentStep(
+                    order=order, role=role, started_at="",
+                    duration_s=0, cost_usd=None, output_tokens=None,
+                    succeeded=g.get("llm_errors", 0) == 0,
+                    node_id=f"game{i}_{role}",
+                ))
+                order += 1
+            # Blunder steps — mark as failed
+            for b in range(blunders):
+                steps.append(AgentStep(
+                    order=order, role="blunder", started_at="",
+                    duration_s=0, cost_usd=None, output_tokens=None,
+                    succeeded=False, error=f"blunder #{b+1} (>200cp drop)",
+                    node_id=f"game{i}_blunder{b}",
+                ))
+                order += 1
+            avg = sum(curve) / len(curve) if curve else 0
+            experiments.append(ExperimentRecord(
+                exp_id=i, hypothesis=g.get("tag", ""),
+                verdict="keep" if won or drew else "revert",
+                score_before=0, score_after=avg,
+                score_delta=avg, cost_usd=0, duration_s=0,
+            ))
+        curves = []
+        for g in self.games:
+            curves.extend(g.get("eval_curve", []))
+        return CycleRecord(
+            cycle_number=gen, mode="chess", started_at=None, ended_at=None,
+            duration_s=0,
+            score_start=0, score_end=self.composite_score,
+            score_delta=self.composite_score,
+            score_trajectory=[float(c) for c in curves],
+            experiments=experiments,
+            kept=self.wins + self.draws, reverted=self.losses,
+            errored=self.total_errors,
+            keep_rate=(self.wins + self.draws) / max(self.wins + self.draws + self.losses, 1),
+            steps=steps,
+        )
 
     @property
     def win_rate(self) -> str:
@@ -1241,7 +1329,7 @@ async def play_game(
 ) -> dict:
     """Play one game using the pipeline for each LLM move."""
     # Each game gets its own workspace for the executor
-    safe_tag = game_tag.replace(":", "_").replace("(", "").replace(")", "").replace(" ", "_")
+    safe_tag = game_tag.replace(":", "_").replace("(", "").replace(")", "").replace(" ", "_")[:80]
     workspace = WORKSPACE / safe_tag
     setup_workspace(workspace)
 
@@ -1364,9 +1452,9 @@ async def play_game(
             )
             print(f"      {DIM}[{game_tag}] {format_moves(game_moves)} eval={eval_cp:+d}cp{RESET}")
 
-            # Early resign: stop wasting API calls on lost positions
-            if len(eval_curve) >= 2 and all(e < -300 for e in eval_curve[-2:]):
-                print(f"      {DIM}[{game_tag}] Resigning (eval < -300cp for 2 moves){RESET}")
+            # Early resign only in hopeless positions (checkmate-level)
+            if len(eval_curve) >= 2 and all(e < -500 for e in eval_curve[-2:]):
+                print(f"      {DIM}[{game_tag}] Resigning (eval < -500cp for 2 moves){RESET}")
                 break
 
         outcome = board.outcome()
@@ -1506,193 +1594,236 @@ def mutate_knobs(
     return new, f"{knob_name}={new_val}"
 
 
+# ── Opus-driven proposal parsing ─────────────────────────────────
+
+
+def parse_opus_proposals(
+    raw: str, best_cfg: PipelineConfig, gen: int,
+) -> list[tuple[str, PipelineConfig, Package, int]]:
+    """Parse Opus JSON proposals into (label, cfg, pipeline, n_games) tuples."""
+    import dataclasses
+    candidates: list[tuple[str, PipelineConfig, Package, int]] = []
+    for line in raw.strip().split("\n"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            prop = json.loads(line)
+            n_games = prop.get("games", GAMES_PER_EVAL)
+            if "knobs" in prop and isinstance(prop["knobs"], dict):
+                overrides = {k: v for k, v in prop["knobs"].items() if hasattr(best_cfg, k)}
+                for k, v in overrides.items():
+                    if "prompt" in prop:
+                        _register_prompt(k, v, prop["prompt"])
+                    for _, (kn, choices) in enumerate(KNOB_SPACE):
+                        if kn == k and v not in choices:
+                            choices.append(v)
+                child_cfg = dataclasses.replace(best_cfg, **overrides)
+                desc = " + ".join(f"{k}={v}" for k, v in overrides.items())
+            elif prop.get("rerun"):
+                child_cfg = dataclasses.replace(best_cfg)
+                desc = "rerun (variance check)"
+            else:
+                knob, value = prop["knob"], prop["value"]
+                if not hasattr(best_cfg, knob):
+                    continue
+                if "prompt" in prop and isinstance(prop["prompt"], str):
+                    _register_prompt(knob, value, prop["prompt"])
+                    print(f"  {CYAN}NEW PROMPT: {knob}={value}{RESET}")
+                for _, (kn, choices) in enumerate(KNOB_SPACE):
+                    if kn == knob and value not in choices:
+                        choices.append(value)
+                child_cfg = dataclasses.replace(best_cfg, **{knob: value})
+                desc = f"{knob}={value}"
+            candidates.append((
+                f"Gen {gen}.{len(candidates)+1}: {desc}",
+                child_cfg, build_pipeline(child_cfg), n_games,
+            ))
+        except Exception:
+            continue
+    return candidates
+
+
 # ── main ──────────────────────────────────────────────────────────
 
 
+def _load_invented_prompts() -> int:
+    """Reload invented prompts from the recording on startup."""
+    recording = LIVE_DIR / "recording.jsonl"
+    if not recording.exists():
+        return 0
+    count = 0
+    for line in recording.read_text().strip().split("\n"):
+        if not line.strip():
+            continue
+        try:
+            e = json.loads(line)
+            if e.get("type") == "prompt_invented":
+                PROMPT_REGISTRY.setdefault(e["knob"], {})[e["value"]] = e["prompt"]
+                for _, (kn, choices) in enumerate(KNOB_SPACE):
+                    if kn == e["knob"] and e["value"] not in choices:
+                        choices.append(e["value"])
+                count += 1
+        except Exception:
+            continue
+    return count
+
+
 async def main():
-    rng = random.Random(42)
-
-    PROMOTE_THRESHOLD = 0.75   # bump ELO when win rate exceeds this
-    MAX_TOTAL_GENS = 1000
-
-    header("CHESS PIPELINE EVOLUTION — adaptive loop")
-    print(f"\n  {WHITE}Model:{RESET}       haiku")
-    print(f"  {WHITE}Opponent:{RESET}    Stockfish 18 (adaptive difficulty)")
-    print(f"  {WHITE}Games/eval:{RESET}  {GAMES_PER_EVAL}")
-    print(f"  {WHITE}Max moves:{RESET}   {MAX_MOVES}")
-    print(f"  {WHITE}Max gens:{RESET}    {MAX_TOTAL_GENS}")
-    print(f"  {WHITE}Knobs:{RESET}       {len(KNOB_SPACE)} (all open, auto-freeze when stable)")
+    from factory.outer_loop.population import MAPElitesArchive, Population
 
     seed_cfg = PipelineConfig()
     seed = build_pipeline(seed_cfg)
-    wf = seed.compile()
-    print(f"\n  {WHITE}Seed:{RESET} {seed_cfg.label}")
-    print(f"  {DIM}Compiled: {len(wf.nodes)} nodes, {len(KNOB_SPACE)} knobs{RESET}")
-    print(f"  {DIM}Each move = 1 full pipeline execution through WorkflowExecutor{RESET}")
 
-    # Signal browsers to reload, clear state
+    # Reload invented prompts from previous runs
+    n_loaded = _load_invented_prompts()
+
+    header("CHESS PIPELINE EVOLUTION — adaptive loop")
+    print(f"\n  {WHITE}Model:{RESET}       haiku")
+    print(f"  {WHITE}Knobs:{RESET}       {len(KNOB_SPACE)}")
+    if n_loaded:
+        print(f"  {CYAN}Loaded:{RESET}      {n_loaded} invented prompts from recording")
+    print(f"  {WHITE}Seed:{RESET}  {seed_cfg.label}")
+    print(f"  {DIM}Compiled: {len(seed.compile().nodes)} nodes{RESET}")
+
     if LIVE_DIR.exists():
         (LIVE_DIR / "_reload.json").write_text(json.dumps({"_reload": True}))
-        import time as _time
-        _time.sleep(1)
+        time.sleep(1)
         shutil.rmtree(LIVE_DIR)
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Gen 0: seed ───────────────────────────────────────────────
 
     header(f"GEN 0 -- seed ({seed_cfg.label})")
-    start = time.monotonic()
     seed_result = await evaluate_pipeline(seed, seed_cfg, eval_tag="seed", gen=0)
-    elapsed = time.monotonic() - start
+    print(f"  {WHITE}Gen 0:{RESET} {seed_result.win_rate} score={seed_result.composite_score:+.0f}")
 
-    print(f"\n  {WHITE}Gen 0:{RESET} {seed_result.win_rate}  "
-          f"vs ELO {seed_cfg.opponent_elo}  {elapsed:.0f}s")
-
-    from factory.outer_loop.population import MAPElitesArchive, Population
-
-    seed_score = seed_result.composite_score
-    seed_ind = Population.make_individual(seed.compile(), generation=0, score=seed_score)
-    seed_ind.features = chess_features(seed_cfg)
+    # Factory components
     archive = MAPElitesArchive()
+    seed_ind = Population.make_individual(seed.compile(), generation=0, score=seed_result.composite_score)
+    seed_ind.features = chess_features(seed_cfg)
     archive.add(seed_ind)
     ind_configs: dict[str, PipelineConfig] = {seed_ind.id: seed_cfg}
     broadcast_eval_result(f"Gen 0: {seed_cfg.label}", seed_cfg, seed_result, gen=0, is_best=True)
 
+    # Factory components
+    from factory.outer_loop.reflector import OuterLoopReflector
+    reflector = OuterLoopReflector(k=3)
+    score_trajectory: list[float] = [seed_result.composite_score]
+    cycle_records: dict[str, CycleRecord] = {seed_ind.id: seed_result.to_cycle_record(0)}
+    PLATEAU_WINDOW, PLATEAU_THRESHOLD = 10, 5.0
     all_results: list[tuple[str, PipelineConfig, EvalResult, float]] = []
 
-    # ── Evolutionary loop (MAP-Elites + opus-driven experiments) ──
+    # ── Evolutionary loop ─────────────────────────────────────────
 
-    for gen in range(1, MAX_TOTAL_GENS + 1):
+    for gen in range(1, 1001):
         best_ind = archive.best()
-        best_score = best_ind.score if best_ind else seed_score
-        header(f"GEN {gen} -- archive: {archive.size} cells, best score={best_score:+.0f}")
+        best_score = best_ind.score if best_ind else 0
+        header(f"GEN {gen} -- archive: {archive.size} cells, best={best_score:+.0f}")
 
-        # Step 1: Opus reflects on full history
-        best_ind = archive.best()
-        best_cfg = ind_configs[best_ind.id] if best_ind else seed_cfg
+        # Factory's plateau detection
+        stalled = (len(score_trajectory) > PLATEAU_WINDOW and
+                   all(abs(s - score_trajectory[-(PLATEAU_WINDOW+1)]) < PLATEAU_THRESHOLD
+                       for s in score_trajectory[-PLATEAU_WINDOW:]))
+
+        # Step 1: Factory's OuterLoopReflector (contrastive analysis)
         all_sorted = sorted(all_results, key=lambda x: x[3], reverse=True)
         history = "\n".join(
-            f"  {cfg.label}: {result.win_rate} avg={result.avg_eval:+.0f}cp blun={result.blunder_count} mv={result.total_moves} score={s:+.0f}"
-            for _, cfg, result, s in all_sorted[:20]
+            f"  {cfg.label}: {r.win_rate} avg={r.avg_eval:+.0f}cp blun={r.blunder_count} mv={r.total_moves} score={s:+.0f}"
+            for _, cfg, r, s in all_sorted[:20]
         ) if all_results else "(seed run)"
 
+        reflection_report = None
         reflection = ""
-        if all_results:
+        if cycle_records:
+            records = [(iid, cycle_records[iid].score_end or 0, cycle_records[iid])
+                       for iid in list(cycle_records.keys())[-20:]]
             try:
-                reflection = await _cli_call_opus(
+                reflection_report = reflector.reflect(records, gen)
+                parts = []
+                if reflection_report.failure_patterns:
+                    parts.append(f"Failures: {'; '.join(reflection_report.failure_patterns[:3])}")
+                if reflection_report.success_patterns:
+                    parts.append(f"Successes: {'; '.join(reflection_report.success_patterns[:3])}")
+                if reflection_report.mutation_suggestions:
+                    parts.append(f"Suggestions: {'; '.join(reflection_report.mutation_suggestions[:3])}")
+                reflection = " | ".join(parts)
+                if reflection:
+                    print(f"\n  {MAGENTA}Reflection:{RESET} {reflection}")
+            except Exception as exc:
+                print(f"  {DIM}(reflection error: {exc}){RESET}")
+
+        # Fall back to Opus reflection when factory reflector has nothing
+        if not reflection and all_results:
+            try:
+                reflection = (await _cli_call_opus(
                     "You are a concise chess optimization analyst. 2-3 sentences.",
-                    f"All results (top 20 by score):\n{history}\n\n"
-                    f"Archive: {archive.size} cells, best={best_score:+.0f}\n"
+                    f"All results (top 20):\n{history}\n\nArchive: {archive.size} cells, best={best_score:+.0f}\n"
                     f"What patterns separate winners from losers? Where is the bottleneck?",
-                )
-                reflection = reflection.strip()
+                )).strip()
                 if reflection:
                     print(f"\n  {MAGENTA}Reflection:{RESET} {reflection}")
             except Exception:
                 pass
 
-        # Step 2: Opus proposes experiments informed by the reflection
-        knob_desc = "\n".join(f"  {k}: {v}" for k, v in KNOB_SPACE)
-        proposal_prompt = (
-            f"You are optimizing a chess pipeline's knob configuration.\n\n"
-            f"Current best config: {best_cfg.full_label}\n"
-            f"Best score: {best_score:+.0f}\n"
-            f"Archive: {archive.size} diverse configs\n\n"
-            f"Your analysis of the results so far:\n{reflection}\n\n"
-            f"Full history (top 20):\n{history}\n\n"
-            f"Available knobs and values:\n{knob_desc}\n\n"
-            f"Scoring: avg_centipawn - 20*blunders + 8*moves_survived\n\n"
-            f"Based on your analysis, propose exactly {CANDIDATES_PER_GEN} experiments.\n"
-            f"For each, change ONE knob from the current best config.\n"
-            f"Format each as a JSON line: {{\"knob\": \"<name>\", \"value\": <value>}}\n\n"
-            f"You can INVENT new prompt variants for any prompt knob. Use:\n"
-            f"{{\"knob\": \"<name>\", \"value\": \"<new_name>\", \"prompt\": \"<full prompt text>\"}}\n\n"
-            f"To RE-RUN the best config unchanged for variance reduction:\n"
-            f"{{\"rerun\": true}}\n"
-            f"To run MORE GAMES for higher confidence on any experiment:\n"
-            f"{{\"knob\": \"<name>\", \"value\": <value>, \"games\": 3}}\n\n"
-            f"Example batch of 5 proposals:\n"
-            f"{{\"rerun\": true, \"games\": 3}}\n"
-            f"{{\"rerun\": true}}\n"
-            f"{{\"knob\": \"verify_style\", \"value\": \"lenient\"}}\n"
-            f"{{\"knob\": \"tactical_style\", \"value\": \"deep_calc\", \"prompt\": \"For each move...\"}}\n"
-            f"{{\"knob\": \"skip_forced\", \"value\": true}}\n\n"
-            f"Balance exploration (new knobs/prompts) with exploitation (re-runs for confidence)."
-        )
-        try:
-            proposals_raw = await _cli_call_opus(
-                "You are a chess optimization strategist. Output only JSON lines, no other text.",
-                proposal_prompt,
-            )
-        except Exception:
-            proposals_raw = ""
+        # Step 2: Factory's apply_random_mutation with Opus as knob expander
+        from factory.outer_loop.mutations import apply_random_mutation, WeightedRandomStrategy
+        strategy = WeightedRandomStrategy()
+        if stalled and hasattr(strategy, "on_plateau"):
+            strategy.on_plateau()
 
-        candidates: list[tuple[str, PipelineConfig, Package]] = []
-        import dataclasses
-        for i, line in enumerate(proposals_raw.strip().split("\n")):
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                prop = json.loads(line)
-                n_games = prop.get("games", GAMES_PER_EVAL)
-                # Re-run: evaluate the best config again unchanged
-                if prop.get("rerun"):
-                    child_cfg = dataclasses.replace(best_cfg)
-                    child_pipeline = build_pipeline(child_cfg)
-                    desc = "rerun (variance check)"
-                    label = f"Gen {gen}.{len(candidates)+1}: {desc}"
-                    candidates.append((label, child_cfg, child_pipeline, n_games))
-                    print(f"  {YELLOW}▶ {label} ({n_games} games){RESET}")
-                    continue
-                knob = prop["knob"]
-                value = prop["value"]
-                if not hasattr(best_cfg, knob):
-                    continue
-                # Auto-register new prompt variants from Opus
-                if "prompt" in prop and isinstance(prop["prompt"], str):
-                    _register_prompt(knob, value, prop["prompt"])
-                    print(f"  {CYAN}NEW PROMPT: {knob}={value}{RESET}")
-                # Auto-expand bounds for any new value
-                for ki, (kn, choices) in enumerate(KNOB_SPACE):
-                    if kn == knob and value not in choices:
-                        choices.append(value)
-                        break
-                child_cfg = dataclasses.replace(best_cfg, **{knob: value})
-                child_pipeline = build_pipeline(child_cfg)
-                desc = f"{knob}={value}"
-                label = f"Gen {gen}.{len(candidates)+1}: {desc}"
-                candidates.append((label, child_cfg, child_pipeline, n_games))
-                print(f"  {YELLOW}▶ {label}{f' ({n_games} games)' if n_games > 1 else ''}{RESET}")
-            except Exception:
-                continue
-
-        # Fall back to random if opus didn't produce enough
-        while len(candidates) < CANDIDATES_PER_GEN:
+        candidates: list[tuple[str, PipelineConfig, Package, int]] = []
+        for c in range(CANDIDATES_PER_GEN):
             parent = archive.sample_parent(tournament_size=3)
-            parent_cfg = ind_configs.get(parent.id, seed_cfg) if parent else seed_cfg
-            child_cfg, desc = mutate_knobs(parent_cfg, rng)
+            if parent is None:
+                continue
+            parent_cfg = ind_configs.get(parent.id, seed_cfg)
+            parent_wf = build_pipeline(parent_cfg).compile()
+
+            result = apply_random_mutation(
+                parent_wf, strategy, gen,
+                reflection_report=reflection_report,
+            )
+            if result is None:
+                continue
+            child_wf, rec = result
+            # Reconstruct PipelineConfig from mutated knob_values
+            import dataclasses
+            def _coerce_back(k, v):
+                """Coerce OptKnob string values back to PipelineConfig types."""
+                orig = getattr(parent_cfg, k, None)
+                if isinstance(orig, bool):
+                    return v == "True" if isinstance(v, str) else bool(v)
+                if isinstance(orig, int):
+                    return int(v) if not isinstance(v, int) else v
+                return v
+            overrides = {k: _coerce_back(k, v) for k, v in child_wf.knob_values.items()
+                         if hasattr(parent_cfg, k) and getattr(parent_cfg, k) != _coerce_back(k, v)}
+            if overrides:
+                child_cfg = dataclasses.replace(parent_cfg, **overrides)
+                desc = " + ".join(f"{k}={v}" for k, v in overrides.items())
+            else:
+                child_cfg = parent_cfg
+                desc = rec.rationale or "no-op"
             child_pipeline = build_pipeline(child_cfg)
-            label = f"Gen {gen}.{len(candidates)+1}: {desc} (random)"
+            label = f"Gen {gen}.{c+1}: {desc}"
             candidates.append((label, child_cfg, child_pipeline, GAMES_PER_EVAL))
             print(f"  {YELLOW}▶ {label}{RESET}")
 
+        # Step 3: Evaluate in parallel
         print(f"\n  {DIM}Evaluating {len(candidates)} in parallel...{RESET}\n")
 
-        async def eval_candidate(
-            label: str, cfg: PipelineConfig, pipeline: Package, gen_num: int,
-            n_games: int = 1,
-        ) -> tuple[str, PipelineConfig, Package, EvalResult, float]:
+        async def eval_one(label, cfg, pipeline, gen_num, n_games=1):
             t0 = time.monotonic()
             result = await evaluate_pipeline(pipeline, cfg, n_games=n_games, eval_tag=label, gen=gen_num)
             return label, cfg, pipeline, result, time.monotonic() - t0
 
         gen_start = time.monotonic()
         eval_results = await asyncio.gather(
-            *(eval_candidate(lbl, cfg, p, gen, ng) for lbl, cfg, p, ng in candidates)
+            *(eval_one(lbl, c, p, gen, ng) for lbl, c, p, ng in candidates)
         )
-        gen_elapsed = time.monotonic() - gen_start
 
+        # Step 4: Update archive (factory's MAPElitesArchive.add)
         gen_candidates = []
         prev_best = best_score
         for label, cfg, pipeline, result, elapsed in eval_results:
@@ -1701,37 +1832,35 @@ async def main():
             ind.features = chess_features(cfg)
             inserted = archive.add(ind)
             ind_configs[ind.id] = cfg
+            cycle_records[ind.id] = result.to_cycle_record(gen)
             gen_candidates.append((label, cfg, result, score))
             marker = f" {GREEN}→ archive{RESET}" if inserted else ""
-            print(f"  {WHITE}{label}:{RESET} {result.win_rate} score={score:+.0f} (avg={result.avg_eval:+.0f}cp blun={result.blunder_count} mv={result.total_moves}){marker}")
+            print(f"  {WHITE}{label}:{RESET} {result.win_rate} score={score:+.0f} "
+                  f"(avg={result.avg_eval:+.0f}cp blun={result.blunder_count} mv={result.total_moves}){marker}")
 
-        new_best = archive.best()
-        new_score = new_best.score if new_best else 0
+        new_score = archive.best().score if archive.best() else 0
+        score_trajectory.append(new_score)
         if new_score > prev_best:
             print(f"\n  {GREEN}NEW BEST: score={new_score:+.0f} (archive: {archive.size} cells){RESET}")
 
+        # Broadcast to UI
         for label, cfg, result, score in gen_candidates:
             broadcast_eval_result(label, cfg, result, gen=gen, is_best=(score == new_score and new_score > prev_best))
-
-        # Broadcast the pre-gen reflection to the UI
         if reflection:
-            reflection_entry = {"type": "reflection", "gen": gen, "text": reflection}
+            entry = {"type": "reflection", "gen": gen, "text": reflection}
             with open(LIVE_DIR / "experiment_log.jsonl", "a") as f:
-                f.write(json.dumps(reflection_entry) + "\n")
+                f.write(json.dumps(entry) + "\n")
             with open(LIVE_DIR / "recording.jsonl", "a") as f:
-                f.write(json.dumps({"t": time.monotonic(), **reflection_entry}) + "\n")
+                f.write(json.dumps({"t": time.monotonic(), **entry}) + "\n")
 
         all_results.extend(gen_candidates)
-        print(f"  {DIM}Gen {gen} in {gen_elapsed:.0f}s{RESET}")
-
-    # ── Results ───────────────────────────────────────────────────
+        print(f"  {DIM}Gen {gen} in {time.monotonic() - gen_start:.0f}s{RESET}")
 
     header("RESULTS")
-    best_ind = archive.best()
-    best_cfg_final = ind_configs[best_ind.id] if best_ind else seed_cfg
-    print(f"\n  {GREEN}{BOLD}Winner:{RESET} score={best_ind.score:+.0f}")
-    print(f"  {GREEN}Archive:{RESET} {archive.size} diverse cells explored")
-    print(f"  {GREEN}Config:{RESET} {best_cfg_final.full_label}")
+    best = archive.best()
+    print(f"\n  {GREEN}{BOLD}Winner:{RESET} score={best.score:+.0f}")
+    print(f"  {GREEN}Archive:{RESET} {archive.size} cells")
+    print(f"  {GREEN}Config:{RESET} {ind_configs[best.id].full_label}")
 
 
 if __name__ == "__main__":

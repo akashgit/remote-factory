@@ -295,7 +295,7 @@ class TestKnobMutate:
             nonlocal called
             called = True
             return "should_not_appear"
-        result = mutate_knob(wf, expander=spy_expander)
+        mutate_knob(wf, expander=spy_expander)
         assert not called
 
 

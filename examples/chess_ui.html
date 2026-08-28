@@ -160,10 +160,10 @@
 <body>
 <h1>Chess Pipeline Evolution</h1>
 <div class="subtitle">
-  Can factory's evolutionary outer loop improve an LLM's chess play?
+  Can factory's evolutionary outer loop teach an LLM to beat Stockfish?
   Each move runs a <code>Package</code> pipeline through the real <code>WorkflowExecutor</code>.
-  Factory's MAP-Elites archive maintains diverse pipeline configs. Tournament selection picks parents, random mutation explores the knob space.
-  Scored by average centipawn eval across games. Reflection uses eval curves, not just W/D/L.
+  Opus reflects on results via factory's <code>OuterLoopReflector</code>, then proposes experiments — including inventing new prompt variants via expandable <code>OptKnob</code>s.
+  Scored by wins (+500), draws (+200), position quality, and survival. <code>KNOB_MUTATE</code> searches the declared optimization surface.
 </div>
 
 <div id="explainer" style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
@@ -195,23 +195,25 @@ pipeline = <span style="color:#d29922">Sequential</span>(
 wf = pipeline.<span style="color:#3fb950">compile</span>()  <span style="color:#8b949e"># → flat DAG</span>
 await <span style="color:#3fb950">WorkflowExecutor</span>(wf, proj).execute()
 
-<span style="color:#8b949e"># MAP-Elites + Opus-driven search</span>
+<span style="color:#8b949e"># All factory — chess only provides</span>
+<span style="color:#8b949e"># build_pipeline() and evaluate()</span>
+
 archive = <span style="color:#d29922">MAPElitesArchive</span>()
+reflector = <span style="color:#d29922">OuterLoopReflector</span>()
+strategy = <span style="color:#d29922">WeightedRandomStrategy</span>()
 
 <span style="color:#d29922">for</span> gen <span style="color:#d29922">in</span> range(1000):
-    <span style="color:#8b949e"># Opus proposes experiments — can also</span>
-    <span style="color:#8b949e"># invent new prompt variants on the fly</span>
-    proposals = <span style="color:#d29922">await</span> <span style="color:#3fb950">opus_propose</span>(
-        archive, all_results, KNOB_SPACE)
-    <span style="color:#d29922">for</span> p <span style="color:#d29922">in</span> proposals:
-        <span style="color:#8b949e"># Auto-expand: new values + prompts</span>
-        <span style="color:#d29922">if</span> p.prompt:
-            <span style="color:#3fb950">register_prompt</span>(p.knob, p.value,
-                            p.prompt)
-        pipeline = <span style="color:#3fb950">build_pipeline</span>(p.cfg)
-        score = <span style="color:#d29922">await</span> evaluate(pipeline)
-        archive.<span style="color:#3fb950">add</span>(ind, score)
-    <span style="color:#d29922">await</span> <span style="color:#3fb950">opus_reflect</span>(all_results)</pre>
+    report = reflector.<span style="color:#3fb950">reflect</span>(records)
+    parent = archive.<span style="color:#3fb950">sample_parent</span>(k=3)
+    wf, rec = <span style="color:#3fb950">apply_random_mutation</span>(
+        parent_wf, strategy, gen,
+        reflection_report=report,
+    )  <span style="color:#8b949e"># KNOB_MUTATE uses</span>
+       <span style="color:#8b949e"># default_knob_expander</span>
+       <span style="color:#8b949e"># (Opus via CLI) to invent</span>
+       <span style="color:#8b949e"># new prompt variants</span>
+    score = <span style="color:#d29922">await</span> evaluate(wf)
+    archive.<span style="color:#3fb950">add</span>(ind, score)</pre>
   </div>
 
   <div style="flex:1; min-width:300px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
@@ -326,7 +328,7 @@ archive = <span style="color:#d29922">MAPElitesArchive</span>()
 <div id="best-games-panel"></div>
 <div id="log-panel"></div>
 <div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">
-  <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Composite Score by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(avg_cp - 20*blunders + 8*moves)</span></h2>
+  <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Composite Score by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(avg_cp - 20*blun + 8*moves + 500*wins + 200*draws)</span></h2>
   <canvas id="elo-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
 </div>
 <div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">
@@ -452,6 +454,7 @@ function renderNodeOutputs(outputs) {
 const games = {};
 const grid = document.getElementById('grid');
 const finishedGames = [];
+const pipelineNodesCache = {}; // tag -> node list (accumulates during game, locks on finish)
 
 // Track which gens user has manually toggled
 const collapsedGens = {};
@@ -512,7 +515,7 @@ function updateUI() {
     const ec = g.eval_curve || [];
     const avgCp = ec.length ? Math.round(ec.reduce((a,b) => a+b, 0) / ec.length) : 0;
     const blunders = ec.filter((v,i) => i > 0 && v - ec[i-1] < -200).length;
-    const composite = avgCp - 20 * blunders + 8 * g.move_count;
+    const composite = avgCp - 20 * blunders + 8 * g.move_count + 500 * (g.result === 'win' ? 1 : 0) + 200 * (g.result === 'draw' ? 1 : 0);
     const scoreStr = g.result ? ` score=${composite >= 0 ? '+' : ''}${composite}` : '';
     const resultText = g.result ? `${g.result.toUpperCase()} (${g.move_count}mv${scoreStr})` : `move ${g.move_count}...`;
     const lastMove = g.moves.length > 0 ? g.moves[g.moves.length - 1] : '';
@@ -534,26 +537,21 @@ function updateUI() {
     }
 
     // Pipeline visualization
-    const pieces = (g.fen || '').split(' ')[0].replace(/[^a-zA-Z]/g, '').replace(/[kK]/g, '').length;
-    const phase = pieces > 26 ? 'opening' : pieces > 10 ? 'middlegame' : 'endgame';
-    const phaseLabel = {opening: 'open', middlegame: 'tact∥pos', endgame: 'endgm'}[phase];
-    const nodes = ['analysis', 'selector', 'verify'];
+    // Pipeline indicator: accumulate nodes as they appear, lock on finish
+    const activeNode = g.active_node || '';
+    if (!pipelineNodesCache[g.tag]) pipelineNodesCache[g.tag] = [];
+    if (activeNode && !pipelineNodesCache[g.tag].includes(activeNode)) {
+      pipelineNodesCache[g.tag].push(activeNode);
+    }
     const nodeLabels = {
-      'analysis': phaseLabel,
-      'selector': 'sel',
-      'verify': 'verify↺',
+      'analyst': 'anal', 'tactician': 'tact', 'positionalist': 'pos',
+      'selector': 'sel', 'verifier': 'verify', 'self-critique': 'crit',
+      'blunder check': 'blun', 'opening': 'open', 'endgame': 'endgm',
+      'phase_gate': 'phase',
     };
-    const analysisNodes = new Set(['board_analyst', 'tactician + positionalist', 'opening', 'endgame', 'phase gate']);
-    const activeNode = analysisNodes.has(g.active_node) ? 'analysis' : g.active_node;
-    const showPipeline = g.whose_turn === 'llm' && !g.result;
-    const pipeHtml = showPipeline ? `
-      <div class="pipeline">
-        ${nodes.map(n => {
-          const active = activeNode === n ? 'active' : '';
-          const label = nodeLabels[n] || n;
-          return `<span class="pipe-node ${active}">${label}</span>`;
-        }).join('<span class="pipe-arrow">→</span>')}
-      </div>` : '';
+    const cached = pipelineNodesCache[g.tag];
+    const nodes = cached && cached.length > 0 ? cached : ['...'];
+    const pipeHtml = '';
 
     html += `
       <div class="game-card ${resultClass}">
@@ -626,26 +624,38 @@ function renderBestGameCard(containerId, game, label, baseline = 0) {
   }).join('\n');
   const lastMove = g.moves && g.moves.length > 0 ? g.moves[g.moves.length - 1] : '';
 
-  const fens = g.fens || [g.fen];
+  if (!g.fens && g.moves && g.moves.length > 0 && !g._fetchingFens) {
+    g._fetchingFens = true;
+    fetch('/compute-fens', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({moves: g.moves}),
+    }).then(r => r.json()).then(d => {
+      g.fens = d.fens;
+    }).catch(() => {}).finally(() => { g._fetchingFens = false; });
+  }
   if (replayTimers[containerId]) clearInterval(replayTimers[containerId]);
   let moveIdx = 0;
 
   function step() {
+    const fens = g.fens || [g.fen];
     if (moveIdx >= (g.moves || []).length) { moveIdx = 0; }
     const evalAtMove = ec[moveIdx] ?? 0;
     const progress = (g.moves || []).slice(0, moveIdx + 1);
-    const currentFen = fens[moveIdx + 1] || fens[fens.length - 1];
+    const currentFen = fens[moveIdx + 1] || fens[fens.length - 1] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     const currentMove = (g.moves || [])[moveIdx] || '';
+    const hasPerMoveFens = fens.length > 1;
+    const boardHtml = renderBoard(currentFen, hasPerMoveFens ? currentMove : '', g.llm_white);
+    const evalBarHtml = renderEvalBar(ec.slice(0, moveIdx + 1), g.llm_white);
     container.innerHTML = `
-      <div class="game-card" style="border-color:#3fb950; margin:0; flex:1;">
+      <div class="game-card" style="border-color:#3fb950; margin:0;">
         <div class="game-header">
           <span style="color:#3fb950; font-weight:bold;">${label}</span>
           <span class="game-result" style="color:#58a6ff;">Gen ${g.gen} | ${g.result.toUpperCase()} (${g.move_count}mv score=${sc >= 0?'+':''}${sc}${baseline ? ` <span style="color:#3fb950;">+${Math.round(sc - baseline)} vs seed</span>` : ''})</span>
         </div>
         <div class="player-label">${topLabel}</div>
-        <div style="display:flex; gap:4px; flex-shrink:0; overflow:hidden;">
-          ${renderEvalBar(ec.slice(0, moveIdx + 1), g.llm_white)}
-          <div class="board">${renderBoard(currentFen, currentMove, g.llm_white)}</div>
+        <div style="display:flex; gap:4px; flex-shrink:0;">
+          ${evalBarHtml}
+          <div class="board">${boardHtml}</div>
         </div>
         <div class="player-label llm">${botLabel}</div>
         <div style="font-size:10px;color:#8b949e;margin:4px 0;">Move ${moveIdx + 1}/${(g.moves||[]).length} eval=${evalAtMove >= 0?'+':''}${evalAtMove}cp</div>
@@ -677,10 +687,10 @@ function updateBestGames() {
 
   let html = `<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">`;
   html += `<h2 style="color:#58a6ff; font-size:14px; margin-bottom:12px;">Best Games</h2>`;
-  html += `<div style="display:flex; gap:16px; flex-wrap:wrap; align-items:stretch;">`;
-  html += `<div id="replay-best" style="flex:1; min-width:400px; display:flex;"></div>`;
+  html += `<div style="display:flex; gap:16px; flex-wrap:wrap;">`;
+  html += `<div id="replay-best" style="flex:1; min-width:400px;"></div>`;
   if (longest.tag !== bestScore.tag) {
-    html += `<div id="replay-longest" style="flex:1; min-width:400px; display:flex;"></div>`;
+    html += `<div id="replay-longest" style="flex:1; min-width:400px;"></div>`;
   }
   html += `</div></div>`;
   bestGamesPanel.innerHTML = html;
@@ -731,6 +741,7 @@ evtSource.onmessage = (e) => {
   games[data.tag] = data;
   if (data.result && !finishedGames.find(g => g.tag === data.tag)) {
     finishedGames.push({...data});
+    if (data.node_outputs) pipelineNodesCache[data.tag] = Object.keys(data.node_outputs);
   }
   // Cap game cards to last 3 gens to prevent browser freeze
   const allTags = Object.keys(games);
@@ -1017,21 +1028,6 @@ function updateEloChart() {
   ctx.fillText('-- running best', W - 60, 14);
 
   // Phase boundary
-  const p2Start = gens.findIndex(g => g >= 100);
-  if (p2Start > 0) {
-    ctx.strokeStyle = '#f0883e';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    const bx = (x(p2Start) + x(p2Start - 1)) / 2;
-    ctx.beginPath();
-    ctx.moveTo(bx, pad.top);
-    ctx.lineTo(bx, pad.top + plotH);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#f0883e';
-    ctx.font = '9px monospace';
-    ctx.fillText('frozen', bx + 4, pad.top + 10);
-  }
 }
 
 function updateLengthChart() {

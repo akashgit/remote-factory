@@ -727,6 +727,25 @@ async def summarize_reflection(request: dict):
         return {"summary": text[:200]}
 
 
+@app.post("/compute-fens")
+async def compute_fens(request: dict):
+    """Compute per-move FENs from a UCI move list."""
+    import chess
+    moves = request.get("moves", [])
+    board = chess.Board()
+    fens = [board.fen()]
+    for move_uci in moves:
+        try:
+            board.push_uci(move_uci)
+        except Exception:
+            try:
+                board.push_san(move_uci)
+            except Exception:
+                break
+        fens.append(board.fen())
+    return {"fens": fens}
+
+
 @app.get("/reload")
 async def trigger_reload():
     """Write a reload marker so the SSE stream tells all clients to refresh."""
@@ -781,7 +800,7 @@ async def replay(speed: float = 10.0, recording_path: str = ""):
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
 
     lines = src.read_text().strip().split("\n")
-    events = [_json.loads(l) for l in lines if l.strip()]
+    events = [_json.loads(line) for line in lines if line.strip()]
     if not events:
         return {"error": "empty recording"}
 
