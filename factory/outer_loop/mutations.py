@@ -567,10 +567,45 @@ def mutate_prompt(
 KnobExpander = Callable[[str, str, str | float, list[str | float]], str | float | None]
 
 
+def default_knob_expander(
+    knob_name: str,
+    hint: str,
+    current: str | float,
+    bounds: list[str | float],
+) -> str | float | None:
+    """Default expander: uses claude CLI to invent new knob values."""
+    import subprocess
+
+    prompt = (
+        f"Invent a new value for the parameter '{knob_name}'.\n"
+        f"Context: {hint}\n"
+        f"Current value: {current}\n"
+        f"Existing options: {bounds}\n\n"
+        f"Write ONLY the new value (a short name if it's a prompt knob, "
+        f"or a number if it's a threshold). Nothing else."
+    )
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", prompt, "--model", "opus",
+             "--append-system-prompt", "Output only the value, no explanation.",
+             "--max-turns", "1", "--output-format", "text"],
+            capture_output=True, text=True, timeout=60,
+        )
+        result = proc.stdout.strip()
+        if not result:
+            return None
+        try:
+            return float(result)
+        except ValueError:
+            return result[:80]
+    except Exception:
+        return None
+
+
 def mutate_knob(
     workflow: Workflow,
     *,
-    expander: KnobExpander | None = None,
+    expander: KnobExpander | None = default_knob_expander,
 ) -> tuple[Workflow, MutationRecord] | None:
     """Mutate a single knob value within its declared bounds.
 
@@ -635,7 +670,7 @@ def apply_random_mutation(
     frozen_nodes: set[str] | None = None,
     archive_stats: dict[str, object] | None = None,
     reflection_report: ReflectionReport | None = None,
-    knob_expander: KnobExpander | None = None,
+    knob_expander: KnobExpander | None = default_knob_expander,
     max_attempts: int = 10,
 ) -> tuple[Workflow, MutationRecord] | None:
     """Apply a mutation using the given strategy. Retries on failure.
@@ -666,7 +701,8 @@ def apply_random_mutation(
             op = MutationType.PARAM_MUTATE
 
         prompt_hint = _extract_prompt_hint(reflection_report) if reflection_report else None
-        result = _try_mutation(workflow, op, frozen, prompt_hint=prompt_hint, expander=knob_expander)
+        result = _try_mutation(workflow, op, frozen, prompt_hint=prompt_hint,
+                               expander=knob_expander)
         if result is not None:
             wf, rec = result
             if len(wf.nodes) > MAX_NODES:
