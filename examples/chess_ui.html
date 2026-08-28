@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chess Pipeline Evolution — Live</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117; color: #c9d1d9; font-family: 'SF Mono', monospace;
+    padding: 20px;
+  }
+  h1 { color: #58a6ff; font-size: 18px; margin-bottom: 6px; }
+  .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+  .subtitle code {
+    background: #21262d; color: #58a6ff; padding: 1px 5px;
+    border-radius: 3px; font-size: 12px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 16px;
+  }
+  .game-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 12px; min-height: 420px;
+    display: flex; flex-direction: column;
+  }
+  .game-card.win { border-color: #3fb950; }
+  .game-card.loss { border-color: #f85149; }
+  .game-card.draw { border-color: #d29922; }
+  .game-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-size: 12px;
+  }
+  .game-tag { color: #58a6ff; font-weight: bold; cursor: help; position: relative; }
+  .game-tag .tooltip {
+    display: none; position: absolute; left: 0; top: 100%;
+    background: #1c2128; border: 1px solid #30363d; border-radius: 4px;
+    padding: 6px 8px; font-size: 10px; color: #c9d1d9; white-space: pre-line; max-width: 350px;
+    z-index: 10; font-weight: normal;
+  }
+  .game-tag:hover .tooltip { display: block; }
+  .game-result { font-weight: bold; font-size: 14px; }
+  .game-result.win { color: #3fb950; }
+  .game-result.loss { color: #f85149; }
+  .game-result.draw { color: #d29922; }
+  .game-result.playing { color: #8b949e; }
+  .player-label {
+    text-align: center; font-size: 11px; color: #8b949e; padding: 4px 0;
+    flex-shrink: 0; min-height: 20px;
+  }
+  .player-label.llm { color: #58a6ff; }
+  .board {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    aspect-ratio: 1; margin: 4px 0;
+    border: 2px solid #5a5a5a; border-radius: 2px;
+    min-width: 0;
+  }
+  .sq {
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(4vw, 32px); line-height: 1;
+    aspect-ratio: 1;
+  }
+  .sq.light { background: #f0d9b5; }
+  .sq.dark { background: #b58863; }
+  .sq.last-move.light { background: #cdd26a; }
+  .sq.last-move.dark { background: #aaa23a; }
+  .sq .white-piece { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+  .sq .black-piece { color: #000; text-shadow: 0 0 1px rgba(255,255,255,0.3); }
+  .moves {
+    font-size: 10px; color: #8b949e; margin-top: 4px;
+    word-break: break-all; overflow-y: auto;
+    line-height: 1.5; flex: 1; min-height: 0;
+  }
+  .gen-header {
+    grid-column: 1 / -1; color: #f0883e; font-size: 14px;
+    font-weight: bold; padding: 10px 0 4px;
+    border-top: 1px solid #30363d; margin-top: 8px;
+    cursor: pointer; user-select: none;
+  }
+  .gen-header:first-child { border-top: none; margin-top: 0; }
+  .gen-header .caret {
+    display: inline-block; transition: transform 0.2s; margin-right: 6px;
+  }
+  .gen-header .caret.collapsed { transform: rotate(-90deg); }
+  .gen-group {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 16px;
+  }
+  .gen-group.collapsed { display: none; }
+  .reflection {
+    grid-column: 1 / -1; background: #161b22; border: 1px solid #30363d;
+    border-radius: 8px; padding: 12px; font-size: 11px; color: #8b949e;
+  }
+  .reflection h3 { color: #d29922; font-size: 12px; margin-bottom: 6px; }
+  .knob-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .knob-val { color: #c9d1d9; }
+  .knob-val.best { color: #3fb950; font-weight: bold; }
+  .turn-indicator {
+    text-align: center; font-size: 11px; padding: 4px 0;
+    margin: 4px 0;
+  }
+  .turn-indicator.llm { color: #58a6ff; }
+  .turn-indicator.stockfish { color: #f0883e; }
+  .turn-indicator.done { color: #8b949e; }
+  .pipeline {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; margin: 6px 0; font-size: 10px;
+  }
+  .pipe-node {
+    padding: 2px 6px; border-radius: 3px;
+    background: #21262d; color: #8b949e; border: 1px solid #30363d;
+  }
+  .pipe-node.active {
+    background: #1f3a5f; color: #58a6ff; border-color: #58a6ff;
+    animation: pulse 1s ease-in-out infinite alternate;
+  }
+  .pipe-arrow { color: #484f58; }
+  .pipe-parallel { display: flex; flex-direction: column; gap: 2px; }
+  @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+  #log-panel {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 12px; margin-bottom: 16px;
+  }
+  #log-panel h2 { color: #f0883e; font-size: 14px; margin-bottom: 8px; }
+  .log-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .log-table th {
+    text-align: left; color: #8b949e; padding: 4px 8px;
+    border-bottom: 1px solid #30363d;
+  }
+  .log-table td { padding: 4px 8px; border-bottom: 1px solid #21262d; }
+  .log-table tr.best td { color: #3fb950; }
+  .log-table tr:hover td { background: #1c2128; }
+  .log-score { font-weight: bold; }
+  .log-bar {
+    display: inline-block; height: 10px; background: #3fb950;
+    border-radius: 2px; vertical-align: middle;
+  }
+  .log-config { color: #8b949e; font-size: 10px; }
+  .node-outputs {
+    margin-top: 6px; font-size: 10px;
+    max-height: 150px; overflow-y: auto; flex-shrink: 0;
+  }
+  .node-output {
+    background: #0d1117; border: 1px solid #21262d; border-radius: 4px;
+    padding: 4px 6px; margin: 2px 0; max-height: 60px; overflow-y: auto;
+  }
+  .node-output-label {
+    color: #58a6ff; font-weight: bold; font-size: 9px;
+    text-transform: uppercase; margin-bottom: 2px;
+  }
+  .node-output-text {
+    color: #8b949e; white-space: pre-wrap; word-break: break-word;
+    font-size: 10px; line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+<h1>Chess Pipeline Evolution</h1>
+<div class="subtitle">
+  Can factory's evolutionary outer loop improve an LLM's chess play?
+  Each move runs a <code>Package</code> pipeline through the real <code>WorkflowExecutor</code>.
+  Factory's MAP-Elites archive maintains diverse pipeline configs. Tournament selection picks parents, random mutation explores the knob space.
+  Scored by average centipawn eval across games. Reflection uses eval curves, not just W/D/L.
+</div>
+
+<div id="explainer" style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+  <div style="flex:1; min-width:300px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
+    <h3 style="color:#58a6ff; font-size:13px; margin-bottom:8px;">Package Composition</h3>
+    <pre style="color:#c9d1d9; font-size:11px; line-height:1.6; margin:0;">
+<span style="color:#8b949e"># Each chess move runs this pipeline.</span>
+<span style="color:#8b949e"># Sequential chains the phases in order.</span>
+pipeline = <span style="color:#d29922">Sequential</span>(
+
+    <span style="color:#8b949e"># Phase-routed analysis via Conditional:</span>
+    <span style="color:#8b949e"># opening → lightweight, mid → all 3 parallel,</span>
+    <span style="color:#8b949e"># endgame → specialized king+pawn focus</span>
+    <span style="color:#d29922">Conditional</span>(phase_gate, {
+      <span style="color:#a5d6ff">"opening"</span>: opening_pkg,
+      <span style="color:#a5d6ff">"middle"</span>:  <span style="color:#d29922">Parallel</span>(anal, tact, pos),
+      <span style="color:#a5d6ff">"endgame"</span>: endgame_pkg,
+    }),
+
+    <span style="color:#8b949e"># Verify loop: combined critique + blunder</span>
+    <span style="color:#8b949e"># check in one call. Loops back to selector</span>
+    <span style="color:#8b949e"># if issue found.</span>
+    <span style="color:#d29922">Loop</span>(
+        <span style="color:#d29922">Sequential</span>(selector_pkg, verify_pkg),
+        verify_gate, max_iterations=2,
+    ),
+)
+
+wf = pipeline.<span style="color:#3fb950">compile</span>()  <span style="color:#8b949e"># → flat DAG</span>
+await <span style="color:#3fb950">WorkflowExecutor</span>(wf, proj).execute()
+
+<span style="color:#8b949e"># MAP-Elites + Opus-driven search</span>
+archive = <span style="color:#d29922">MAPElitesArchive</span>()
+
+<span style="color:#d29922">for</span> gen <span style="color:#d29922">in</span> range(1000):
+    <span style="color:#8b949e"># Opus proposes experiments — can also</span>
+    <span style="color:#8b949e"># invent new prompt variants on the fly</span>
+    proposals = <span style="color:#d29922">await</span> <span style="color:#3fb950">opus_propose</span>(
+        archive, all_results, KNOB_SPACE)
+    <span style="color:#d29922">for</span> p <span style="color:#d29922">in</span> proposals:
+        <span style="color:#8b949e"># Auto-expand: new values + prompts</span>
+        <span style="color:#d29922">if</span> p.prompt:
+            <span style="color:#3fb950">register_prompt</span>(p.knob, p.value,
+                            p.prompt)
+        pipeline = <span style="color:#3fb950">build_pipeline</span>(p.cfg)
+        score = <span style="color:#d29922">await</span> evaluate(pipeline)
+        archive.<span style="color:#3fb950">add</span>(ind, score)
+    <span style="color:#d29922">await</span> <span style="color:#3fb950">opus_reflect</span>(all_results)</pre>
+  </div>
+
+  <div style="flex:1; min-width:300px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
+    <h3 style="color:#58a6ff; font-size:13px; margin-bottom:8px;">Pipeline Graph (per move)</h3>
+    <pre style="color:#c9d1d9; font-size:11px; line-height:1.6; margin:0;">
+ board_state.md
+       │
+       ▼
+ ┌─────────────┐
+ │ <span style="color:#f0883e">phase gate</span>  │ <span style="color:#8b949e">Conditional</span>
+ └──┬──┬──┬────┘
+    │  │  └→ <span style="color:#58a6ff">endgame</span>
+    │  └──→ <span style="color:#58a6ff">anal</span> ∥ <span style="color:#58a6ff">tact</span> ∥ <span style="color:#58a6ff">pos</span>
+    └────→ <span style="color:#58a6ff">opening</span>
+       │
+       ▼
+ ┌───────────┐◄──╮
+ │ <span style="color:#3fb950">selector</span>  │   │ <span style="color:#8b949e">verify ↺</span>
+ └─────┬─────┘   │
+       ▼         │
+ ┌───────────┐   │ critique +
+ │ <span style="color:#d29922">verifier</span>  │───╯ blunder check
+ └─────┬─────┘
+       │ PROCEED
+       ▼
+   move.md</pre>
+  </div>
+
+  <div style="flex:1; min-width:300px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
+    <h3 style="color:#58a6ff; font-size:13px; margin-bottom:8px;">Optimization Surface</h3>
+    <pre style="color:#c9d1d9; font-size:11px; line-height:1.5; margin:0;">
+<span style="color:#f0883e"># ── Knobs auto-expand at runtime ─</span>
+<span style="color:#8b949e"># Opus can invent new prompt variants</span>
+<span style="color:#8b949e"># and values beyond initial bounds.</span>
+<span style="color:#8b949e"># New variants are registered and</span>
+<span style="color:#8b949e"># available to future generations.</span>
+
+<span style="color:#8b949e"># Changes the DAG structure</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"pipeline_mode"</span>, <span style="color:#a5d6ff">"topology"</span>,
+  bounds=[<span style="color:#a5d6ff">"parallel"</span>,     <span style="color:#8b949e"># fork/join</span>
+          <span style="color:#a5d6ff">"single_deep"</span>,  <span style="color:#8b949e"># 1 analyst</span>
+          <span style="color:#a5d6ff">"enumerate"</span>])   <span style="color:#8b949e"># list+pick</span>
+
+<span style="color:#8b949e"># Adds an opponent threat node</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_opponent_model"</span>, <span style="color:#a5d6ff">"topology"</span>,
+  bounds=[True, False])
+
+<span style="color:#8b949e"># Skip pipeline when ≤2 legal moves</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"skip_forced"</span>, <span style="color:#a5d6ff">"topology"</span>,
+  bounds=[True, False])
+
+<span style="color:#8b949e"># Persist a plan across moves</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_game_plan"</span>, <span style="color:#a5d6ff">"memory"</span>,
+  bounds=[True, False])
+
+<span style="color:#8b949e"># Pass full move history to analysts</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_game_context"</span>, <span style="color:#a5d6ff">"memory"</span>,
+  bounds=[True, False])
+
+<span style="color:#8b949e"># Selector reasoning depth</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"selector_tokens"</span>, <span style="color:#a5d6ff">"threshold"</span>,
+  bounds=[10, 100, 500])
+
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_verification"</span>, <span style="color:#a5d6ff">"topology"</span>,
+  bounds=[True, False])
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"game_phase_routing"</span>, <span style="color:#a5d6ff">"topology"</span>,
+  bounds=[True, False])
+
+<span style="color:#f0883e"># ── Prompts (expandable: Opus can</span>
+<span style="color:#f0883e">#    invent new variants) ─────────</span>
+
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"tactical_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  default=<span style="color:#a5d6ff">"mate_focused"</span>,  <span style="color:#8b949e"># ★</span>
+  bounds=[<span style="color:#a5d6ff">"broad"</span>, <span style="color:#a5d6ff">"mate_focused"</span>,
+          <span style="color:#a5d6ff">"material"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"positional_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  default=<span style="color:#a5d6ff">"dynamic"</span>,       <span style="color:#8b949e"># ★</span>
+  bounds=[<span style="color:#a5d6ff">"classical"</span>, <span style="color:#a5d6ff">"dynamic"</span>,
+          <span style="color:#a5d6ff">"prophylactic"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"verify_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  default=<span style="color:#a5d6ff">"strict"</span>,        <span style="color:#8b949e"># ★</span>
+  bounds=[<span style="color:#a5d6ff">"strict"</span>, <span style="color:#a5d6ff">"standard"</span>,
+          <span style="color:#a5d6ff">"lenient"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"critique_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  default=<span style="color:#a5d6ff">"sanity_check"</span>,  <span style="color:#8b949e"># ★</span>
+  bounds=[<span style="color:#a5d6ff">"devils_advocate"</span>,
+          <span style="color:#a5d6ff">"sanity_check"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+
+<span style="color:#f0883e"># ── Phase strategy (expandable) ──</span>
+
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"opening_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  bounds=[<span style="color:#a5d6ff">"theory"</span>,      <span style="color:#8b949e"># named openings</span>
+          <span style="color:#a5d6ff">"principled"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"middlegame_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  bounds=[<span style="color:#a5d6ff">"theory"</span>,           <span style="color:#8b949e"># Nimzowitsch</span>
+          <span style="color:#a5d6ff">"safety_first"</span>,     <span style="color:#8b949e"># threats</span>
+          <span style="color:#a5d6ff">"theory+positional"</span>, <span style="color:#8b949e">...</span>],
+  <span style="color:#3fb950">expandable</span>=True)
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"endgame_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
+  bounds=[<span style="color:#a5d6ff">"theory"</span>,          <span style="color:#8b949e"># Lucena etc</span>
+          <span style="color:#a5d6ff">"theory+technical"</span>, <span style="color:#8b949e"># combo</span>
+          <span style="color:#a5d6ff">"defensive"</span>, <span style="color:#8b949e">...</span>],  <span style="color:#8b949e"># hold draws</span>
+  <span style="color:#3fb950">expandable</span>=True)</pre>
+  </div>
+</div>
+
+<div id="best-games-panel"></div>
+<div id="log-panel"></div>
+<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">
+  <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Composite Score by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(avg_cp - 20*blunders + 8*moves)</span></h2>
+  <canvas id="elo-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
+</div>
+<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">
+  <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Game Length by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(moves survived)</span></h2>
+  <canvas id="length-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
+</div>
+<div class="grid" id="grid"></div>
+
+<script>
+const PIECE_MAP = {
+  'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙',
+  'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+};
+
+function parseFEN(fen) {
+  const rows = fen.split(' ')[0].split('/');
+  const board = [];
+  for (const row of rows) {
+    const rank = [];
+    for (const ch of row) {
+      if (ch >= '1' && ch <= '8') {
+        for (let i = 0; i < parseInt(ch); i++) rank.push('');
+      } else {
+        rank.push(ch);
+      }
+    }
+    board.push(rank);
+  }
+  return board;
+}
+
+function renderBoard(fen, lastMove, llmWhite) {
+  const board = parseFEN(fen);
+  const flipped = !llmWhite;
+  let lastFrom = -1, lastTo = -1;
+  if (lastMove && lastMove.length >= 4) {
+    const fc = lastMove.charCodeAt(0) - 97, fr = 8 - parseInt(lastMove[1]);
+    const tc = lastMove.charCodeAt(2) - 97, tr = 8 - parseInt(lastMove[3]);
+    lastFrom = fr * 8 + fc;
+    lastTo = tr * 8 + tc;
+  }
+  let html = '';
+  for (let ri = 0; ri < 8; ri++) {
+    for (let ci = 0; ci < 8; ci++) {
+      const r = flipped ? 7 - ri : ri;
+      const c = flipped ? 7 - ci : ci;
+      const idx = r * 8 + c;
+      const light = (r + c) % 2 === 0;
+      const highlight = (idx === lastFrom || idx === lastTo) ? ' last-move' : '';
+      const piece = board[r][c];
+      const sym = PIECE_MAP[piece] || '';
+      const pieceClass = piece ? (piece === piece.toUpperCase() ? 'white-piece' : 'black-piece') : '';
+      const content = sym ? `<span class="${pieceClass}">${sym}</span>` : '';
+      html += `<div class="sq ${light ? 'light' : 'dark'}${highlight}">${content}</div>`;
+    }
+  }
+  return html;
+}
+
+function formatMoves(moves) {
+  const pairs = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    const num = Math.floor(i / 2) + 1;
+    const w = moves[i];
+    const b = moves[i + 1] || '';
+    pairs.push(`${num}.${w} ${b}`.trim());
+  }
+  return pairs.join(' ');
+}
+
+function formatTooltip(g) {
+  // Extract mutated knob names from the tag
+  // Tag format: "Gen 1.2: knob=val (source) + knob=val (source):g1(W)"
+  const mutated = new Set();
+  const colonIdx = g.tag.indexOf(': ');
+  const gameIdx = g.tag.lastIndexOf(':g');
+  if (colonIdx >= 0) {
+    const desc = g.tag.slice(colonIdx + 2, gameIdx > colonIdx ? gameIdx : undefined);
+    for (const part of desc.split(' + ')) {
+      const knob = part.split('=')[0].trim();
+      if (knob) mutated.add(knob);
+    }
+  }
+  // Map compact label keys to full knob names
+  const keyMap = {mode:'pipeline_mode', sel_tok:'selector_tokens', tact:'tactical_style',
+    pos:'positional_style', blun:'blunder_style', ctx:'use_game_context',
+    plan:'use_game_plan', opp:'use_opponent_model', eg:'endgame_style',
+    skip:'skip_forced', elo:'opponent_elo', reanalyze:'blunder_loop_target'};
+  // Use full_config (pipe-separated) if available, otherwise split compact config
+  const lines = g.full_config
+    ? g.full_config.split(' | ')
+    : (g.config || g.tag).split(' ').filter(p => p.includes('=') || ['ctx','plan','opp','skip','reanalyze'].includes(p));
+  return lines.map(line => {
+    const key = line.split('=')[0];
+    const fullKey = keyMap[key] || key;
+    if (mutated.has(fullKey)) return `<b style="color:#d29922">${line}</b>`;
+    return line;
+  }).join('\n');
+}
+
+function renderNodeOutputs(outputs) {
+  const labels = {
+    'board_analyst': 'Analyst',
+    'tactician': 'Tactician',
+    'positionalist': 'Positionalist',
+    'selector': 'Selector',
+  };
+  const keys = Object.keys(outputs);
+  if (keys.length === 0) return '';
+  let html = '<div class="node-outputs">';
+  for (const [nodeId, text] of Object.entries(outputs)) {
+    const label = labels[nodeId] || nodeId;
+    const escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    html += `<div class="node-output">
+      <div class="node-output-label">${label}</div>
+      <div class="node-output-text">${escaped}</div>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+const games = {};
+const grid = document.getElementById('grid');
+const finishedGames = [];
+
+// Track which gens user has manually toggled
+const collapsedGens = {};
+
+function updateUI() {
+  const sorted = Object.values(games).sort((a, b) => {
+    if (a.gen !== b.gen) return a.gen - b.gen;
+    return a.tag.localeCompare(b.tag);
+  });
+
+  // Find the highest gen with any active (non-finished) games
+  const maxGen = Math.max(...sorted.map(g => g.gen), 0);
+  const activeGens = new Set();
+  for (const g of sorted) {
+    if (!g.result) activeGens.add(g.gen);
+  }
+
+  let html = '';
+  let lastGen = -1;
+  for (const g of sorted) {
+    if (g.gen !== lastGen) {
+      // Close previous gen group
+      if (lastGen >= 0) html += '</div>';
+      lastGen = g.gen;
+
+      // Auto-collapse finished gens, unless user toggled
+      const isActive = activeGens.has(g.gen);
+      const isCollapsed = (g.gen in collapsedGens) ? collapsedGens[g.gen] : !isActive;
+      const caretClass = isCollapsed ? 'collapsed' : '';
+      const groupClass = isCollapsed ? 'collapsed' : '';
+
+      let genLabel;
+      if (g.gen === 0) genLabel = 'Gen 0 (Seed)';
+      else genLabel = `Gen ${g.gen}`;
+
+      // Summarize what mutations this gen explores
+      const genGames = sorted.filter(x => x.gen === g.gen);
+      const mutations = new Set();
+      for (const gg of genGames) {
+        const m = gg.tag.match(/: (.+?):/);
+        if (m) {
+          for (const part of m[1].split(' + ')) {
+            const knob = part.split('=')[0].trim();
+            if (knob && !knob.startsWith('Gen')) mutations.add(knob);
+          }
+        }
+      }
+      const mutSummary = mutations.size > 0 ?
+        ` — exploring ${[...mutations].join(', ')}` : '';
+
+      html += `<div class="gen-header" onclick="toggleGen(${g.gen})">
+        <span class="caret ${caretClass}">▼</span>${genLabel}<span style="color:#8b949e;font-weight:normal;font-size:12px;">${mutSummary}</span>
+      </div>`;
+      html += `<div class="gen-group ${groupClass}" data-gen="${g.gen}">`;
+    }
+
+    const resultClass = g.result || 'playing';
+    const ec = g.eval_curve || [];
+    const avgCp = ec.length ? Math.round(ec.reduce((a,b) => a+b, 0) / ec.length) : 0;
+    const blunders = ec.filter((v,i) => i > 0 && v - ec[i-1] < -200).length;
+    const composite = avgCp - 20 * blunders + 8 * g.move_count;
+    const scoreStr = g.result ? ` score=${composite >= 0 ? '+' : ''}${composite}` : '';
+    const resultText = g.result ? `${g.result.toUpperCase()} (${g.move_count}mv${scoreStr})` : `move ${g.move_count}...`;
+    const lastMove = g.moves.length > 0 ? g.moves[g.moves.length - 1] : '';
+    const llmColor = g.llm_white ? 'White' : 'Black';
+    const sfColor = g.llm_white ? 'Black' : 'White';
+    const topLabel = `Stockfish ${g.elo} (${sfColor})`;
+    const botLabel = `Claude Haiku 4.5 (${llmColor})`;
+    const topClass = '';
+    const botClass = 'llm';
+
+    // Turn indicator + pipeline
+    let turnHtml = '';
+    if (g.result) {
+      turnHtml = `<div class="turn-indicator done">Game over</div>`;
+    } else if (g.whose_turn === 'llm') {
+      turnHtml = `<div class="turn-indicator llm">LLM thinking...</div>`;
+    } else if (g.whose_turn === 'stockfish') {
+      turnHtml = `<div class="turn-indicator stockfish">Stockfish moving...</div>`;
+    }
+
+    // Pipeline visualization
+    const pieces = (g.fen || '').split(' ')[0].replace(/[^a-zA-Z]/g, '').replace(/[kK]/g, '').length;
+    const phase = pieces > 26 ? 'opening' : pieces > 10 ? 'middlegame' : 'endgame';
+    const phaseLabel = {opening: 'open', middlegame: 'tact∥pos', endgame: 'endgm'}[phase];
+    const nodes = ['analysis', 'selector', 'verify'];
+    const nodeLabels = {
+      'analysis': phaseLabel,
+      'selector': 'sel',
+      'verify': 'verify↺',
+    };
+    const analysisNodes = new Set(['board_analyst', 'tactician + positionalist', 'opening', 'endgame', 'phase gate']);
+    const activeNode = analysisNodes.has(g.active_node) ? 'analysis' : g.active_node;
+    const showPipeline = g.whose_turn === 'llm' && !g.result;
+    const pipeHtml = showPipeline ? `
+      <div class="pipeline">
+        ${nodes.map(n => {
+          const active = activeNode === n ? 'active' : '';
+          const label = nodeLabels[n] || n;
+          return `<span class="pipe-node ${active}">${label}</span>`;
+        }).join('<span class="pipe-arrow">→</span>')}
+      </div>` : '';
+
+    html += `
+      <div class="game-card ${resultClass}">
+        <div class="game-header">
+          <span class="game-tag">${g.tag}<span class="tooltip">${formatTooltip(g)}</span></span>
+          <span class="game-result ${resultClass}">${resultText}</span>
+        </div>
+        <div class="player-label ${topClass}">${topLabel}</div>
+        <div style="display:flex; gap:4px; flex-shrink:0; overflow:hidden;">
+          ${renderEvalBar(g.eval_curve || [], g.llm_white)}
+          <div class="board">${renderBoard(g.fen, lastMove, g.llm_white)}</div>
+        </div>
+        <div class="player-label ${botClass}">${botLabel}</div>
+        ${turnHtml}
+        ${pipeHtml}
+        <div class="moves">${formatMoves(g.moves)}</div>
+      </div>`;
+  }
+  // Close last gen group
+  if (lastGen >= 0) html += '</div>';
+  grid.innerHTML = html;
+}
+
+function toggleGen(gen) {
+  collapsedGens[gen] = !(collapsedGens[gen] ?? false);
+  updateUI();
+}
+
+const logCollapsed = {};
+function toggleLogGen(gen) {
+  const isOpen = (gen in logCollapsed) ? !logCollapsed[gen] : false;
+  logCollapsed[gen] = !isOpen;
+  updateLog(); updateEloChart(); updateLengthChart();
+}
+
+// Best games panel
+const bestGamesPanel = document.getElementById('best-games-panel');
+const replayTimers = {};
+
+function computeGameScore(g) {
+  const ec = g.eval_curve || [];
+  const avg = ec.length ? ec.reduce((a,b) => a+b, 0) / ec.length : 0;
+  const blunders = ec.filter((v,i) => i > 0 && v - ec[i-1] < -200).length;
+  return Math.round(avg - 20 * blunders + 8 * g.move_count);
+}
+
+function renderBestGameCard(containerId, game, label, baseline = 0) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const g = game;
+  const llmColor = g.llm_white ? 'White' : 'Black';
+  const sfColor = g.llm_white ? 'Black' : 'White';
+  const topLabel = `Stockfish ${g.elo} (${sfColor})`;
+  const botLabel = `Claude Haiku 4.5 (${llmColor})`;
+  const ec = g.eval_curve || [];
+  const sc = computeGameScore(g);
+  const defaults = {
+    pipeline_mode: 'parallel', use_verification: 'True', verify_iterations: '2',
+    game_phase_routing: 'False', skip_forced: 'False', use_opponent_model: 'False',
+    tactical_style: 'mate_focused', positional_style: 'dynamic',
+    verify_style: 'strict', critique_style: 'sanity_check',
+    opening_hint: 'theory', middlegame_hint: 'theory', endgame_hint: 'theory',
+  };
+  const config = (g.full_config || g.config || '').split(' | ').map(line => {
+    const [k, v] = line.split('=');
+    if (k && v && defaults[k] !== undefined && defaults[k] !== v) {
+      return `<b style="color:#d29922">${line}</b>`;
+    }
+    return line;
+  }).join('\n');
+  const lastMove = g.moves && g.moves.length > 0 ? g.moves[g.moves.length - 1] : '';
+
+  const fens = g.fens || [g.fen];
+  if (replayTimers[containerId]) clearInterval(replayTimers[containerId]);
+  let moveIdx = 0;
+
+  function step() {
+    if (moveIdx >= (g.moves || []).length) { moveIdx = 0; }
+    const evalAtMove = ec[moveIdx] ?? 0;
+    const progress = (g.moves || []).slice(0, moveIdx + 1);
+    const currentFen = fens[moveIdx + 1] || fens[fens.length - 1];
+    const currentMove = (g.moves || [])[moveIdx] || '';
+    container.innerHTML = `
+      <div class="game-card" style="border-color:#3fb950; margin:0; flex:1;">
+        <div class="game-header">
+          <span style="color:#3fb950; font-weight:bold;">${label}</span>
+          <span class="game-result" style="color:#58a6ff;">Gen ${g.gen} | ${g.result.toUpperCase()} (${g.move_count}mv score=${sc >= 0?'+':''}${sc}${baseline ? ` <span style="color:#3fb950;">+${Math.round(sc - baseline)} vs seed</span>` : ''})</span>
+        </div>
+        <div class="player-label">${topLabel}</div>
+        <div style="display:flex; gap:4px; flex-shrink:0; overflow:hidden;">
+          ${renderEvalBar(ec.slice(0, moveIdx + 1), g.llm_white)}
+          <div class="board">${renderBoard(currentFen, currentMove, g.llm_white)}</div>
+        </div>
+        <div class="player-label llm">${botLabel}</div>
+        <div style="font-size:10px;color:#8b949e;margin:4px 0;">Move ${moveIdx + 1}/${(g.moves||[]).length} eval=${evalAtMove >= 0?'+':''}${evalAtMove}cp</div>
+        <div class="moves">${formatMoves(progress)}</div>
+        <div style="font-size:9px;color:#8b949e;margin-top:6px;white-space:pre-line;">${config}</div>
+        ${g.reflection ? `<div style="font-size:10px;color:#d2a8ff;margin-top:8px;font-style:italic;line-height:1.4;border-top:1px solid #30363d;padding-top:6px;">💭 ${g.reflection.replace(/\*\*(.+?)\*\*/g, '<b style="color:#c9d1d9;font-style:normal;">$1</b>').replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:1px 4px;border-radius:2px;color:#d29922;">$1</code>')}</div>` : ''}
+      </div>`;
+    moveIdx++;
+  }
+  step();
+  replayTimers[containerId] = setInterval(step, 800);
+}
+
+let bestGameTag = '';
+let longestGameTag = '';
+
+function updateBestGames() {
+  if (finishedGames.length === 0) { bestGamesPanel.innerHTML = '<div style="color:#8b949e;padding:8px;">Waiting for finished games...</div>'; return; }
+  const scored = finishedGames.map(g => ({...g, composite: computeGameScore(g)}));
+  const bestScore = scored.reduce((a, b) => a.composite > b.composite ? a : b);
+  const longest = scored.reduce((a, b) => (b.moves || []).length > (a.moves || []).length ? b : a);
+  // Only re-render if best games changed
+  if (bestScore.tag === bestGameTag && longest.tag === longestGameTag) return;
+  bestGameTag = bestScore.tag;
+  longestGameTag = longest.tag;
+  // Clear old replays
+  if (replayTimers['replay-best']) { clearInterval(replayTimers['replay-best']); delete replayTimers['replay-best']; }
+  if (replayTimers['replay-longest']) { clearInterval(replayTimers['replay-longest']); delete replayTimers['replay-longest']; }
+
+  let html = `<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">`;
+  html += `<h2 style="color:#58a6ff; font-size:14px; margin-bottom:12px;">Best Games</h2>`;
+  html += `<div style="display:flex; gap:16px; flex-wrap:wrap; align-items:stretch;">`;
+  html += `<div id="replay-best" style="flex:1; min-width:400px; display:flex;"></div>`;
+  if (longest.tag !== bestScore.tag) {
+    html += `<div id="replay-longest" style="flex:1; min-width:400px; display:flex;"></div>`;
+  }
+  html += `</div></div>`;
+  bestGamesPanel.innerHTML = html;
+  try {
+    const bl = window._bestBaseline || 0;
+    renderBestGameCard('replay-best', bestScore, 'Highest Score', bl);
+    if (longest.tag !== bestScore.tag) {
+      renderBestGameCard('replay-longest', longest, 'Longest Game', bl);
+    }
+  } catch(e) {
+    console.error('Best games render error:', e);
+    bestGamesPanel.innerHTML += `<pre style="color:red">${e.message}\n${e.stack}</pre>`;
+  }
+}
+
+// Load full state on page load, then stream updates via SSE
+fetch('/state').then(r => r.json()).then(state => {
+  for (const g of state.games) {
+    games[g.tag] = g;
+    if (g.result && !finishedGames.find(fg => fg.tag === g.tag)) finishedGames.push({...g});
+  }
+  // Load pre-computed best games (from replay recordings)
+  if (state.best_games) {
+    window._bestBaseline = state.best_games.baseline || 0;
+    for (const g of [state.best_games.best_score, state.best_games.longest]) {
+      if (g && g.tag && !finishedGames.find(fg => fg.tag === g.tag)) {
+        finishedGames.push({...g});
+      }
+    }
+  }
+  updateUI();
+  updateBestGames();
+  for (const e of state.log) {
+    const key = e.label + ':' + e.gen;
+    if (!seenLogLabels.has(key)) {
+      seenLogLabels.add(key);
+      logEntries.push(e);
+    }
+  }
+  updateLog(); updateEloChart(); updateLengthChart();
+});
+
+const evtSource = new EventSource('/events');
+evtSource.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+  if (data._reload) { location.reload(); return; }
+  if (!data.tag) return;
+  games[data.tag] = data;
+  if (data.result && !finishedGames.find(g => g.tag === data.tag)) {
+    finishedGames.push({...data});
+  }
+  // Cap game cards to last 3 gens to prevent browser freeze
+  const allTags = Object.keys(games);
+  if (allTags.length > 30) {
+    const gens = [...new Set(Object.values(games).map(g => g.gen))].sort((a,b) => a-b);
+    const keepGens = new Set(gens.slice(-3));
+    for (const tag of allTags) {
+      if (!keepGens.has(games[tag].gen)) delete games[tag];
+    }
+  }
+  updateUI();
+  updateBestGames();
+};
+
+// Experiment log
+const logEntries = [];
+const logPanel = document.getElementById('log-panel');
+
+function renderEvalBar(evalCurve, llmWhite) {
+  const lastEval = evalCurve && evalCurve.length > 0 ? evalCurve[evalCurve.length - 1] : 0;
+  const clamped = Math.max(-500, Math.min(500, lastEval));
+  const llmPct = Math.max(5, Math.round(50 + (clamped / 500) * 50));
+  const sfPct = Math.max(5, 100 - llmPct);
+  const evalText = Math.abs(lastEval) >= 10000 ? (lastEval > 0 ? 'M' : '-M') :
+    (lastEval >= 0 ? '+' : '') + (lastEval / 100).toFixed(1);
+  // Bottom = LLM's color, Top = Stockfish's color
+  const botColor = llmWhite ? '#eee' : '#333';
+  const botText = llmWhite ? '#333' : '#eee';
+  const topColor = llmWhite ? '#333' : '#eee';
+  return `
+    <div style="width:28px; min-width:28px; display:flex; flex-direction:column; border-radius:3px; overflow:hidden; border:1px solid #30363d; font-size:9px; text-align:center;">
+      <div style="flex:${sfPct}; background:${topColor}; min-height:10px;"></div>
+      <div style="flex:${llmPct}; background:${botColor}; color:${botText}; display:flex; align-items:flex-start; justify-content:center; padding-top:1px; min-height:14px;">${evalText}</div>
+    </div>`;
+}
+
+function rawScore(entry) {
+  const t = entry.wins + entry.draws + entry.losses;
+  return t > 0 ? (entry.wins + 0.5 * entry.draws) / t : 0;
+}
+function updateLog() {
+  if (logEntries.length === 0) {
+    logPanel.innerHTML = '';
+    return;
+  }
+  const evalEntries = logEntries.filter(e => e.type !== 'reflection');
+  if (evalEntries.length === 0) { logPanel.innerHTML = ''; return; }
+  let html = '<h2>Experiment Log</h2><table class="log-table"><tr>';
+  html += '<th>Gen</th><th>Candidate</th><th>W/D/L</th><th>Score</th><th></th><th>Avg cp</th><th>Blun</th><th>Moves</th><th>Config</th></tr>';
+  const getScore = e => e.composite ?? e.score ?? 0;
+  const maxScore = Math.max(...evalEntries.map(getScore));
+  const minScore = Math.min(...evalEntries.map(getScore));
+  const scoreRange = Math.max(maxScore - minScore, 1);
+  const allGens = [...new Set(evalEntries.map(e => e.gen))].sort((a, b) => a - b);
+  const latestGen = allGens.length > 0 ? allGens[allGens.length - 1] : -1;
+  let currentGen = -1;
+
+  for (const e of evalEntries) {
+    const isOpen = (e.gen in logCollapsed) ? !logCollapsed[e.gen] : e.gen === latestGen;
+    // Gen header row (clickable to toggle)
+    if (e.gen !== currentGen) {
+      currentGen = e.gen;
+      const genEntries = evalEntries.filter(x => x.gen === e.gen);
+      const genBest = Math.max(...genEntries.map(getScore));
+      const genLongest = Math.max(...genEntries.map(x => x.moves ?? 0));
+      html += `<tr class="log-gen-header" onclick="toggleLogGen(${e.gen})" style="cursor:pointer;background:#161b22;">`;
+      html += `<td><span style="display:inline-block;transition:transform 0.2s;transform:rotate(${isOpen ? 0 : -90}deg)">▼</span> ${e.gen}</td>`;
+      html += `<td colspan="3" style="font-weight:bold;color:#58a6ff;">${genEntries.length} candidates, best=${genBest >= 0 ? '+' : ''}${Math.round(genBest)}, longest=${genLongest}mv</td>`;
+      html += `<td colspan="5"></td></tr>`;
+    }
+    if (!isOpen) continue;
+
+    const sc = getScore(e);
+    const best = sc === maxScore ? 'best' : '';
+    const barW = Math.round(((sc - minScore) / scoreRange) * 120);
+    const avgCp = e.avg_eval ?? 0;
+    html += `<tr class="${best}" data-log-gen="${e.gen}">`;
+    html += `<td></td>`;
+    html += `<td>${e.label}</td>`;
+    html += `<td>+${e.wins}=${e.draws}-${e.losses}</td>`;
+    html += `<td class="log-score">${sc >= 0 ? '+' : ''}${Math.round(sc)}</td>`;
+    html += `<td><span class="log-bar" style="width:${barW}px"></span></td>`;
+    html += `<td style="color:#8b949e">${avgCp >= 0 ? '+' : ''}${Math.round(avgCp)}</td>`;
+    html += `<td style="color:#8b949e">${e.blunders ?? '?'}</td>`;
+    html += `<td style="color:#8b949e">${e.moves ?? '?'}</td>`;
+    // Highlight mutated knobs in config
+    const knobToConfig = {
+      'pipeline_mode': 'mode',
+      'selector_tokens': 'sel_tok',
+      'opponent_elo': 'elo',
+      'use_game_context': 'ctx',
+      'include_analyst': 'no-analyst',
+    };
+    let configHtml = e.config;
+    const mutMatch = e.label.match(/: (.+)$/);
+    if (mutMatch && e.gen > 0) {
+      const mutations = mutMatch[1].split(' + ').map(m => m.split('=')[0].trim());
+      for (const knob of mutations) {
+        const configKey = knobToConfig[knob] || knob;
+        // Highlight the key=value pair in the config string
+        const re = new RegExp(`(${configKey}[=][^ ]+|${configKey})`, 'g');
+        configHtml = configHtml.replace(re, `<span style="color:#d29922;font-weight:bold">$1</span>`);
+      }
+    }
+    html += `<td class="log-config">${configHtml}</td>`;
+    html += '</tr>';
+
+    // After last entry of each gen, show learnings (only if expanded)
+    const nextEntry = evalEntries[evalEntries.indexOf(e) + 1];
+    const isLastInGen = !nextEntry || nextEntry.gen !== e.gen;
+    if (isLastInGen && isOpen) {
+      const genEntries = evalEntries.filter(x => x.gen === e.gen);
+      if (genEntries.length > 1) {
+        const learnings = [];
+        // Find what correlated with highest ELO
+        const scored = genEntries.map(x => ({...x, cp: x.avg_eval ?? x.score ?? 0}));
+        const bestInGen = scored.reduce((a, b) => a.cp > b.cp ? a : b);
+        const worstInGen = scored.reduce((a, b) => a.cp < b.cp ? a : b);
+        if (bestInGen.cp > worstInGen.cp) {
+          // Compare best vs worst configs to find what differed
+          const bestCfg = bestInGen.config.split(' ');
+          const worstCfg = worstInGen.config.split(' ');
+          for (const token of bestCfg) {
+            if (!worstCfg.includes(token) && token.includes('=')) {
+              learnings.push(token);
+            }
+          }
+        }
+        if (bestInGen.wins > 0) learnings.push(`${bestInGen.wins} win(s)!`);
+        if (bestInGen.errors < worstInGen.errors) learnings.push(`fewer errors (${bestInGen.errors} vs ${worstInGen.errors})`);
+
+        if (learnings.length > 0) {
+          const genDisplay = e.gen >= 100 ? `P2.${e.gen - 100}` : `P1.${e.gen}`;
+          html += `<tr><td></td><td colspan="7" style="color:#3fb950;font-size:11px;padding:2px 8px 4px;">` +
+            `<strong>${genDisplay} learnings:</strong> ${learnings.join(' · ')}</td></tr>`;
+        }
+        // Show LLM reflection if present
+        const reflection = logEntries.find(x => x.type === 'reflection' && x.gen === e.gen);
+        if (reflection) {
+          const rid = `reflection-${e.gen}`;
+          // If verbose, summarize via LLM on first render
+          if (reflection.text.includes('Failures:') && !reflection._summarized) {
+            reflection._summarized = true;
+            fetch('/summarize-reflection', {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({text: reflection.text}),
+            }).then(r => r.json()).then(d => {
+              reflection.text = d.summary;
+              updateLog(); updateEloChart(); updateLengthChart();
+            }).catch(() => {});
+          }
+          html += `<tr><td></td><td colspan="7" id="${rid}" style="color:#d2a8ff;font-size:11px;padding:4px 8px 10px;font-style:italic;line-height:1.5;">` +
+            `💭 ${reflection.text.replace(/\*\*(.+?)\*\*/g, '<b style="color:#c9d1d9;">$1</b>').replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:1px 4px;border-radius:2px;color:#d29922;">$1</code>')}</td></tr>`;
+        }
+      }
+    }
+  }
+  html += '</table>';
+  logPanel.innerHTML = html;
+}
+
+function updateEloChart() {
+  const canvas = document.getElementById('elo-chart');
+  if (!canvas) return;
+  if (logEntries.length === 0) {
+    const ctx2 = canvas.getContext('2d');
+    ctx2.fillStyle = '#8b949e';
+    ctx2.font = '12px monospace';
+    ctx2.fillText('Waiting for eval results...', 20, 30);
+    return;
+  }
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width || 900;
+  const H = rect.height || 180;
+  canvas.width = W * 2;
+  canvas.height = H * 2;
+  ctx.scale(2, 2);
+  const pad = {top: 20, right: 20, bottom: 30, left: 60};
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  // Compute best avg eval per generation
+  const chartEntries = logEntries.filter(e => e.type !== 'reflection');
+  const gens = [...new Set(chartEntries.map(e => e.gen))].sort((a, b) => a - b);
+  const getCp = e => e.composite ?? e.score ?? 0;
+  const bestPerGen = gens.map(g => {
+    const ge = chartEntries.filter(e => e.gen === g);
+    return Math.max(...ge.map(getCp));
+  });
+  const runningBest = [];
+  let cumMax = -Infinity;
+  for (const v of bestPerGen) {
+    cumMax = Math.max(cumMax, v);
+    runningBest.push(cumMax);
+  }
+
+  const allCp = chartEntries.map(getCp);
+  // Clip bottom outliers but always include the best
+  const sortedCp = [...allCp].sort((a,b) => a - b);
+  const p10 = sortedCp[Math.floor(sortedCp.length * 0.10)] ?? 0;
+  const topScore = Math.max(...allCp);
+  const minCp = p10 - 30;
+  const maxCp = topScore + 30;
+  const cpRange = Math.max(maxCp - minCp, 1);
+
+  function x(i) { return pad.left + (i / Math.max(gens.length - 1, 1)) * plotW; }
+  function y(cp) { return pad.top + plotH - ((cp - minCp) / cpRange) * plotH; }
+
+  // Background
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  const gridStep = cpRange > 2000 ? 500 : cpRange > 800 ? 200 : cpRange > 400 ? 100 : 50;
+  for (let cp = Math.ceil(minCp / gridStep) * gridStep; cp <= maxCp; cp += gridStep) {
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y(cp));
+    ctx.lineTo(W - pad.right, y(cp));
+    ctx.stroke();
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText((cp >= 0 ? '+' : '') + cp, pad.left - 6, y(cp) + 3);
+  }
+  // Zero line
+  if (minCp < 0 && maxCp > 0) {
+    ctx.strokeStyle = '#484f58';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(pad.left, y(0)); ctx.lineTo(W - pad.right, y(0)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  const labelStep = Math.max(1, Math.ceil(gens.length / 20));
+  for (let i = 0; i < gens.length; i += labelStep) {
+    ctx.fillText(`${gens[i]}`, x(i), H - 8);
+  }
+
+  // Plot all individual points (dots), clamp outliers to chart bounds
+  for (const e of chartEntries) {
+    const gi = gens.indexOf(e.gen);
+    const cp = Math.max(minCp, Math.min(maxCp, getCp(e)));
+    ctx.beginPath();
+    ctx.arc(x(gi), y(cp), 2, 0, Math.PI * 2);
+    ctx.fillStyle = e.wins > 0 ? '#3fb950' : cp >= 0 ? '#58a6ff' : '#484f58';
+    ctx.fill();
+  }
+
+  // Plot best-per-gen line
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < gens.length; i++) {
+    const py = y(bestPerGen[i]);
+    if (i === 0) ctx.moveTo(x(i), py);
+    else ctx.lineTo(x(i), py);
+  }
+  ctx.stroke();
+
+  // Plot running best (cumulative) as dashed line
+  ctx.strokeStyle = '#3fb950';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  for (let i = 0; i < gens.length; i++) {
+    const py = y(runningBest[i]);
+    if (i === 0) ctx.moveTo(x(i), py);
+    else ctx.lineTo(x(i), py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Legend
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#58a6ff';
+  ctx.fillText('● best in gen', W - 160, 14);
+  ctx.fillStyle = '#3fb950';
+  ctx.fillText('-- running best', W - 60, 14);
+
+  // Phase boundary
+  const p2Start = gens.findIndex(g => g >= 100);
+  if (p2Start > 0) {
+    ctx.strokeStyle = '#f0883e';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    const bx = (x(p2Start) + x(p2Start - 1)) / 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, pad.top);
+    ctx.lineTo(bx, pad.top + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f0883e';
+    ctx.font = '9px monospace';
+    ctx.fillText('frozen', bx + 4, pad.top + 10);
+  }
+}
+
+function updateLengthChart() {
+  const canvas = document.getElementById('length-chart');
+  if (!canvas) return;
+  const chartEntries = logEntries.filter(e => e.type !== 'reflection' && e.moves != null);
+  if (chartEntries.length === 0) return;
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width || 900;
+  const H = rect.height || 180;
+  canvas.width = W * 2; canvas.height = H * 2; ctx.scale(2, 2);
+  const pad = {top: 20, right: 20, bottom: 30, left: 40};
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const gens = [...new Set(chartEntries.map(e => e.gen))].sort((a,b) => a - b);
+  const getMoves = e => e.moves ?? 0;
+  const bestPerGen = gens.map(g => Math.max(...chartEntries.filter(e => e.gen === g).map(getMoves)));
+  const runningBest = []; let cumMax = 0;
+  for (const v of bestPerGen) { cumMax = Math.max(cumMax, v); runningBest.push(cumMax); }
+
+  const maxMv = Math.max(...chartEntries.map(getMoves)) + 2;
+  const minMv = 0;
+  const mvRange = Math.max(maxMv, 1);
+
+  function x(i) { return pad.left + (i / Math.max(gens.length - 1, 1)) * plotW; }
+  function y(mv) { return pad.top + plotH - ((mv - minMv) / mvRange) * plotH; }
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  for (let mv = 0; mv <= maxMv; mv += 5) {
+    ctx.beginPath(); ctx.moveTo(pad.left, y(mv)); ctx.lineTo(W - pad.right, y(mv)); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(mv.toString(), pad.left - 6, y(mv) + 3);
+  }
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  const labelStep = Math.max(1, Math.ceil(gens.length / 20));
+  for (let i = 0; i < gens.length; i += labelStep) ctx.fillText(`${gens[i]}`, x(i), H - 8);
+
+  // Dots
+  for (const e of chartEntries) {
+    const gi = gens.indexOf(e.gen);
+    ctx.beginPath(); ctx.arc(x(gi), y(getMoves(e)), 2, 0, Math.PI * 2);
+    ctx.fillStyle = getMoves(e) >= 30 ? '#3fb950' : '#484f58'; ctx.fill();
+  }
+  // Best-per-gen line
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i < gens.length; i++) {
+    if (i === 0) ctx.moveTo(x(i), y(bestPerGen[i])); else ctx.lineTo(x(i), y(bestPerGen[i]));
+  }
+  ctx.stroke();
+  // Running best
+  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath();
+  for (let i = 0; i < gens.length; i++) {
+    if (i === 0) ctx.moveTo(x(i), y(runningBest[i])); else ctx.lineTo(x(i), y(runningBest[i]));
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  // Legend
+  ctx.font = '10px monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = '#58a6ff'; ctx.fillText('● best in gen', W - pad.right, pad.top);
+  ctx.fillStyle = '#3fb950'; ctx.fillText('— running best', W - pad.right, pad.top + 14);
+}
+
+const seenLogLabels = new Set();
+const logSource = new EventSource('/log-events');
+logSource.onmessage = (e) => {
+  const entry = JSON.parse(e.data);
+  const key = entry.label + ':' + entry.gen;
+  if (!seenLogLabels.has(key)) {
+    seenLogLabels.add(key);
+    logEntries.push(entry);
+    updateLog(); updateEloChart(); updateLengthChart();
+  }
+};
+logSource.onerror = () => {
+  // On reconnect, clear dedup so replayed entries come through
+  seenLogLabels.clear();
+  logEntries.length = 0;
+};
+</script>
+</body>
+</html>
