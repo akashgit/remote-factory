@@ -9,6 +9,7 @@ from factory.outer_loop.mutations import (
     WeightedRandomStrategy,
     apply_random_mutation,
     insert_node,
+    mutate_knob,
     mutate_params,
     parallelize,
     redirect_edge,
@@ -248,3 +249,77 @@ class TestApplyRandomMutation:
             max_attempts=5,
         )
         assert result is None
+
+
+class TestKnobMutate:
+    def test_mutates_knob_within_bounds(self, simple_workflow: Workflow) -> None:
+        wf = simple_workflow.model_copy(update={
+            "knob_values": {"style": "broad"},
+            "knob_bounds": {"style": ["broad", "focused", "deep"]},
+        })
+        result = mutate_knob(wf, expander=None)
+        assert result is not None
+        child_wf, rec = result
+        assert rec.operator == MutationType.KNOB_MUTATE
+        assert child_wf.knob_values["style"] != "broad"
+        assert child_wf.knob_values["style"] in ["focused", "deep"]
+
+    def test_returns_none_without_knob_values(self, simple_workflow: Workflow) -> None:
+        result = mutate_knob(simple_workflow, expander=None)
+        assert result is None
+
+    def test_calls_expander_when_bounds_exhausted(self, simple_workflow: Workflow) -> None:
+        wf = simple_workflow.model_copy(update={
+            "knob_values": {"style": "only_option"},
+            "knob_bounds": {"style": ["only_option"]},
+            "knob_expandable": {"style": "invent a new style"},
+        })
+        expanded_value = None
+        def fake_expander(name, hint, current, bounds):
+            nonlocal expanded_value
+            expanded_value = "invented_style"
+            return "invented_style"
+        result = mutate_knob(wf, expander=fake_expander)
+        assert result is not None
+        child_wf, rec = result
+        assert child_wf.knob_values["style"] == "invented_style"
+        assert "invented_style" in child_wf.knob_bounds["style"]
+
+    def test_expander_not_called_when_not_expandable(self, simple_workflow: Workflow) -> None:
+        wf = simple_workflow.model_copy(update={
+            "knob_values": {"style": "only_option"},
+            "knob_bounds": {"style": ["only_option"]},
+        })
+        called = False
+        def spy_expander(name, hint, current, bounds):
+            nonlocal called
+            called = True
+            return "should_not_appear"
+        result = mutate_knob(wf, expander=spy_expander)
+        assert not called
+
+
+class TestKnobPreservation:
+    def test_insert_node_preserves_knobs(self, simple_workflow: Workflow) -> None:
+        wf = simple_workflow.model_copy(update={
+            "knob_values": {"style": "broad", "depth": 3.0},
+            "knob_bounds": {"style": ["broad", "deep"], "depth": [1.0, 5.0]},
+            "knob_expandable": {"style": "prompt hint"},
+        })
+        new_node = AgentNode(id="new_agent", role=AgentRole.RESEARCHER)
+        result = insert_node(wf, new_node, "strategist")
+        assert result is not None
+        child_wf, _ = result
+        assert child_wf.knob_values == {"style": "broad", "depth": 3.0}
+        assert child_wf.knob_bounds == {"style": ["broad", "deep"], "depth": [1.0, 5.0]}
+        assert child_wf.knob_expandable == {"style": "prompt hint"}
+
+    def test_remove_node_preserves_knobs(self, simple_workflow: Workflow) -> None:
+        wf = simple_workflow.model_copy(update={
+            "knob_values": {"mode": "parallel"},
+            "knob_bounds": {"mode": ["parallel", "serial"]},
+        })
+        result = remove_node(wf, "strategist")
+        assert result is not None
+        child_wf, _ = result
+        assert child_wf.knob_values == {"mode": "parallel"}

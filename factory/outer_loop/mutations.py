@@ -204,6 +204,9 @@ def _deep_copy_workflow(workflow: Workflow) -> Workflow:
         edges=edges,
         start_node=workflow.start_node,
         terminal=workflow.terminal,
+        knob_values=dict(workflow.knob_values),
+        knob_bounds={k: list(v) for k, v in workflow.knob_bounds.items()},
+        knob_expandable=dict(workflow.knob_expandable),
     )
 
 
