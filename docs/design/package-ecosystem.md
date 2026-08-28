@@ -2,6 +2,23 @@
 
 *Design proposal -- August 2026*
 
+## Implementation Status
+
+Phases 1-2 of the migration path (Section 6) are implemented in `factory/workflow/package.py`. Phase 3 is partially implemented.
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Package primitive | **Complete** | `Package`, `Port`, `StateContract`, `OptKnob`, `MemoryDeclaration` |
+| Phase 2: Composition operators | **Complete** | `Sequential`, `Parallel`, `Conditional`, `Loop`, `compile()` |
+| Phase 3: Optimization integration | **Partial** | `KNOB_MUTATE` operator, `knob_values`/`knob_bounds`/`knob_expandable` on `Workflow`, `compute_features` includes knob values, `default_knob_expander` for expandable knobs. `save()`/`Package.load()` not yet implemented. |
+| Phase 4: Registry | Not started | |
+| Phase 5: Architect agent | Not started | |
+
+**Model drifts from this design doc:**
+- `OptKnob.bounds` is `list[str | float]` (not `tuple`). Added `expandable: bool` and `expansion_hint: str` fields.
+- `StateContract.requires`/`produces` use `frozenset[str]` (not `set[str]`).
+- `MemoryDeclaration.schema` renamed to `schema_def` to avoid shadowing the Pydantic `schema` method.
+
 ## 1. Vision
 
 Remote factory today defines workflow modes as hand-wired DAGs of typed nodes. Each mode encodes a fixed topology: build, design, improve, research. This works, but the knowledge embedded in a workflow -- which agents to call, in what order, with what review gates -- is trapped inside monolithic Python functions. A team that builds a factory optimized for drug simulation cannot share their topology with a team doing compiler fuzzing without copy-pasting hundreds of lines of graph definitions.

@@ -65,6 +65,8 @@ The same graph definition produces two execution formats:
 - **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
 - **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
+**Package ecosystem** (`factory/workflow/package.py`): A `Package` wraps a workflow subgraph behind a typed interface (`Port`, `StateContract`, `OptKnob`, `MemoryDeclaration`) and composes with other Packages via `Sequential`, `Parallel`, `Conditional`, and `Loop` operators. `Package.compile()` lowers compositions to flat `Workflow` IR with `knob_values`, `knob_bounds`, and `knob_expandable` fields for optimizer-tunable parameters. See `docs/design/package-ecosystem.md` for the design doc.
+
 ### Layer 2b: Outer Loop — Evolutionary Workflow Search (`factory/outer_loop/`)
 
 The outer loop evolves workflow *topologies* via MAP-Elites quality-diversity search. Given a base workflow (e.g. the single-builder FeatureBench seed), it produces a population of structurally diverse candidates, evaluates each via an inner loop (one full CEO cycle per candidate), and uses contrastive reflection to guide mutations toward higher fitness.
@@ -74,9 +76,9 @@ The outer loop evolves workflow *topologies* via MAP-Elites quality-diversity se
 **Key modules:**
 - `engine.py` — `SwarmEngine` orchestrates the evolutionary loop: seeding, tournament selection, mutation, evaluation, convergence detection (plateau, diversity collapse, early stop)
 - `evaluator.py` — `SwarmEvaluator` with `FitnessCache` (structural-hash dedup) and `CycleRecordCache` (content-hash dedup). Supports both `EvaluatorFn` protocol and `FeatureBenchInnerLoop` evaluation with git worktree isolation
-- `mutations.py` — 7 structured graph mutation operators (`NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`) with `WeightedRandomStrategy` and reflection-guided selection
+- `mutations.py` — 8 structured mutation operators (`NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`, `KNOB_MUTATE`) with `WeightedRandomStrategy`, reflection-guided selection, and `default_knob_expander` (Opus via CLI) for runtime expansion of `OptKnob` bounds
 - `population.py` — `Population` (collection management) and `MAPElitesArchive` (4D grid: depth × fork_degree × agent_count × gate_count)
-- `similarity.py` — `structural_hash`, `graph_edit_distance`, `compute_features`, `NoveltyFilter`
+- `similarity.py` — `structural_hash`, `graph_edit_distance`, `compute_features` (includes knob values as feature dimensions for MAP-Elites diversity), `NoveltyFilter`
 - `reflector.py` — `OuterLoopReflector` performs two-stage contrastive reflection (top-K vs bottom-K) to identify failure/success patterns and generate mutation suggestions
 - `mode_registry.py` — `EphemeralModeRegistry` registers candidate workflows as temporary modes (`evolve-gen{N}-{id[:8]}`) with content-hash integrity checking, target-dir mirroring, and promotion to permanent modes
 - `designer.py` — `DesignerAgent` generates from-scratch workflow designs (minimal, thorough, custom variants)
@@ -154,7 +156,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 
 All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
 
-Outer loop models live in `factory/outer_loop/models.py`: `SwarmConfig` (evolutionary search configuration — benchmark, budget, population_size, mutation_rate, frozen_node_ids, training/holdout instances, convergence thresholds), `Individual` (candidate with workflow_data, score, features, lineage), `EvalResult` (benchmark_score + hygiene_score + cost + complexity), `GenerationSummary` (per-generation stats), `OuterLoopResult` (final run result with trajectory, pareto front, hyperparameter history), `HyperparameterRecord` (per-generation mutation_rate, operator_weights, diversity), `MutationRecord` (operator + target_node + before/after), `MutationType` (enum: 7 mutation operators), `OuterLoopState` (checkpoint for crash recovery), `AuditResult` (overfit detection).
+Outer loop models live in `factory/outer_loop/models.py`: `SwarmConfig` (evolutionary search configuration — benchmark, budget, population_size, mutation_rate, frozen_node_ids, training/holdout instances, convergence thresholds), `Individual` (candidate with workflow_data, score, features, lineage), `EvalResult` (benchmark_score + hygiene_score + cost + complexity), `GenerationSummary` (per-generation stats), `OuterLoopResult` (final run result with trajectory, pareto front, hyperparameter history), `HyperparameterRecord` (per-generation mutation_rate, operator_weights, diversity), `MutationRecord` (operator + target_node + before/after), `MutationType` (enum: 8 mutation operators including `KNOB_MUTATE`), `OuterLoopState` (checkpoint for crash recovery), `AuditResult` (overfit detection).
 
 ## Environment
 

@@ -76,5 +76,5 @@ Compare the baseline and overwrite runs:
 
 - Start with small, focused overwrites (one change at a time)
 - The overwrite is interpreted by a strategist agent into structured mutations
-- Valid mutations: update_node (change fields), remove_node, add_edge, remove_edge
+- Valid mutations: update_node (change fields), remove_node, add_edge, remove_edge, mutate_knob (change OptKnob values within bounds)
 - The overwrite only affects the current session — it does not persist

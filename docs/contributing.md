@@ -124,7 +124,16 @@ factory/
 ├── dashboard/              # FastAPI live dashboard
 ├── discovery/              # Project introspection
 ├── eval/                   # Three-tier eval system
-└── notify/                 # Telegram notifications
+├── notify/                 # Telegram notifications
+├── outer_loop/             # MAP-Elites evolutionary workflow search
+│   ├── engine.py           # SwarmEngine orchestrator
+│   ├── mutations.py        # 8 mutation operators (incl. KNOB_MUTATE)
+│   └── ...
+└── workflow/
+    ├── primitives.py       # Node types, Edge, Workflow
+    ├── package.py          # Package ecosystem: composition operators
+    ├── executor.py         # WorkflowExecutor (async DAG walker)
+    └── ...
 
 tests/                      # 3000+ tests mirroring factory/ structure
 ```

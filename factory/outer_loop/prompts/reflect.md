@@ -28,7 +28,7 @@ Compare the winners and losers. Identify:
 {
   "failure_patterns": ["..."],
   "success_patterns": ["..."],
-  "mutation_suggestions": ["NODE_INSERT: ...", "PARAM_MUTATE: ..."],
+  "mutation_suggestions": ["NODE_INSERT: ...", "PARAM_MUTATE: ...", "KNOB_MUTATE: ..."],
   "prompt_improvements": ["..."],
   "structural_recommendations": ["..."]
 }
