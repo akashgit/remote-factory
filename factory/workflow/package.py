@@ -52,7 +52,13 @@ class StateContract(BaseModel):
 
 
 class OptKnob(BaseModel):
-    """A parameter the outer loop is allowed to mutate."""
+    """A parameter the outer loop is allowed to mutate.
+
+    When ``expandable=True``, the outer loop may propose values beyond
+    the initial ``bounds``.  For prompt knobs this means authoring new
+    prompt text; for threshold knobs it means extrapolating the range.
+    ``expansion_hint`` tells the optimizer how to generate new values.
+    """
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
@@ -61,6 +67,8 @@ class OptKnob(BaseModel):
     node_id: str
     default: str | float
     bounds: list[str | float] = Field(default_factory=list)
+    expandable: bool = False
+    expansion_hint: str = ""
 
 
 class MemoryDeclaration(BaseModel):

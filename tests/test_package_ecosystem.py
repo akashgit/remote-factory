@@ -232,6 +232,44 @@ class TestPackagePrimitive:
         assert pkg.memory[0].kind == "vector"
 
 
+    def test_expandable_knob(self):
+        knob = OptKnob(
+            name="style", kind="prompt", node_id="n",
+            default="balanced", bounds=["balanced", "aggressive"],
+            expandable=True, expansion_hint="chess tactical prompt",
+        )
+        assert knob.expandable is True
+        assert knob.expansion_hint == "chess tactical prompt"
+
+    def test_knob_not_expandable_by_default(self):
+        knob = OptKnob(
+            name="mode", kind="topology", node_id="n",
+            default="parallel", bounds=["parallel", "serial"],
+        )
+        assert knob.expandable is False
+        assert knob.expansion_hint == ""
+
+    def test_compile_propagates_knob_values(self):
+        pkg = Package(
+            name="test",
+            graph=Workflow(
+                name="test",
+                nodes={"n": FnNode(id="n", command="echo")},
+                edges=[], start_node="n",
+            ),
+            entry_node="n", exit_node="n",
+            knobs=[OptKnob(name="timeout", kind="threshold", node_id="n",
+                           default=1800, bounds=[600, 3600])],
+        )
+        wf = pkg.compile()
+        assert wf.knob_values == {"timeout": 1800}
+
+    def test_compile_no_knobs_empty_dict(self):
+        pkg = _study_package()
+        wf = pkg.compile()
+        assert wf.knob_values == {}
+
+
 # ── Sequential composition ─────────────────────────────────────────
 
 
