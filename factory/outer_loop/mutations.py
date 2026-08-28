@@ -736,7 +736,7 @@ def _try_mutation(
     mutable_nodes = [
         nid for nid in workflow.nodes if nid not in frozen and nid != workflow.start_node
     ]
-    if not mutable_nodes and op not in (MutationType.NODE_INSERT,):
+    if not mutable_nodes and op not in (MutationType.NODE_INSERT, MutationType.KNOB_MUTATE):
         return None
 
     if op == MutationType.NODE_INSERT:

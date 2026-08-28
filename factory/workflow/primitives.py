@@ -319,13 +319,20 @@ class Workflow(BaseModel):
 
         edges_out = [e.model_dump(mode="json") for e in self.edges]
 
-        return {
+        result: dict[str, Any] = {
             "name": self.name,
             "nodes": nodes_out,
             "edges": edges_out,
             "start_node": self.start_node,
             "terminal": self.terminal,
         }
+        if self.knob_values:
+            result["knob_values"] = dict(self.knob_values)
+        if self.knob_bounds:
+            result["knob_bounds"] = {k: list(v) for k, v in self.knob_bounds.items()}
+        if self.knob_expandable:
+            result["knob_expandable"] = dict(self.knob_expandable)
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Workflow:
@@ -363,6 +370,9 @@ class Workflow(BaseModel):
             edges=edges,
             start_node=data["start_node"],
             terminal=data.get("terminal", False),
+            knob_values=data.get("knob_values", {}),
+            knob_bounds={k: list(v) for k, v in data.get("knob_bounds", {}).items()},
+            knob_expandable=data.get("knob_expandable", {}),
         )
 
 

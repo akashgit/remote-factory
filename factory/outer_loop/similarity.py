@@ -101,7 +101,10 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
     base = (depth, fork_degree, agent_count, gate_count)
 
     if workflow.knob_values:
-        knob_features = tuple(hash(str(v)) % 10 for v in workflow.knob_values.values())
+        knob_features = tuple(
+            int(hashlib.sha256(str(v).encode()).hexdigest(), 16) % 10
+            for v in workflow.knob_values.values()
+        )
         return base + knob_features
 
     return base

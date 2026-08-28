@@ -276,6 +276,11 @@ def Parallel(
 
     for pkg in pkg_list:
         for nid, node in pkg.graph.nodes.items():
+            if nid in all_nodes and nid not in (fork_id, join_id):
+                raise ValueError(
+                    f"Node ID collision: '{nid}' exists in multiple packages. "
+                    "Use unique node IDs or namespace them by package."
+                )
             all_nodes[nid] = node
         all_edges.extend(pkg.graph.edges)
 
@@ -332,6 +337,11 @@ def Conditional(
         all_edges.extend(pkg.graph.edges)
 
         condition = condition_map.get(label)
+        if condition is None:
+            raise ValueError(
+                f"Unknown branch label '{label}' in Conditional. "
+                f"Valid labels: {list(condition_map.keys())}"
+            )
         all_edges.append(Edge(source=gate.id, target=pkg.entry_node, condition=condition))
         all_edges.append(Edge(source=pkg.exit_node, target=exit_id))
 
@@ -365,8 +375,10 @@ def Loop(
 ) -> Package:
     """Wrap a package with a gate that re-enters on RELOOP."""
     composed_name = name or f"loop_{body.name}"
+    exit_id = f"exit_{composed_name}"
+    exit_node = FnNode(id=exit_id, command="true", notes="Loop exit point")
 
-    all_nodes: dict[str, NodeType] = {gate.id: gate}
+    all_nodes: dict[str, NodeType] = {gate.id: gate, exit_id: exit_node}
     all_edges: list[Edge] = []
 
     for nid, node in body.graph.nodes.items():
@@ -375,6 +387,7 @@ def Loop(
 
     all_edges.append(Edge(source=body.exit_node, target=gate.id))
     all_edges.append(Edge(source=gate.id, target=body.entry_node, condition=VerdictType.RELOOP))
+    all_edges.append(Edge(source=gate.id, target=exit_id, condition=VerdictType.PROCEED))
 
     graph = Workflow(
         name=composed_name,
@@ -390,7 +403,7 @@ def Loop(
         contract=body.contract,
         graph=graph,
         entry_node=body.entry_node,
-        exit_node=gate.id,
+        exit_node=exit_id,
         knobs=body.knobs,
         memory=body.memory,
     )

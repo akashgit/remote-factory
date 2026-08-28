@@ -416,13 +416,20 @@ class TestLoop:
         composed = Loop(body, gate)
 
         assert composed.entry_node == "build_node"
-        assert composed.exit_node == "gate_precheck"
+        assert composed.exit_node != "gate_precheck"  # exit is the PROCEED target, not the gate
 
         reloop_edges = [
             e for e in composed.graph.edges
             if e.source == "gate_precheck" and e.condition == VerdictType.RELOOP
         ]
         assert len(reloop_edges) == 1
+
+        proceed_edges = [
+            e for e in composed.graph.edges
+            if e.source == "gate_precheck" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed_edges) == 1
+        assert composed.exit_node == proceed_edges[0].target
         assert reloop_edges[0].target == "build_node"
 
         exit_edges = [
@@ -509,3 +516,122 @@ class TestCompileRoundTrip:
         assert restored.name == wf.name
         assert set(restored.nodes.keys()) == set(wf.nodes.keys())
         assert len(restored.edges) == len(wf.edges)
+
+
+# ── Bug fix tests (QA review B3-B8) ──────────────────────────────
+
+
+class TestB3SerializationKnobs:
+    """B3: to_dict/from_dict must preserve knob fields."""
+
+    def test_round_trip_preserves_knob_values(self):
+        pkg = Package(
+            name="test",
+            graph=Workflow(
+                name="test",
+                nodes={"n": FnNode(id="n", command="echo")},
+                edges=[], start_node="n",
+            ),
+            entry_node="n", exit_node="n",
+            knobs=[OptKnob(name="style", kind="prompt", node_id="n",
+                           default="aggressive", bounds=["aggressive", "balanced"],
+                           expandable=True, expansion_hint="try new styles")],
+        )
+        wf = pkg.compile()
+        data = wf.to_dict()
+        restored = Workflow.from_dict(data)
+        assert restored.knob_values == {"style": "aggressive"}
+        assert restored.knob_bounds == {"style": ["aggressive", "balanced"]}
+        assert restored.knob_expandable == {"style": "try new styles"}
+
+    def test_round_trip_empty_knobs(self):
+        wf = Workflow(
+            name="no_knobs",
+            nodes={"n": FnNode(id="n", command="echo")},
+            edges=[], start_node="n",
+        )
+        data = wf.to_dict()
+        assert "knob_values" not in data
+        restored = Workflow.from_dict(data)
+        assert restored.knob_values == {}
+
+
+class TestB4ParallelCollision:
+    """B4: Parallel must detect node ID collisions."""
+
+    def test_parallel_detects_collision(self):
+        pkg_a = Package(
+            name="a",
+            graph=Workflow(name="a", nodes={"shared": FnNode(id="shared", command="echo a")},
+                           edges=[], start_node="shared"),
+            entry_node="shared", exit_node="shared",
+        )
+        pkg_b = Package(
+            name="b",
+            graph=Workflow(name="b", nodes={"shared": FnNode(id="shared", command="echo b")},
+                           edges=[], start_node="shared"),
+            entry_node="shared", exit_node="shared",
+        )
+        import pytest
+        with pytest.raises(ValueError, match="Node ID collision"):
+            Parallel(pkg_a, pkg_b)
+
+    def test_parallel_no_collision(self):
+        a = _make_simple_package("alpha")
+        b = _make_simple_package("beta")
+        result = Parallel(a, b)
+        assert len(result.graph.nodes) >= 4  # fork + join + 2 nodes
+
+
+class TestB5LoopProceedEdge:
+    """B5: Loop must have a PROCEED exit edge."""
+
+    def test_loop_has_proceed_edge(self):
+        body = _make_simple_package("body")
+        gate = GateNode(id="gate", evaluator_type="fn", evaluator_command="echo PROCEED")
+        loop = Loop(body, gate)
+        wf = loop.compile()
+        proceed_edges = [e for e in wf.edges if e.condition == VerdictType.PROCEED]
+        assert len(proceed_edges) >= 1, "Loop must have a PROCEED exit edge"
+        reloop_edges = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
+        assert len(reloop_edges) >= 1, "Loop must have a RELOOP edge"
+
+    def test_loop_exit_node_is_not_gate(self):
+        body = _make_simple_package("body")
+        gate = GateNode(id="gate", evaluator_type="fn", evaluator_command="echo PROCEED")
+        loop = Loop(body, gate)
+        assert loop.exit_node != gate.id, "Exit should be the PROCEED target, not the gate"
+
+
+class TestB6DeterministicHash:
+    """B6: compute_features must be deterministic across calls."""
+
+    def test_deterministic_across_calls(self):
+        from factory.outer_loop.similarity import compute_features
+        wf = Workflow(
+            name="test",
+            nodes={"n": FnNode(id="n", command="echo")},
+            edges=[], start_node="n",
+            knob_values={"style": "aggressive", "mode": "parallel"},
+        )
+        f1 = compute_features(wf)
+        f2 = compute_features(wf)
+        assert f1 == f2
+
+
+class TestB8ConditionalUnknownLabel:
+    """B8: Conditional must reject unknown branch labels."""
+
+    def test_unknown_label_raises(self):
+        gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo PROCEED")
+        a = _make_simple_package("a")
+        import pytest
+        with pytest.raises(ValueError, match="Unknown branch label"):
+            Conditional(gate, {"TYPO": a})
+
+    def test_valid_labels_accepted(self):
+        gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo PROCEED")
+        a = _make_simple_package("a")
+        b = _make_simple_package("b")
+        result = Conditional(gate, {"PROCEED": a, "HALT": b})
+        assert result is not None
