@@ -807,6 +807,7 @@ def _try_mutation(
         return mutate_prompt(workflow, target, frozen_nodes=frozen, prompt_hint=prompt_hint)
 
     elif op == MutationType.KNOB_MUTATE:
-        return mutate_knob(workflow, expander=kwargs.get("expander"))
+        exp = kwargs.get("expander")
+        return mutate_knob(workflow, expander=exp if callable(exp) else None)
 
     return None
