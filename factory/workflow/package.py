@@ -135,6 +135,9 @@ class Package(BaseModel):
         if self.knobs:
             wf.knob_values = {k.name: k.default for k in self.knobs}
             wf.knob_bounds = {k.name: list(k.bounds) for k in self.knobs if k.bounds}
+            wf.knob_expandable = {
+                k.name: k.expansion_hint for k in self.knobs if k.expandable
+            }
         return wf
 
 
