@@ -354,6 +354,8 @@ def Conditional(
 
     all_inputs = [inp for p in pkg_list for inp in p.inputs]
     all_outputs = [out for p in pkg_list for out in p.outputs]
+    all_knobs = [k for p in pkg_list for k in p.knobs]
+    all_memory = [m for p in pkg_list for m in p.memory]
 
     return Package(
         name=composed_name,
@@ -363,6 +365,8 @@ def Conditional(
         graph=graph,
         entry_node=gate.id,
         exit_node=exit_id,
+        knobs=all_knobs,
+        memory=all_memory,
     )
 
 
