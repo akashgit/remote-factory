@@ -295,18 +295,35 @@ Constraints:
 - One approach MUST verify user intent against user-intent.md
 - Prompts must reference specific acceptance criteria and implementation details
 
-PHASE 2 — EXECUTE QA
-For each approach in the plan, spawn an adversarial tester agent:
+PHASE 2 — EXECUTE QA (ALL IN PARALLEL)
+Spawn ALL of the following in parallel — K adversarial testers plus one
+mandatory code reviewer:
+
+For each adversarial approach in the plan:
 ```
-factory agent adversarial_tester --task "<approach.prompt>" --project {project_path}
+factory agent adversarial_tester --review-tag <slug> --task "<approach.prompt>" --project {project_path} &
 ```
 
-Each tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+Plus one mandatory code review (always, regardless of K):
+```
+factory agent code_reviewer --task "Review the code changes on this branch. \
+Use /code-review for a thorough review covering correctness bugs, security \
+issues, edge cases, missing tests, style, scope creep, and simplification \
+opportunities. Focus on the diff — what changed, not the entire codebase." \
+--project {project_path} &
+```
 
-After ALL testers complete, review quality:
+Then `wait` for all K+1 agents to complete.
+
+Each adversarial tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+The code reviewer writes to `.factory/reviews/code-review.md`.
+
+After ALL agents complete, review quality:
 - Each adversarial report exists and has substantive findings
 - All acceptance criteria are covered by at least one tester
 - No tester missed its assigned focus area
+- Code review completed — if it found critical or high-severity issues,
+  flag them in your QA summary as blocking
 - Critical findings are actually reproducible (spot-check)
 
 If a tester produced thin output, re-invoke it with a more specific prompt.
@@ -314,21 +331,6 @@ If a tester produced thin output, re-invoke it with a more specific prompt.
 Each tester should output: Acceptance Criteria Verification (PASS/FAIL per
 criterion with evidence), Edge Case Findings (steps to reproduce, expected
 vs actual), and User Intent Verification (does output match user's ask).
-
-PHASE 3 — CODE REVIEW (MANDATORY)
-After all adversarial testers complete, run a code review:
-```
-factory agent code_reviewer --task "Review the code changes on this branch. \
-Use /code-review for a thorough review covering correctness bugs, security \
-issues, edge cases, missing tests, style, scope creep, and simplification \
-opportunities. Focus on the diff — what changed, not the entire codebase." \
---project {project_path}
-```
-
-The code reviewer writes to `.factory/reviews/code-review.md`.
-This step is MANDATORY — always run it regardless of K or adversarial results.
-If the code review finds critical or high-severity issues, flag them in your
-QA summary as blocking.
 
 Write a brief QA summary to the end of qa-plan.json noting which
 approaches completed, code review results, and any quality issues."""
