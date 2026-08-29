@@ -274,12 +274,34 @@ factory run /path/to/project --loop --interval 1800
 factory tmux /path/to/project --loop
 ```
 
+## Package ecosystem (`package.py`)
+
+A `Package` wraps a workflow subgraph behind a typed interface and composes with other Packages:
+
+- **`Port`** — named artifact slot (data plane)
+- **`StateContract`** — preconditions/postconditions (control plane)
+- **`OptKnob`** — parameter the outer loop can mutate (with optional `expandable=True` for runtime expansion)
+- **`MemoryDeclaration`** — what a package persists and how
+
+Composition operators: `Sequential`, `Parallel`, `Conditional`, `Loop`. All lower to flat `Workflow` DAGs via `Package.compile()`.
+
+The compiled `Workflow` carries three knob-related fields populated by `compile()`:
+- `knob_values: dict[str, str | float]` — current knob defaults
+- `knob_bounds: dict[str, list[str | float]]` — allowed values per knob
+- `knob_expandable: dict[str, str]` — expansion hints for knobs the optimizer can grow
+
+These fields are preserved through `to_dict()`/`from_dict()` serialization and `_deep_copy_workflow()` in the mutation operators.
+
+See `docs/design/package-ecosystem.md` for the full design doc.
+
 ## File layout
 
 ```
 factory/workflow/
 ├── __init__.py          # Public API: re-exports all primitives + executor
 ├── primitives.py        # Pydantic models: Node types, Edge, Verdict, Workflow
+├── package.py           # Package ecosystem: Package, Port, StateContract, OptKnob,
+│                        #   MemoryDeclaration, Sequential, Parallel, Conditional, Loop
 ├── definitions.py       # 8 workflow functions returning Workflow objects
 ├── executor.py          # WorkflowExecutor — async graph walker
 ├── validation.py        # NetworkX-based graph validator

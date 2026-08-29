@@ -63,7 +63,7 @@ calibrate ──▶ evaluate ──▶ reflect ──▶ evolve ──▶ gate_c
 1. **Calibrate** — Seeds the initial population from a base workflow. Creates N candidates: the unmodified seed + (N-1) random mutations.
 2. **Evaluate** — Runs each candidate on the benchmark instance via InnerLoop.step(). Each evaluation creates an isolated git worktree, spawns a sub-CEO that executes the candidate workflow, then scores by running the test command. Score = pytest pass rate (0.0–1.0) minus parsimony penalty.
 3. **Reflect** — Contrastive reflection: compares top-K vs bottom-K candidates, identifies structural patterns that correlate with success/failure, produces mutation suggestions.
-4. **Evolve** — Tournament selection + mutation. 7 mutation operators: `NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`. Reflection suggestions guide operator selection (70% guided, 30% random).
+4. **Evolve** — Tournament selection + mutation. 8 mutation operators: `NODE_INSERT`, `NODE_REMOVE`, `EDGE_REDIRECT`, `PARALLELIZE`, `SERIALIZE`, `PARAM_MUTATE`, `PROMPT_MUTATE`, `KNOB_MUTATE`. Reflection suggestions guide operator selection (70% guided, 30% random). `KNOB_MUTATE` searches the `OptKnob` values declared by Packages; when bounds are exhausted and the knob is `expandable`, `default_knob_expander` (Opus via CLI) invents new values at runtime.
 5. **Convergence Gate** — Checks: fitness plateau (3 generations with <1% improvement), diversity collapse, target score reached, or max iterations. RELOOP if not converged, PROCEED to promote if done.
 6. **Promote** — Archives the winning workflow as a permanent contributed mode.
 
@@ -131,9 +131,9 @@ Modes are registered via `EphemeralModeRegistry` which:
 |--------|---------|
 | `engine.py` | `SwarmEngine` — orchestrates the evolutionary loop |
 | `evaluator.py` | `SwarmEvaluator` — fitness evaluation with caching and worktree isolation |
-| `mutations.py` | 7 mutation operators + `WeightedRandomStrategy` |
-| `population.py` | `Population` + `MAPElitesArchive` (4D quality-diversity grid) |
-| `similarity.py` | `structural_hash`, `graph_edit_distance`, `NoveltyFilter` |
+| `mutations.py` | 8 mutation operators (incl. `KNOB_MUTATE`) + `WeightedRandomStrategy` + `default_knob_expander` |
+| `population.py` | `Population` + `MAPElitesArchive` (quality-diversity grid, dimensionality extends with knob values) |
+| `similarity.py` | `structural_hash`, `graph_edit_distance`, `compute_features` (includes hashed knob values), `NoveltyFilter` |
 | `reflector.py` | `OuterLoopReflector` — contrastive analysis of winners vs losers |
 | `mode_registry.py` | `EphemeralModeRegistry` — lifecycle management for candidate modes |
 | `designer.py` | `DesignerAgent` — from-scratch workflow design |

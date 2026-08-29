@@ -47,12 +47,16 @@ class OuterLoopReflector:
         self,
         records: list[tuple[str, float, CycleRecord | None]],
         generation: int = 0,
+        knob_values_by_id: dict[str, dict[str, object]] | None = None,
     ) -> ReflectionReport:
         """Analyze a generation's results via contrastive reflection.
 
         Args:
             records: list of (individual_id, fitness, CycleRecord|None) triples
             generation: current generation number
+            knob_values_by_id: optional mapping of individual_id to knob_values
+                dict. When provided, enables knob-contrastive analysis that
+                identifies which knob settings correlate with high/low scores.
 
         Returns:
             ReflectionReport with patterns and suggestions
@@ -80,6 +84,8 @@ class OuterLoopReflector:
         self._extract_success_patterns(top_k, report)
         self._generate_mutation_suggestions(top_k, bottom_k, report)
         self._generate_structural_recommendations(top_k, bottom_k, report)
+        if knob_values_by_id:
+            self._extract_knob_patterns(valid, top_k, bottom_k, knob_values_by_id, report)
 
         if self._project_dir:
             self._save_report(report, generation)
@@ -214,6 +220,63 @@ class OuterLoopReflector:
                         "consider parallelizing independent agents"
                     )
                     break
+
+    def _extract_knob_patterns(
+        self,
+        all_sorted: Sequence[tuple[str, float, CycleRecord | None]],
+        top_k: Sequence[tuple[str, float, CycleRecord | None]],
+        bottom_k: Sequence[tuple[str, float, CycleRecord | None]],
+        knob_values_by_id: dict[str, dict[str, object]],
+        report: ReflectionReport,
+    ) -> None:
+        """Contrastive analysis of knob values between winners and losers.
+
+        For each knob, computes the average score per value across all
+        individuals. Reports knobs where the best value significantly
+        outperforms the worst, giving the optimizer a per-knob gradient.
+        """
+        all_knob_names: set[str] = set()
+        for kv in knob_values_by_id.values():
+            all_knob_names.update(kv.keys())
+
+        for knob in sorted(all_knob_names):
+            val_scores: dict[str, list[float]] = {}
+            for id_, score, _ in all_sorted:
+                kv = knob_values_by_id.get(id_, {})
+                val = str(kv.get(knob, ""))
+                if val:
+                    val_scores.setdefault(val, []).append(score)
+
+            if len(val_scores) < 2:
+                continue
+
+            avg_by_val = {v: sum(s) / len(s) for v, s in val_scores.items() if s}
+            if not avg_by_val:
+                continue
+
+            best_val = max(avg_by_val, key=avg_by_val.get)  # type: ignore[arg-type]
+            worst_val = min(avg_by_val, key=avg_by_val.get)  # type: ignore[arg-type]
+            gap = avg_by_val[best_val] - avg_by_val[worst_val]
+
+            if gap > 0:
+                report.mutation_suggestions.append(
+                    f"KNOB_MUTATE: {knob}={best_val} (avg score {avg_by_val[best_val]:+.0f}) "
+                    f"outperforms {knob}={worst_val} ({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
+                )
+
+        # Top-K vs bottom-K: which knobs differ consistently?
+        top_ids = {id_ for id_, _, _ in top_k}
+        bottom_ids = {id_ for id_, _, _ in bottom_k}
+        for knob in sorted(all_knob_names):
+            top_vals = {str(knob_values_by_id.get(id_, {}).get(knob, "")) for id_ in top_ids}
+            bottom_vals = {str(knob_values_by_id.get(id_, {}).get(knob, "")) for id_ in bottom_ids}
+            top_vals.discard("")
+            bottom_vals.discard("")
+            if top_vals and bottom_vals and not top_vals & bottom_vals:
+                report.success_patterns.append(
+                    f"Top performers use {knob}={','.join(top_vals)}; "
+                    f"bottom use {knob}={','.join(bottom_vals)}"
+                )
 
     def _save_report(self, report: ReflectionReport, generation: int) -> None:
         if not self._project_dir:
