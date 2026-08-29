@@ -170,8 +170,8 @@ def _validate_ceo_flags(
         raw_path = getattr(args, "path", None)
         project_path = Path(raw_path).resolve() if raw_path else Path.cwd()
         entries = WorkflowRegistry.discover(project_path)
-        project_entries = {n for n, e in entries.items() if e.source == "project"}
-        if mode not in project_entries:
+        all_workflow_entries = set(entries.keys())
+        if mode not in all_workflow_entries:
             print(
                 f"Error: unknown mode '{mode}'. "
                 f"Not a built-in mode and not found in project workflows at "
@@ -193,13 +193,13 @@ def _validate_ceo_flags(
     from_plan: str | None = getattr(args, "from_plan", None)
     just_plan: bool = getattr(args, "just_plan", False)
 
-    if auto_approve and mode != "design":
-        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+    if auto_approve and mode not in ("design", "design-v2"):
+        print("Error: --auto-approve only applies to --mode design or design-v2", file=sys.stderr)
         return 1
 
     if just_plan:
-        if mode != "design":
-            print("Error: --just-plan requires --mode design", file=sys.stderr)
+        if mode not in ("design", "design-v2"):
+            print("Error: --just-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if from_plan:
             print("Error: --just-plan and --from-plan are mutually exclusive.", file=sys.stderr)
@@ -209,8 +209,8 @@ def _validate_ceo_flags(
             return 1
 
     if from_plan:
-        if mode != "design":
-            print("Error: --from-plan requires --mode design", file=sys.stderr)
+        if mode not in ("design", "design-v2"):
+            print("Error: --from-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if focus:
             print("Error: --from-plan and --focus are mutually exclusive.", file=sys.stderr)
@@ -255,10 +255,10 @@ def _validate_ceo_flags(
             return 1
 
     _design_is_existing = (
-        mode == "design" and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode in ("design", "design-v2") and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
-    if mode == "design":
+    if mode in ("design", "design-v2"):
         if auto_approve:
             headless = True
         elif headless:
@@ -354,7 +354,7 @@ def _resolve_ceo_project(
     context: str | None = None
 
     _design_is_existing = (
-        mode == "design" and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode in ("design", "design-v2") and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "create":
@@ -377,10 +377,10 @@ def _resolve_ceo_project(
                 if m.group(1) in registered:
                     update_existing_mode = m.group(1)
                     create_description = m.group(2).strip()
-    elif mode == "design" and _design_is_existing:
+    elif mode in ("design", "design-v2") and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
-    elif mode == "design":
+    elif mode in ("design", "design-v2"):
         resolved_file = Path(raw_path).expanduser()
         if _safe_is_file(resolved_file):
             design_idea = resolved_file.read_text()
@@ -485,6 +485,7 @@ def _validate_late_flags(
         and mode
         not in (
             "design",
+            "design-v2",
             "research",
             "create",
             "evolve",
@@ -639,8 +640,8 @@ def _execute_ceo(
     )
     if mode == "create":
         ceo_mode = "create"
-    elif mode == "design":
-        ceo_mode = "design"
+    elif mode in ("design", "design-v2"):
+        ceo_mode = mode
     elif interactive:
         ceo_mode = "design"
     else:
@@ -711,6 +712,7 @@ def _execute_ceo(
         from_plan=resolved_plan.plan if resolved_plan else None,
         from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
         just_plan=just_plan,
+        auto_approve=auto_approve,
     )
 
     session_name = _derive_session_name(
@@ -915,7 +917,7 @@ def _run_headless(
                 min_growth=min_growth,
                 max_new=max_new,
                 branch=branch,
-                already_improved=mode in ("design", "meta") or discover_only,
+                already_improved=mode in ("design", "design-v2", "meta") or discover_only,
                 model=model,
                 no_github=no_github,
                 use_profile=use_profile,
@@ -968,7 +970,7 @@ def _run_headless(
             min_growth=min_growth,
             max_new=max_new,
             branch=branch,
-            already_improved=mode in ("design", "meta") or discover_only,
+            already_improved=mode in ("design", "design-v2", "meta") or discover_only,
             model=model,
             no_github=no_github,
             use_profile=use_profile,

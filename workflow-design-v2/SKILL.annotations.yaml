@@ -1,0 +1,663 @@
+init_user_intent:
+  type: FnNode
+  id: init_user_intent
+  command: python3 -c "import datetime, os; project = '{project_path}'; ts = datetime.datetime.now().isoformat(timespec='seconds');
+    idea = os.environ.get('FOCUS', os.environ.get('FACTORY_IDEA', 'No idea provided'));
+    content = f'# User Intent Ledger\n\n## [{ts}] Initial Idea\n{idea}\n'; open(f'{project}/.factory/strategy/user-intent.md',
+    'w').write(content); print(f'User intent ledger initialized at {ts}')"
+  reads: []
+  writes:
+  - .factory/strategy/user-intent.md
+  edges_out:
+  - target: gate_has_factory
+    condition: null
+gate_has_factory:
+  type: GateNode
+  id: gate_has_factory
+  evaluator_type: fn
+  evaluator_command: python3 -c "from pathlib import Path; exists = Path("{project_path}/.factory/config.json").exists();
+    print("PROCEED" if exists else "HALT")"
+  reads: []
+  edges_out:
+  - target: graph_update
+    condition: PROCEED
+  - target: discover
+    condition: HALT
+discover:
+  type: FnNode
+  id: discover
+  command: factory discover {project_path}
+  reads: []
+  writes:
+  - .factory/eval_profile.json
+  edges_out:
+  - target: gate_factory_md_exists
+    condition: null
+gate_factory_md_exists:
+  type: GateNode
+  id: gate_factory_md_exists
+  evaluator_type: fn
+  evaluator_command: python3 -c "from pathlib import Path; exists = Path("{project_path}/factory.md").exists();
+    print("PROCEED" if exists else "HALT")"
+  reads: []
+  edges_out:
+  - target: factory_init
+    condition: PROCEED
+  - target: create_factory_md
+    condition: HALT
+create_factory_md:
+  type: AgentNode
+  id: create_factory_md
+  role: ceo
+  blocking: 'true'
+  reads:
+  - .factory/eval_profile.json
+  writes:
+  - factory.md
+  edges_out:
+  - target: factory_init
+    condition: null
+  slots:
+    task_prompt_create_factory_md: 'Create factory.md from template. Copy the factory
+      config template to the project root. Fill in: Goal, Scope, Guards, Eval command,
+      Threshold, and Smoke Test. If .factory/eval_spec.json exists, populate the Eval
+      Spec section. If .factory/strategy/current.md has a Research Configuration section,
+      populate research sections (Research Target, Mutable/Fixed Surfaces, etc.).
+
+      Read: .factory/eval_profile.json
+
+      Write output to: factory.md'
+    timeout_create_factory_md: '3600'
+factory_init:
+  type: FnNode
+  id: factory_init
+  command: factory init {project_path}
+  reads:
+  - factory.md
+  writes:
+  - .factory/config.json
+  edges_out:
+  - target: graph_update
+    condition: null
+graph_update:
+  type: FnNode
+  id: graph_update
+  command: factory graph update {project_path}
+  reads: []
+  writes:
+  - graph.json
+  edges_out:
+  - target: study
+    condition: null
+study:
+  type: Study
+  id: study
+  command: factory study {project_path}
+  writes:
+  - .factory/strategy/observations.md
+  edges_out:
+  - target: graph_explorer
+    condition: null
+graph_explorer:
+  type: AgentNode
+  id: graph_explorer
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/strategy/observations.md
+  writes:
+  - .factory/strategy/graph-context.md
+  edges_out:
+  - target: concat_study
+    condition: null
+  slots:
+    task_prompt_graph_explorer: 'Explore the project''s code knowledge graph to build
+      structural understanding. Read .factory/strategy/observations.md for focus context.
+
+
+      **Step 0 — detect graph availability:** Your working directory is already the
+      project root. The graph file lives at `$PROJECT_PATH/graph.json` (NOT inside
+      `.factory/`). Run this smoke check FIRST — use a relative path since your CWD
+      is the project root: `test -f graph.json && echo ''GRAPH AVAILABLE'' || echo
+      ''NO GRAPH''` — if the output says GRAPH AVAILABLE, proceed with the graph commands
+      below. If the output says NO GRAPH, skip to the fallback section.
+
+
+      **If the graph IS available:**
+
+      1. Run `factory graph query "$PROJECT_PATH" "<focus from observations>" --depth
+      2` to find relevant nodes
+
+      2. Run `factory graph explain "$PROJECT_PATH" "<key node>"` on the most important
+      nodes to understand their connections and dependencies
+
+      3. Run `factory graph path "$PROJECT_PATH" "<A>" "<B>"` to trace dependency
+      paths between key components
+
+      4. Write structured findings to .factory/strategy/graph-context.md covering:
+      key modules and their relationships, dependency paths, architectural layers,
+      entry points and hotspots
+
+
+      **If the graph is NOT available**, fall back to direct file exploration:
+
+      1. Use `find . -name ''*.py'' | head -50` to discover source files
+
+      2. Use `grep -rn ''class \|def '' --include=''*.py'' | head -100` to map functions
+      and classes
+
+      3. Use `grep -rn ''import '' --include=''*.py'' | head -100` to trace dependencies
+
+      4. Write the same structured findings to .factory/strategy/graph-context.md
+
+      Read: .factory/strategy/observations.md
+
+      Write output to: .factory/strategy/graph-context.md'
+    timeout_graph_explorer: '600'
+concat_study:
+  type: FnNode
+  id: concat_study
+  command: cat {project_path}/.factory/strategy/observations.md {project_path}/.factory/strategy/graph-context.md
+    > {project_path}/.factory/strategy/study-combined.md
+  reads:
+  - .factory/strategy/graph-context.md
+  - .factory/strategy/observations.md
+  writes:
+  - .factory/strategy/study-combined.md
+  edges_out:
+  - target: research_director
+    condition: null
+research_director:
+  type: AgentNode
+  id: research_director
+  role: ceo
+  blocking: 'true'
+  reads:
+  - .factory/strategy/study-combined.md
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/strategy/research-plan.json
+  edges_out:
+  - target: strategy_director
+    condition: null
+  slots:
+    task_prompt_research_director: "You are the Research Director for this design\
+      \ session.\n\nRead:\n- `.factory/strategy/study-combined.md` — project study\
+      \ findings (observations + graph analysis)\n- `.factory/strategy/user-intent.md`\
+      \ — the user's original idea\n\nYour task has TWO phases:\n\nPHASE 1 — DESIGN\
+      \ RESEARCH DIRECTIONS\nAnalyze the design space and identify N orthogonal research\
+      \ dimensions.\nDefault dimensions (adapt or replace based on the specific project):\n\
+      \  - Similar projects / prior art\n  - Technology stack options\n  - Common\
+      \ pitfalls and failure modes\nYou may add dimensions specific to the domain\
+      \ (e.g., security, UX patterns,\ndata model constraints, compliance requirements,\
+      \ API design, concurrency).\n\nN is NOT fixed — YOU decide based on domain complexity:\n\
+      \  - Simple CLI or library: 3 directions\n  - Web app with auth, database, UI:\
+      \ 4-5 directions\n  - Complex system with integrations, security, compliance:\
+      \ 5-7 directions\n\nFor each direction, design a TAILORED prompt — not a generic\
+      \ template.\nBad: \"Research similar projects and prior art\"\nGood: \"Find\
+      \ existing link-checking tools that handle Obsidian-style wikilinks\n      \
+      \ ([[note]]) and image embeds (![[image.png]]). Compare how they resolve\n \
+      \      relative paths vs vault-root-relative paths.\"\n\nWrite the research\
+      \ plan to `.factory/strategy/research-plan.json`:\n```json\n[\n  {\"focus\"\
+      : \"...\", \"slug\": \"...\", \"prompt\": \"...\"}\n]\n```\n\nConstraints:\n\
+      - Minimum 3 directions, maximum 7\n- Each slug must be unique and kebab-case\n\
+      - Prompts must be specific to THIS project, not generic templates\n\nPHASE 2\
+      \ — EXECUTE RESEARCH\nFor each direction in the plan, spawn a researcher agent:\n\
+      ```\nfactory agent researcher --task \"<direction.prompt>\" --project $PROJECT_PATH\n\
+      ```\n\nEach researcher writes to `.factory/strategy/research-<slug>.md`.\n\n\
+      After ALL researchers complete, review quality:\n- Each research file exists\
+      \ and has substantive content (>50 bytes)\n- No two reports cover the same ground\
+      \ excessively\n- Key risks and opportunities are covered\n\nIf a researcher\
+      \ produced thin output, re-invoke it with a more specific prompt.\n\nWrite a\
+      \ brief research summary to the end of research-plan.json noting\nwhich directions\
+      \ completed and any quality issues.\nRead: .factory/strategy/study-combined.md,\
+      \ .factory/strategy/user-intent.md\nWrite output to: .factory/strategy/research-plan.json"
+    timeout_research_director: '3600'
+strategy_director:
+  type: AgentNode
+  id: strategy_director
+  role: ceo
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-plan.json
+  - .factory/strategy/study-combined.md
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/strategy/strategy-plan.json
+  edges_out:
+  - target: synthesize_strategy
+    condition: null
+  slots:
+    task_prompt_strategy_director: "You are the Strategy Director for this design\
+      \ session.\n\nRead:\n- ALL research reports at `.factory/strategy/research-*.md`\n\
+      - `.factory/strategy/research-plan.json` — which research directions were explored\n\
+      - `.factory/strategy/user-intent.md` — the user's original idea\n- `.factory/strategy/study-combined.md`\
+      \ — project context\n\nYour task has TWO phases:\n\nPHASE 1 — DESIGN STRATEGY\
+      \ PERSPECTIVES\nAnalyze the research findings and user intent to identify M\
+      \ strategy\nperspectives this project needs.\n\nDefault perspectives (adapt\
+      \ or replace based on the specific project):\n  - Architecture strategy — how\
+      \ to build it (components, phases, tech choices)\n  - Testing/verification strategy\
+      \ — how to verify it works (acceptance criteria,\n    test plan, edge cases)\n\
+      \  - Risk/scope strategy — what to cut, what's hard, what breaks\n\nYou may\
+      \ add perspectives specific to the domain:\n  - Security strategy (for auth-heavy\
+      \ projects)\n  - Data modeling strategy (for data-heavy projects)\n  - API design\
+      \ strategy (for API-first projects)\n  - Performance strategy (for latency-sensitive\
+      \ systems)\n\nM is NOT fixed — YOU decide based on project complexity:\n  -\
+      \ Simple project: 2-3 perspectives\n  - Medium project: 3-4 perspectives\n \
+      \ - Complex project: 4-5 perspectives\n\nFor each perspective, design a TAILORED\
+      \ prompt.\nBad: \"Create an architecture strategy\"\nGood: \"Design the architecture\
+      \ for a markdown link checker CLI. The core\n       challenge is resolving Obsidian\
+      \ wikilinks against a configurable vault\n       root while also supporting\
+      \ standard URLs with redirect following.\n       Research shows <X library>\
+      \ handles HTTP well but nothing handles\n       wikilinks — design that component\
+      \ from scratch.\"\n\nWrite the strategy plan to `.factory/strategy/strategy-plan.json`:\n\
+      ```json\n[\n  {\"perspective\": \"...\", \"slug\": \"...\", \"prompt\": \"...\"\
+      }\n]\n```\n\nConstraints:\n- Minimum 2 perspectives, maximum 5\n- Each slug\
+      \ must be unique and kebab-case\n- One perspective MUST cover testing/verification\
+      \ with explicit acceptance criteria\n- Prompts must reference specific findings\
+      \ from the research reports\n\nPHASE 2 — EXECUTE STRATEGIES\nFor each perspective\
+      \ in the plan, spawn a strategist agent:\n```\nfactory agent strategist --task\
+      \ \"<perspective.prompt>\" --project $PROJECT_PATH\n```\n\nEach strategist writes\
+      \ to `.factory/strategy/strategy-<slug>.md`.\n\nAfter ALL strategists complete,\
+      \ review quality:\n- Each strategy file exists and has substantive content (>100\
+      \ bytes)\n- The testing strategy has a `### Acceptance Criteria` section with\
+      \ checkboxes\n- Architecture strategy cites research findings\n- No critical\
+      \ perspective is missing\n\nIf a strategist produced thin output, re-invoke\
+      \ it with a more specific prompt.\n\nWrite a brief strategy summary to the end\
+      \ of strategy-plan.json noting\nwhich perspectives completed and any quality\
+      \ issues.\nRead: .factory/strategy/research-plan.json, .factory/strategy/study-combined.md,\
+      \ .factory/strategy/user-intent.md\nWrite output to: .factory/strategy/strategy-plan.json"
+    timeout_strategy_director: '3600'
+synthesize_strategy:
+  type: AgentNode
+  id: synthesize_strategy
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: design_doc
+    condition: null
+  slots:
+    task_prompt_synthesize_strategy: "You are the Strategy Synthesizer. Compile one\
+      \ final plan from all\nstrategy inputs.\n\nRead:\n- ALL strategy files at `.factory/strategy/strategy-*.md`\n\
+      - `.factory/strategy/strategy-plan.json` — which perspectives were explored\n\
+      - `.factory/strategy/user-intent.md` — ground truth for user's ask\n\nWrite\
+      \ the final plan to `.factory/strategy/current.md`.\n\nRequired sections (in\
+      \ this order):\n### Architecture\n  Merge from architecture strategy. Include\
+      \ component list and interfaces.\n### Phased Plan\n  #### Phase 1: <name>\n\
+      \  - **What:** <specific changes from architecture strategy>\n  - **Why:** <rationale>\n\
+      \  - **Acceptance criteria:** <from testing strategy — inline the relevant criteria>\n\
+      \  - **Risks:** <from risk strategy — inline relevant risks>\n  #### Phase 2:\
+      \ <name>\n  ...\n### Acceptance Criteria\n  Full checklist from testing strategy.\
+      \ Each item must be:\n  - [ ] Specific enough for pass/fail verification\n \
+      \ - Traceable to user intent (cite which part of user-intent.md)\n### MVP Scope\n\
+      \  From risk strategy. In vs deferred.\n### Deferred Features\n  Items requiring\
+      \ human intervention or explicitly deferred.\n\nCRITICAL: The ### Acceptance\
+      \ Criteria section is the contract between\nthe builder and QA. It flows to\
+      \ adversarial testers who verify each\ncriterion independently. Make every item\
+      \ testable and unambiguous.\nRead: .factory/strategy/user-intent.md\nWrite output\
+      \ to: .factory/strategy/current.md"
+    timeout_synthesize_strategy: '600'
+design_doc:
+  type: AgentNode
+  id: design_doc
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_design_doc: "You are a Technical Writer and Design Architect. Your\
+      \ job: take the structured\nstrategy at `.factory/strategy/current.md` and rewrite\
+      \ it as a proper\nDESIGN DOCUMENT — a document a human reviewer can read end-to-end\
+      \ and\nunderstand exactly what is being built, why, and how.\n\nRead:\n- `.factory/strategy/current.md`\
+      \ — the structured strategy (your raw input)\n- `.factory/strategy/user-intent.md`\
+      \ — the user's original idea and feedback\n\nRewrite `.factory/strategy/current.md`\
+      \ IN PLACE. Replace the compressed\nbullet points with a well-structured design\
+      \ document.\n\nRequired sections (in this order):\n\n## What We're Building\n\
+      \  Explain the project in 2-3 paragraphs of prose. What does it do?\n  Who is\
+      \ it for? What problem does it solve? Reference the user's\n  original words\
+      \ from user-intent.md.\n\n## Architecture\n  Describe the system architecture\
+      \ in full sentences.\n  Include a text-based architecture diagram using box-drawing\
+      \ characters:\n  ```\n  ┌──────────┐     ┌──────────┐     ┌──────────┐\n  │\
+      \ Component│────▶│ Component│────▶│ Component│\n  └──────────┘     └──────────┘\
+      \     └──────────┘\n  ```\n  Explain each component — what it does, why it exists,\
+      \ how it connects.\n\n## How It Works\n  Walk through the user flow step by\
+      \ step. For a CLI, show example\n  invocations and expected output. For a web\
+      \ app, describe the user\n  journey screen by screen. For a library, show usage\
+      \ examples.\n\n  This should read like a tutorial — someone unfamiliar with\
+      \ the project\n  should be able to follow along.\n\n## Phased Plan\n  For each\
+      \ phase, explain:\n  - What gets built in this phase and why this ordering\n\
+      \  - What the user can do after this phase completes\n  - How to verify the\
+      \ phase worked (concrete test commands or checks)\n\n  Use prose paragraphs,\
+      \ not just bullet points. Each phase should\n  read as a self-contained \"chapter.\"\
+      \n\n## Acceptance Criteria\n  Present the full checklist, but group criteria\
+      \ by category and add\n  context for each. Explain WHY each criterion matters,\
+      \ not just what it is.\n\n  Format: category heading, then checkbox items with\
+      \ brief explanation.\n\n## MVP Scope\n  What's in, what's deferred, and why.\
+      \ Explain the tradeoffs.\n\n## Deferred Features\n  Items deferred to future\
+      \ phases, with brief rationale.\n\nCRITICAL RULES:\n- Write in full sentences\
+      \ and paragraphs, NOT bullet points\n- The reader should understand the design\
+      \ WITHOUT reading any other file\n- Include concrete examples (CLI invocations,\
+      \ API calls, code snippets)\n- Architecture diagrams must use text/box-drawing\
+      \ characters\n- Every technical choice must be explained — no unexplained jargon\n\
+      - The document must be self-contained: a human reviewer reads ONLY this\n  file\
+      \ and decides whether to approve the design\nRead: .factory/strategy/current.md,\
+      \ .factory/strategy/user-intent.md\nWrite output to: .factory/strategy/current.md"
+    timeout_design_doc: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: user
+  reads:
+  - .factory/strategy/current.md
+  - .factory/strategy/user-intent.md
+  edges_out:
+  - target: archivist_plan
+    condition: PROCEED
+  - target: strategy_director
+    condition: RELOOP
+  slots:
+    max_iterations_gate_strategy: '3'
+archivist_plan:
+  type: AgentNode
+  id: archivist_plan
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/archive/plan.md
+  edges_out:
+  - target: builder
+    condition: null
+  slots:
+    task_prompt_archivist_plan: 'Archive the approved research and strategy.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/archive/plan.md'
+    timeout_archivist_plan: '300'
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Implement the next phase from .factory/strategy/current.md.
+      Read the CEO''s plan approval at .factory/reviews/ceo-verdict-strategist.md.
+      Read CLAUDE.md and factory.md if they exist. Implement exactly what the current
+      phase describes. Run tests. Commit changes and open a draft PR.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '1200'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: fork_qa
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_build: Read builder output. Check git log and diff. Does the
+      work match the plan for this phase? If the Builder opened a PR, read it. REDIRECT
+      if off-scope or missed key requirements.
+    max_iterations_gate_build: '3'
+fork_qa:
+  type: ForkNode
+  id: fork_qa
+  targets: health_checker,code_reviewer,qa_director
+  edges_out:
+  - target: join_qa
+    condition: null
+health_checker:
+  type: AgentNode
+  id: health_checker
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/health-check.md
+  edges_out: []
+  slots:
+    task_prompt_health_checker: 'Execute health_checker task for the project.
+
+      Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/health-check.md'
+    timeout_health_checker: '600'
+code_reviewer:
+  type: AgentNode
+  id: code_reviewer
+  role: code_reviewer
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/code-review.md
+  edges_out: []
+  slots:
+    task_prompt_code_reviewer: 'Execute code_reviewer task for the project.
+
+      Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/code-review.md'
+    timeout_code_reviewer: '900'
+qa_director:
+  type: AgentNode
+  id: qa_director
+  role: ceo
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/reviews/qa-plan.json
+  edges_out: []
+  slots:
+    task_prompt_qa_director: "You are the QA Director for this design session.\n\n\
+      Read:\n- `.factory/strategy/current.md` — the design document with acceptance\
+      \ criteria\n- `.factory/strategy/user-intent.md` — what the user ACTUALLY asked\
+      \ for\n- `.factory/reviews/builder-latest.md` — what the builder implemented\n\
+      \nYour task has TWO phases:\n\nPHASE 1 — DESIGN QA APPROACHES\nAnalyze the acceptance\
+      \ criteria, the user's intent, and the builder's\nimplementation to identify\
+      \ K orthogonal testing approaches.\n\nDefault approaches (adapt or replace based\
+      \ on the specific project):\n  - Happy path verification — does each acceptance\
+      \ criterion pass with\n    normal, expected inputs?\n  - Edge case & boundary\
+      \ testing — empty inputs, large inputs, special\n    characters, off-by-one,\
+      \ boundary conditions\n  - User intent verification — does the output match\
+      \ what the user\n    ACTUALLY asked for (from user-intent.md), not just the\
+      \ plan?\n\nYou may add approaches specific to the implementation:\n  - Security\
+      \ testing (for auth, file I/O, user-facing APIs)\n  - Integration testing (for\
+      \ multi-component systems)\n  - Performance testing (for latency-sensitive features)\n\
+      \  - Error handling testing (for systems with many failure modes)\n  - Concurrency\
+      \ testing (for parallel/async systems)\n\nK is NOT fixed — YOU decide based\
+      \ on the complexity of the acceptance\ncriteria and the nature of the implementation:\n\
+      \  - Simple implementation (3-5 criteria): 2 testers\n  - Medium implementation\
+      \ (5-10 criteria): 3 testers\n  - Complex implementation (10+ criteria, security,\
+      \ integrations): 4-5 testers\n\nFor each approach, design a TAILORED prompt\
+      \ — not a generic template.\nBad: \"Test the implementation for edge cases\"\
+      \nGood: \"Test the Obsidian wikilink resolver with these edge cases:\n     \
+      \  nested vault folders (vault/sub/note.md linking to ../other.md),\n      \
+      \ wikilinks with display text ([[note|display]]),\n       wikilinks to non-existent\
+      \ files, wikilinks with anchor\n       fragments ([[note#heading]]), and case-sensitivity\
+      \ mismatches.\"\n\nWrite the QA plan to `.factory/reviews/qa-plan.json`:\n```json\n\
+      [\n  {\"approach\": \"...\", \"slug\": \"...\", \"prompt\": \"...\"}\n]\n```\n\
+      \nConstraints:\n- Minimum 2 approaches, maximum 5\n- Each slug must be unique\
+      \ and kebab-case\n- ALL acceptance criteria from current.md must be covered\
+      \ by at least\n  one tester's prompt\n- One approach MUST verify user intent\
+      \ against user-intent.md\n- Prompts must reference specific acceptance criteria\
+      \ and implementation details\n\nPHASE 2 — EXECUTE QA\nFor each approach in the\
+      \ plan, spawn an adversarial tester agent:\n```\nfactory agent adversarial_tester\
+      \ --task \"<approach.prompt>\" --project $PROJECT_PATH\n```\n\nEach tester writes\
+      \ to `.factory/reviews/adversarial-<slug>-latest.md`.\n\nAfter ALL testers complete,\
+      \ review quality:\n- Each adversarial report exists and has substantive findings\n\
+      - All acceptance criteria are covered by at least one tester\n- No tester missed\
+      \ its assigned focus area\n- Critical findings are actually reproducible (spot-check)\n\
+      \nIf a tester produced thin output, re-invoke it with a more specific prompt.\n\
+      \nWrite a brief QA summary to the end of qa-plan.json noting which\napproaches\
+      \ completed and any quality issues.\nRead: .factory/reviews/builder-latest.md,\
+      \ .factory/strategy/current.md, .factory/strategy/user-intent.md\nWrite output\
+      \ to: .factory/reviews/qa-plan.json"
+    timeout_qa_director: '3600'
+join_qa:
+  type: JoinNode
+  id: join_qa
+  sources: health_checker,code_reviewer,qa_director
+  reads:
+  - .factory/reviews/code-review.md
+  - .factory/reviews/health-check.md
+  - .factory/reviews/qa-plan.json
+  writes: []
+  edges_out:
+  - target: synthesize_qa
+    condition: null
+synthesize_qa:
+  type: FnNode
+  id: synthesize_qa
+  command: 'python3 -c "from pathlib import Path; import re, glob; project = ''{project_path}'';
+    reports = []; for p in sorted(Path(f''{project}/.factory/reviews'').glob(''adversarial-*-latest.md'')):     slug
+    = p.name.replace(''-latest.md'', '''').replace(''adversarial-'', '''');     reports.append((slug,
+    p.read_text())); findings = {}; for tester_slug, text in reports:     for line
+    in text.splitlines():         stripped = line.strip();         if stripped.startswith(''-
+    '') or stripped.startswith(''* ''):             key = re.sub(r''\s+'', '' '',
+    stripped[2:].strip().lower()[:80]);             findings.setdefault(key, []).append(tester_slug);
+    high = [(k, v) for k, v in findings.items() if len(v) >= 2]; medium = [(k, v)
+    for k, v in findings.items() if len(v) == 1]; out = [''# Synthesized QA Report\n''];
+    hc = Path(f''{project}/.factory/reviews/health-check.md''); cr = Path(f''{project}/.factory/reviews/code-review.md'');
+    out.append(''## Health Check\n''); out.append(hc.read_text() if hc.exists() else
+    ''(not available)''); out.append(''\n## Code Review\n''); out.append(cr.read_text()
+    if cr.exists() else ''(not available)''); out.append(''\n## High-Confidence Adversarial
+    Findings (caught by 2+ testers)\n''); [out.append(f''- {k} (testers: {v})'') for
+    k, v in high]; if not high: out.append(''- (none)''); out.append(''\n## Medium-Confidence
+    Adversarial Findings (single tester)\n''); [out.append(f''- {k} (tester: {v[0]})'')
+    for k, v in medium]; if not medium: out.append(''- (none)''); out.append(''\n##
+    Raw Adversarial Reports\n''); [out.append(f''### Tester: {slug}\n{text}\n'') for
+    slug, text in reports]; Path(f''{project}/.factory/reviews/qa-synthesized.md'').write_text(''\n''.join(out));
+    print(f''Synthesized {len(high)} high + {len(medium)} medium findings from {len(reports)}
+    adversarial reports'')"'
+  reads:
+  - .factory/reviews/code-review.md
+  - .factory/reviews/health-check.md
+  writes:
+  - .factory/reviews/qa-synthesized.md
+  edges_out:
+  - target: gate_qa
+    condition: null
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-synthesized.md
+  - .factory/strategy/user-intent.md
+  edges_out:
+  - target: gate_doc_freshness
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: "You are the CEO reviewing QA results. This is the final\
+      \ gate before merge.\n\nRead:\n- `.factory/strategy/user-intent.md` — what the\
+      \ user ACTUALLY asked for\n- `.factory/reviews/qa-synthesized.md` — merged QA\
+      \ report (health check,\n  code review, and synthesized adversarial findings)\n\
+      \nDecision framework:\n\nPROCEED if ALL of these hold:\n  1. All acceptance\
+      \ criteria from current.md are verified PASS\n  2. Health check passes (tests\
+      \ green, eval not regressed)\n  3. No blocking code review issues\n  4. No HIGH-confidence\
+      \ adversarial findings that violate user intent\n\nRELOOP to builder (max 3\
+      \ iterations) if ANY of these hold:\n  1. An acceptance criterion failed — cite\
+      \ which one\n  2. Health check failed — cite which check\n  3. Blocking review\
+      \ or HIGH adversarial findings\n\n  When relooping, provide feedback mapped\
+      \ to SPECIFIC user requirements:\n  - \"User asked for X (user-intent.md), but\
+      \ <finding from QA>\"\n  - \"Acceptance criterion '<criterion>' FAILED: <evidence>\"\
+      \n\n  IMPORTANT: Append your reloop feedback to .factory/strategy/user-intent.md\n\
+      \  under a new '## [timestamp] Reloop Feedback (Iteration N)' heading.\n\nHALT\
+      \ if:\n  - 3 reloops exhausted without resolution\n  - Fundamental design flaw\
+      \ that builder iterations cannot fix"
+    max_iterations_gate_qa: '3'
+gate_doc_freshness:
+  type: GateNode
+  id: gate_doc_freshness
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-synthesized.md
+  edges_out:
+  - target: gate_precheck
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_doc_freshness: Check the PR diff for documentation freshness.
+      If public APIs, CLI commands, configuration options, or architecture were changed
+      or added, corresponding documentation (README.md, CLAUDE.md, docstrings, --help
+      text, or doc/ files) MUST be updated. PROCEED if docs are current or no doc-worthy
+      changes exist. RELOOP to builder if documentation is stale — specify exactly
+      which changes need doc updates.
+    max_iterations_gate_doc_freshness: '3'
+gate_precheck:
+  type: GateNode
+  id: gate_precheck
+  evaluator_type: fn
+  evaluator_command: factory precheck {project_path} --score-before 0 --score-after
+    0
+  reads:
+  - .factory/reviews/qa-synthesized.md
+  edges_out:
+  - target: archivist_build
+    condition: PROCEED
+  - target: archivist_build
+    condition: HALT
+archivist_build:
+  type: AgentNode
+  id: archivist_build
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/qa-synthesized.md
+  writes:
+  - .factory/archive/build.md
+  edges_out:
+  - target: spec_generate
+    condition: null
+  slots:
+    task_prompt_archivist_build: 'Archive the build phase results.
+
+      Read: .factory/reviews/qa-synthesized.md
+
+      Write output to: .factory/archive/build.md'
+    timeout_archivist_build: '300'
+spec_generate:
+  type: FnNode
+  id: spec_generate
+  command: factory workflow run spec-generate {project_path}
+  reads: []
+  writes: []
+  edges_out: []
