@@ -1384,9 +1384,6 @@ def _get_builtin_registry() -> dict[str, Any]:
         "outer-loop": lambda: __import__(
             "factory.workflow.contributed.outer_loop", fromlist=["workflow"]
         ).workflow(),
-        "design-v2": lambda: __import__(
-            "factory.workflow.contributed.design_v2", fromlist=["workflow"]
-        ).workflow(),
     }
     return _BUILTIN_REGISTRY
 
