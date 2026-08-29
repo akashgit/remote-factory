@@ -244,7 +244,7 @@ Read:
 - `.factory/strategy/user-intent.md` — what the user ACTUALLY asked for
 - `.factory/reviews/builder-latest.md` — what the builder implemented
 
-Your task has TWO phases:
+Your task has THREE phases:
 
 PHASE 1 — DESIGN QA APPROACHES
 Analyze the acceptance criteria, the user's intent, and the builder's
@@ -270,6 +270,7 @@ criteria and the nature of the implementation:
   - Simple implementation (3-5 criteria): 2 testers
   - Medium implementation (5-10 criteria): 3 testers
   - Complex implementation (10+ criteria, security, integrations): 4-5 testers
+Note: the code review runs separately as Phase 3 and does NOT count toward K.
 
 For each approach, design a TAILORED prompt — not a generic template.
 Bad: "Test the implementation for edge cases"
@@ -294,18 +295,35 @@ Constraints:
 - One approach MUST verify user intent against user-intent.md
 - Prompts must reference specific acceptance criteria and implementation details
 
-PHASE 2 — EXECUTE QA
-For each approach in the plan, spawn an adversarial tester agent:
+PHASE 2 — EXECUTE QA (ALL IN PARALLEL)
+Spawn ALL of the following in parallel — K adversarial testers plus one
+mandatory code reviewer:
+
+For each adversarial approach in the plan:
 ```
-factory agent adversarial_tester --task "<approach.prompt>" --project {project_path}
+factory agent adversarial_tester --review-tag <slug> --task "<approach.prompt>" --project {project_path} &
 ```
 
-Each tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+Plus one mandatory code review (always, regardless of K):
+```
+factory agent code_reviewer --task "Review the code changes on this branch. \
+Use /code-review for a thorough review covering correctness bugs, security \
+issues, edge cases, missing tests, style, scope creep, and simplification \
+opportunities. Focus on the diff — what changed, not the entire codebase." \
+--project {project_path} &
+```
 
-After ALL testers complete, review quality:
+Then `wait` for all K+1 agents to complete.
+
+Each adversarial tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+The code reviewer writes to `.factory/reviews/code-review.md`.
+
+After ALL agents complete, review quality:
 - Each adversarial report exists and has substantive findings
 - All acceptance criteria are covered by at least one tester
 - No tester missed its assigned focus area
+- Code review completed — if it found critical or high-severity issues,
+  flag them in your QA summary as blocking
 - Critical findings are actually reproducible (spot-check)
 
 If a tester produced thin output, re-invoke it with a more specific prompt.
@@ -315,7 +333,7 @@ criterion with evidence), Edge Case Findings (steps to reproduce, expected
 vs actual), and User Intent Verification (does output match user's ask).
 
 Write a brief QA summary to the end of qa-plan.json noting which
-approaches completed and any quality issues."""
+approaches completed, code review results, and any quality issues."""
 
 GATE_QA_PROMPT = """\
 You are the CEO reviewing QA results. This is the final gate before merge.
