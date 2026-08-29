@@ -175,3 +175,32 @@ class TestMAPElitesArchive:
         assert loaded.size == 2
         assert loaded.best() is not None
         assert loaded.best().id == "b"  # type: ignore[union-attr]
+
+
+class TestRankWeightedSelection:
+    def test_rank_weighted_biases_toward_best(self) -> None:
+        archive = MAPElitesArchive()
+        archive.add(Individual(id="bad", workflow_data={}, score=-100.0, features=(0, 0, 1, 0)))
+        archive.add(Individual(id="ok", workflow_data={}, score=0.0, features=(1, 0, 1, 0)))
+        archive.add(Individual(id="good", workflow_data={}, score=100.0, features=(2, 0, 1, 0)))
+        counts: dict[str, int] = {"bad": 0, "ok": 0, "good": 0}
+        for _ in range(300):
+            p = archive.sample_parent(tournament_size=1, rank_weighted=True)
+            assert p is not None
+            counts[p.id] += 1
+        # With rank weighting (weights 1,2,3), "good" should be picked ~50% of the time
+        assert counts["good"] > counts["bad"]
+        assert counts["good"] > 100  # at least ~33%
+
+    def test_rank_weighted_false_is_uniform(self) -> None:
+        archive = MAPElitesArchive()
+        archive.add(Individual(id="a", workflow_data={}, score=-1000.0, features=(0, 0, 1, 0)))
+        archive.add(Individual(id="b", workflow_data={}, score=1000.0, features=(1, 0, 1, 0)))
+        counts: dict[str, int] = {"a": 0, "b": 0}
+        for _ in range(200):
+            p = archive.sample_parent(tournament_size=1, rank_weighted=False)
+            assert p is not None
+            counts[p.id] += 1
+        # Uniform: both should be roughly 50/50
+        assert counts["a"] > 50
+        assert counts["b"] > 50

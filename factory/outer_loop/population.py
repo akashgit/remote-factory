@@ -125,15 +125,30 @@ class MAPElitesArchive:
     def all_individuals(self) -> list[Individual]:
         return list(self._grid.values())
 
-    def sample_parent(self, tournament_size: int = 3) -> Individual | None:
-        """Tournament selection: pick tournament_size random individuals, return the best."""
+    def sample_parent(
+        self,
+        tournament_size: int = 3,
+        rank_weighted: bool = False,
+    ) -> Individual | None:
+        """Tournament selection: pick tournament_size individuals, return the best.
+
+        When ``rank_weighted=True``, individuals are drawn with probability
+        proportional to their rank (best=N, worst=1) instead of uniformly.
+        This biases toward stronger parents while still allowing weaker
+        individuals a small chance, preserving diversity.
+        """
         import random
 
         individuals = list(self._grid.values())
         if not individuals:
             return None
         k = min(tournament_size, len(individuals))
-        tournament = random.sample(individuals, k)
+        if rank_weighted and len(individuals) >= 2:
+            ranked = sorted(individuals, key=lambda i: i.score)
+            weights = [rank + 1.0 for rank in range(len(ranked))]
+            tournament = random.choices(ranked, weights=weights, k=k)
+        else:
+            tournament = random.sample(individuals, k)
         return max(tournament, key=lambda i: i.score)
 
     def pareto_front(self) -> list[Individual]:
