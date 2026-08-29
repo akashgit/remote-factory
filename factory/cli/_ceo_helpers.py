@@ -712,6 +712,7 @@ def _execute_ceo(
         from_plan=resolved_plan.plan if resolved_plan else None,
         from_plan_feedback=resolved_plan.feedback if resolved_plan else None,
         just_plan=just_plan,
+        auto_approve=auto_approve,
     )
 
     session_name = _derive_session_name(
