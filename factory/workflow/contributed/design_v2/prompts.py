@@ -114,6 +114,20 @@ Constraints:
 - One perspective MUST cover testing/verification with explicit acceptance criteria
 - Prompts must reference specific findings from the research reports
 
+INTENT FIDELITY CHECK (MANDATORY before spawning strategists):
+Before writing the strategy plan, extract every distinct ask from
+user-intent.md — features, constraints, behaviors, requirements the user
+mentioned. Write them as an `"intent_items"` array in strategy-plan.json.
+Then verify: does at least one perspective's prompt cover each intent item?
+If an intent item is not addressed by any perspective, either add a
+perspective or expand an existing prompt to cover it. No user ask may be
+silently dropped.
+
+Each strategist prompt MUST include this line at the end:
+"IMPORTANT: The user specifically asked for: <list the intent items relevant
+to this perspective>. Your strategy MUST address each of these. Do not
+substitute your own ideas for what the user asked for."
+
 PHASE 2 — EXECUTE STRATEGIES
 For each perspective in the plan, spawn a strategist agent:
 ```
@@ -127,21 +141,33 @@ After ALL strategists complete, review quality:
 - The testing strategy has a `### Acceptance Criteria` section with checkboxes
 - Architecture strategy cites research findings
 - No critical perspective is missing
+- INTENT COVERAGE: re-read user-intent.md and verify every user ask appears
+  in at least one strategy output. If a strategist dropped an intent item,
+  re-invoke it with explicit instructions to address the missing item.
 
 If a strategist produced thin output, re-invoke it with a more specific prompt.
 
 Write a brief strategy summary to the end of strategy-plan.json noting
-which perspectives completed and any quality issues."""
+which perspectives completed, intent coverage status, and any quality issues."""
 
 SYNTHESIZE_STRATEGY_PROMPT = """\
 You are the Strategy Synthesizer. Compile one final plan from all
-strategy inputs.
+strategy inputs. Your primary obligation is FIDELITY TO USER INTENT —
+the plan must capture everything the user asked for.
 
 Read:
+- `.factory/strategy/user-intent.md` — ground truth for user's ask (READ THIS FIRST)
 - ALL strategy files at `.factory/strategy/strategy-*.md`
-- `.factory/strategy/strategy-plan.json` — which perspectives were explored
-- `.factory/strategy/user-intent.md` — ground truth for user's ask
+- `.factory/strategy/strategy-plan.json` — which perspectives were explored,
+  including the `intent_items` array listing every user ask
 
+STEP 1 — INTENT EXTRACTION
+Before synthesizing, extract every distinct ask from user-intent.md into a
+numbered list. These are the user's requirements. Every single one must
+appear in the final plan — either as a feature in the phased plan, an
+acceptance criterion, or an explicitly deferred item with rationale.
+
+STEP 2 — SYNTHESIZE
 Write the final plan to `.factory/strategy/current.md`.
 
 Required sections (in this order):
@@ -163,6 +189,22 @@ Required sections (in this order):
   From risk strategy. In vs deferred.
 ### Deferred Features
   Items requiring human intervention or explicitly deferred.
+
+STEP 3 — INTENT COVERAGE AUDIT
+After writing current.md, go back to your numbered intent list from Step 1.
+For each user ask, verify it appears in the plan:
+- In the phased plan as a deliverable, OR
+- In acceptance criteria as a testable item, OR
+- In deferred features with a rationale for why it's deferred
+
+Write a `### Intent Coverage` section at the end of current.md:
+| # | User Ask | Where in Plan | Status |
+|---|----------|--------------|--------|
+| 1 | <ask> | Phase 1 / Criterion 3 / Deferred | Covered / Deferred |
+
+If ANY user ask has status "Missing" — you have failed. Go back and add it
+to the appropriate section before finalizing. No user ask may be silently
+dropped.
 
 CRITICAL: The ### Acceptance Criteria section is the contract between
 the builder and QA. It flows to adversarial testers who verify each
