@@ -1736,10 +1736,16 @@ async def main():
         reflection_report = None
         reflection = ""
         if cycle_records:
+            record_ids = list(cycle_records.keys())[-20:]
             records = [(iid, cycle_records[iid].score_end or 0, cycle_records[iid])
-                       for iid in list(cycle_records.keys())[-20:]]
+                       for iid in record_ids]
+            knob_vals = {}
+            for iid in record_ids:
+                cfg = ind_configs.get(iid)
+                if cfg:
+                    knob_vals[iid] = {k: getattr(cfg, k) for k, _ in KNOB_SPACE if hasattr(cfg, k)}
             try:
-                reflection_report = reflector.reflect(records, gen)
+                reflection_report = reflector.reflect(records, gen, knob_values_by_id=knob_vals)
                 parts = []
                 if reflection_report.failure_patterns:
                     parts.append(f"Failures: {'; '.join(reflection_report.failure_patterns[:3])}")
