@@ -194,12 +194,12 @@ def _validate_ceo_flags(
     just_plan: bool = getattr(args, "just_plan", False)
 
     if auto_approve and mode not in ("design", "design-v2"):
-        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+        print("Error: --auto-approve only applies to --mode design or design-v2", file=sys.stderr)
         return 1
 
     if just_plan:
         if mode not in ("design", "design-v2"):
-            print("Error: --just-plan requires --mode design", file=sys.stderr)
+            print("Error: --just-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if from_plan:
             print("Error: --just-plan and --from-plan are mutually exclusive.", file=sys.stderr)
@@ -210,7 +210,7 @@ def _validate_ceo_flags(
 
     if from_plan:
         if mode not in ("design", "design-v2"):
-            print("Error: --from-plan requires --mode design", file=sys.stderr)
+            print("Error: --from-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if focus:
             print("Error: --from-plan and --focus are mutually exclusive.", file=sys.stderr)

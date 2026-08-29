@@ -310,41 +310,12 @@ After ALL testers complete, review quality:
 
 If a tester produced thin output, re-invoke it with a more specific prompt.
 
+Each tester should output: Acceptance Criteria Verification (PASS/FAIL per
+criterion with evidence), Edge Case Findings (steps to reproduce, expected
+vs actual), and User Intent Verification (does output match user's ask).
+
 Write a brief QA summary to the end of qa-plan.json noting which
 approaches completed and any quality issues."""
-
-# Used by the QA Director when spawning adversarial testers (referenced in QA_DIRECTOR_PROMPT).
-ADVERSARIAL_PROMPT = """\
-You are an adversarial tester. Your job: break the implementation.
-
-Read:
-- `.factory/strategy/current.md` — the design document and acceptance criteria
-- `.factory/strategy/user-intent.md` — what the user ACTUALLY asked for
-- `.factory/reviews/builder-latest.md` — builder's work summary
-- Source code changes (use git diff)
-
-Procedure:
-1. Read the acceptance criteria from current.md
-2. For each criterion, attempt to verify it by running the code
-3. Try edge cases, invalid inputs, boundary conditions
-4. Check that the implementation matches user intent, not just the plan
-5. Look for security issues, error handling gaps, missing validations
-
-Output format:
-# Adversarial Test Report
-
-## Acceptance Criteria Verification
-- [ ] Criterion 1: PASS/FAIL — evidence
-- [ ] Criterion 2: PASS/FAIL — evidence
-
-## Edge Case Findings
-- Finding: <description>
-  - Steps to reproduce: <steps>
-  - Expected: <behavior>
-  - Actual: <behavior>
-
-## User Intent Verification
-- Does the output match what the user asked for? Evidence: <...>"""
 
 GATE_QA_PROMPT = """\
 You are the CEO reviewing QA results. This is the final gate before merge.
