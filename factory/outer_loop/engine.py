@@ -281,7 +281,10 @@ class SwarmEngine:
 
         mutation_rate = self._strategy.get_mutation_rate(generation)
         for _ in range(self._config.population_size):
-            parent = self._archive.sample_parent(self._config.tournament_size)
+            parent = self._archive.sample_parent(
+                self._config.tournament_size,
+                rank_weighted=self._config.rank_weighted_selection,
+            )
             if parent is None:
                 continue
             parent_wf = Workflow.from_dict(parent.workflow_data)  # type: ignore[arg-type]

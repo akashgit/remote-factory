@@ -87,6 +87,7 @@ class SwarmConfig(BaseModel):
     budget: int
     population_size: int = 4
     tournament_size: int = 3
+    rank_weighted_selection: bool = False
     mutation_rate: float = 0.3
     target_score: float | None = None
     frozen_node_ids: list[str] = Field(default_factory=list)
