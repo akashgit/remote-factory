@@ -95,6 +95,24 @@ factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shor
 
 Design mode subsumes Build and Improve — it researches, plans, gets your approval, then builds and iterates.
 
+### Design-v2 — inference-time scaling
+
+Design-v2 applies the same principle at every stage: **parallel generation → synthesis → gate**. Instead of hardcoded researchers and a single strategist, three Director agents dynamically design N/M/K approaches with project-specific prompts.
+
+```bash
+factory ceo "markdown link checker with Obsidian wikilinks" --mode design-v2
+factory ceo ~/my-project --mode design-v2 --focus "auth layer"
+factory ceo ~/my-project --mode design-v2 --auto-approve   # CEO acts as user at gates
+```
+
+| Stage | design | design-v2 |
+|-------|--------|-----------|
+| Research | 3 hardcoded researchers | Research Director designs N (3-7) tailored directions |
+| Strategy | 1 strategist | Strategy Director designs M (2-5) perspectives + synthesis |
+| User gate | Compressed plan | Design Doc — human-readable prose with architecture diagrams |
+| QA | 1 adversarial tester | QA Director designs K (2-5) testers + code review, all parallel |
+| User input | Ephemeral | User Intent Ledger — append-only file, QA checks against it |
+
 ---
 
 ## Create Your Own Factory Mode
@@ -166,6 +184,7 @@ Beyond the core Design and Create modes, re:factory ships with a growing set of 
 | **frontend-design** | Feature-to-UI pipeline — forks 5 design researchers in parallel, joins findings, then runs design audit → spec → build → render → deep QA |
 | **parallel-improve** | Forks N hypotheses into isolated git worktrees, runs experiments concurrently, and selects the best result |
 | **deep-research** | Decomposes a topic into research directions, executes each with internal iteration, and checks coverage |
+| **design-v2** | Inference-time scaling for the design pipeline — dynamic Research/Strategy/QA Directors, user intent ledger, design doc synthesis |
 | **deep-qa** | Multi-stage quality assurance — health check, code review, and adversarial testing in parallel |
 | **study** | Graph-powered codebase analysis — builds a dependency graph, explores it, and produces a combined study report |
 
