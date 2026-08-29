@@ -191,6 +191,7 @@ def _build_ceo_task(
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
+    auto_approve: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -489,6 +490,20 @@ def _build_ceo_task(
             f"6. Keep/revert verdict + finalize\n"
             f"7. Archivist (single batch)\n\n"
             f"Do NOT skip the review pipeline. Do NOT abbreviate any step.\n"
+        )
+
+    if auto_approve:
+        task += (
+            "\n\n## Auto-Approve Mode\n\n"
+            "auto_approve: true\n\n"
+            "At user approval gates (like gate_strategy), you act as the user:\n"
+            "1. Read the plan at .factory/strategy/current.md\n"
+            "2. Read the user's original intent at .factory/strategy/user-intent.md\n"
+            "3. Compare: does the plan match what the user asked for?\n"
+            "4. If YES: approve and proceed (say \"Approved\" and continue to the next step)\n"
+            "5. If NO: provide specific feedback about what's missing or wrong, then reloop\n\n"
+            "You are the CEO acting on behalf of the user. Apply judgment — approve good plans, "
+            "reject bad ones. Do NOT blindly approve everything. Do NOT wait for human input.\n"
         )
 
     if clean_pr:
