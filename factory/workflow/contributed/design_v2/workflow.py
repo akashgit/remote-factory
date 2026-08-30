@@ -113,23 +113,10 @@ def workflow() -> Workflow:
     wf.nodes["init_user_intent"] = FnNode(
         id="init_user_intent",
         command=(
-            "python3 -c \""
-            "import datetime, os, sys; "
-            "from pathlib import Path; "
-            "project = sys.argv[1]; "
-            "intent = Path(f'{project}/.factory/strategy/user-intent.md'); "
-            "(sys.exit(0) if intent.exists() and intent.stat().st_size > 0 else None); "
-            "ts = datetime.datetime.now().isoformat(timespec='seconds'); "
-            "bl = Path(f'{project}/.factory/strategy/backlog.md'); "
-            "idea = os.environ.get('FACTORY_IDEA', '') "
-            "or ((bl.read_text().strip().splitlines() or [''])[0] "
-            "if bl.exists() and bl.stat().st_size > 0 else '') "
-            "or 'No idea provided'; "
-            "Path(f'{project}/.factory/strategy').mkdir(parents=True, exist_ok=True); "
-            "content = f'# User Intent Ledger\\\\n\\\\n## [{ts}] Initial Idea\\\\n{idea}\\\\n'; "
-            "intent.write_text(content); "
-            "print(f'User intent ledger initialized at {ts}')\" "
-            "\"{project_path}\""
+            'python3 -c '
+            '"from factory.workflow.contributed.design_v2.intent_init '
+            'import main; main()" '
+            '"{project_path}"'
         ),
         writes={".factory/strategy/user-intent.md"},
         notes="Creates the user intent ledger with the initial idea.",

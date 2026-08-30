@@ -21,13 +21,23 @@ def main() -> None:
         slug = p.name.replace("-latest.md", "").replace("adversarial-", "")
         reports.append((slug, p.read_text()))
 
-    # Dedup is exact-match on normalized text; semantic similarity would catch more overlaps
+    # NOTE: Dedup uses normalized text prefix matching. LLM-generated findings with
+    # different wording for the same issue will appear as separate MEDIUM findings.
+    # This is acceptable — false separation is safer than false merging.
+    # A semantic dedup (embeddings, LLM judge) is a future improvement.
+    _negative_signals = {
+        "fail", "error", "bug", "issue", "missing", "broken",
+        "crash", "wrong", "violation", "not found", "does not",
+        "doesn't", "cannot", "can't", "unexpected", "invalid",
+    }
     findings: dict[str, list[str]] = {}
     for tester_slug, text in reports:
         for line in text.splitlines():
             stripped = line.strip()
             if stripped.startswith("- ") or stripped.startswith("* "):
                 key = re.sub(r"\s+", " ", stripped[2:].strip().lower()[:200])
+                if not any(signal in key for signal in _negative_signals):
+                    continue
                 findings.setdefault(key, []).append(tester_slug)
 
     high = [(k, v) for k, v in findings.items() if len(v) >= 2]
