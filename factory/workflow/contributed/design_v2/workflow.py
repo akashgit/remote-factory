@@ -171,7 +171,10 @@ def workflow() -> Workflow:
         id="synthesize_strategy",
         role=AgentRole.STRATEGIST,
         prompt_template=SYNTHESIZE_STRATEGY_PROMPT,
-        reads={".factory/strategy/user-intent.md"},
+        reads={
+            ".factory/strategy/user-intent.md",
+            ".factory/strategy/strategy-plan.json",
+        },
         writes={".factory/strategy/current.md"},
         post_checks=[
             ArtifactCheck(

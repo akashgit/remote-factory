@@ -21,14 +21,36 @@ def main() -> None:
         slug = p.name.replace("-latest.md", "").replace("adversarial-", "")
         reports.append((slug, p.read_text()))
 
+    if not reports:
+        out: list[str] = ["# Synthesized QA Report\n"]
+        out.append("## WARNING: NO ADVERSARIAL REPORTS FOUND\n")
+        out.append("No adversarial-*-latest.md files were found. This means either:")
+        out.append("- The QA Director timed out before testers finished")
+        out.append("- The testers crashed without producing output")
+        out.append("- No adversarial testing was performed\n")
+        out.append("**This is NOT a clean report. The code was NOT adversarially tested.**\n")
+        hc = Path(f"{project}/.factory/reviews/health-check.md")
+        cr = Path(f"{project}/.factory/reviews/code-review.md")
+        out.append("## Health Check\n")
+        out.append(hc.read_text() if hc.exists() else "(not available)")
+        out.append("\n## Code Review\n")
+        out.append(cr.read_text() if cr.exists() else "(not available)")
+        Path(f"{project}/.factory/reviews/qa-synthesized.md").write_text("\n".join(out))
+        print("WARNING: No adversarial reports found — QA report is NOT clean")
+        return
+
     # NOTE: Dedup uses normalized text prefix matching. LLM-generated findings with
     # different wording for the same issue will appear as separate MEDIUM findings.
     # This is acceptable — false separation is safer than false merging.
     # A semantic dedup (embeddings, LLM judge) is a future improvement.
-    _negative_signals = {
-        "fail", "error", "bug", "issue", "missing", "broken",
-        "crash", "wrong", "violation", "not found", "does not",
-        "doesn't", "cannot", "can't", "unexpected", "invalid",
+    #
+    # Filter: exclude lines that are clearly positive/neutral (PASS, verified, ok).
+    # Include everything else — this avoids dropping security findings that lack
+    # obvious negative keywords.
+    _positive_signals = {
+        "pass", "passed", "verified", "confirmed", "ok", "correct",
+        "works", "succeeded", "success", "no issues", "all good",
+        "clean", "no errors", "no findings",
     }
     findings: dict[str, list[str]] = {}
     for tester_slug, text in reports:
@@ -36,7 +58,7 @@ def main() -> None:
             stripped = line.strip()
             if stripped.startswith("- ") or stripped.startswith("* "):
                 key = re.sub(r"\s+", " ", stripped[2:].strip().lower()[:200])
-                if not any(signal in key for signal in _negative_signals):
+                if any(signal in key for signal in _positive_signals):
                     continue
                 findings.setdefault(key, []).append(tester_slug)
 
