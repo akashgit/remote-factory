@@ -337,13 +337,45 @@ Constraints:
 - One approach MUST verify user intent against user-intent.md
 - Prompts must reference specific acceptance criteria and implementation details
 
+MANDATORY RUN-THE-CODE TESTERS (hardcoded — always include these):
+In addition to your K designed approaches, you MUST always include these
+two hardcoded testers that ACTUALLY RUN the built code. These are non-negotiable.
+
+1. slug: "smoke-run"
+   Prompt: "You are a smoke-test runner. Your ONLY job: actually run what was
+   built. Do NOT just read the code or check tests pass — EXECUTE the
+   application. For a CLI: run it with example inputs from the acceptance
+   criteria. For a server: start it, hit it with curl/httpx, verify responses.
+   For a library: import it and call the main functions. Show the exact
+   commands you ran and the exact output you got. If it crashes, fails to
+   start, or produces wrong output — that is your finding. Keep it fast and
+   simple: 2-3 runs max, focusing on the golden path."
+
+2. slug: "user-scenario"
+   Prompt: "You are testing from the user's perspective. Read
+   .factory/strategy/user-intent.md for what the user actually asked for.
+   Now USE the application exactly as the user described they would use it.
+   If the user said 'build a CLI that checks links' — run it on a real
+   markdown file with links. If the user said 'handle wikilinks' — create
+   a test file with wikilinks and run the tool on it. Show exactly what you
+   did and what happened. The user's words are your test script."
+
+These two testers run alongside your K designed testers — they do NOT count
+toward K. Total agents spawned = K (designed) + 2 (hardcoded) + 1 (code review).
+
 PHASE 2 — EXECUTE QA (ALL IN PARALLEL)
-Spawn ALL of the following in parallel — K adversarial testers plus one
-mandatory code reviewer:
+Spawn ALL of the following in parallel — K designed testers + 2 hardcoded
+run-the-code testers + 1 code reviewer:
 
 For each adversarial approach in the plan:
 ```
 factory agent adversarial_tester --review-tag <slug> --task "<approach.prompt>" --project {project_path} &
+```
+
+Plus the 2 mandatory run-the-code testers (ALWAYS, non-negotiable):
+```
+factory agent adversarial_tester --review-tag smoke-run --task "<smoke-run prompt from above>" --project {project_path} &
+factory agent adversarial_tester --review-tag user-scenario --task "<user-scenario prompt from above>" --project {project_path} &
 ```
 
 Plus one mandatory code review (always, regardless of K):
@@ -355,7 +387,7 @@ opportunities. Focus on the diff — what changed, not the entire codebase." \
 --project {project_path} &
 ```
 
-Then `wait` for all K+1 agents to complete.
+Then `wait` for all K+3 agents to complete.
 
 Each adversarial tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
 The code reviewer writes to `.factory/reviews/code-review.md`.
