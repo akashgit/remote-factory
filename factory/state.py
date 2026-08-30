@@ -1,5 +1,6 @@
 """Project state detection — determines which mode the factory should operate in."""
 
+import asyncio
 import subprocess
 from pathlib import Path
 
@@ -80,7 +81,25 @@ def detect_state(project_path: Path) -> ProjectState:
         log.info("detect_state_result", state=ProjectState.EVALS_PENDING_REVIEW.value)
         return ProjectState.EVALS_PENDING_REVIEW
 
+    # Auto-bootstrap: if factory.md exists but config.json is missing,
+    # regenerate config.json from factory.md without running discovery.
     factory_dir = project_path / ".factory"
+    factory_md = project_path / "factory.md"
+    if factory_md.exists() and not (factory_dir / "config.json").exists():
+        try:
+            from factory.store import ExperimentStore, ensure_factory_dir
+
+            ensure_factory_dir(factory_dir)
+            store = ExperimentStore(project_path)
+            asyncio.run(store.reparse_config())
+            log.info("auto_bootstrapped_from_factory_md", project=str(project_path))
+        except Exception:
+            log.warning(
+                "auto_bootstrap_failed",
+                project=str(project_path),
+                hint="factory.md exists but could not regenerate config.json",
+            )
+
     if (factory_dir / "config.json").exists():
         log.info("detect_state_result", state=ProjectState.HAS_FACTORY.value)
         return ProjectState.HAS_FACTORY

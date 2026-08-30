@@ -10,7 +10,9 @@ import pytest
 from factory.worktree import (
     _SHARED_SYMLINK_ENTRIES,
     _bootstrap_unborn_repo,
+    _finalize_greenfield,
     _has_active_sessions,
+    _is_greenfield_run,
     _is_unborn_repo,
     _preserve_telemetry,
     _seed_experiment_factory,
@@ -1394,3 +1396,112 @@ class TestSelectiveWorktreeIsolation:
 
         assert (wt_path / ".factory" / "strategy").is_dir()
         assert not (wt_path / ".factory" / "strategy" / "backlog.md").exists()
+
+
+class TestIsGreenfieldRun:
+    def test_greenfield_detected(self, git_project: Path) -> None:
+        """Greenfield: main has no factory.md, worktree does."""
+        wt_path, _ = create_worktree(git_project)
+        assert not (git_project / "factory.md").exists()
+        (wt_path / "factory.md").write_text("# Goal\nTest\n")
+        assert _is_greenfield_run(wt_path, git_project) is True
+
+    def test_not_greenfield_when_main_has_factory_md(self, git_project: Path) -> None:
+        """Not greenfield when main already has factory.md."""
+        (git_project / "factory.md").write_text("# Goal\nExisting\n")
+        wt_path, _ = create_worktree(git_project)
+        (wt_path / "factory.md").write_text("# Goal\nTest\n")
+        assert _is_greenfield_run(wt_path, git_project) is False
+
+    def test_not_greenfield_when_worktree_has_no_factory_md(self, git_project: Path) -> None:
+        """Not greenfield when worktree has no factory.md."""
+        wt_path, _ = create_worktree(git_project)
+        assert _is_greenfield_run(wt_path, git_project) is False
+
+
+class TestFinalizeGreenfield:
+    def test_commits_untracked_factory_md(self, git_project: Path) -> None:
+        """_finalize_greenfield commits factory.md when untracked."""
+        wt_path, branch = create_worktree(git_project)
+        (wt_path / "factory.md").write_text("# Goal\nTest project\n")
+
+        result = _finalize_greenfield(wt_path, git_project, branch)
+
+        assert result is True
+        ls_files = subprocess.run(
+            ["git", "ls-files", "factory.md"],
+            cwd=wt_path,
+            capture_output=True,
+            text=True,
+        )
+        assert ls_files.stdout.strip() == "factory.md"
+
+    def test_noop_when_already_tracked(self, git_project: Path) -> None:
+        """_finalize_greenfield is a no-op when factory.md is already tracked."""
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(git_project.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        wt_path, branch = create_worktree(git_project)
+        (wt_path / "factory.md").write_text("# Goal\nTest\n")
+        subprocess.run(["git", "add", "factory.md"], cwd=wt_path, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add factory.md"],
+            cwd=wt_path,
+            capture_output=True,
+            check=True,
+            env=env,
+        )
+
+        result = _finalize_greenfield(wt_path, git_project, branch)
+        assert result is True
+
+    def test_returns_false_when_no_factory_md(self, git_project: Path) -> None:
+        """_finalize_greenfield returns False when factory.md does not exist."""
+        wt_path, branch = create_worktree(git_project)
+        result = _finalize_greenfield(wt_path, git_project, branch)
+        assert result is False
+
+
+class TestRemoveWorktreeGreenfield:
+    def test_retains_worktree_on_finalization_failure(self, git_project: Path) -> None:
+        """remove_worktree retains worktree when greenfield finalization fails."""
+        wt_path, branch = create_worktree(git_project)
+        (wt_path / "factory.md").write_text("# Goal\nTest\n")
+
+        with patch("factory.worktree._finalize_greenfield", return_value=False):
+            remove_worktree(git_project, wt_path, branch)
+
+        assert wt_path.exists()
+
+    def test_proceeds_normally_for_non_greenfield(self, git_project: Path) -> None:
+        """remove_worktree proceeds normally for non-greenfield runs (regression)."""
+        wt_path, branch = create_worktree(git_project)
+        assert wt_path.exists()
+
+        remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
+
+    def test_greenfield_success_removes_worktree(self, git_project: Path) -> None:
+        """remove_worktree removes worktree after successful greenfield finalization."""
+        wt_path, branch = create_worktree(git_project)
+        (wt_path / "factory.md").write_text("# Goal\nTest\n")
+
+        with patch("factory.worktree._finalize_greenfield", return_value=True):
+            remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
+
+    def test_no_worktree_mode_skips_finalization(self, git_project: Path) -> None:
+        """When worktree_path == project_path, skip greenfield finalization."""
+        (git_project / "factory.md").write_text("# Goal\nTest\n")
+
+        with patch("factory.worktree._finalize_greenfield") as mock_finalize:
+            remove_worktree(git_project, git_project / "nonexistent", "factory/run-test")
+
+        mock_finalize.assert_not_called()

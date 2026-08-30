@@ -154,6 +154,49 @@ class TestHasOpenPlanIssues:
             assert _has_open_plan_issues(tmp_project) is False
 
 
+class TestAutoBootstrapFromFactoryMd:
+    def test_bootstrap_from_factory_md_when_config_missing(self, tmp_project):
+        """detect_state returns HAS_FACTORY when factory.md exists but config.json does not."""
+        factory_md = tmp_project / "factory.md"
+        factory_md.write_text(
+            "# Goal\nTest project\n\n"
+            "# Modifiable\n- src/\n\n"
+            "# Command\npytest\n\n"
+            "# Threshold\n0.8\n"
+        )
+        assert not (tmp_project / ".factory" / "config.json").exists()
+        state = detect_state(tmp_project)
+        assert state == ProjectState.HAS_FACTORY
+        assert (tmp_project / ".factory" / "config.json").exists()
+
+    def test_malformed_factory_md_logs_warning_no_crash(self, tmp_project):
+        """When reparse_config fails, detect_state logs warning but does not crash."""
+        (tmp_project / "factory.md").write_text("# Goal\nTest\n")
+        with patch(
+            "factory.state.asyncio.run",
+            side_effect=RuntimeError("reparse failed"),
+        ):
+            with patch("factory.state.log") as mock_log:
+                state = detect_state(tmp_project)
+        mock_log.warning.assert_any_call(
+            "auto_bootstrap_failed",
+            project=str(tmp_project),
+            hint="factory.md exists but could not regenerate config.json",
+        )
+        assert state == ProjectState.NO_FACTORY
+
+    def test_existing_project_with_config_unaffected(self, tmp_project):
+        """Projects with both factory.md and config.json are unaffected."""
+        factory_dir = tmp_project / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text(
+            '{"goal":"x","scope":[],"guards":[],"eval_command":"x","eval_threshold":0.8,"constraints":[]}'
+        )
+        (tmp_project / "factory.md").write_text("# Goal\nTest\n")
+        state = detect_state(tmp_project)
+        assert state == ProjectState.HAS_FACTORY
+
+
 class TestDetectStateWithIssues:
     def test_repo_incomplete_with_open_issues(self, tmp_project):
         """detect_state returns REPO_INCOMPLETE when plan issues exist."""
