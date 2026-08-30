@@ -526,14 +526,54 @@ _PROMPT_VARIANTS = [
 MAX_NODES = 30
 
 
+PromptRewriter = Callable[[str, str, str | None], str | None]
+
+
+def default_prompt_rewriter(
+    node_id: str,
+    current_prompt: str,
+    hint: str | None,
+) -> str | None:
+    """Default prompt rewriter: uses claude CLI to rewrite an agent prompt."""
+    import subprocess
+
+    context = f"Hint from reflection: {hint}" if hint else "No specific hint."
+    prompt = (
+        f"You are improving an AI agent's prompt. The agent's role is '{node_id}'.\n\n"
+        f"Current prompt:\n{current_prompt}\n\n"
+        f"{context}\n\n"
+        f"Write an improved version of this prompt. Keep the same role and format. "
+        f"Make it more specific, fix any issues the hint identifies, and remove "
+        f"any contradictory or redundant instructions. "
+        f"Output ONLY the new prompt text, nothing else."
+    )
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", prompt, "--model", "opus",
+             "--append-system-prompt", "Output only the prompt text.",
+             "--max-turns", "1", "--output-format", "text"],
+            capture_output=True, text=True, timeout=60,
+        )
+        result = proc.stdout.strip()
+        return result if result else None
+    except Exception:
+        return None
+
+
 def mutate_prompt(
     workflow: Workflow,
     node_id: str,
     *,
     frozen_nodes: set[str] | None = None,
     prompt_hint: str | None = None,
+    rewriter: PromptRewriter | None = default_prompt_rewriter,
 ) -> tuple[Workflow, MutationRecord] | None:
-    """Mutate the prompt_template of an AgentNode."""
+    """Mutate the prompt_template of an AgentNode.
+
+    When a rewriter is provided, it REPLACES the prompt (informed by the
+    current prompt + hint). When no rewriter is available, falls back to
+    appending a hint or random variant.
+    """
     frozen = frozen_nodes or set()
     if node_id in frozen:
         return None
@@ -544,11 +584,17 @@ def mutate_prompt(
         return None
 
     old_prompt = node.prompt_template or ""
-    if prompt_hint:
-        new_prompt = f"{old_prompt}\n\n{prompt_hint}" if old_prompt else prompt_hint
-    else:
-        variant = random.choice(_PROMPT_VARIANTS)
-        new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
+    new_prompt: str | None = None
+
+    if rewriter is not None:
+        new_prompt = rewriter(node_id, old_prompt, prompt_hint)
+
+    if not new_prompt:
+        if prompt_hint:
+            new_prompt = f"{old_prompt}\n\n{prompt_hint}" if old_prompt else prompt_hint
+        else:
+            variant = random.choice(_PROMPT_VARIANTS)
+            new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
 
     try:
         updated = node.model_copy(update={"prompt_template": new_prompt})

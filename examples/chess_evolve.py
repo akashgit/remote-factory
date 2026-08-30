@@ -462,26 +462,23 @@ class PipelineConfig:
     verify_loop_target: str = "selector_only"
     verify_iterations: int = 2                # 1 = no loop, 2 = one retry, 3 = two retries
 
-    # Tunable — topology
-    pipeline_mode: str = "parallel"           # parallel / single_deep / enumerate
-    use_verification: bool = True             # verify (critique + blunder) loop
-    game_phase_routing: bool = False          # Conditional routes to phase-specific analysis
-    skip_forced: bool = False                 # skip full pipeline when ≤2 legal moves
-    use_opponent_model: bool = False          # predict opponent threats before selecting
+    # Locked winners (from 8000 experiments)
+    pipeline_mode: str = "parallel"
+    tactical_style: str = "capture_refutation_gate"
+    positional_style: str = "prophylactic"
+    middlegame_hint: str = "theory+safety_first"
+    endgame_hint: str = "theory+technical+convert"
+    board_representation: str = "both"
+    game_phase_routing: bool = False
+    skip_forced: bool = False
+    use_opponent_model: bool = False
 
-    # Tunable — prompts (defaults from Opus reflection)
-    tactical_style: str = "mate_focused"      # broad / mate_focused / material
-    positional_style: str = "dynamic"         # classical / dynamic / prophylactic
-    verify_style: str = "strict"              # strict / standard / lenient
-    critique_style: str = "sanity_check"      # devils_advocate / sanity_check
-
-    # Tunable — representation
-    board_representation: str = "both"        # fen / ascii / both
-
-    # Tunable — phase strategy
+    # Tunable — still room to improve
+    use_verification: bool = True
+    verify_style: str = "strict"              # prompt mutation can improve this
+    verify_iterations: int = 2
+    critique_style: str = "sanity_check"      # prompt mutation can improve this
     opening_hint: str = "theory"              # theory / principled
-    middlegame_hint: str = "theory"           # safety_first / attacking / positional / theory + combos
-    endgame_hint: str = "theory"             # technical / aggressive / defensive / theory + combos
 
     @property
     def label(self) -> str:
@@ -1562,25 +1559,12 @@ def chess_features(cfg: PipelineConfig) -> tuple[int, ...]:
 
 
 KNOB_SPACE: list[tuple[str, list]] = [
-    # Topology
-    ("pipeline_mode", ["parallel", "single_deep", "enumerate"]),
-    ("use_verification", [True, False]),
-    ("verify_iterations", [1, 2, 3, 4, 5]),
-    ("game_phase_routing", [True, False]),
-    ("skip_forced", [True, False]),
-    ("use_opponent_model", [True, False]),
-    # Prompts
-    ("tactical_style", ["broad", "mate_focused", "material"]),
-    ("positional_style", ["classical", "dynamic", "prophylactic"]),
+    # Still tunable (room to improve via KNOB_MUTATE + PROMPT_MUTATE)
     ("verify_style", ["strict", "standard", "lenient"]),
+    ("verify_iterations", [1, 2, 3]),
     ("critique_style", ["devils_advocate", "sanity_check"]),
-    ("selector_tokens", [10, 100]),
-    # Representation
-    ("board_representation", ["fen", "ascii", "both"]),
-    # Phase strategy
+    ("use_verification", [True, False]),
     ("opening_hint", ["theory", "principled"]),
-    ("middlegame_hint", ["theory", "safety_first", "attacking", "positional", "theory+safety_first", "theory+positional"]),
-    ("endgame_hint", ["theory", "technical", "aggressive", "defensive", "theory+technical", "theory+defensive"]),
 ]
 
 
@@ -1778,9 +1762,44 @@ async def main():
             except Exception:
                 pass
 
+        # Generate game-aware prompt improvement from blunder analysis
+        if reflection_report and all_results:
+            worst = sorted(all_results, key=lambda x: x[3])[:3]
+            blunder_details = []
+            for _, cfg, result, score in worst:
+                for g in result.games:
+                    curve = g.get("eval_curve", [])
+                    moves = g.get("move_list", [])
+                    for i in range(1, len(curve)):
+                        if curve[i] - curve[i-1] < -200 and i < len(moves):
+                            blunder_details.append(
+                                f"Move {i}: {moves[i]} dropped {curve[i-1]:+d}cp to {curve[i]:+d}cp"
+                            )
+            if blunder_details:
+                try:
+                    hint = (await _cli_call_opus(
+                        "You are a chess coach. Write ONE sentence of advice to prevent these blunders. "
+                        "Be specific about the pattern — what to check before committing to a move.",
+                        f"Recent blunders:\n" + "\n".join(blunder_details[:8]),
+                    )).strip()
+                    if hint and reflection_report:
+                        reflection_report.prompt_improvements.append(hint)
+                        print(f"  {CYAN}Prompt hint:{RESET} {hint}")
+                except Exception:
+                    pass
+
         # Step 2: Factory's apply_random_mutation with Opus as knob expander
-        from factory.outer_loop.mutations import apply_random_mutation, WeightedRandomStrategy
-        strategy = WeightedRandomStrategy()
+        from factory.outer_loop.mutations import apply_random_mutation, WeightedRandomStrategy, MutationType
+        strategy = WeightedRandomStrategy(weights={
+            MutationType.NODE_INSERT.value: 0,
+            MutationType.NODE_REMOVE.value: 0,
+            MutationType.EDGE_REDIRECT.value: 0,
+            MutationType.PARALLELIZE.value: 0,
+            MutationType.SERIALIZE.value: 0,
+            MutationType.PARAM_MUTATE.value: 0.05,
+            MutationType.PROMPT_MUTATE.value: 0.50,
+            MutationType.KNOB_MUTATE.value: 0.45,
+        })
         if stalled and hasattr(strategy, "on_plateau"):
             strategy.on_plateau()
 

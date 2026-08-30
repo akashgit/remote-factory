@@ -162,8 +162,8 @@
 <div class="subtitle">
   Can factory's evolutionary outer loop teach an LLM to beat Stockfish?
   Each move runs a <code>Package</code> pipeline through the real <code>WorkflowExecutor</code>.
-  Opus reflects on results via factory's <code>OuterLoopReflector</code>, then proposes experiments — including inventing new prompt variants via expandable <code>OptKnob</code>s.
-  Scored by wins (+500), draws (+200), position quality, and survival. <code>KNOB_MUTATE</code> searches the declared optimization surface.
+  Best config locked from 8000 experiments. Factory tunes 5 remaining knobs via <code>KNOB_MUTATE</code> (guided by knob-contrastive reflection) and evolves agent prompts via <code>PROMPT_MUTATE</code> (Opus analyzes blunders, writes targeted advice).
+  Scored by wins (+500), draws (+200), position quality, and survival.
 </div>
 
 <div id="explainer" style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
@@ -245,83 +245,47 @@ strategy = <span style="color:#d29922">WeightedRandomStrategy</span>()
   <div style="flex:1; min-width:300px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
     <h3 style="color:#58a6ff; font-size:13px; margin-bottom:8px;">Optimization Surface</h3>
     <pre style="color:#c9d1d9; font-size:11px; line-height:1.5; margin:0;">
-<span style="color:#f0883e"># ── Knobs auto-expand at runtime ─</span>
-<span style="color:#8b949e"># Opus can invent new prompt variants</span>
-<span style="color:#8b949e"># and values beyond initial bounds.</span>
-<span style="color:#8b949e"># New variants are registered and</span>
-<span style="color:#8b949e"># available to future generations.</span>
+<span style="color:#f0883e"># ── 5 tunable knobs ──────────────</span>
 
-<span style="color:#8b949e"># Changes the DAG structure</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"pipeline_mode"</span>, <span style="color:#a5d6ff">"topology"</span>,
-  bounds=[<span style="color:#a5d6ff">"parallel"</span>,     <span style="color:#8b949e"># fork/join</span>
-          <span style="color:#a5d6ff">"single_deep"</span>,  <span style="color:#8b949e"># 1 analyst</span>
-          <span style="color:#a5d6ff">"enumerate"</span>])   <span style="color:#8b949e"># list+pick</span>
-
-<span style="color:#8b949e"># Adds an opponent threat node</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_opponent_model"</span>, <span style="color:#a5d6ff">"topology"</span>,
-  bounds=[True, False])
-
-<span style="color:#8b949e"># Skip pipeline when ≤2 legal moves</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"skip_forced"</span>, <span style="color:#a5d6ff">"topology"</span>,
-  bounds=[True, False])
-
-<span style="color:#8b949e"># Persist a plan across moves</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_game_plan"</span>, <span style="color:#a5d6ff">"memory"</span>,
-  bounds=[True, False])
-
-<span style="color:#8b949e"># Pass full move history to analysts</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_game_context"</span>, <span style="color:#a5d6ff">"memory"</span>,
-  bounds=[True, False])
-
-<span style="color:#8b949e"># Selector reasoning depth</span>
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"selector_tokens"</span>, <span style="color:#a5d6ff">"threshold"</span>,
-  bounds=[10, 100, 500])
-
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_verification"</span>, <span style="color:#a5d6ff">"topology"</span>,
-  bounds=[True, False])
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"game_phase_routing"</span>, <span style="color:#a5d6ff">"topology"</span>,
-  bounds=[True, False])
-
-<span style="color:#f0883e"># ── Prompts (expandable: Opus can</span>
-<span style="color:#f0883e">#    invent new variants) ─────────</span>
-
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"tactical_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  default=<span style="color:#a5d6ff">"mate_focused"</span>,  <span style="color:#8b949e"># ★</span>
-  bounds=[<span style="color:#a5d6ff">"broad"</span>, <span style="color:#a5d6ff">"mate_focused"</span>,
-          <span style="color:#a5d6ff">"material"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"positional_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  default=<span style="color:#a5d6ff">"dynamic"</span>,       <span style="color:#8b949e"># ★</span>
-  bounds=[<span style="color:#a5d6ff">"classical"</span>, <span style="color:#a5d6ff">"dynamic"</span>,
-          <span style="color:#a5d6ff">"prophylactic"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"verify_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  default=<span style="color:#a5d6ff">"strict"</span>,        <span style="color:#8b949e"># ★</span>
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"verify_style"</span>,
   bounds=[<span style="color:#a5d6ff">"strict"</span>, <span style="color:#a5d6ff">"standard"</span>,
-          <span style="color:#a5d6ff">"lenient"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"critique_style"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  default=<span style="color:#a5d6ff">"sanity_check"</span>,  <span style="color:#8b949e"># ★</span>
+          <span style="color:#a5d6ff">"lenient"</span>])
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"verify_iterations"</span>,
+  bounds=[1, 2, 3])
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"critique_style"</span>,
   bounds=[<span style="color:#a5d6ff">"devils_advocate"</span>,
-          <span style="color:#a5d6ff">"sanity_check"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
+          <span style="color:#a5d6ff">"sanity_check"</span>])
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"use_verification"</span>,
+  bounds=[True, False])
+<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"opening_hint"</span>,
+  bounds=[<span style="color:#a5d6ff">"theory"</span>, <span style="color:#a5d6ff">"principled"</span>])
 
-<span style="color:#f0883e"># ── Phase strategy (expandable) ──</span>
+<span style="color:#f0883e"># ── Prompt mutation ──────────────</span>
+<span style="color:#8b949e"># Opus analyzes blunders each gen</span>
+<span style="color:#8b949e"># and writes targeted chess advice</span>
+<span style="color:#8b949e"># that factory appends to agents:</span>
 
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"opening_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  bounds=[<span style="color:#a5d6ff">"theory"</span>,      <span style="color:#8b949e"># named openings</span>
-          <span style="color:#a5d6ff">"principled"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"middlegame_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  bounds=[<span style="color:#a5d6ff">"theory"</span>,           <span style="color:#8b949e"># Nimzowitsch</span>
-          <span style="color:#a5d6ff">"safety_first"</span>,     <span style="color:#8b949e"># threats</span>
-          <span style="color:#a5d6ff">"theory+positional"</span>, <span style="color:#8b949e">...</span>],
-  <span style="color:#3fb950">expandable</span>=True)
-<span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"endgame_hint"</span>, <span style="color:#a5d6ff">"prompt"</span>,
-  bounds=[<span style="color:#a5d6ff">"theory"</span>,          <span style="color:#8b949e"># Lucena etc</span>
-          <span style="color:#a5d6ff">"theory+technical"</span>, <span style="color:#8b949e"># combo</span>
-          <span style="color:#a5d6ff">"defensive"</span>, <span style="color:#8b949e">...</span>],  <span style="color:#8b949e"># hold draws</span>
-  <span style="color:#3fb950">expandable</span>=True)</pre>
+<span style="color:#8b949e"># tactician:</span>
+<span style="color:#a5d6ff">"Before committing, check if the</span>
+<span style="color:#a5d6ff"> opponent can capture or refute</span>
+<span style="color:#a5d6ff"> your move with a tactical reply"</span>
+
+<span style="color:#8b949e"># positionalist:</span>
+<span style="color:#a5d6ff">"Think about what the opponent</span>
+<span style="color:#a5d6ff"> wants to do. Suggest moves that</span>
+<span style="color:#a5d6ff"> prevent their plan while improving</span>
+<span style="color:#a5d6ff"> your position"</span>
+
+<span style="color:#8b949e"># verifier:</span>
+<span style="color:#a5d6ff">"Check for blunders: does this</span>
+<span style="color:#a5d6ff"> move hang a piece? Walk into a</span>
+<span style="color:#a5d6ff"> fork, pin, or skewer?"</span>
+
+<span style="color:#8b949e"># As factory finds blunders, it</span>
+<span style="color:#8b949e"># appends advice like:</span>
+<span style="color:#d2a8ff">"Always verify your piece is still</span>
+<span style="color:#d2a8ff"> defended after the opponent's most</span>
+<span style="color:#d2a8ff"> forcing reply"</span></pre>
   </div>
 </div>
 
@@ -331,9 +295,15 @@ strategy = <span style="color:#d29922">WeightedRandomStrategy</span>()
   <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Composite Score by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(avg_cp - 20*blun + 8*moves + 500*wins + 200*draws)</span></h2>
   <canvas id="elo-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
 </div>
-<div style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px;">
-  <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Game Length by Generation <span style="color:#8b949e; font-weight:normal; font-size:11px;">(moves survived)</span></h2>
-  <canvas id="length-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
+<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px;">
+  <div style="flex:2; min-width:400px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
+    <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Game Length by Generation</h2>
+    <canvas id="length-chart" width="900" height="180" style="width:100%; height:180px;"></canvas>
+  </div>
+  <div style="flex:1; min-width:250px; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px;">
+    <h2 style="color:#58a6ff; font-size:14px; margin-bottom:8px;">Mutation Distribution</h2>
+    <div id="mutation-dist"></div>
+  </div>
 </div>
 <div class="grid" id="grid"></div>
 
@@ -522,7 +492,7 @@ function updateUI() {
     const llmColor = g.llm_white ? 'White' : 'Black';
     const sfColor = g.llm_white ? 'Black' : 'White';
     const topLabel = `Stockfish ${g.elo} (${sfColor})`;
-    const botLabel = `Claude Haiku 4.5 (${llmColor})`;
+    const botLabel = `Claude (${llmColor})`;
     const topClass = '';
     const botClass = 'llm';
 
@@ -584,7 +554,7 @@ const logCollapsed = {};
 function toggleLogGen(gen) {
   const isOpen = (gen in logCollapsed) ? !logCollapsed[gen] : false;
   logCollapsed[gen] = !isOpen;
-  updateLog(); updateEloChart(); updateLengthChart();
+  updateLog(); updateEloChart(); updateLengthChart(); updateMutationDist();
 }
 
 // Best games panel
@@ -605,7 +575,7 @@ function renderBestGameCard(containerId, game, label, baseline = 0) {
   const llmColor = g.llm_white ? 'White' : 'Black';
   const sfColor = g.llm_white ? 'Black' : 'White';
   const topLabel = `Stockfish ${g.elo} (${sfColor})`;
-  const botLabel = `Claude Haiku 4.5 (${llmColor})`;
+  const botLabel = `Claude (${llmColor})`;
   const ec = g.eval_curve || [];
   const sc = computeGameScore(g);
   const defaults = {
@@ -730,7 +700,7 @@ fetch('/state').then(r => r.json()).then(state => {
       logEntries.push(e);
     }
   }
-  updateLog(); updateEloChart(); updateLengthChart();
+  updateLog(); updateEloChart(); updateLengthChart(); updateMutationDist();
 });
 
 const evtSource = new EventSource('/events');
@@ -890,7 +860,7 @@ function updateLog() {
               body: JSON.stringify({text: reflection.text}),
             }).then(r => r.json()).then(d => {
               reflection.text = d.summary;
-              updateLog(); updateEloChart(); updateLengthChart();
+              updateLog(); updateEloChart(); updateLengthChart(); updateMutationDist();
             }).catch(() => {});
           }
           html += `<tr><td></td><td colspan="7" id="${rid}" style="color:#d2a8ff;font-size:11px;padding:4px 8px 10px;font-style:italic;line-height:1.5;">` +
@@ -1020,14 +990,25 @@ function updateEloChart() {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // Trendline (linear regression on best-per-gen)
+  if (gens.length >= 3) {
+    const n = bestPerGen.length;
+    let sx=0,sy=0,sxx=0,sxy=0;
+    for (let i=0;i<n;i++){sx+=i;sy+=bestPerGen[i];sxx+=i*i;sxy+=i*bestPerGen[i];}
+    const slope=(n*sxy-sx*sy)/(n*sxx-sx*sx), intercept=(sy-slope*sx)/n;
+    ctx.strokeStyle='#d29922';ctx.lineWidth=1.5;ctx.setLineDash([6,3]);ctx.beginPath();
+    ctx.moveTo(x(0),y(intercept));ctx.lineTo(x(n-1),y(slope*(n-1)+intercept));
+    ctx.stroke();ctx.setLineDash([]);
+  }
+
   // Legend
   ctx.font = '10px monospace';
   ctx.fillStyle = '#58a6ff';
-  ctx.fillText('● best in gen', W - 160, 14);
+  ctx.fillText('● best in gen', W - 240, 14);
   ctx.fillStyle = '#3fb950';
-  ctx.fillText('-- running best', W - 60, 14);
-
-  // Phase boundary
+  ctx.fillText('-- running best', W - 140, 14);
+  ctx.fillStyle = '#d29922';
+  ctx.fillText('-- trend', W - 40, 14);
 }
 
 function updateLengthChart() {
@@ -1086,10 +1067,84 @@ function updateLengthChart() {
     if (i === 0) ctx.moveTo(x(i), y(runningBest[i])); else ctx.lineTo(x(i), y(runningBest[i]));
   }
   ctx.stroke(); ctx.setLineDash([]);
+  // Trendline
+  if (gens.length >= 3) {
+    const n = bestPerGen.length;
+    let sx=0,sy=0,sxx=0,sxy=0;
+    for (let i=0;i<n;i++){sx+=i;sy+=bestPerGen[i];sxx+=i*i;sxy+=i*bestPerGen[i];}
+    const slope=(n*sxy-sx*sy)/(n*sxx-sx*sx), intercept=(sy-slope*sx)/n;
+    ctx.strokeStyle='#d29922';ctx.lineWidth=1.5;ctx.setLineDash([6,3]);ctx.beginPath();
+    ctx.moveTo(x(0),y(intercept));ctx.lineTo(x(n-1),y(slope*(n-1)+intercept));
+    ctx.stroke();ctx.setLineDash([]);
+  }
   // Legend
   ctx.font = '10px monospace'; ctx.textAlign = 'right';
   ctx.fillStyle = '#58a6ff'; ctx.fillText('● best in gen', W - pad.right, pad.top);
   ctx.fillStyle = '#3fb950'; ctx.fillText('— running best', W - pad.right, pad.top + 14);
+  ctx.fillStyle = '#d29922'; ctx.fillText('-- trend', W - pad.right, pad.top + 28);
+}
+
+function updateMutationDist() {
+  const panel = document.getElementById('mutation-dist');
+  if (!panel) return;
+  const evalEntries = logEntries.filter(e => e.type !== 'reflection');
+  if (evalEntries.length === 0) { panel.innerHTML = ''; return; }
+  const colors = {
+    knob: '#d29922', remove: '#f85149', insert: '#3fb950', redirect: '#58a6ff',
+    parallel: '#bc8cff', prompt: '#d2a8ff', param: '#8b949e', seed: '#484f58', other: '#484f58',
+  };
+  const counts = {}, scores = {}, details = {};
+  for (const e of evalEntries) {
+    const l = e.label || '';
+    let type = 'other';
+    if (l.includes('Removed')) type = 'remove';
+    else if (l.includes('Inserted')) type = 'insert';
+    else if (l.includes('Redirected')) type = 'redirect';
+    else if (l.includes('Parallelized')) type = 'parallel';
+    else if (l.includes('Changed params')) type = 'param';
+    else if (l.includes('Mutated prompt')) type = 'prompt';
+    else if (l.includes('Mutated knob') || l.includes('=')) type = 'knob';
+    else if (l.includes('seed')) type = 'seed';
+    counts[type] = (counts[type] || 0) + 1;
+    scores[type] = scores[type] || [];
+    scores[type].push(e.composite ?? e.score ?? 0);
+    if (!details[type]) details[type] = [];
+    const sc = Math.round(e.composite ?? e.score ?? 0);
+    details[type].push(`${e.label?.replace(/^Gen \d+\.\d+: /, '') || '?'} (${sc >= 0 ? '+' : ''}${sc})`);
+  }
+  const total = evalEntries.length;
+  let html = '<div style="font-size:11px;">';
+  for (const [type, count] of Object.entries(counts).sort((a,b) => b[1]-a[1])) {
+    const pct = Math.round(100 * count / total);
+    const avg = scores[type] ? Math.round(scores[type].reduce((a,b)=>a+b,0) / scores[type].length) : 0;
+    const best = scores[type] ? Math.round(Math.max(...scores[type])) : 0;
+    const color = colors[type] || '#484f58';
+    const items = (details[type] || []).sort((a,b) => {
+      const sa = parseInt(a.match(/\(([+-]?\d+)\)/)?.[1] || '0');
+      const sb = parseInt(b.match(/\(([+-]?\d+)\)/)?.[1] || '0');
+      return sb - sa;
+    }).slice(0, 15);
+    const tooltip = items.join('\n');
+    html += `<div style="margin-bottom:4px;position:relative;cursor:pointer;" class="mut-row">`;
+    html += `<div style="display:flex; justify-content:space-between; margin-bottom:2px;">`;
+    html += `<span style="color:${color};font-weight:bold;">${type}</span>`;
+    html += `<span style="color:#8b949e;">${count} (${pct}%) avg=${avg >= 0 ? '+' : ''}${avg} best=${best >= 0 ? '+' : ''}${best}</span>`;
+    html += `</div>`;
+    html += `<div style="height:6px;background:#21262d;border-radius:3px;">`;
+    html += `<div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>`;
+    html += `</div>`;
+    html += `<div class="mut-tooltip" style="display:none;position:absolute;left:0;top:100%;z-index:20;background:#1c2128;border:1px solid #30363d;border-radius:4px;padding:8px;font-size:10px;color:#c9d1d9;white-space:pre-line;max-width:400px;max-height:200px;overflow-y:auto;">${tooltip}</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  panel.innerHTML = html;
+  panel.querySelectorAll('.mut-row').forEach(row => {
+    const tip = row.querySelector('.mut-tooltip');
+    if (tip) {
+      row.addEventListener('mouseenter', () => tip.style.display = 'block');
+      row.addEventListener('mouseleave', () => tip.style.display = 'none');
+    }
+  });
 }
 
 const seenLogLabels = new Set();
@@ -1100,7 +1155,7 @@ logSource.onmessage = (e) => {
   if (!seenLogLabels.has(key)) {
     seenLogLabels.add(key);
     logEntries.push(entry);
-    updateLog(); updateEloChart(); updateLengthChart();
+    updateLog(); updateEloChart(); updateLengthChart(); updateMutationDist();
   }
 };
 logSource.onerror = () => {
