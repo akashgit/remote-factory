@@ -763,12 +763,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
     result = f"{frontmatter}\n\n{header}\n\n{body}\n"
 
     line_count = result.count("\n") + 1
-    if line_count > 600:
+    if line_count > 1200:
         log.warning(
             "skill_export.oversized",
             workflow=name,
             lines=line_count,
-            limit=600,
+            limit=1200,
         )
 
     return result
@@ -851,7 +851,7 @@ def validate_skill(content: str) -> list[str]:
             issues.append(f"Description exceeds 1024 chars ({len(desc_val)})")
 
     line_count = content.count("\n") + 1
-    if line_count > 600:
-        issues.append(f"Body exceeds 600 lines ({line_count})")
+    if line_count > 1200:
+        issues.append(f"Body exceeds 1200 lines ({line_count})")
 
     return issues

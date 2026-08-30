@@ -617,7 +617,7 @@ class TestPromptContent:
         assert "INTENT FIDELITY" in CREATE_GATE_STRATEGY_PROMPT
         assert "user-intent.md" in CREATE_GATE_STRATEGY_PROMPT
 
-    def test_all_10_prompts_importable(self) -> None:
+    def test_all_8_prompts_importable(self) -> None:
         from factory.workflow.contributed.create_v2 import prompts
         prompt_names = [
             "CREATE_RESEARCH_DIRECTOR_PROMPT",
