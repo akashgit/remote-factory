@@ -552,11 +552,19 @@ def default_prompt_rewriter(
             ["claude", "-p", prompt, "--model", "opus",
              "--append-system-prompt", "Output only the prompt text.",
              "--max-turns", "1", "--output-format", "text"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=120,
         )
         result = proc.stdout.strip()
+        if result:
+            log.info("prompt_rewritten", node=node_id, len=len(result))
+        else:
+            log.warning("prompt_rewriter_empty", node=node_id)
         return result if result else None
-    except Exception:
+    except subprocess.TimeoutExpired:
+        log.warning("prompt_rewriter_timeout", node=node_id, timeout=120)
+        return None
+    except Exception as exc:
+        log.warning("prompt_rewriter_error", node=node_id, error=str(exc))
         return None
 
 
@@ -599,7 +607,8 @@ def mutate_prompt(
     try:
         updated = node.model_copy(update={"prompt_template": new_prompt})
         wf.nodes[node_id] = updated  # type: ignore[assignment]
-    except Exception:
+    except Exception as exc:
+        log.warning("prompt_mutate_validation_failed", node=node_id, error=str(exc))
         return None
 
     record = MutationRecord(
@@ -637,16 +646,22 @@ def default_knob_expander(
             ["claude", "-p", prompt, "--model", "opus",
              "--append-system-prompt", "Output only the value, no explanation.",
              "--max-turns", "1", "--output-format", "text"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=120,
         )
         result = proc.stdout.strip()
         if not result:
+            log.warning("knob_expander_empty", knob=knob_name)
             return None
+        log.info("knob_expanded_via_cli", knob=knob_name, value=result[:40])
         try:
             return float(result)
         except ValueError:
             return result[:80]
-    except Exception:
+    except subprocess.TimeoutExpired:
+        log.warning("knob_expander_timeout", knob=knob_name, timeout=120)
+        return None
+    except Exception as exc:
+        log.warning("knob_expander_error", knob=knob_name, error=str(exc))
         return None
 
 
