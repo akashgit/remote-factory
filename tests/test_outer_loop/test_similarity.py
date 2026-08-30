@@ -97,11 +97,13 @@ class TestGraphEditDistance:
 
 class TestComputeFeatures:
     def test_simple_workflow(self, simple_workflow: Workflow) -> None:
-        depth, fork_degree, agent_count, gate_count = compute_features(simple_workflow)
+        features = compute_features(simple_workflow)
+        depth, fork_degree, agent_count, gate_count = features[:4]
         assert depth >= 4
         assert fork_degree == 0
         assert agent_count == 3
         assert gate_count == 1
+        assert len(features) > 4  # prompt features appended
 
     def test_workflow_with_fork(self) -> None:
         nodes = {
@@ -124,10 +126,12 @@ class TestComputeFeatures:
             Edge(source="join", target="gate"),
         ]
         wf = Workflow(name="forked", nodes=nodes, edges=edges, start_node="start")
-        depth, fork_degree, agent_count, gate_count = compute_features(wf)
+        features = compute_features(wf)
+        depth, fork_degree, agent_count, gate_count = features[:4]
         assert fork_degree == 3
         assert agent_count == 3
         assert gate_count == 1
+        assert len(features) > 4  # prompt features for 3 agents
 
 
 class TestNoveltyFilter:

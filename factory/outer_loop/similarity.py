@@ -73,10 +73,13 @@ def graph_edit_distance(w1: Workflow, w2: Workflow) -> int:
 def compute_features(workflow: Workflow) -> tuple[int, ...]:
     """Extract features from a workflow for MAP-Elites grid placement.
 
-    Base features: (depth, fork_degree, agent_count, gate_count).
-    If the workflow carries knob_values (from Package.compile()), each
-    categorical knob value is hashed to an integer bucket and appended,
-    giving the archive diversity pressure across the optimization surface.
+    Features: (depth, fork_degree, agent_count, gate_count,
+               *knob_hashes, *prompt_hashes).
+
+    Knob values (from Package.compile()) and agent prompt_templates are
+    each hashed to integer buckets so that KNOB_MUTATE and PROMPT_MUTATE
+    produce distinct cells — without this, prompt-only mutations collapse
+    into a single cell and only the best survives.
     """
     g = _build_nx_graph(workflow)
 
@@ -98,14 +101,22 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
         elif tname == "GateNode":
             gate_count += 1
 
-    base = (depth, fork_degree, agent_count, gate_count)
+    base: tuple[int, ...] = (depth, fork_degree, agent_count, gate_count)
 
     if workflow.knob_values:
         knob_features = tuple(
             int(hashlib.sha256(str(v).encode()).hexdigest(), 16) % 10
             for v in workflow.knob_values.values()
         )
-        return base + knob_features
+        base = base + knob_features
+
+    prompt_features = tuple(
+        int(hashlib.sha256((node.prompt_template or "").encode()).hexdigest(), 16) % 8
+        for node in workflow.nodes.values()
+        if type(node).__name__ == "AgentNode" and hasattr(node, "prompt_template")
+    )
+    if prompt_features:
+        base = base + prompt_features
 
     return base
 
