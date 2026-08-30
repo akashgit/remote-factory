@@ -62,7 +62,7 @@ class TestPopulation:
         ind = Population.make_individual(simple_workflow, generation=1, score=0.8)
         assert ind.generation == 1
         assert ind.score == 0.8
-        assert len(ind.features) == 4
+        assert len(ind.features) == 8
         assert ind.parent_id is None
 
     def test_serialization_round_trip(self, simple_workflow: Workflow, tmp_path: Path) -> None:

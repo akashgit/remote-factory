@@ -103,44 +103,38 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
         elif tname == "GateNode":
             gate_count += 1
 
-    base: tuple[int, ...] = (depth, fork_degree, agent_count, gate_count)
+    def _hash_bucket(sig: str, buckets: int = 8) -> int:
+        return int(hashlib.sha256(sig.encode()).hexdigest(), 16) % buckets
 
-    # EDGE_REDIRECT: hash the sorted edge list so different wiring → different cell
-    edge_sig = ",".join(
-        sorted(f"{e.source}->{e.target}" for e in workflow.edges)
+    # EDGE_REDIRECT: hash the sorted edge list
+    edge_sig = ",".join(sorted(f"{e.source}->{e.target}" for e in workflow.edges))
+
+    # PARAM_MUTATE: aggregate hash of (model, timeout) per agent, sorted by node id
+    param_sig = "|".join(
+        f"{nid}:{getattr(workflow.nodes[nid], 'model', '')}:{getattr(workflow.nodes[nid], 'timeout', 0)}"
+        for nid in sorted(workflow.nodes)
+        if type(workflow.nodes[nid]).__name__ == "AgentNode"
     )
-    base = base + (int(hashlib.sha256(edge_sig.encode()).hexdigest(), 16) % 8,)
 
-    # PARAM_MUTATE: hash mutable params (timeout, model) per agent node
-    param_parts: list[str] = []
-    for nid in sorted(workflow.nodes):
-        node = workflow.nodes[nid]
-        if type(node).__name__ == "AgentNode":
-            model = getattr(node, "model", "")
-            timeout = getattr(node, "timeout", 0)
-            param_parts.append(f"{nid}:{model}:{timeout}")
-    if param_parts:
-        param_sig = "|".join(param_parts)
-        base = base + (int(hashlib.sha256(param_sig.encode()).hexdigest(), 16) % 8,)
-
-    # KNOB_MUTATE: hash each knob value
-    if workflow.knob_values:
-        knob_features = tuple(
-            int(hashlib.sha256(str(v).encode()).hexdigest(), 16) % 10
-            for v in workflow.knob_values.values()
-        )
-        base = base + knob_features
-
-    # PROMPT_MUTATE: hash each agent's prompt
-    prompt_features = tuple(
-        int(hashlib.sha256((node.prompt_template or "").encode()).hexdigest(), 16) % 8
-        for node in workflow.nodes.values()
-        if type(node).__name__ == "AgentNode" and hasattr(node, "prompt_template")
+    # PROMPT_MUTATE: aggregate hash of all prompts, sorted by node id
+    prompt_sig = "|".join(
+        f"{nid}:{getattr(workflow.nodes[nid], 'prompt_template', '') or ''}"
+        for nid in sorted(workflow.nodes)
+        if type(workflow.nodes[nid]).__name__ == "AgentNode"
     )
-    if prompt_features:
-        base = base + prompt_features
 
-    return base
+    # KNOB_MUTATE: aggregate hash of all knob values (sorted by key)
+    knob_sig = "|".join(
+        f"{k}={v}" for k, v in sorted(workflow.knob_values.items())
+    ) if workflow.knob_values else ""
+
+    return (
+        depth, fork_degree, agent_count, gate_count,
+        _hash_bucket(edge_sig),
+        _hash_bucket(param_sig, 16),
+        _hash_bucket(prompt_sig, 32),
+        _hash_bucket(knob_sig, 16),
+    )
 
 
 class NoveltyFilter:
