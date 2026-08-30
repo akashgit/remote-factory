@@ -162,7 +162,7 @@
 <div class="subtitle">
   Can factory's evolutionary outer loop teach an LLM to beat Stockfish?
   Each move runs a <code>Package</code> pipeline through the real <code>WorkflowExecutor</code>.
-  Best config locked from 8000 experiments. Factory tunes 5 remaining knobs via <code>KNOB_MUTATE</code> (guided by knob-contrastive reflection) and evolves agent prompts via <code>PROMPT_MUTATE</code> (Opus analyzes blunders, writes targeted advice).
+  Best config locked from 8000 experiments. Factory tunes 5 remaining knobs via <code>KNOB_MUTATE</code> (guided by knob-contrastive reflection) and rewrites agent prompts via <code>PROMPT_MUTATE</code> (Opus analyzes blunders, rewrites full prompts — not append, replacement).
   Scored by wins (+500), draws (+200), position quality, and survival.
 </div>
 
@@ -208,10 +208,10 @@ strategy = <span style="color:#d29922">WeightedRandomStrategy</span>()
     wf, rec = <span style="color:#3fb950">apply_random_mutation</span>(
         parent_wf, strategy, gen,
         reflection_report=report,
-    )  <span style="color:#8b949e"># KNOB_MUTATE uses</span>
-       <span style="color:#8b949e"># default_knob_expander</span>
-       <span style="color:#8b949e"># (Opus via CLI) to invent</span>
-       <span style="color:#8b949e"># new prompt variants</span>
+    )  <span style="color:#8b949e"># KNOB_MUTATE: guided by</span>
+       <span style="color:#8b949e"># knob-contrastive gradients</span>
+       <span style="color:#8b949e"># PROMPT_MUTATE: Opus rewrites</span>
+       <span style="color:#8b949e"># full prompts (replacement)</span>
     score = <span style="color:#d29922">await</span> evaluate(wf)
     archive.<span style="color:#3fb950">add</span>(ind, score)</pre>
   </div>
@@ -260,32 +260,33 @@ strategy = <span style="color:#d29922">WeightedRandomStrategy</span>()
 <span style="color:#d29922">OptKnob</span>(<span style="color:#a5d6ff">"opening_hint"</span>,
   bounds=[<span style="color:#a5d6ff">"theory"</span>, <span style="color:#a5d6ff">"principled"</span>])
 
-<span style="color:#f0883e"># ── Prompt mutation ──────────────</span>
-<span style="color:#8b949e"># Opus analyzes blunders each gen</span>
-<span style="color:#8b949e"># and writes targeted chess advice</span>
-<span style="color:#8b949e"># that factory appends to agents:</span>
+<span style="color:#f0883e"># ── Prompt mutation (free-form) ──</span>
+<span style="color:#8b949e"># Opus rewrites agent prompts each</span>
+<span style="color:#8b949e"># gen via default_prompt_rewriter.</span>
+<span style="color:#8b949e"># Full replacement, not append —</span>
+<span style="color:#8b949e"># can fix contradictions, remove</span>
+<span style="color:#8b949e"># bad advice, sharpen wording.</span>
 
+<span style="color:#8b949e"># Starting prompts:</span>
 <span style="color:#8b949e"># tactician:</span>
-<span style="color:#a5d6ff">"Before committing, check if the</span>
-<span style="color:#a5d6ff"> opponent can capture or refute</span>
-<span style="color:#a5d6ff"> your move with a tactical reply"</span>
+<span style="color:#a5d6ff">"Scan for tactical opportunities:</span>
+<span style="color:#a5d6ff"> forks, pins, skewers, hanging</span>
+<span style="color:#a5d6ff"> pieces, checkmate threats..."</span>
 
 <span style="color:#8b949e"># positionalist:</span>
 <span style="color:#a5d6ff">"Think about what the opponent</span>
 <span style="color:#a5d6ff"> wants to do. Suggest moves that</span>
-<span style="color:#a5d6ff"> prevent their plan while improving</span>
-<span style="color:#a5d6ff"> your position"</span>
+<span style="color:#a5d6ff"> prevent their plan..."</span>
 
 <span style="color:#8b949e"># verifier:</span>
 <span style="color:#a5d6ff">"Check for blunders: does this</span>
 <span style="color:#a5d6ff"> move hang a piece? Walk into a</span>
 <span style="color:#a5d6ff"> fork, pin, or skewer?"</span>
 
-<span style="color:#8b949e"># As factory finds blunders, it</span>
-<span style="color:#8b949e"># appends advice like:</span>
-<span style="color:#d2a8ff">"Always verify your piece is still</span>
-<span style="color:#d2a8ff"> defended after the opponent's most</span>
-<span style="color:#d2a8ff"> forcing reply"</span></pre>
+<span style="color:#8b949e"># After each gen, Opus rewrites:</span>
+<span style="color:#d2a8ff">"Scan for tactical shots — BUT</span>
+<span style="color:#d2a8ff"> first check the opponent's most</span>
+<span style="color:#d2a8ff"> forcing reply to each candidate"</span></pre>
   </div>
 </div>
 
