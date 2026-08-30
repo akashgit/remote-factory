@@ -22,7 +22,9 @@ from factory.workflow.primitives import (
 
 from .prompts import (
     DESIGN_DOC_PROMPT,
+    GATE_OVERWATCH_PROMPT,
     GATE_QA_PROMPT,
+    OVERWATCH_PROMPT,
     QA_DIRECTOR_PROMPT,
     RESEARCH_DIRECTOR_PROMPT,
     STRATEGY_DIRECTOR_PROMPT,
@@ -365,6 +367,42 @@ def workflow() -> Workflow:
         },
     )
 
+    # ── Overwatch (NEW — final verification before PR) ──
+
+    wf.nodes["overwatch"] = AgentNode(
+        id="overwatch",
+        role=AgentRole.CEO,
+        timeout=1800,
+        prompt_template=OVERWATCH_PROMPT,
+        reads={
+            ".factory/strategy/user-intent.md",
+            ".factory/strategy/current.md",
+            ".factory/reviews/builder-latest.md",
+            ".factory/reviews/qa-synthesized.md",
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+        },
+        writes={".factory/reviews/overwatch-latest.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/overwatch-latest.md",
+                must_exist=True,
+                min_size=100,
+            ),
+        ],
+    )
+
+    wf.nodes["gate_overwatch"] = GateNode(
+        id="gate_overwatch",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=GATE_OVERWATCH_PROMPT,
+        reads={
+            ".factory/reviews/overwatch-latest.md",
+            ".factory/strategy/user-intent.md",
+        },
+    )
+
     # ── Fix inherited node reads for design-v2 data flow ──
     # These nodes inherited reads of adversarial-qa.md from build_workflow,
     # but design-v2 replaces that with qa-synthesized.md.
@@ -398,6 +436,7 @@ def workflow() -> Workflow:
         if e.source not in _removed
         and e.target not in _removed
         and not (e.source == "join_qa" and e.target == "gate_qa")
+        and not (e.source == "gate_qa" and e.target == "gate_doc_freshness")
     ]
 
     # Bootstrap + study edges
@@ -446,6 +485,22 @@ def workflow() -> Workflow:
             ),
             Edge(source="join_qa", target="synthesize_qa"),
             Edge(source="synthesize_qa", target="gate_qa"),
+            Edge(
+                source="gate_qa",
+                target="overwatch",
+                condition=VerdictType.PROCEED,
+            ),
+            Edge(source="overwatch", target="gate_overwatch"),
+            Edge(
+                source="gate_overwatch",
+                target="gate_doc_freshness",
+                condition=VerdictType.PROCEED,
+            ),
+            Edge(
+                source="gate_overwatch",
+                target="builder",
+                condition=VerdictType.RELOOP,
+            ),
         ]
     )
 

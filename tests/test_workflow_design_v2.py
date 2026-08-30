@@ -48,10 +48,10 @@ class TestMeta:
 
 class TestGraphStructure:
     def test_node_count(self, design_v2_wf) -> None:
-        assert len(design_v2_wf.nodes) == 29
+        assert len(design_v2_wf.nodes) == 31
 
     def test_edge_count(self, design_v2_wf) -> None:
-        assert len(design_v2_wf.edges) == 32
+        assert len(design_v2_wf.edges) == 35
 
     def test_workflow_name(self, design_v2_wf) -> None:
         assert design_v2_wf.name == "design-v2"
@@ -94,6 +94,8 @@ class TestKeyNodesPresent:
             "study",
             "graph_explorer",
             "concat_study",
+            "overwatch",
+            "gate_overwatch",
         ],
     )
     def test_node_exists(self, design_v2_wf, node_id: str) -> None:
@@ -174,6 +176,18 @@ class TestNodeProperties:
         assert isinstance(node, FnNode)
         assert ".factory/strategy/user-intent.md" in node.writes
 
+    def test_overwatch_is_ceo(self, design_v2_wf) -> None:
+        node = design_v2_wf.nodes["overwatch"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.CEO
+        assert node.timeout == 1800
+
+    def test_gate_overwatch_is_agent(self, design_v2_wf) -> None:
+        gate = design_v2_wf.nodes["gate_overwatch"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "agent"
+        assert gate.evaluator_role == AgentRole.CEO
+
     def test_fork_qa_targets(self, design_v2_wf) -> None:
         fork = design_v2_wf.nodes["fork_qa"]
         assert isinstance(fork, ForkNode)
@@ -228,6 +242,38 @@ class TestEdgeWiring:
         assert ("gate_has_factory", "graph_update", VerdictType.PROCEED) in edges
         assert ("gate_has_factory", "discover", VerdictType.HALT) in edges
 
+    def test_gate_qa_proceed_to_overwatch(self, design_v2_wf) -> None:
+        assert (
+            "gate_qa",
+            "overwatch",
+            VerdictType.PROCEED,
+        ) in self._edge_set(design_v2_wf)
+
+    def test_overwatch_to_gate_overwatch(self, design_v2_wf) -> None:
+        assert ("overwatch", "gate_overwatch", None) in self._edge_set(design_v2_wf)
+
+    def test_gate_overwatch_proceed_to_doc_freshness(self, design_v2_wf) -> None:
+        assert (
+            "gate_overwatch",
+            "gate_doc_freshness",
+            VerdictType.PROCEED,
+        ) in self._edge_set(design_v2_wf)
+
+    def test_gate_overwatch_reloop_to_builder(self, design_v2_wf) -> None:
+        assert (
+            "gate_overwatch",
+            "builder",
+            VerdictType.RELOOP,
+        ) in self._edge_set(design_v2_wf)
+
+    def test_no_old_gate_qa_to_doc_freshness_edge(self, design_v2_wf) -> None:
+        direct = [
+            e
+            for e in design_v2_wf.edges
+            if e.source == "gate_qa" and e.target == "gate_doc_freshness"
+        ]
+        assert direct == [], "old gate_qa -> gate_doc_freshness edge should be removed"
+
     def test_no_old_join_qa_to_gate_qa_edge(self, design_v2_wf) -> None:
         """The old direct join_qa -> gate_qa edge must be replaced by join_qa -> synthesize_qa."""
         direct = [
@@ -267,6 +313,12 @@ class TestPostChecks:
         assert checks[0].min_size == 500
         assert "## What We're Building" in checks[0].must_contain
         assert "## Architecture" in checks[0].must_contain
+
+    def test_overwatch_post_check(self, design_v2_wf) -> None:
+        node = design_v2_wf.nodes["overwatch"]
+        assert len(node.post_checks) == 1
+        assert node.post_checks[0].path == ".factory/reviews/overwatch-latest.md"
+        assert node.post_checks[0].min_size == 100
 
     def test_qa_director_post_check(self, design_v2_wf) -> None:
         node = design_v2_wf.nodes["qa_director"]
