@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import networkx as nx
 import structlog
@@ -20,8 +20,7 @@ from factory.workflow.primitives import (
     Workflow,
 )
 
-if TYPE_CHECKING:
-    from factory.outer_loop.reflector import ReflectionReport
+from factory.outer_loop.reflector import ReflectionReport
 
 log = structlog.get_logger()
 
@@ -527,14 +526,54 @@ _PROMPT_VARIANTS = [
 MAX_NODES = 30
 
 
+PromptRewriter = Callable[[str, str, str | None], str | None]
+
+
+def default_prompt_rewriter(
+    node_id: str,
+    current_prompt: str,
+    hint: str | None,
+) -> str | None:
+    """Default prompt rewriter: uses claude CLI to rewrite an agent prompt."""
+    import subprocess
+
+    context = f"Hint from reflection: {hint}" if hint else "No specific hint."
+    prompt = (
+        f"You are improving an AI agent's prompt. The agent's role is '{node_id}'.\n\n"
+        f"Current prompt:\n{current_prompt}\n\n"
+        f"{context}\n\n"
+        f"Write an improved version of this prompt. Keep the same role and format. "
+        f"Make it more specific, fix any issues the hint identifies, and remove "
+        f"any contradictory or redundant instructions. "
+        f"Output ONLY the new prompt text, nothing else."
+    )
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", prompt, "--model", "opus",
+             "--append-system-prompt", "Output only the prompt text.",
+             "--max-turns", "1", "--output-format", "text"],
+            capture_output=True, text=True, timeout=60,
+        )
+        result = proc.stdout.strip()
+        return result if result else None
+    except Exception:
+        return None
+
+
 def mutate_prompt(
     workflow: Workflow,
     node_id: str,
     *,
     frozen_nodes: set[str] | None = None,
     prompt_hint: str | None = None,
+    rewriter: PromptRewriter | None = default_prompt_rewriter,
 ) -> tuple[Workflow, MutationRecord] | None:
-    """Mutate the prompt_template of an AgentNode."""
+    """Mutate the prompt_template of an AgentNode.
+
+    When a rewriter is provided, it REPLACES the prompt (informed by the
+    current prompt + hint). When no rewriter is available, falls back to
+    appending a hint or random variant.
+    """
     frozen = frozen_nodes or set()
     if node_id in frozen:
         return None
@@ -545,11 +584,17 @@ def mutate_prompt(
         return None
 
     old_prompt = node.prompt_template or ""
-    if prompt_hint:
-        new_prompt = f"{old_prompt}\n\n{prompt_hint}" if old_prompt else prompt_hint
-    else:
-        variant = random.choice(_PROMPT_VARIANTS)
-        new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
+    new_prompt: str | None = None
+
+    if rewriter is not None:
+        new_prompt = rewriter(node_id, old_prompt, prompt_hint)
+
+    if not new_prompt:
+        if prompt_hint:
+            new_prompt = f"{old_prompt}\n\n{prompt_hint}" if old_prompt else prompt_hint
+        else:
+            variant = random.choice(_PROMPT_VARIANTS)
+            new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
 
     try:
         updated = node.model_copy(update={"prompt_template": new_prompt})
@@ -605,44 +650,81 @@ def default_knob_expander(
         return None
 
 
+def _parse_knob_suggestion(
+    suggestion: str,
+) -> tuple[str, str] | None:
+    """Extract (knob_name, best_value) from a KNOB_MUTATE suggestion string."""
+    if not suggestion.startswith("KNOB_MUTATE:"):
+        return None
+    # Format: "KNOB_MUTATE: name=value (avg score +X) outperforms ..."
+    rest = suggestion[len("KNOB_MUTATE:"):].strip()
+    if "=" not in rest:
+        return None
+    name, _, after = rest.partition("=")
+    value = after.split()[0].rstrip("()") if after else ""
+    return (name.strip(), value) if name and value else None
+
+
 def mutate_knob(
     workflow: Workflow,
     *,
     expander: KnobExpander | None = default_knob_expander,
+    reflection_report: ReflectionReport | None = None,
 ) -> tuple[Workflow, MutationRecord] | None:
     """Mutate a single knob value within its declared bounds.
 
-    Reads knob_values from the workflow (populated by Package.compile()),
-    picks one at random, and changes it to a different value from the
-    corresponding OptKnob's bounds.
+    When a reflection_report is provided with KNOB_MUTATE suggestions,
+    70% of the time picks the suggested knob and value (exploitation).
+    30% of the time picks randomly (exploration).
 
     When all bounds are exhausted and the knob is expandable, calls
     ``expander(knob_name, expansion_hint, current_value, bounds)`` to
-    generate a new value. The expander can be backed by an LLM (e.g.
-    Opus authoring a new prompt variant). If the expander returns a
-    value, it is added to knob_bounds for future mutations.
+    generate a new value.
     """
     if not workflow.knob_values:
         return None
 
     wf = _deep_copy_workflow(workflow)
     knob_names = list(wf.knob_values.keys())
-    knob_name = random.choice(knob_names)
-    old_val = wf.knob_values[knob_name]
-    bounds = wf.knob_bounds.get(knob_name, [])
 
-    new_val: str | float | None = None
+    # Try guided mutation from reflection suggestions (70% of the time)
+    guided_knob: str | None = None
+    guided_val: str | float | None = None
+    if reflection_report and random.random() < 0.7:
+        suggestions = [
+            _parse_knob_suggestion(s) for s in reflection_report.mutation_suggestions
+        ]
+        valid = [(k, v) for parsed in suggestions if parsed
+                 for k, v in [parsed] if k in wf.knob_values]
+        if valid:
+            guided_knob, guided_val = random.choice(valid)
 
-    if bounds:
-        alternatives = [v for v in bounds if v != old_val]
-        if alternatives:
-            new_val = random.choice(alternatives)
-        elif knob_name in wf.knob_expandable and expander is not None:
-            hint = wf.knob_expandable[knob_name]
-            new_val = expander(knob_name, hint, old_val, bounds)
-            if new_val is not None:
-                wf.knob_bounds.setdefault(knob_name, []).append(new_val)
-                log.info("knob_expanded", knob=knob_name, new_value=new_val)
+    if guided_knob and guided_val is not None:
+        knob_name = guided_knob
+        old_val = wf.knob_values[knob_name]
+        new_val: str | float | None = guided_val
+        # Coerce type to match existing value
+        if isinstance(old_val, float) and isinstance(new_val, str):
+            try:
+                new_val = float(new_val)
+            except ValueError:
+                pass
+    else:
+        knob_name = random.choice(knob_names)
+        old_val = wf.knob_values[knob_name]
+        bounds = wf.knob_bounds.get(knob_name, [])
+        new_val = None
+
+        if bounds:
+            alternatives = [v for v in bounds if v != old_val]
+            if alternatives:
+                new_val = random.choice(alternatives)
+            elif knob_name in wf.knob_expandable and expander is not None:
+                hint = wf.knob_expandable[knob_name]
+                new_val = expander(knob_name, hint, old_val, bounds)
+                if new_val is not None:
+                    wf.knob_bounds.setdefault(knob_name, []).append(new_val)
+                    log.info("knob_expanded", knob=knob_name, new_value=new_val)
 
     if new_val is None:
         if isinstance(old_val, bool):
@@ -705,7 +787,8 @@ def apply_random_mutation(
 
         prompt_hint = _extract_prompt_hint(reflection_report) if reflection_report else None
         result = _try_mutation(workflow, op, frozen, prompt_hint=prompt_hint,
-                               expander=knob_expander)
+                               expander=knob_expander,
+                               reflection_report=reflection_report)
         if result is not None:
             wf, rec = result
             if len(wf.nodes) > MAX_NODES:
@@ -808,6 +891,11 @@ def _try_mutation(
 
     elif op == MutationType.KNOB_MUTATE:
         exp = kwargs.get("expander")
-        return mutate_knob(workflow, expander=exp if callable(exp) else None)
+        ref = kwargs.get("reflection_report")
+        return mutate_knob(
+            workflow,
+            expander=exp if callable(exp) else None,
+            reflection_report=ref if isinstance(ref, ReflectionReport) else None,
+        )
 
     return None
