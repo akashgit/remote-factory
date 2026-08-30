@@ -12,12 +12,16 @@ from pathlib import Path
 
 
 def main() -> None:
+    if len(sys.argv) < 2:
+        print("Usage: qa_synthesis.py <project_path>", file=sys.stderr)
+        sys.exit(1)
     project = sys.argv[1]
     reports: list[tuple[str, str]] = []
     for p in sorted(Path(f"{project}/.factory/reviews").glob("adversarial-*-latest.md")):
         slug = p.name.replace("-latest.md", "").replace("adversarial-", "")
         reports.append((slug, p.read_text()))
 
+    # Dedup is exact-match on normalized text; semantic similarity would catch more overlaps
     findings: dict[str, list[str]] = {}
     for tester_slug, text in reports:
         for line in text.splitlines():

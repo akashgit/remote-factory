@@ -259,7 +259,7 @@ def _build_ceo_task(
             "4. Seed the backlog: extract phase headers from current.md and append to backlog.md\n\n"
             "Do NOT skip this step. Do NOT exit without publishing.\n"
         )
-    elif design_existing and shown_mode == "design-v2":
+    elif design_existing and mode == "design-v2":
         task += "\n\n## Plan Loop (Interactive)\n\n"
         task += "**existing_project: true**\n\n"
         task += (
@@ -303,6 +303,17 @@ def _build_ceo_task(
                 "look at the backlog, eval scores, open issues, and recent history — "
                 "then present your findings and recommendations.\n"
             )
+    elif design_idea and mode == "design-v2":
+        task += (
+            f"\n\n## Plan Loop (Interactive)\n\n"
+            f"**Raw idea from user:** {design_idea}\n\n"
+            f"You are in design-v2 mode with a new idea.\n"
+            f"Follow the design-v2 SKILL.md playbook: Research Director, "
+            f"Strategy Director, Synthesize, Design Doc, then user approval.\n\n"
+            f"After you approve the plan at the strategy gate, persist it to "
+            f".factory/strategy/current.md — the workflow continues to "
+            f"implementation automatically.\n"
+        )
     elif design_idea:
         task += (
             f"\n\n## Plan Loop (Interactive)\n\n"

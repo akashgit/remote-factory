@@ -15,6 +15,7 @@ from pathlib import Path
 import structlog
 
 from factory.cli._helpers import (
+    DESIGN_MODES,
     _emit_cli_event,
     _ensure_dashboard,
     _print_banner,
@@ -78,6 +79,7 @@ def _run_single_cycle(
     run_id: str | None = None,
     no_worktree: bool = False,
     overwrite: str | None = None,
+    auto_approve: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -131,6 +133,7 @@ def _run_single_cycle(
             issue_numbers=issue_numbers,
             issue_urls=issue_urls,
             clean_pr=clean_pr,
+            auto_approve=auto_approve,
         )
 
         result, code = _run(
@@ -405,7 +408,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     warn_deprecated_mode(mode)
     auto_approve: bool = getattr(args, "auto_approve", False)
-    if auto_approve and mode not in ("design", "design-v2"):
+    if auto_approve and mode not in DESIGN_MODES:
         print("Error: --auto-approve only applies to --mode design or design-v2", file=sys.stderr)
         return 1
     force_fresh = mode == "auto-fresh"
@@ -430,7 +433,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in ("design", "design-v2", "research"):
+    if focus and mode not in (*DESIGN_MODES, "research"):
         print(
             f"Error: --focus (targeted mode) only works in design or research mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",
@@ -455,7 +458,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
-    skip_improve = mode in ("design", "design-v2", "meta") or discover_only
+    skip_improve = mode in (*DESIGN_MODES, "meta") or discover_only
 
     overwrite = getattr(args, "overwrite", None)
 
@@ -480,6 +483,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             run_id=run_id,
             no_worktree=no_worktree,
             overwrite=overwrite,
+            auto_approve=auto_approve,
             **budget_kwargs,
         )
         if code != 0:

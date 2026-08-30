@@ -45,7 +45,7 @@ def workflow() -> Workflow:
     wf = build_workflow()
 
     # ── Bootstrap: gate_has_factory + discover + factory.md creation ──
-    # Mirrors the bootstrap subgraph in definitions.design_workflow().
+    # TODO: extract shared bootstrap subgraph to avoid copy-paste with definitions.design_workflow().
 
     wf.nodes["gate_has_factory"] = GateNode(
         id="gate_has_factory",

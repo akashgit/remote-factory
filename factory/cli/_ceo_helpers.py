@@ -13,6 +13,7 @@ from pathlib import Path
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
+    DESIGN_MODES,
     _emit_cli_event,
     _ensure_dashboard,
     get_all_ceo_modes,
@@ -172,10 +173,10 @@ def _validate_ceo_flags(
         entries = WorkflowRegistry.discover(project_path)
         all_workflow_entries = set(entries.keys())
         if mode not in all_workflow_entries:
+            available = sorted(set(all_modes) | all_workflow_entries)
             print(
                 f"Error: unknown mode '{mode}'. "
-                f"Not a built-in mode and not found in project workflows at "
-                f"{project_path / '.factory' / 'workflows'}.",
+                f"Available modes: {', '.join(available)}",
                 file=sys.stderr,
             )
             return 1
@@ -193,12 +194,12 @@ def _validate_ceo_flags(
     from_plan: str | None = getattr(args, "from_plan", None)
     just_plan: bool = getattr(args, "just_plan", False)
 
-    if auto_approve and mode not in ("design", "design-v2"):
+    if auto_approve and mode not in DESIGN_MODES:
         print("Error: --auto-approve only applies to --mode design or design-v2", file=sys.stderr)
         return 1
 
     if just_plan:
-        if mode not in ("design", "design-v2"):
+        if mode not in DESIGN_MODES:
             print("Error: --just-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if from_plan:
@@ -209,7 +210,7 @@ def _validate_ceo_flags(
             return 1
 
     if from_plan:
-        if mode not in ("design", "design-v2"):
+        if mode not in DESIGN_MODES:
             print("Error: --from-plan requires --mode design or design-v2", file=sys.stderr)
             return 1
         if focus:
@@ -255,31 +256,31 @@ def _validate_ceo_flags(
             return 1
 
     _design_is_existing = (
-        mode in ("design", "design-v2")
+        mode in DESIGN_MODES
         and raw_path
         and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
-    if mode in ("design", "design-v2"):
+    if mode in DESIGN_MODES:
         if auto_approve:
             headless = True
         elif headless:
             flag = "--bg" if bg else "--headless"
             print(
-                f"Error: --mode design requires foreground mode (incompatible with {flag})",
+                f"Error: --mode design/design-v2 requires foreground mode (incompatible with {flag})",
                 file=sys.stderr,
             )
             return 1
         if prompt_file:
             print(
-                "Error: --mode design and --prompt are mutually exclusive. "
+                "Error: --mode design/design-v2 and --prompt are mutually exclusive. "
                 "Design mode generates the spec; --prompt provides one.",
                 file=sys.stderr,
             )
             return 1
         if focus and not _design_is_existing and not just_plan:
             print(
-                "Error: --mode design and --focus are mutually exclusive "
+                "Error: --mode design/design-v2 and --focus are mutually exclusive "
                 "for new ideas. To discuss a topic on an existing project, "
                 'pass the project path: factory ceo /path --mode design --focus "topic"',
                 file=sys.stderr,
@@ -356,7 +357,7 @@ def _resolve_ceo_project(
     context: str | None = None
 
     _design_is_existing = (
-        mode in ("design", "design-v2")
+        mode in DESIGN_MODES
         and raw_path
         and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
@@ -381,10 +382,10 @@ def _resolve_ceo_project(
                 if m.group(1) in registered:
                     update_existing_mode = m.group(1)
                     create_description = m.group(2).strip()
-    elif mode in ("design", "design-v2") and _design_is_existing:
+    elif mode in DESIGN_MODES and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
-    elif mode in ("design", "design-v2"):
+    elif mode in DESIGN_MODES:
         resolved_file = Path(raw_path).expanduser()
         if _safe_is_file(resolved_file):
             design_idea = resolved_file.read_text()
@@ -644,7 +645,7 @@ def _execute_ceo(
     )
     if mode == "create":
         ceo_mode = "create"
-    elif mode in ("design", "design-v2"):
+    elif mode in DESIGN_MODES:
         ceo_mode = mode
     elif interactive:
         ceo_mode = "design"
@@ -921,7 +922,7 @@ def _run_headless(
                 min_growth=min_growth,
                 max_new=max_new,
                 branch=branch,
-                already_improved=mode in ("design", "design-v2", "meta") or discover_only,
+                already_improved=mode in (*DESIGN_MODES, "meta") or discover_only,
                 model=model,
                 no_github=no_github,
                 use_profile=use_profile,
@@ -974,7 +975,7 @@ def _run_headless(
             min_growth=min_growth,
             max_new=max_new,
             branch=branch,
-            already_improved=mode in ("design", "design-v2", "meta") or discover_only,
+            already_improved=mode in (*DESIGN_MODES, "meta") or discover_only,
             model=model,
             no_github=no_github,
             use_profile=use_profile,
