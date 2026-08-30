@@ -255,7 +255,9 @@ def _validate_ceo_flags(
             return 1
 
     _design_is_existing = (
-        mode in ("design", "design-v2") and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode in ("design", "design-v2")
+        and raw_path
+        and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode in ("design", "design-v2"):
@@ -354,7 +356,9 @@ def _resolve_ceo_project(
     context: str | None = None
 
     _design_is_existing = (
-        mode in ("design", "design-v2") and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode in ("design", "design-v2")
+        and raw_path
+        and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "create":

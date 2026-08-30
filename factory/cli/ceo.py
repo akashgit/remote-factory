@@ -136,8 +136,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return err
 
     if design_existing:
-        banner_mode = "design"
-    elif mode in ("design", "research") and (design_idea or research_ideation):
+        banner_mode = mode if mode == "design-v2" else "design"
+    elif mode in ("design", "design-v2", "research") and (design_idea or research_ideation):
         banner_mode = "ideation"
     else:
         banner_mode = mode
