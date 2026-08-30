@@ -45,6 +45,7 @@ CEO_MODES = [
     "evolve",
     "deep-research",
     "outer-loop",
+    "create-v2",
 ]
 
 

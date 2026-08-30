@@ -1387,6 +1387,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "design-v2": lambda: __import__(
             "factory.workflow.contributed.design_v2", fromlist=["workflow"]
         ).workflow(),
+        "create-v2": lambda: __import__(
+            "factory.workflow.contributed.create_v2", fromlist=["workflow"]
+        ).workflow(),
     }
     return _BUILTIN_REGISTRY
 

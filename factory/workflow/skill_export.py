@@ -83,6 +83,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "create-v2": {
+        "description": (
+            "Create mode with inference-time scaling — dynamic research, "
+            "multi-strategy with intent fidelity, workflow-specific QA (mandatory "
+            "workflow-validate and cli-integration testers), and Overwatch "
+            "verification. Use when the user says 'create a mode' and wants "
+            "the v2 pipeline with directors and intent tracking."
+        ),
+        "argument_hint": '"mode description" or "existing_mode: change description"',
+    },
 }
 
 
