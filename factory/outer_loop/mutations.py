@@ -599,8 +599,14 @@ def mutate_prompt(
     try:
         updated = node.model_copy(update={"prompt_template": new_prompt})
         wf.nodes[node_id] = updated  # type: ignore[assignment]
-    except Exception:
+    except Exception as exc:
+        log.warning("prompt_mutate_validation_failed", node=node_id, error=str(exc))
         return None
+
+    # Persist in knob_values so the mutation survives Package.compile() round-trips
+    prompt_knob = f"_prompt_{node_id}"
+    wf.knob_values[prompt_knob] = new_prompt
+    wf.knob_expandable[prompt_knob] = f"Prompt for {node_id}"
 
     record = MutationRecord(
         operator=MutationType.PROMPT_MUTATE,
