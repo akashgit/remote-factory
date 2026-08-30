@@ -15,6 +15,7 @@ from factory.cli._ceo_helpers import (
     _validate_ceo_flags,
     _validate_late_flags,
 )
+from factory.cli._helpers import DESIGN_MODES
 from factory.cli._mode_handlers import (
     _auto_detect_mode,
     handle_deep_qa_mode,
@@ -136,8 +137,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return err
 
     if design_existing:
-        banner_mode = "design"
-    elif mode in ("design", "research") and (design_idea or research_ideation):
+        banner_mode = mode if mode == "design-v2" else "design"
+    elif mode in (*DESIGN_MODES, "research") and (design_idea or research_ideation):
         banner_mode = "ideation"
     else:
         banner_mode = mode

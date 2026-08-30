@@ -240,6 +240,11 @@ factory ceo /path/to/project --mode design --just-plan                    # Rese
 factory ceo "distributed eval runner" --mode design --just-plan            # Plan a new idea
 factory ceo /path/to/project --mode design --just-plan --focus "auth"      # Focused planning
 
+# Design-v2 — inference-time scaling (dynamic directors, user intent ledger)
+factory ceo "markdown link checker" --mode design-v2                      # Dynamic research + strategy
+factory ceo /path/to/project --mode design-v2 --focus "auth"              # Existing project
+factory ceo /path/to/project --mode design-v2 --auto-approve              # CEO acts as user at gates
+
 # Improve — point at existing codebase
 factory ceo /path/to/project                    # Single improvement cycle
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat

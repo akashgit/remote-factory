@@ -635,3 +635,44 @@ class TestB8ConditionalUnknownLabel:
         b = _make_simple_package("b")
         result = Conditional(gate, {"PROCEED": a, "HALT": b})
         assert result is not None
+
+
+class TestConditionalKnobPropagation:
+    def test_conditional_propagates_knobs(self):
+        from factory.workflow.package import Conditional, OptKnob
+        pkg_a = Package(
+            name="a",
+            graph=Workflow(name="a", nodes={"a1": FnNode(id="a1", command="echo a")},
+                           edges=[], start_node="a1"),
+            entry_node="a1", exit_node="a1",
+            knobs=[OptKnob(name="style", kind="prompt", node_id="a1",
+                           default="fast", bounds=["fast", "slow"])],
+        )
+        pkg_b = Package(
+            name="b",
+            graph=Workflow(name="b", nodes={"b1": FnNode(id="b1", command="echo b")},
+                           edges=[], start_node="b1"),
+            entry_node="b1", exit_node="b1",
+            memory=[MemoryDeclaration(namespace="b", kind="kv")],
+        )
+        gate = GateNode(id="g1", evaluator_type="fn", evaluator_command="echo PROCEED")
+        cond = Conditional(gate, {"PROCEED": pkg_a, "HALT": pkg_b})
+        assert len(cond.knobs) == 1
+        assert cond.knobs[0].name == "style"
+        assert len(cond.memory) == 1
+        assert cond.memory[0].namespace == "b"
+
+    def test_conditional_compiles_with_knobs(self):
+        from factory.workflow.package import Conditional, OptKnob
+        pkg = Package(
+            name="x",
+            graph=Workflow(name="x", nodes={"x1": FnNode(id="x1", command="echo")},
+                           edges=[], start_node="x1"),
+            entry_node="x1", exit_node="x1",
+            knobs=[OptKnob(name="depth", kind="threshold", node_id="x1",
+                           default=3.0, bounds=[1.0, 5.0])],
+        )
+        gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo PROCEED")
+        cond = Conditional(gate, {"PROCEED": pkg})
+        wf = cond.compile()
+        assert wf.knob_values == {"depth": 3.0}

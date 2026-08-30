@@ -415,6 +415,85 @@ def _should_remove_worktree(branch: str) -> bool:
     return (value or "true").lower() in ("true", "1", "yes")
 
 
+def _is_greenfield_run(worktree_path: Path, project_path: Path) -> bool:
+    """Return True if main has no factory.md but the worktree does (non-symlink)."""
+    main_factory_md = project_path / "factory.md"
+    wt_factory_md = worktree_path / "factory.md"
+    return (
+        not main_factory_md.exists()
+        and wt_factory_md.exists()
+        and not wt_factory_md.is_symlink()
+    )
+
+
+def _finalize_greenfield(worktree_path: Path, project_path: Path, branch: str) -> bool:
+    """Ensure factory.md is tracked on the greenfield branch. Returns True on success."""
+    wt_factory_md = worktree_path / "factory.md"
+    if not wt_factory_md.exists():
+        log.warning("finalize_greenfield_no_factory_md", path=str(worktree_path))
+        return False
+
+    result = subprocess.run(
+        ["git", "ls-files", "factory.md"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        log.info("finalize_greenfield_already_tracked", branch=branch)
+        return True
+
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Factory",
+        "GIT_AUTHOR_EMAIL": "factory@localhost",
+        "GIT_COMMITTER_NAME": "Factory",
+        "GIT_COMMITTER_EMAIL": "factory@localhost",
+    }
+
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        add_result = subprocess.run(
+            ["git", "add", "factory.md"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        if add_result.returncode != 0:
+            log.warning("finalize_greenfield_add_failed", stderr=add_result.stderr[:200])
+            return False
+
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", "chore: track factory.md for greenfield initialization"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if commit_result.returncode == 0:
+            break
+        if "lock" in commit_result.stderr.lower() and attempt < max_attempts - 1:
+            import time
+
+            time.sleep(0.2 * (attempt + 1))
+            continue
+        log.warning("finalize_greenfield_commit_failed", stderr=commit_result.stderr[:200])
+        return False
+
+    verify = subprocess.run(
+        ["git", "ls-files", "factory.md"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if verify.returncode != 0 or not verify.stdout.strip():
+        log.warning("finalize_greenfield_postcondition_failed", branch=branch)
+        return False
+
+    log.info("finalize_greenfield_committed", branch=branch)
+    return True
+
+
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
@@ -451,7 +530,6 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
                 )
             except Exception:
                 pass
-            import sys
 
             print(
                 f"Worktree retained: {worktree_path}\n"
@@ -459,6 +537,24 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
                 file=sys.stderr,
             )
             return
+        if worktree_path != project_path and _is_greenfield_run(worktree_path, project_path):
+            if not _finalize_greenfield(worktree_path, project_path, branch):
+                log.warning(
+                    "greenfield_finalization_failed",
+                    worktree=str(worktree_path),
+                    branch=branch,
+                    hint="factory.md not committed; retaining worktree for recovery",
+                )
+                print(
+                    f"WARNING: Greenfield finalization failed — factory.md may not be tracked.\n"
+                    f"Worktree retained: {worktree_path}\n"
+                    f"To recover: cd {worktree_path} && git add factory.md && "
+                    f"git commit -m 'chore: track factory.md'\n"
+                    f"Then clean up: git worktree remove {worktree_path} && git branch -D {branch}",
+                    file=sys.stderr,
+                )
+                return
+
         _sync_backlog_to_main(worktree_path, project_path)
         _sync_bootstrap_to_main(worktree_path, project_path)
         _preserve_telemetry(worktree_path, project_path)

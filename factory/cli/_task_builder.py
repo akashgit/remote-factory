@@ -191,6 +191,7 @@ def _build_ceo_task(
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
+    auto_approve: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -258,14 +259,37 @@ def _build_ceo_task(
             "4. Seed the backlog: extract phase headers from current.md and append to backlog.md\n\n"
             "Do NOT skip this step. Do NOT exit without publishing.\n"
         )
+    elif design_existing and mode == "design-v2":
+        task += "\n\n## Plan Loop (Interactive)\n\n"
+        task += "**existing_project: true**\n\n"
+        task += (
+            f"You are in design-v2 mode on an existing project at `{project_path}`.\n"
+            "Follow the design-v2 SKILL.md playbook: Research Director, "
+            "Strategy Director, Synthesize, Design Doc, then user approval.\n"
+        )
+        if focus:
+            task += (
+                f"\n**Focus topic (from --focus):** {focus}\n\n"
+                f"The user wants to discuss this specific topic. Use it to seed the "
+                f"research and spec, but be open to the user redirecting.\n"
+            )
+        else:
+            task += (
+                "\nNo specific topic was provided. Study the project broadly — "
+                "look at the backlog, eval scores, open issues, and recent history — "
+                "then present your findings and recommendations.\n"
+            )
     elif design_existing:
         task += (
             f"\n\n## Plan Loop (Interactive)\n\n"
             f"**existing_project: true**\n\n"
-            f"You are in interactive planning mode on an **existing project** at `{project_path}`.\n\n"
-            f"Run the Plan Loop (P0-P3) with interactive approval. Research the project "
-            f"(local study + external best practices), synthesize an improvement spec "
-            f"through user feedback. After you approve the plan at the strategy gate, the workflow continues to implementation automatically.\n\n"
+            f"You are in interactive planning mode on an **existing project** "
+            f"at `{project_path}`.\n\n"
+            f"Run the Plan Loop (P0-P3) with interactive approval. Research the "
+            f"project (local study + external best practices), synthesize an "
+            f"improvement spec through user feedback. After you approve the plan "
+            f"at the strategy gate, the workflow continues to implementation "
+            f"automatically.\n\n"
         )
         if focus:
             task += (
@@ -279,6 +303,17 @@ def _build_ceo_task(
                 "look at the backlog, eval scores, open issues, and recent history — "
                 "then present your findings and recommendations.\n"
             )
+    elif design_idea and mode == "design-v2":
+        task += (
+            f"\n\n## Plan Loop (Interactive)\n\n"
+            f"**Raw idea from user:** {design_idea}\n\n"
+            f"You are in design-v2 mode with a new idea.\n"
+            f"Follow the design-v2 SKILL.md playbook: Research Director, "
+            f"Strategy Director, Synthesize, Design Doc, then user approval.\n\n"
+            f"After you approve the plan at the strategy gate, persist it to "
+            f".factory/strategy/current.md — the workflow continues to "
+            f"implementation automatically.\n"
+        )
     elif design_idea:
         task += (
             f"\n\n## Plan Loop (Interactive)\n\n"
@@ -489,6 +524,20 @@ def _build_ceo_task(
             f"6. Keep/revert verdict + finalize\n"
             f"7. Archivist (single batch)\n\n"
             f"Do NOT skip the review pipeline. Do NOT abbreviate any step.\n"
+        )
+
+    if auto_approve:
+        task += (
+            "\n\n## Auto-Approve Mode\n\n"
+            "auto_approve: true\n\n"
+            "At user approval gates (like gate_strategy), you act as the user:\n"
+            "1. Read the plan at .factory/strategy/current.md\n"
+            "2. Read the user's original intent at .factory/strategy/user-intent.md\n"
+            "3. Compare: does the plan match what the user asked for?\n"
+            "4. If YES: approve and proceed (say \"Approved\" and continue to the next step)\n"
+            "5. If NO: provide specific feedback about what's missing or wrong, then reloop\n\n"
+            "You are the CEO acting on behalf of the user. Apply judgment — approve good plans, "
+            "reject bad ones. Do NOT blindly approve everything. Do NOT wait for human input.\n"
         )
 
     if clean_pr:

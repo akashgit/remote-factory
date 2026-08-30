@@ -25,6 +25,8 @@ DEAD_MODES: dict[str, str] = {
     "parallel-improve": "design",
 }
 
+DESIGN_MODES = ("design", "design-v2")
+
 CEO_MODES = [
     "auto",
     "auto-fresh",
