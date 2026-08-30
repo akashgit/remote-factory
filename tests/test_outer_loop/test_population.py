@@ -198,9 +198,49 @@ class TestRankWeightedSelection:
         archive.add(Individual(id="b", workflow_data={}, score=1000.0, features=(1, 0, 1, 0)))
         counts: dict[str, int] = {"a": 0, "b": 0}
         for _ in range(200):
-            p = archive.sample_parent(tournament_size=1, rank_weighted=False)
+            p = archive.sample_parent(tournament_size=1, rank_weighted=False, auto_rank_weighted=False)
             assert p is not None
             counts[p.id] += 1
         # Uniform: both should be roughly 50/50
         assert counts["a"] > 50
         assert counts["b"] > 50
+
+
+class TestAutoRankWeighted:
+    def test_auto_activates_by_cell_count(self) -> None:
+        archive = MAPElitesArchive()
+        for i in range(10):
+            archive.add(Individual(id=f"i{i}", workflow_data={}, score=i * 10.0, features=(i,)))
+        counts: dict[str, int] = {}
+        for _ in range(300):
+            p = archive.sample_parent(tournament_size=1, auto_rank_cell_threshold=8)
+            assert p is not None
+            counts[p.id] = counts.get(p.id, 0) + 1
+        # With auto rank-weighted, best should be picked more often
+        assert counts.get("i9", 0) > counts.get("i0", 0)
+
+    def test_auto_stays_uniform_below_thresholds(self) -> None:
+        archive = MAPElitesArchive()
+        archive.add(Individual(id="a", workflow_data={}, score=10.0, features=(0,)))
+        archive.add(Individual(id="b", workflow_data={}, score=11.0, features=(1,)))
+        # 2 cells < 8 threshold, variance ~0.25 < 1000 threshold
+        counts: dict[str, int] = {"a": 0, "b": 0}
+        for _ in range(200):
+            p = archive.sample_parent(tournament_size=1)
+            assert p is not None
+            counts[p.id] += 1
+        assert counts["a"] > 50
+        assert counts["b"] > 50
+
+    def test_auto_disabled(self) -> None:
+        archive = MAPElitesArchive()
+        for i in range(10):
+            archive.add(Individual(id=f"i{i}", workflow_data={}, score=i * 100.0, features=(i,)))
+        counts: dict[str, int] = {}
+        for _ in range(300):
+            p = archive.sample_parent(tournament_size=1, auto_rank_weighted=False)
+            assert p is not None
+            counts[p.id] = counts.get(p.id, 0) + 1
+        # Without auto, uniform sampling — worst should get ~10% (1/10)
+        assert counts.get("i0", 0) > 10
+
