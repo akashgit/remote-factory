@@ -17,8 +17,8 @@ def main() -> None:
         sys.exit(1)
     project = sys.argv[1]
     reports: list[tuple[str, str]] = []
-    for p in sorted(Path(f"{project}/.factory/reviews").glob("adversarial-*-latest.md")):
-        slug = p.name.replace("-latest.md", "").replace("adversarial-", "")
+    for p in sorted(Path(f"{project}/.factory/reviews").glob("adversarial*-latest.md")):
+        slug = p.stem.removeprefix("adversarial_tester-").removeprefix("adversarial-").removesuffix("-latest")
         reports.append((slug, p.read_text()))
 
     if not reports:
