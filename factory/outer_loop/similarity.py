@@ -73,13 +73,15 @@ def graph_edit_distance(w1: Workflow, w2: Workflow) -> int:
 def compute_features(workflow: Workflow) -> tuple[int, ...]:
     """Extract features from a workflow for MAP-Elites grid placement.
 
-    Features: (depth, fork_degree, agent_count, gate_count,
-               *knob_hashes, *prompt_hashes).
+    Every mutation type must produce a distinct feature so that different
+    mutations land in different cells:
 
-    Knob values (from Package.compile()) and agent prompt_templates are
-    each hashed to integer buckets so that KNOB_MUTATE and PROMPT_MUTATE
-    produce distinct cells — without this, prompt-only mutations collapse
-    into a single cell and only the best survives.
+    - NODE_INSERT / NODE_REMOVE → agent_count, depth
+    - PARALLELIZE / SERIALIZE  → fork_degree
+    - EDGE_REDIRECT            → edge_hash
+    - PARAM_MUTATE             → param_hash (timeout, model, etc.)
+    - KNOB_MUTATE              → knob_hashes
+    - PROMPT_MUTATE            → prompt_hashes
     """
     g = _build_nx_graph(workflow)
 
@@ -103,6 +105,25 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
 
     base: tuple[int, ...] = (depth, fork_degree, agent_count, gate_count)
 
+    # EDGE_REDIRECT: hash the sorted edge list so different wiring → different cell
+    edge_sig = ",".join(
+        sorted(f"{e.source}->{e.target}" for e in workflow.edges)
+    )
+    base = base + (int(hashlib.sha256(edge_sig.encode()).hexdigest(), 16) % 8,)
+
+    # PARAM_MUTATE: hash mutable params (timeout, model) per agent node
+    param_parts: list[str] = []
+    for nid in sorted(workflow.nodes):
+        node = workflow.nodes[nid]
+        if type(node).__name__ == "AgentNode":
+            model = getattr(node, "model", "")
+            timeout = getattr(node, "timeout", 0)
+            param_parts.append(f"{nid}:{model}:{timeout}")
+    if param_parts:
+        param_sig = "|".join(param_parts)
+        base = base + (int(hashlib.sha256(param_sig.encode()).hexdigest(), 16) % 8,)
+
+    # KNOB_MUTATE: hash each knob value
     if workflow.knob_values:
         knob_features = tuple(
             int(hashlib.sha256(str(v).encode()).hexdigest(), 16) % 10
@@ -110,6 +131,7 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
         )
         base = base + knob_features
 
+    # PROMPT_MUTATE: hash each agent's prompt
     prompt_features = tuple(
         int(hashlib.sha256((node.prompt_template or "").encode()).hexdigest(), 16) % 8
         for node in workflow.nodes.values()

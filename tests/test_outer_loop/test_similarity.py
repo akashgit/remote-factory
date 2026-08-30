@@ -103,7 +103,7 @@ class TestComputeFeatures:
         assert fork_degree == 0
         assert agent_count == 3
         assert gate_count == 1
-        assert len(features) > 4  # prompt features appended
+        assert len(features) > 4  # edge, param, and prompt features appended
 
     def test_workflow_with_fork(self) -> None:
         nodes = {
@@ -131,7 +131,7 @@ class TestComputeFeatures:
         assert fork_degree == 3
         assert agent_count == 3
         assert gate_count == 1
-        assert len(features) > 4  # prompt features for 3 agents
+        assert len(features) > 4  # edge, param, and prompt features
 
 
 class TestNoveltyFilter:
