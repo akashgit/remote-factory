@@ -724,8 +724,16 @@ def mutate_knob(
                 new_val = float(new_val)
             except ValueError:
                 pass
-    else:
-        knob_name = random.choice(knob_names)
+        # Skip no-op: guided value same as current
+        if str(new_val) == str(old_val):
+            new_val = None
+            guided_knob = None
+    if not guided_knob:
+        # Exclude synthetic _prompt_* knobs (handled by PROMPT_MUTATE)
+        real_knobs = [k for k in knob_names if not k.startswith("_prompt_")]
+        if not real_knobs:
+            return None
+        knob_name = random.choice(real_knobs)
         old_val = wf.knob_values[knob_name]
         bounds = wf.knob_bounds.get(knob_name, [])
         new_val = None
