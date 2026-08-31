@@ -890,10 +890,10 @@ class WorkflowExecutor:
         if node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
-                    "{project_path}", shlex.quote(str(self.project_path)),
+                    "{project_path}", str(self.project_path),
                 )
                 try:
-                    output = await self._run_shell(cmd)
+                    output = await self._run_shell_or_exec(cmd)
                     return self._parse_fn_verdict(output, node.id)
                 except RuntimeError:
                     return Verdict.halt(reason=f"gate command failed: {cmd}")
@@ -1062,14 +1062,25 @@ class WorkflowExecutor:
             )
         )
 
-    async def _run_shell(self, cmd: str) -> str:
-        """Run a shell command and return stdout."""
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=self.project_path,
-        )
+    async def _run_shell_or_exec(self, cmd: str) -> str:
+        """Run a command, using exec mode for python3 -c to avoid quote issues."""
+        import re
+        m = re.match(r"""^python3\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
+        if m:
+            code = m.group(2)
+            proc = await asyncio.create_subprocess_exec(
+                "python3", "-c", code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.project_path,
+            )
+        else:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.project_path,
+            )
         stdout_bytes, stderr_bytes = await proc.communicate()
         stdout = stdout_bytes.decode() if stdout_bytes else ""
 
@@ -1080,6 +1091,10 @@ class WorkflowExecutor:
             )
 
         return stdout
+
+    async def _run_shell(self, cmd: str) -> str:
+        """Run a shell command and return stdout."""
+        return await self._run_shell_or_exec(cmd)
 
     async def _wait_for_reads(self, node: NodeType) -> None:
         """Wait until all files in node.reads are available in completed_files."""
