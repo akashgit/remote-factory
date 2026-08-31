@@ -568,6 +568,51 @@ def default_prompt_rewriter(
         return None
 
 
+async def async_prompt_rewriter(
+    node_id: str,
+    current_prompt: str,
+    hint: str | None,
+) -> str | None:
+    """Async prompt rewriter: uses claude CLI without blocking the event loop."""
+    import asyncio as _asyncio
+
+    context = f"Hint from reflection: {hint}" if hint else "No specific hint."
+    prompt = (
+        f"You are improving an AI agent's prompt. The agent's role is '{node_id}'.\n\n"
+        f"Current prompt:\n{current_prompt}\n\n"
+        f"{context}\n\n"
+        f"Write an improved version of this prompt. Keep the same role and format. "
+        f"Make it more specific, fix any issues the hint identifies, and remove "
+        f"any contradictory or redundant instructions. "
+        f"Output ONLY the new prompt text, nothing else."
+    )
+    try:
+        proc = await _asyncio.create_subprocess_exec(
+            "claude", "-p", prompt, "--model", "opus",
+            "--append-system-prompt", "Output only the prompt text.",
+            "--max-turns", "1", "--output-format", "text",
+            stdout=_asyncio.subprocess.PIPE,
+            stderr=_asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await _asyncio.wait_for(proc.communicate(), timeout=120.0)
+        result = stdout.decode().strip() if stdout else ""
+        if result:
+            log.info("prompt_rewritten", node=node_id, len=len(result))
+        else:
+            log.warning("prompt_rewriter_empty", node=node_id)
+        return result if result else None
+    except _asyncio.TimeoutError:
+        log.warning("prompt_rewriter_timeout", node=node_id, timeout=120)
+        try:
+            proc.kill()  # type: ignore[possibly-undefined]
+        except Exception:
+            pass
+        return None
+    except Exception as exc:
+        log.warning("prompt_rewriter_error", node=node_id, error=str(exc))
+        return None
+
+
 def mutate_prompt(
     workflow: Workflow,
     node_id: str,
