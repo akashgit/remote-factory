@@ -137,12 +137,23 @@ class Package(BaseModel):
         survive compile() round-trips.
         """
         wf = self.graph.model_copy(deep=True)
+        # Preserve _prompt_* entries from previous mutations before overwriting
+        saved_prompts = {
+            k: v for k, v in wf.knob_values.items()
+            if k.startswith("_prompt_")
+        }
+        saved_expandable = {
+            k: v for k, v in wf.knob_expandable.items()
+            if k.startswith("_prompt_")
+        }
         if self.knobs:
             wf.knob_values = {k.name: k.default for k in self.knobs}
             wf.knob_bounds = {k.name: list(k.bounds) for k in self.knobs if k.bounds}
             wf.knob_expandable = {
                 k.name: k.expansion_hint for k in self.knobs if k.expandable
             }
+        wf.knob_values.update(saved_prompts)
+        wf.knob_expandable.update(saved_expandable)
         for key, val in list(wf.knob_values.items()):
             if key.startswith("_prompt_") and isinstance(val, str):
                 node_id = key[len("_prompt_"):]
