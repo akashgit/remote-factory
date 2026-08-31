@@ -843,7 +843,12 @@ class WorkflowExecutor:
         )
 
         if code != 0:
-            raise RuntimeError(f"agent {node.role.value} exited with code {code}")
+            log.warning(
+                "agent_nonzero_exit",
+                role=node.role.value,
+                code=code,
+                output_len=len(stdout),
+            )
 
         return stdout
 
