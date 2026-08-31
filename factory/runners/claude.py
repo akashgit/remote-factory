@@ -116,6 +116,7 @@ class ClaudeRunner:
             "--output-format",
             "stream-json",
             "--verbose",
+            "--bare",
             "--disallowedTools",
             "Agent",
         ]
@@ -300,6 +301,7 @@ class ClaudeRunner:
             "claude",
             "--append-system-prompt-file",
             prompt_file.name,
+            "--bare",
         ]
         settings_file = request.extras.get("settings_file")
         if settings_file:
