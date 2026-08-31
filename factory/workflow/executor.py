@@ -890,10 +890,11 @@ class WorkflowExecutor:
         if node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
-                    "{project_path}", str(self.project_path),
+                    "{project_path}",
+                    shlex.quote(str(self.project_path)),
                 )
                 try:
-                    output = await self._run_shell_or_exec(cmd)
+                    output = await self._run_shell(cmd)
                     return self._parse_fn_verdict(output, node.id)
                 except RuntimeError:
                     return Verdict.halt(reason=f"gate command failed: {cmd}")
