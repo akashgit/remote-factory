@@ -240,12 +240,16 @@ class OuterLoopReflector:
             all_knob_names.update(kv.keys())
 
         for knob in sorted(all_knob_names):
+            is_prompt = knob.startswith("_prompt_") or knob.startswith("prompt_")
             val_scores: dict[str, list[float]] = {}
             for id_, score, _ in all_sorted:
                 kv = knob_values_by_id.get(id_, {})
                 val = str(kv.get(knob, ""))
-                if val:
-                    val_scores.setdefault(val, []).append(score)
+                if not val:
+                    continue
+                if is_prompt:
+                    val = val[:100]
+                val_scores.setdefault(val, []).append(score)
 
             if len(val_scores) < 2:
                 continue
@@ -259,9 +263,14 @@ class OuterLoopReflector:
             gap = avg_by_val[best_val] - avg_by_val[worst_val]
 
             if gap > 0:
+                op = "PROMPT_MUTATE" if is_prompt else "KNOB_MUTATE"
+                display_best = best_val[:60] + "..." if len(best_val) > 60 else best_val
+                display_worst = worst_val[:60] + "..." if len(worst_val) > 60 else worst_val
                 report.mutation_suggestions.append(
-                    f"KNOB_MUTATE: {knob}={best_val} (avg score {avg_by_val[best_val]:+.0f}) "
-                    f"outperforms {knob}={worst_val} ({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
+                    f"{op}: {knob}={display_best} "
+                    f"(avg score {avg_by_val[best_val]:+.0f}) "
+                    f"outperforms {knob}={display_worst} "
+                    f"({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
                 )
 
         # Top-K vs bottom-K: which knobs differ consistently?
