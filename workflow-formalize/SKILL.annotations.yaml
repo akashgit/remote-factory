@@ -1,0 +1,371 @@
+fork_research:
+  type: ForkNode
+  id: fork_research
+  targets: researcher_patterns,researcher_mathlib,researcher_algorithm
+  edges_out:
+  - target: researcher_patterns
+    condition: null
+  - target: researcher_mathlib
+    condition: null
+  - target: researcher_algorithm
+    condition: null
+researcher_patterns:
+  type: AgentNode
+  id: researcher_patterns
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-patterns.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_patterns: 'Formalization patterns analysis. Analyze how
+      existing samplers are formalized in $PROJECT_PATH/formal/Mcmc/. Study the pattern:
+      Kernel theory (formal/Mcmc/Kernel/ or Mcmc/Hamiltonian/) -> Executable refinement
+      (formal/Mcmc/Executable/Continuous/) -> CompilerIR program -> IRFormat emission.
+      Read 2-3 existing examples end-to-end (e.g. RWMH: Kernel/GaussianRandomWalk.lean
+      + Executable/Continuous/RWMH.lean + Executable/Continuous/CompilerIR.lean).
+      Document the module structure, naming conventions, import patterns, proof strategies,
+      and how theorems connect kernel specs to executable refinements. Write findings
+      to .factory/strategy/research-patterns.md.
+
+      Write output to: .factory/strategy/research-patterns.md'
+    timeout_researcher_patterns: '600'
+researcher_mathlib:
+  type: AgentNode
+  id: researcher_mathlib
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-mathlib.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_mathlib: 'Mathlib API discovery for the target algorithm.
+      Read the --focus description from the CEO task to understand which algorithm
+      is being formalized. Search $PROJECT_PATH/.lake/packages/mathlib/Mathlib/ for
+      relevant lemmas covering: measure theory, probability, linear algebra, topology,
+      analysis. Check $PROJECT_PATH/formal/lean-toolchain for the pinned Lean/mathlib
+      version. Document available theorems that the formalization can reuse — provide
+      exact module paths and theorem names. Write findings to .factory/strategy/research-mathlib.md.
+
+      Write output to: .factory/strategy/research-mathlib.md'
+    timeout_researcher_mathlib: '600'
+researcher_algorithm:
+  type: AgentNode
+  id: researcher_algorithm
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-algorithm.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_algorithm: 'Algorithm specification parsing. Read the --focus
+      description from the CEO task. Parse the algorithm description into a precise
+      mathematical specification. Identify: the state space, the proposal mechanism,
+      the acceptance criterion, what needs to be proved (detailed balance, stationarity,
+      invariance, reversibility), what IR primitives are needed (sample_gaussian,
+      compute_log_density, etc.), and what the signature of the resulting executable
+      function should be. Write findings to .factory/strategy/research-algorithm.md.
+
+      Write output to: .factory/strategy/research-algorithm.md'
+    timeout_researcher_algorithm: '600'
+join_research:
+  type: JoinNode
+  id: join_research
+  sources: researcher_patterns,researcher_mathlib,researcher_algorithm
+  reads: []
+  writes: []
+  edges_out:
+  - target: gate_research
+    condition: null
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-algorithm.md
+  - .factory/strategy/research-mathlib.md
+  - .factory/strategy/research-patterns.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: fork_research
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: 'Review the three research outputs for the formalization.
+      Check: (1) Are existing formalization patterns well-documented with concrete
+      examples? (2) Are relevant mathlib lemmas identified with exact paths? (3) Is
+      the algorithm specification mathematically precise with clear proof targets?
+      PROCEED if all three are adequate. RELOOP if any research is shallow or missing
+      key details.'
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-algorithm.md
+  - .factory/strategy/research-mathlib.md
+  - .factory/strategy/research-patterns.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Synthesize a formalization plan from the three research
+      outputs. Read .factory/strategy/research-patterns.md, research-mathlib.md, and
+      research-algorithm.md. Produce a concrete implementation plan covering: 1) Lean
+      module structure — which files to create under formal/Mcmc/ 2) Theorem statements
+      — what to prove and in what order 3) IR program design — what CompilerIR programs
+      to add 4) IRFormat wiring — how to connect to formal/Mcmc/Executable/IRFormat.lean
+      5) Mathlib reuse map — which existing lemmas to reference 6) Module dependency
+      graph — build order for lake build 7) formal/Mcmc.lean update plan — new import
+      lines Write the plan to .factory/strategy/current.md.
+
+      Read: .factory/strategy/research-algorithm.md, .factory/strategy/research-mathlib.md,
+      .factory/strategy/research-patterns.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: user
+  reads:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: archivist_plan
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    max_iterations_gate_strategy: '3'
+archivist_plan:
+  type: AgentNode
+  id: archivist_plan
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/archive/formalize-plan.md
+  edges_out:
+  - target: builder_theory
+    condition: null
+  slots:
+    task_prompt_archivist_plan: 'Archive the approved formalization plan. Record the
+      algorithm being formalized, the module structure, theorem proof order, and mathlib
+      dependencies.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/archive/formalize-plan.md'
+    timeout_archivist_plan: '300'
+builder_theory:
+  type: AgentNode
+  id: builder_theory
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_theory
+    condition: null
+  slots:
+    task_prompt_builder_theory: 'Implement the Lean kernel theory and executable refinement.
+      Read the approved formalization plan at .factory/strategy/current.md. Read CLAUDE.md
+      for project conventions. Create the Lean modules specified in the plan: - Kernel
+      theory module(s) under formal/Mcmc/Kernel/ or appropriate subdirectory - Executable
+      refinement module(s) under formal/Mcmc/Executable/ - Refinement theorems connecting
+      the IR program to the mathematical kernel - Module docstrings and public definition
+      docstrings per CLAUDE.md conventions Constraints: No sorry, admit, or axiom.
+      Reuse mathlib lemmas from the plan. After writing the Lean code, run ''cd formal
+      && lake build'' to check compilation. If compilation fails, fix the errors before
+      reporting completion. Commit changes when compilation succeeds.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder_theory: '1200'
+gate_theory:
+  type: GateNode
+  id: gate_theory
+  evaluator_type: fn
+  evaluator_command: cd {project_path}/formal && lake build
+  reads: []
+  edges_out:
+  - target: gate_theory_review
+    condition: PROCEED
+  - target: builder_theory
+    condition: RELOOP
+  slots:
+    max_iterations_gate_theory: '5'
+gate_theory_review:
+  type: GateNode
+  id: gate_theory_review
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: builder_ir
+    condition: PROCEED
+  - target: archivist_build
+    condition: HALT
+  slots:
+    gate_prompt_gate_theory_review: 'Review the compiled Lean proofs. Read the builder
+      output at .factory/reviews/builder-latest.md. Check git diff for the new .lean
+      files. Verify: (1) Module structure matches the approved plan (2) Theorem names
+      and types are meaningful (3) No sorry, admit, or axiom in the code (4) Module
+      docstrings are present PROCEED to IR phase if proofs are well-structured. HALT
+      if fundamental issues require re-planning.'
+builder_ir:
+  type: AgentNode
+  id: builder_ir
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_ir
+    condition: null
+  slots:
+    task_prompt_builder_ir: 'Wire IR emission and update imports. Read the approved
+      plan at .factory/strategy/current.md. Read CLAUDE.md for project conventions.
+      Tasks: - Add IR program to CompilerIR (extend the program type with the new
+      sampler) - Wire into formal/Mcmc/Executable/IRFormat.lean - Update formal/Mcmc.lean
+      with new module imports After writing the code, run ''cd formal && lake build''
+      to verify IR matches theory via refinement theorem. If compilation fails, fix
+      the errors before reporting completion. Commit changes when compilation succeeds.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder_ir: '1200'
+gate_ir:
+  type: GateNode
+  id: gate_ir
+  evaluator_type: fn
+  evaluator_command: cd {project_path}/formal && lake build
+  reads: []
+  edges_out:
+  - target: fn_generate
+    condition: PROCEED
+  - target: builder_ir
+    condition: RELOOP
+  slots:
+    max_iterations_gate_ir: '3'
+fn_generate:
+  type: FnNode
+  id: fn_generate
+  command: cd {project_path} && make generate
+  reads: []
+  writes:
+  - Samplers.ir
+  edges_out:
+  - target: fork_qa
+    condition: null
+fork_qa:
+  type: ForkNode
+  id: fork_qa
+  targets: fn_check_generated,fn_test,fn_proof_hygiene
+  edges_out:
+  - target: fn_check_generated
+    condition: null
+  - target: fn_test
+    condition: null
+  - target: fn_proof_hygiene
+    condition: null
+fn_check_generated:
+  type: FnNode
+  id: fn_check_generated
+  command: cd {project_path} && make check-generated
+  reads: []
+  writes: []
+  edges_out:
+  - target: join_qa
+    condition: null
+fn_test:
+  type: FnNode
+  id: fn_test
+  command: cd {project_path} && make test
+  reads: []
+  writes: []
+  edges_out:
+  - target: join_qa
+    condition: null
+fn_proof_hygiene:
+  type: FnNode
+  id: fn_proof_hygiene
+  command: 'cd {project_path}/formal && FILES=$(git diff --name-only HEAD~2 -- Mcmc/
+    | grep ''\.lean$'' || true) && if [ -z "$FILES" ]; then   echo ''PASS: no new
+    .lean files to check''; exit 0; fi && if echo "$FILES" | xargs grep -n ''sorry\|admit\|axiom'';
+    then   echo ''FAIL: found sorry/admit/axiom in new Lean files''; exit 1; else   echo
+    ''PASS: no proof holes found''; exit 0; fi'
+  reads: []
+  writes: []
+  edges_out:
+  - target: join_qa
+    condition: null
+join_qa:
+  type: JoinNode
+  id: join_qa
+  sources: fn_check_generated,fn_test,fn_proof_hygiene
+  reads: []
+  writes: []
+  edges_out:
+  - target: gate_qa
+    condition: null
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: archivist_build
+    condition: PROCEED
+  - target: builder_ir
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: 'Review the three parallel QA results. All three must pass
+      for PROCEED: (1) make check-generated — committed IR matches Lean source (2)
+      make test — full test suite passes (3) proof hygiene — no sorry/admit/axiom
+      in .lean files If any check failed, RELOOP to builder_ir with specific guidance
+      on what to fix (max 3 iterations). If all pass, PROCEED to archivist.'
+    max_iterations_gate_qa: '3'
+archivist_build:
+  type: AgentNode
+  id: archivist_build
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/archive/formalize-build.md
+  edges_out: []
+  slots:
+    task_prompt_archivist_build: 'Archive the formalization build results. Record:
+      what algorithm was formalized, theorems proved, IR programs added, new Reference
+      Julia functions generated, and any lessons learned from proof compilation iterations.
+
+      Read: .factory/reviews/builder-latest.md
+
+      Write output to: .factory/archive/formalize-build.md'
+    timeout_archivist_build: '300'
