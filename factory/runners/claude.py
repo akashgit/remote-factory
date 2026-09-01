@@ -73,6 +73,11 @@ def _parse_usage(data: dict) -> AgentUsage:
     )
 
 
+def _claude_bin() -> str:
+    """Return the Claude CLI binary name, respecting FACTORY_CLAUDE_BIN override."""
+    return os.environ.get("FACTORY_CLAUDE_BIN", "claude")
+
+
 class ClaudeRunner:
     """Runner implementation for Claude Code CLI."""
 
@@ -85,7 +90,7 @@ class ClaudeRunner:
         return RunnerMeta(
             name="claude",
             display_name="Claude Code",
-            binary="claude",
+            binary=_claude_bin(),
             install_hint="npm install -g @anthropic-ai/claude-code",
             supports_usage_telemetry=True,
             supports_session_name=True,
@@ -108,7 +113,7 @@ class ClaudeRunner:
         prompt_path = Path(prompt_file.name)
 
         cmd = [
-            "claude",
+            _claude_bin(),
             "--append-system-prompt-file",
             prompt_file.name,
             "-p",
@@ -298,7 +303,7 @@ class ClaudeRunner:
         temp_files.append(settings_path)
 
         cmd = [
-            "claude",
+            _claude_bin(),
             "--append-system-prompt-file",
             prompt_file.name,
             "--bare",

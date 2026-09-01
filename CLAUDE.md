@@ -213,6 +213,15 @@ Usage: `factory ceo /path --profile litellm-proxy`
 
 The factory uses Claude Code (`claude` CLI) as its agent backend. The runner abstraction (`factory/runners/`) supports this via `ClaudeRunner` in `factory/runners/claude.py`. The runner protocol (`factory/runners/protocol.py`) defines the interface.
 
+**Custom binary:** Set `FACTORY_CLAUDE_BIN` to use a wrapper script (e.g. `glaude`) instead of the `claude` binary. All runner invocations (headless, interactive, background, tmux) and CLI commands (`factory ceo`, `factory resume`) respect this override. Works with credential profiles:
+
+```toml
+[credentials.glaude]
+FACTORY_CLAUDE_BIN = "glaude"
+```
+
+Usage: `factory ceo /path --profile glaude`
+
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data and usage logs to this directory. These are project-local artifacts that should not be committed to version control.
 
 ## Running the factory

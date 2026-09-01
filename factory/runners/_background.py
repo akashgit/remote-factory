@@ -73,8 +73,10 @@ async def run_in_background(
     prompt_file.close()
     prompt_path = prompt_file.name
 
+    from factory.runners.claude import _claude_bin
+
     cmd = [
-        "claude", "--bg", "--name", session_name,
+        _claude_bin(), "--bg", "--name", session_name,
         "--append-system-prompt-file", prompt_path, "-p", task,
         "--disallowedTools", "Agent",
     ]
@@ -136,7 +138,12 @@ async def run_in_background(
                 return session_output, 0 if is_success else 1, None
 
         logger.error("Background agent timed out after %ss: role=%s", timeout, role)
-        stop_result = subprocess.run(["claude", "stop", session_id], capture_output=True)
+        from factory.runners.claude import _claude_bin
+
+        stop_result = subprocess.run(
+            [_claude_bin(), "stop", session_id],
+            capture_output=True,
+        )
         if stop_result.returncode != 0:
             logger.warning(
                 "Failed to stop background session %s: %s",

@@ -182,9 +182,12 @@ def cmd_refactory(args: argparse.Namespace) -> int:
     from factory.agents.runner import resolve_prompt
     from factory.refactory import get_session_id, setup_workspace
 
-    claude_path = shutil.which("claude")
+    from factory.runners.claude import _claude_bin
+
+    bin_ = _claude_bin()
+    claude_path = shutil.which(bin_)
     if not claude_path:
-        print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
+        print(f"Error: '{bin_}' CLI not found. Install Claude Code first.", file=sys.stderr)
         return 1
 
     project_path = Path(getattr(args, "path", None) or Path.cwd()).resolve()
@@ -217,7 +220,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
 
     if is_new_session:
         cmd = [
-            "claude",
+            bin_,
             "--session-id",
             session_id,
             "--append-system-prompt-file",
@@ -228,7 +231,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
         ]
     else:
         cmd = [
-            "claude",
+            bin_,
             "--resume",
             session_id,
             "--append-system-prompt-file",
@@ -246,5 +249,5 @@ def cmd_refactory(args: argparse.Namespace) -> int:
         cmd.extend(["--mcp-config", str(mcp_config), "--strict-mcp-config"])
 
     os.chdir(project_path)
-    os.execvp("claude", cmd)
+    os.execvp(bin_, cmd)
     return 0

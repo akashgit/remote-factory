@@ -234,7 +234,10 @@ async def run_in_tmux(
 
     settings_file = _generate_settings(sentinel_file, tmpdir, project_path, session_id=f"{session}:{window}")
 
-    cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file),
+    from factory.runners.claude import _claude_bin
+
+    bin_ = _claude_bin()
+    cmd = [bin_, "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file),
            "--disallowedTools", "Agent"]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
@@ -335,9 +338,11 @@ async def run_in_tmux(
 def _check_claude_agents_state(session_name: str) -> str | None:
     """Query claude agents --json for a session's state. Returns 'busy', 'waiting',
     'idle', or None if the session is not found or the command fails."""
+    from factory.runners.claude import _claude_bin
+
     try:
         result = subprocess.run(
-            ["claude", "agents", "--json"],
+            [_claude_bin(), "agents", "--json"],
             capture_output=True,
             text=True,
             timeout=10,

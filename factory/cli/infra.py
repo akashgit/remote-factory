@@ -165,9 +165,12 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print("Run 'factory ceo <path>' first to create a session.", file=sys.stderr)
         return 1
 
-    claude_path = shutil.which("claude")
+    from factory.runners.claude import _claude_bin
+
+    bin_ = _claude_bin()
+    claude_path = shutil.which(bin_)
     if not claude_path:
-        print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
+        print(f"Error: '{bin_}' CLI not found. Install Claude Code first.", file=sys.stderr)
         return 1
 
     interactive = True
@@ -179,7 +182,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         interactive = False
         resume_mode = cycle_state.mode
 
-    cmd = ["claude", "--resume", session_id]
+    cmd = [bin_, "--resume", session_id]
     if model:
         cmd.extend(["--model", model])
 
@@ -219,7 +222,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print(f"Resuming interactive CEO session: {session_id[:12]}...")
 
     os.chdir(project_path)
-    os.execvp("claude", cmd)
+    os.execvp(bin_, cmd)
     return 0
 
 

@@ -122,6 +122,69 @@ class TestClaudeRunner:
             ]
 
 
+class TestFactoryClaudeBin:
+    """Tests for FACTORY_CLAUDE_BIN binary override."""
+
+    async def test_headless_respects_factory_claude_bin(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FACTORY_CLAUDE_BIN", "glaude")
+        runner = ClaudeRunner()
+
+        with patch(
+            "factory.runners._subprocess.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (
+                b'{"result":"ok","usage":{},"cost_usd":0,"duration_ms":0,"num_turns":1,"model":"m"}',
+                b"",
+            )
+            with patch(
+                "factory.runners._subprocess.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                await runner.headless(
+                    AgentRunRequest(prompt="test", task="hi", cwd=tmp_path, timeout=10.0)
+                )
+
+                cmd = list(mock_exec.call_args[0])
+                assert cmd[0] == "glaude"
+
+    def test_interactive_respects_factory_claude_bin(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FACTORY_CLAUDE_BIN", "glaude")
+        runner = ClaudeRunner()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            runner.interactive_run(
+                AgentRunRequest(prompt="test", task="hi", cwd=tmp_path)
+            )
+            cmd = mock_run.call_args[0][0]
+            assert cmd[0] == "glaude"
+
+    def test_metadata_respects_factory_claude_bin(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FACTORY_CLAUDE_BIN", "glaude")
+        meta = ClaudeRunner.metadata()
+        assert meta.binary == "glaude"
+
+    def test_defaults_to_claude_without_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("FACTORY_CLAUDE_BIN", raising=False)
+        runner = ClaudeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(prompt="test", task="hi", cwd=tmp_path, timeout=10.0)
+        )
+        assert cmd[0] == "claude"
+
+
 class TestInteractiveBackupRestore:
     def test_restores_backup_after_interactive_run(self, tmp_path: Path) -> None:
         claude_dir = tmp_path / ".claude"
