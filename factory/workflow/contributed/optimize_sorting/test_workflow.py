@@ -44,7 +44,7 @@ class TestGraphValidation:
 
 
 class TestNodeExistence:
-    """All 25 nodes must be present."""
+    """All 31 nodes must be present."""
 
     SHARED_NODES = {
         "lock_baseline",
@@ -60,8 +60,9 @@ class TestNodeExistence:
         "builder_config_change",
         "gate_no_code_changes",
         "run_benchmark_t1",
-        "gate_accuracy_t1",
+        "gate_catastrophic_t1",
         "confirm_benchmark_t1",
+        "gate_accuracy_t1",
         "archive_result_t1",
     }
 
@@ -70,8 +71,9 @@ class TestNodeExistence:
         "strategist_t2",
         "builder_optimize_hotpath",
         "run_benchmark_t2",
-        "gate_accuracy_t2",
+        "gate_catastrophic_t2",
         "confirm_benchmark_t2",
+        "gate_accuracy_t2",
         "archive_result_t2",
     }
 
@@ -80,9 +82,10 @@ class TestNodeExistence:
         "strategist_t3",
         "builder_implement_alternative",
         "run_benchmark_t3",
+        "gate_catastrophic_t3",
+        "confirm_benchmark_t3",
         "gate_accuracy_t3",
         "gate_per_unit_accuracy",
-        "confirm_benchmark_t3",
         "archive_result_t3",
     }
 
@@ -90,7 +93,7 @@ class TestNodeExistence:
 
     def test_total_node_count(self) -> None:
         wf = workflow()
-        assert len(wf.nodes) == 28
+        assert len(wf.nodes) == 31
 
     def test_all_nodes_present(self) -> None:
         wf = workflow()
@@ -100,13 +103,13 @@ class TestNodeExistence:
         assert len(self.SHARED_NODES) == 5
 
     def test_tier1_node_count(self) -> None:
-        assert len(self.TIER1_NODES) == 8
+        assert len(self.TIER1_NODES) == 9
 
     def test_tier2_node_count(self) -> None:
-        assert len(self.TIER2_NODES) == 7
+        assert len(self.TIER2_NODES) == 8
 
     def test_tier3_node_count(self) -> None:
-        assert len(self.TIER3_NODES) == 8
+        assert len(self.TIER3_NODES) == 9
 
 
 # ── Node Types ────────────────────────────────────────────────────
@@ -140,6 +143,17 @@ class TestNodeTypes:
     def test_accuracy_gates_are_gate_nodes(self) -> None:
         wf = workflow()
         for name in ("gate_accuracy_t1", "gate_accuracy_t2", "gate_accuracy_t3"):
+            node = wf.nodes[name]
+            assert isinstance(node, GateNode), f"{name} should be GateNode"
+            assert node.evaluator_type == "fn"
+
+    def test_catastrophic_gates_are_gate_nodes(self) -> None:
+        wf = workflow()
+        for name in (
+            "gate_catastrophic_t1",
+            "gate_catastrophic_t2",
+            "gate_catastrophic_t3",
+        ):
             node = wf.nodes[name]
             assert isinstance(node, GateNode), f"{name} should be GateNode"
             assert node.evaluator_type == "fn"
@@ -207,11 +221,11 @@ class TestNodeTypes:
 
 
 class TestEdgeTopology:
-    """All 33 edges with correct conditions."""
+    """All 39 edges with correct conditions."""
 
     def test_edge_count(self) -> None:
         wf = workflow()
-        assert len(wf.edges) == 36
+        assert len(wf.edges) == 39
 
     def _find_edges(
         self,
@@ -285,20 +299,25 @@ class TestEdgeTopology:
             "gate_no_code_changes", "builder_config_change", VerdictType.RELOOP
         )) == 1
 
-    def test_edge_t1_benchmark_to_accuracy(self) -> None:
-        assert len(self._find_edges("run_benchmark_t1", "gate_accuracy_t1")) == 1
+    def test_edge_t1_benchmark_to_catastrophic(self) -> None:
+        assert len(self._find_edges("run_benchmark_t1", "gate_catastrophic_t1")) == 1
+
+    def test_edge_t1_catastrophic_proceed(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t1", "confirm_benchmark_t1", VerdictType.PROCEED
+        )) == 1
+
+    def test_edge_t1_catastrophic_halt(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t1", "archive_result_t1", VerdictType.HALT
+        )) == 1
+
+    def test_edge_t1_confirm_to_accuracy(self) -> None:
+        assert len(self._find_edges("confirm_benchmark_t1", "gate_accuracy_t1")) == 1
 
     def test_edge_t1_accuracy_proceed(self) -> None:
         assert len(self._find_edges(
-            "gate_accuracy_t1", "confirm_benchmark_t1", VerdictType.PROCEED
-        )) == 1
-
-    def test_edge_t1_confirm_to_archive(self) -> None:
-        assert len(self._find_edges("confirm_benchmark_t1", "archive_result_t1")) == 1
-
-    def test_edge_t1_accuracy_reloop(self) -> None:
-        assert len(self._find_edges(
-            "gate_accuracy_t1", "builder_config_change", VerdictType.RELOOP
+            "gate_accuracy_t1", "archive_result_t1", VerdictType.PROCEED
         )) == 1
 
     def test_edge_t1_accuracy_halt(self) -> None:
@@ -322,20 +341,25 @@ class TestEdgeTopology:
             "builder_optimize_hotpath", "run_benchmark_t2"
         )) == 1
 
-    def test_edge_t2_benchmark_to_accuracy(self) -> None:
-        assert len(self._find_edges("run_benchmark_t2", "gate_accuracy_t2")) == 1
+    def test_edge_t2_benchmark_to_catastrophic(self) -> None:
+        assert len(self._find_edges("run_benchmark_t2", "gate_catastrophic_t2")) == 1
+
+    def test_edge_t2_catastrophic_proceed(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t2", "confirm_benchmark_t2", VerdictType.PROCEED
+        )) == 1
+
+    def test_edge_t2_catastrophic_halt(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t2", "archive_result_t2", VerdictType.HALT
+        )) == 1
+
+    def test_edge_t2_confirm_to_accuracy(self) -> None:
+        assert len(self._find_edges("confirm_benchmark_t2", "gate_accuracy_t2")) == 1
 
     def test_edge_t2_accuracy_proceed(self) -> None:
         assert len(self._find_edges(
-            "gate_accuracy_t2", "confirm_benchmark_t2", VerdictType.PROCEED
-        )) == 1
-
-    def test_edge_t2_confirm_to_archive(self) -> None:
-        assert len(self._find_edges("confirm_benchmark_t2", "archive_result_t2")) == 1
-
-    def test_edge_t2_accuracy_reloop(self) -> None:
-        assert len(self._find_edges(
-            "gate_accuracy_t2", "builder_optimize_hotpath", VerdictType.RELOOP
+            "gate_accuracy_t2", "archive_result_t2", VerdictType.PROCEED
         )) == 1
 
     def test_edge_t2_accuracy_halt(self) -> None:
@@ -359,17 +383,25 @@ class TestEdgeTopology:
             "builder_implement_alternative", "run_benchmark_t3"
         )) == 1
 
-    def test_edge_t3_benchmark_to_accuracy(self) -> None:
-        assert len(self._find_edges("run_benchmark_t3", "gate_accuracy_t3")) == 1
+    def test_edge_t3_benchmark_to_catastrophic(self) -> None:
+        assert len(self._find_edges("run_benchmark_t3", "gate_catastrophic_t3")) == 1
+
+    def test_edge_t3_catastrophic_proceed(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t3", "confirm_benchmark_t3", VerdictType.PROCEED
+        )) == 1
+
+    def test_edge_t3_catastrophic_halt(self) -> None:
+        assert len(self._find_edges(
+            "gate_catastrophic_t3", "archive_result_t3", VerdictType.HALT
+        )) == 1
+
+    def test_edge_t3_confirm_to_accuracy(self) -> None:
+        assert len(self._find_edges("confirm_benchmark_t3", "gate_accuracy_t3")) == 1
 
     def test_edge_t3_accuracy_proceed(self) -> None:
         assert len(self._find_edges(
             "gate_accuracy_t3", "gate_per_unit_accuracy", VerdictType.PROCEED
-        )) == 1
-
-    def test_edge_t3_accuracy_reloop(self) -> None:
-        assert len(self._find_edges(
-            "gate_accuracy_t3", "builder_implement_alternative", VerdictType.RELOOP
         )) == 1
 
     def test_edge_t3_accuracy_halt(self) -> None:
@@ -379,11 +411,8 @@ class TestEdgeTopology:
 
     def test_edge_t3_per_unit_proceed(self) -> None:
         assert len(self._find_edges(
-            "gate_per_unit_accuracy", "confirm_benchmark_t3", VerdictType.PROCEED
+            "gate_per_unit_accuracy", "archive_result_t3", VerdictType.PROCEED
         )) == 1
-
-    def test_edge_t3_confirm_to_archive(self) -> None:
-        assert len(self._find_edges("confirm_benchmark_t3", "archive_result_t3")) == 1
 
     def test_edge_t3_per_unit_reloop(self) -> None:
         assert len(self._find_edges(
@@ -644,7 +673,7 @@ class TestReloopEdges:
     def test_all_reloop_edges_originate_from_gates(self) -> None:
         wf = workflow()
         reloop_edges = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
-        assert len(reloop_edges) == 5  # 2 in T1, 1 in T2, 2 in T3
+        assert len(reloop_edges) == 2  # 1 in T1 (config gate), 1 in T3 (per-unit gate)
         for edge in reloop_edges:
             assert isinstance(wf.nodes[edge.source], GateNode), (
                 f"RELOOP edge from {edge.source} but it's not a GateNode"
@@ -653,4 +682,4 @@ class TestReloopEdges:
     def test_reloop_count(self) -> None:
         wf = workflow()
         reloop_edges = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
-        assert len(reloop_edges) == 5
+        assert len(reloop_edges) == 2
