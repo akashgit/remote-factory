@@ -245,6 +245,75 @@ def _benchmark_command() -> str:
     )
 
 
+def _benchmark_3x_command() -> str:
+    """Inline python3 -c command for confirm_benchmark_t{1,2,3} FnNodes.
+
+    Reads the existing benchmark-result.json (run 1), executes 2 more runs,
+    then averages all 3 and overwrites benchmark-result.json with
+    mean/std fields (same format as baseline.json).
+    """
+    return (
+        "python3 -c \""
+        "import json, subprocess, sys, statistics, os, datetime;"
+        "p = '{project_path}';"
+        "cfg = json.load(open(os.path.join(p, '.factory', 'config.json')));"
+        "sb = cfg.get('sorting_benchmark', cfg.get('research_target', {}));"
+        "cmd = sb.get('command', sb.get('run_command', ''));"
+        ""
+        "if not cmd:"
+        "    print('ERROR: No benchmark command in config.json', file=sys.stderr);"
+        "    sys.exit(1);"
+        ""
+        "br_path = os.path.join(p, '.factory', 'sorting', 'benchmark-result.json');"
+        "run1 = json.load(open(br_path));"
+        "results = [run1];"
+        ""
+        "for i in range(2):"
+        "    print(f'Confirmation run {i+2}/3');"
+        "    out_i = os.path.join(p, '.factory', 'sorting', f'benchmark_confirm_{i}.json');"
+        "    run_cmd = cmd.replace('{recording}', sb.get('recording', '')).replace('{output}', out_i);"
+        "    r = subprocess.run(run_cmd, shell=True, capture_output=True, text=True, cwd=p);"
+        "    if r.returncode != 0:"
+        "        print(f'Benchmark failed: {r.stderr}', file=sys.stderr);"
+        "        sys.exit(1);"
+        "    if os.path.exists(out_i):"
+        "        results.append(json.load(open(out_i)));"
+        "    else:"
+        "        results.append(json.loads(r.stdout));"
+        ""
+        "accs = [r['accuracy'] for r in results];"
+        "speeds = [r['speed_seconds'] for r in results];"
+        "acc_mean = statistics.mean(accs);"
+        "acc_std = statistics.stdev(accs) if len(accs) > 1 else 0.0;"
+        "spd_mean = statistics.mean(speeds);"
+        "spd_std = statistics.stdev(speeds) if len(speeds) > 1 else 0.0;"
+        ""
+        "pu = {};"
+        "for r in results:"
+        "    for uid, val in r.get('per_unit_accuracy', {}).items():"
+        "        pu.setdefault(uid, []).append(val);"
+        "pu_stats = {uid: {'mean': statistics.mean(vals), 'std': statistics.stdev(vals) if len(vals) > 1 else 0.0} for uid, vals in pu.items()};"
+        ""
+        "st = {};"
+        "for r in results:"
+        "    for stage, val in r.get('stage_timing', {}).items():"
+        "        st.setdefault(stage, []).append(val);"
+        "st_stats = {stage: {'mean': statistics.mean(vals), 'std': statistics.stdev(vals) if len(vals) > 1 else 0.0} for stage, vals in st.items()};"
+        ""
+        "averaged = {"
+        "    'accuracy': {'mean': acc_mean, 'std': acc_std},"
+        "    'speed_seconds': {'mean': spd_mean, 'std': spd_std},"
+        "    'per_unit_accuracy': pu_stats,"
+        "    'stage_timing': st_stats,"
+        "    'n_runs': 3,"
+        "    'confirmed_at': datetime.datetime.now(datetime.timezone.utc).isoformat()"
+        "};"
+        "json.dump(averaged, open(br_path, 'w'), indent=2);"
+        "print(f'Confirmed (3 runs): acc={acc_mean:.4f}+-{acc_std:.4f}, speed={spd_mean:.2f}+-{spd_std:.2f}s')"
+        "\""
+    )
+
+
 def _config_gate_command() -> str:
     """Shell evaluator_command for gate_no_code_changes."""
     return (
@@ -327,6 +396,11 @@ def _archive_prompt(tier: int) -> str:
         "You are the Archivist recording the result of a sorting optimization experiment.\n\n"
         "## Your Task\n\n"
         "1. Read the benchmark result at `.factory/sorting/benchmark-result.json`\n"
+        "   - If the verdict is 'keep', this file contains the **averaged 3-run** result\n"
+        "     (with mean/std fields, same format as baseline.json).\n"
+        "     Use the `.accuracy.mean` and `.speed_seconds.mean` values for deltas.\n"
+        "   - If the verdict is 'revert', this file contains a single-run result.\n"
+        "     Use the top-level `.accuracy` and `.speed_seconds` values for deltas.\n"
         "2. Read the baseline at `.factory/sorting/baseline.json`\n"
         "3. Compute deltas:\n"
         "   - `speed_delta = baseline_speed - result_speed` (positive = faster)\n"
@@ -334,8 +408,10 @@ def _archive_prompt(tier: int) -> str:
         "   - `accuracy_delta = result_accuracy - baseline_accuracy`\n"
         "   - `per_unit_deltas`: for each unit, `result - baseline_mean`\n"
         "4. Determine verdict:\n"
-        "   - If you reached this node via a PROCEED edge from the accuracy gate: verdict = 'keep'\n"
-        "   - If you reached this node via a HALT edge (accuracy regression): verdict = 'revert'\n"
+        "   - If you reached this node via a PROCEED edge from the confirm_benchmark step:\n"
+        "     verdict = 'keep'\n"
+        "   - If you reached this node via a HALT edge (accuracy regression):\n"
+        "     verdict = 'revert'\n"
         "   - If reverting, run `git revert HEAD --no-edit` to undo the change\n"
         "5. Read the tier from `.factory/sorting/tier-selection.json`\n"
         "6. Append ONE JSONL line to `.factory/sorting/experiments.jsonl` with fields:\n"
@@ -356,7 +432,8 @@ def _archive_prompt(tier: int) -> str:
         "   - **Change**: brief description of what was changed\n"
         "   - **Speed delta**: absolute value (e.g. -1.23s) and percentage (e.g. -15.2%)\n"
         "   - **Accuracy delta**: e.g. +0.0012\n"
-        "   - **Verdict**: keep\n\n"
+        "   - **Verdict**: keep\n"
+        "   - **Confidence**: mean ± std from 3 confirmation runs\n\n"
         "If the verdict is **'revert'**, do NOT post a PR comment.\n\n"
         "## Rules\n"
         "- Append exactly ONE line (valid JSON) to experiments.jsonl\n"
@@ -557,7 +634,7 @@ _BUILDER_T3_PROMPT = (
 def workflow() -> Workflow:
     """Build the optimize-sorting workflow graph.
 
-    Returns a Workflow with 25 nodes, 33 edges, terminal=True.
+    Returns a Workflow with 28 nodes, 36 edges, terminal=True.
     """
     nodes: dict[str, AgentNode | FnNode | GateNode] = {}
     edges: list[Edge] = []
@@ -602,7 +679,7 @@ def workflow() -> Workflow:
         writes=set(),
     )
 
-    # ── Tier 1 nodes (6-12) ───────────────────────────────────────
+    # ── Tier 1 nodes (6-13) ───────────────────────────────────────
 
     nodes["researcher_discover_params"] = AgentNode(
         id="researcher_discover_params",
@@ -653,6 +730,13 @@ def workflow() -> Workflow:
         writes=set(),
     )
 
+    nodes["confirm_benchmark_t1"] = FnNode(
+        id="confirm_benchmark_t1",
+        command=_benchmark_3x_command(),
+        reads={".factory/sorting/benchmark-result.json"},
+        writes={".factory/sorting/benchmark-result.json"},
+    )
+
     nodes["archive_result_t1"] = AgentNode(
         id="archive_result_t1",
         role=AgentRole.ARCHIVIST,
@@ -661,7 +745,7 @@ def workflow() -> Workflow:
         writes={".factory/sorting/experiments.jsonl"},
     )
 
-    # ── Tier 2 nodes (13-18) ──────────────────────────────────────
+    # ── Tier 2 nodes (13-19) ──────────────────────────────────────
 
     nodes["researcher_profile_pipeline"] = AgentNode(
         id="researcher_profile_pipeline",
@@ -708,6 +792,13 @@ def workflow() -> Workflow:
         writes=set(),
     )
 
+    nodes["confirm_benchmark_t2"] = FnNode(
+        id="confirm_benchmark_t2",
+        command=_benchmark_3x_command(),
+        reads={".factory/sorting/benchmark-result.json"},
+        writes={".factory/sorting/benchmark-result.json"},
+    )
+
     nodes["archive_result_t2"] = AgentNode(
         id="archive_result_t2",
         role=AgentRole.ARCHIVIST,
@@ -716,7 +807,7 @@ def workflow() -> Workflow:
         writes={".factory/sorting/experiments.jsonl"},
     )
 
-    # ── Tier 3 nodes (19-25) ──────────────────────────────────────
+    # ── Tier 3 nodes (20-28) ──────────────────────────────────────
 
     nodes["researcher_explore_alternatives"] = AgentNode(
         id="researcher_explore_alternatives",
@@ -767,6 +858,13 @@ def workflow() -> Workflow:
         writes=set(),
     )
 
+    nodes["confirm_benchmark_t3"] = FnNode(
+        id="confirm_benchmark_t3",
+        command=_benchmark_3x_command(),
+        reads={".factory/sorting/benchmark-result.json"},
+        writes={".factory/sorting/benchmark-result.json"},
+    )
+
     nodes["archive_result_t3"] = AgentNode(
         id="archive_result_t3",
         role=AgentRole.ARCHIVIST,
@@ -775,7 +873,7 @@ def workflow() -> Workflow:
         writes={".factory/sorting/experiments.jsonl"},
     )
 
-    # ── Edges (33 total) ──────────────────────────────────────────
+    # ── Edges (36 total) ──────────────────────────────────────────
 
     edges = [
         # Baseline + Tier Selection (2)
@@ -794,7 +892,7 @@ def workflow() -> Workflow:
         Edge(source="gate_is_tier3", target="researcher_explore_alternatives",
              condition=VerdictType.PROCEED),                                         # 7
 
-        # Tier 1 Subgraph — Config Sweep (9)
+        # Tier 1 Subgraph — Config Sweep (10)
         Edge(source="researcher_discover_params", target="strategist_t1"),           # 8
         Edge(source="strategist_t1", target="builder_config_change"),                # 9
         Edge(source="builder_config_change", target="gate_no_code_changes"),         # 10
@@ -803,42 +901,45 @@ def workflow() -> Workflow:
         Edge(source="gate_no_code_changes", target="builder_config_change",
              condition=VerdictType.RELOOP),                                          # 12
         Edge(source="run_benchmark_t1", target="gate_accuracy_t1"),                  # 13
-        Edge(source="gate_accuracy_t1", target="archive_result_t1",
+        Edge(source="gate_accuracy_t1", target="confirm_benchmark_t1",
              condition=VerdictType.PROCEED),                                         # 14
+        Edge(source="confirm_benchmark_t1", target="archive_result_t1"),             # 15
         Edge(source="gate_accuracy_t1", target="builder_config_change",
-             condition=VerdictType.RELOOP),                                          # 15
+             condition=VerdictType.RELOOP),                                          # 16
         Edge(source="gate_accuracy_t1", target="archive_result_t1",
-             condition=VerdictType.HALT),                                            # 16
+             condition=VerdictType.HALT),                                            # 17
 
-        # Tier 2 Subgraph — Code Optimization (7)
-        Edge(source="researcher_profile_pipeline", target="strategist_t2"),          # 17
-        Edge(source="strategist_t2", target="builder_optimize_hotpath"),             # 18
-        Edge(source="builder_optimize_hotpath", target="run_benchmark_t2"),          # 19
-        Edge(source="run_benchmark_t2", target="gate_accuracy_t2"),                  # 20
-        Edge(source="gate_accuracy_t2", target="archive_result_t2",
-             condition=VerdictType.PROCEED),                                         # 21
+        # Tier 2 Subgraph — Code Optimization (8)
+        Edge(source="researcher_profile_pipeline", target="strategist_t2"),          # 18
+        Edge(source="strategist_t2", target="builder_optimize_hotpath"),             # 19
+        Edge(source="builder_optimize_hotpath", target="run_benchmark_t2"),          # 20
+        Edge(source="run_benchmark_t2", target="gate_accuracy_t2"),                  # 21
+        Edge(source="gate_accuracy_t2", target="confirm_benchmark_t2",
+             condition=VerdictType.PROCEED),                                         # 22
+        Edge(source="confirm_benchmark_t2", target="archive_result_t2"),             # 23
         Edge(source="gate_accuracy_t2", target="builder_optimize_hotpath",
-             condition=VerdictType.RELOOP),                                          # 22
+             condition=VerdictType.RELOOP),                                          # 24
         Edge(source="gate_accuracy_t2", target="archive_result_t2",
-             condition=VerdictType.HALT),                                            # 23
+             condition=VerdictType.HALT),                                            # 25
 
-        # Tier 3 Subgraph — Algorithm Changes (10)
-        Edge(source="researcher_explore_alternatives", target="strategist_t3"),      # 24
-        Edge(source="strategist_t3", target="builder_implement_alternative"),        # 25
-        Edge(source="builder_implement_alternative", target="run_benchmark_t3"),     # 26
-        Edge(source="run_benchmark_t3", target="gate_accuracy_t3"),                  # 27
+        # Tier 3 Subgraph — Algorithm Changes (11)
+        Edge(source="researcher_explore_alternatives", target="strategist_t3"),      # 26
+        Edge(source="strategist_t3", target="builder_implement_alternative"),        # 27
+        Edge(source="builder_implement_alternative", target="run_benchmark_t3"),     # 28
+        Edge(source="run_benchmark_t3", target="gate_accuracy_t3"),                  # 29
         Edge(source="gate_accuracy_t3", target="gate_per_unit_accuracy",
-             condition=VerdictType.PROCEED),                                         # 28
+             condition=VerdictType.PROCEED),                                         # 30
         Edge(source="gate_accuracy_t3", target="builder_implement_alternative",
-             condition=VerdictType.RELOOP),                                          # 29
+             condition=VerdictType.RELOOP),                                          # 31
         Edge(source="gate_accuracy_t3", target="archive_result_t3",
-             condition=VerdictType.HALT),                                            # 30
-        Edge(source="gate_per_unit_accuracy", target="archive_result_t3",
-             condition=VerdictType.PROCEED),                                         # 31
+             condition=VerdictType.HALT),                                            # 32
+        Edge(source="gate_per_unit_accuracy", target="confirm_benchmark_t3",
+             condition=VerdictType.PROCEED),                                         # 33
+        Edge(source="confirm_benchmark_t3", target="archive_result_t3"),             # 34
         Edge(source="gate_per_unit_accuracy", target="builder_implement_alternative",
-             condition=VerdictType.RELOOP),                                          # 32
+             condition=VerdictType.RELOOP),                                          # 35
         Edge(source="gate_per_unit_accuracy", target="archive_result_t3",
-             condition=VerdictType.HALT),                                            # 33
+             condition=VerdictType.HALT),                                            # 36
     ]
 
     # ── Trigger ───────────────────────────────────────────────────
