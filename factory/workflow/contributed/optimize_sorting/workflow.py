@@ -131,8 +131,11 @@ def _select_tier_command() -> str:
     """Inline python3 -c command for the select_tier FnNode."""
     return (
         "python3 -c \""
-        "import json, os, re, sys;"
+        "import json, os, re, subprocess, sys;"
         "p = '{project_path}';"
+        "# Reset to main so each experiment measures against the baseline independently."
+        "# Experiment branches are created by the builder."
+        "subprocess.run(['git', 'checkout', 'main'], cwd=p, check=True);"
         "focus_path = os.path.join(p, '.factory', 'sorting', 'focus.txt');"
         "exp_path = os.path.join(p, '.factory', 'sorting', 'experiments.jsonl');"
         "out_path = os.path.join(p, '.factory', 'sorting', 'tier-selection.json');"
@@ -318,8 +321,8 @@ def _per_unit_gate_command() -> str:
     )
 
 
-def _archive_prompt() -> str:
-    """Shared prompt template for archive_result_t{1,2,3} AgentNodes."""
+def _archive_prompt(tier: int) -> str:
+    """Prompt template for archive_result_t{1,2,3} AgentNodes."""
     return (
         "You are the Archivist recording the result of a sorting optimization experiment.\n\n"
         "## Your Task\n\n"
@@ -338,6 +341,23 @@ def _archive_prompt() -> str:
         "6. Append ONE JSONL line to `.factory/sorting/experiments.jsonl` with fields:\n"
         "   `tier`, `change` (brief description), `speed_delta`, `speed_delta_pct`, "
         "`accuracy_delta`, `per_unit_deltas`, `stage_timing`, `verdict`, `timestamp` (ISO8601)\n\n"
+        f"## PR Comment (Tier {tier})\n"
+        "If the verdict is **'keep'**, post a PR comment with the benchmark summary:\n"
+        "1. Find the PR number for the current branch:\n"
+        "   ```\n"
+        "   gh pr list --head $(git branch --show-current) --json number -q '.[0].number'\n"
+        "   ```\n"
+        "2. Post the comment:\n"
+        "   ```\n"
+        "   gh pr comment <PR_NUMBER> --body '<message>'\n"
+        "   ```\n"
+        "   The message must include:\n"
+        f"   - **Tier**: {tier}\n"
+        "   - **Change**: brief description of what was changed\n"
+        "   - **Speed delta**: absolute value (e.g. -1.23s) and percentage (e.g. -15.2%)\n"
+        "   - **Accuracy delta**: e.g. +0.0012\n"
+        "   - **Verdict**: keep\n\n"
+        "If the verdict is **'revert'**, do NOT post a PR comment.\n\n"
         "## Rules\n"
         "- Append exactly ONE line (valid JSON) to experiments.jsonl\n"
         "- Do NOT overwrite the file — append only\n"
@@ -636,7 +656,7 @@ def workflow() -> Workflow:
     nodes["archive_result_t1"] = AgentNode(
         id="archive_result_t1",
         role=AgentRole.ARCHIVIST,
-        prompt_template=_archive_prompt(),
+        prompt_template=_archive_prompt(tier=1),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes={".factory/sorting/experiments.jsonl"},
     )
@@ -691,7 +711,7 @@ def workflow() -> Workflow:
     nodes["archive_result_t2"] = AgentNode(
         id="archive_result_t2",
         role=AgentRole.ARCHIVIST,
-        prompt_template=_archive_prompt(),
+        prompt_template=_archive_prompt(tier=2),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes={".factory/sorting/experiments.jsonl"},
     )
@@ -750,7 +770,7 @@ def workflow() -> Workflow:
     nodes["archive_result_t3"] = AgentNode(
         id="archive_result_t3",
         role=AgentRole.ARCHIVIST,
-        prompt_template=_archive_prompt(),
+        prompt_template=_archive_prompt(tier=3),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes={".factory/sorting/experiments.jsonl"},
     )
