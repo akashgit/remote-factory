@@ -493,6 +493,7 @@ def _validate_late_flags(
             "design-v2",
             "research",
             "create",
+            "create-v2",
             "evolve",
             "study",
             "frontend-design",
@@ -502,7 +503,7 @@ def _validate_late_flags(
         and not just_plan
     ):
         print(
-            f"Error: --focus (targeted mode) only works in design, research, create, evolve, study, frontend-design, "
+            f"Error: --focus (targeted mode) only works in design, research, create, create-v2, evolve, study, frontend-design, "
             f"frontend-design-discover, or design (with --just-plan) mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,

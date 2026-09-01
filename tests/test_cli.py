@@ -1963,6 +1963,13 @@ class TestCreateModeFocus:
         task = _build_ceo_task(tmp_path, "design", create_description=None)
         assert "## Create Mode (New Factory Mode)" not in task
 
+    def test_focus_accepted_with_create_v2_mode(self, tmp_path):
+        """--focus is accepted when --mode create-v2 is set (issue #1428)."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create-v2", "--focus", "add a linting mode"])
+        mock_run.assert_called_once()
+
 
 class TestProfileParser:
     def test_profile_build_subcommand(self):
