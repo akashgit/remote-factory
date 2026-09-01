@@ -314,6 +314,29 @@ def _benchmark_3x_command() -> str:
     )
 
 
+def _catastrophic_gate_command() -> str:
+    """Inline python3 -c evaluator command for gate_catastrophic_t{1,2,3}.
+
+    Only catches catastrophic accuracy drops (>10% below baseline mean).
+    Outputs pass (PROCEED) or fail (HALT).
+    """
+    return (
+        "python3 -c \""
+        "import json, os;"
+        "p = '{project_path}';"
+        "bl = json.load(open(os.path.join(p, '.factory', 'sorting', 'baseline.json')));"
+        "br = json.load(open(os.path.join(p, '.factory', 'sorting', 'benchmark-result.json')));"
+        "acc = br['accuracy'];"
+        "bl_mean = bl['accuracy']['mean'];"
+        "threshold = bl_mean * 0.9;"
+        "if acc >= threshold:"
+        "    print(f'pass: acc={acc:.4f} >= catastrophic threshold={threshold:.4f}');"
+        "else:"
+        "    print(f'fail: catastrophic drop acc={acc:.4f} < {threshold:.4f} (>{10}% below baseline={bl_mean:.4f})')"
+        "\""
+    )
+
+
 def _config_gate_command() -> str:
     """Shell evaluator_command for gate_no_code_changes."""
     return (
@@ -330,7 +353,13 @@ def _config_gate_command() -> str:
 
 
 def _accuracy_gate_command(tier: int) -> str:
-    """Inline python3 -c evaluator command for gate_accuracy_t{1,2,3}."""
+    """Inline python3 -c evaluator command for gate_accuracy_t{1,2,3}.
+
+    Runs AFTER confirm_benchmark so benchmark-result.json has averaged format
+    with {accuracy: {mean, std}, ...}.  Falls back to plain float for safety.
+    Outputs pass (PROCEED) or fail (HALT) — no reloop since 3-run average is
+    definitive.
+    """
     if tier in (1, 2):
         threshold_expr = "bl['accuracy']['mean'] - bl['accuracy']['std']"
     else:
@@ -343,21 +372,24 @@ def _accuracy_gate_command(tier: int) -> str:
         "br = json.load(open(os.path.join(p, '.factory', 'sorting', 'benchmark-result.json')));"
         f"threshold = {threshold_expr};"
         "acc = br['accuracy'];"
+        "if isinstance(acc, dict):"
+        "    acc = acc['mean'];"
         "bl_mean = bl['accuracy']['mean'];"
         "delta = acc - bl_mean;"
-        "catastrophic = acc < bl_mean * 0.9;"
-        "if catastrophic:"
-        "    print(f'fail: catastrophic drop acc={acc:.4f} vs baseline={bl_mean:.4f} (>{10}% below)');"
-        "elif acc >= threshold:"
+        "if acc >= threshold:"
         "    print(f'pass: acc={acc:.4f} >= threshold={threshold:.4f} (delta={delta:+.4f})');"
         "else:"
-        "    print(f'reloop: acc={acc:.4f} < threshold={threshold:.4f} (delta={delta:+.4f}, baseline={bl_mean:.4f})')"
+        "    print(f'fail: acc={acc:.4f} < threshold={threshold:.4f} (delta={delta:+.4f}, baseline={bl_mean:.4f})')"
         "\""
     )
 
 
 def _per_unit_gate_command() -> str:
-    """Inline python3 -c evaluator command for gate_per_unit_accuracy."""
+    """Inline python3 -c evaluator command for gate_per_unit_accuracy.
+
+    Handles averaged format: per_unit_accuracy values may be
+    {mean: float, std: float} dicts (from confirm_benchmark) or plain floats.
+    """
     return (
         "python3 -c \""
         "import json, os;"
@@ -375,6 +407,8 @@ def _per_unit_gate_command() -> str:
         "        drops.append((uid, 1.0));"
         "        continue;"
         "    cur = pu_br[uid];"
+        "    if isinstance(cur, dict):"
+        "        cur = cur['mean'];"
         "    drop = (bl_mean - cur) / bl_mean;"
         "    if drop > 0.05:"
         "        drops.append((uid, drop));"
@@ -396,11 +430,12 @@ def _archive_prompt(tier: int) -> str:
         "You are the Archivist recording the result of a sorting optimization experiment.\n\n"
         "## Your Task\n\n"
         "1. Read the benchmark result at `.factory/sorting/benchmark-result.json`\n"
-        "   - If the verdict is 'keep', this file contains the **averaged 3-run** result\n"
-        "     (with mean/std fields, same format as baseline.json).\n"
-        "     Use the `.accuracy.mean` and `.speed_seconds.mean` values for deltas.\n"
-        "   - If the verdict is 'revert', this file contains a single-run result.\n"
-        "     Use the top-level `.accuracy` and `.speed_seconds` values for deltas.\n"
+        "   - If `accuracy` is a dict with `mean`/`std` keys, the file contains **averaged\n"
+        "     3-run** data (from confirm_benchmark). Use `.accuracy.mean` and\n"
+        "     `.speed_seconds.mean` for deltas.\n"
+        "   - If `accuracy` is a plain float, it is a **single-run** result (catastrophic\n"
+        "     gate halted before confirmation runs). Use `.accuracy` and `.speed_seconds`\n"
+        "     directly.\n"
         "2. Read the baseline at `.factory/sorting/baseline.json`\n"
         "3. Compute deltas:\n"
         "   - `speed_delta = baseline_speed - result_speed` (positive = faster)\n"
@@ -408,10 +443,10 @@ def _archive_prompt(tier: int) -> str:
         "   - `accuracy_delta = result_accuracy - baseline_accuracy`\n"
         "   - `per_unit_deltas`: for each unit, `result - baseline_mean`\n"
         "4. Determine verdict:\n"
-        "   - If you reached this node via a PROCEED edge from the confirm_benchmark step:\n"
-        "     verdict = 'keep'\n"
-        "   - If you reached this node via a HALT edge (accuracy regression):\n"
-        "     verdict = 'revert'\n"
+        "   - If you reached this node via a PROCEED edge from gate_accuracy\n"
+        "     (or gate_per_unit_accuracy for tier 3): verdict = 'keep'\n"
+        "   - If you reached this node via a HALT edge (catastrophic gate or\n"
+        "     accuracy gate failure): verdict = 'revert'\n"
         "   - If reverting, run `git revert HEAD --no-edit` to undo the change\n"
         "5. Read the tier from `.factory/sorting/tier-selection.json`\n"
         "6. Append ONE JSONL line to `.factory/sorting/experiments.jsonl` with fields:\n"
@@ -634,7 +669,7 @@ _BUILDER_T3_PROMPT = (
 def workflow() -> Workflow:
     """Build the optimize-sorting workflow graph.
 
-    Returns a Workflow with 28 nodes, 36 edges, terminal=True.
+    Returns a Workflow with 31 nodes, 39 edges, terminal=True.
     """
     nodes: dict[str, AgentNode | FnNode | GateNode] = {}
     edges: list[Edge] = []
@@ -722,10 +757,10 @@ def workflow() -> Workflow:
         writes={".factory/sorting/benchmark-result.json"},
     )
 
-    nodes["gate_accuracy_t1"] = GateNode(
-        id="gate_accuracy_t1",
+    nodes["gate_catastrophic_t1"] = GateNode(
+        id="gate_catastrophic_t1",
         evaluator_type="fn",
-        evaluator_command=_accuracy_gate_command(1),
+        evaluator_command=_catastrophic_gate_command(),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes=set(),
     )
@@ -735,6 +770,14 @@ def workflow() -> Workflow:
         command=_benchmark_3x_command(),
         reads={".factory/sorting/benchmark-result.json"},
         writes={".factory/sorting/benchmark-result.json"},
+    )
+
+    nodes["gate_accuracy_t1"] = GateNode(
+        id="gate_accuracy_t1",
+        evaluator_type="fn",
+        evaluator_command=_accuracy_gate_command(1),
+        reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
+        writes=set(),
     )
 
     nodes["archive_result_t1"] = AgentNode(
@@ -784,10 +827,10 @@ def workflow() -> Workflow:
         writes={".factory/sorting/benchmark-result.json"},
     )
 
-    nodes["gate_accuracy_t2"] = GateNode(
-        id="gate_accuracy_t2",
+    nodes["gate_catastrophic_t2"] = GateNode(
+        id="gate_catastrophic_t2",
         evaluator_type="fn",
-        evaluator_command=_accuracy_gate_command(2),
+        evaluator_command=_catastrophic_gate_command(),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes=set(),
     )
@@ -797,6 +840,14 @@ def workflow() -> Workflow:
         command=_benchmark_3x_command(),
         reads={".factory/sorting/benchmark-result.json"},
         writes={".factory/sorting/benchmark-result.json"},
+    )
+
+    nodes["gate_accuracy_t2"] = GateNode(
+        id="gate_accuracy_t2",
+        evaluator_type="fn",
+        evaluator_command=_accuracy_gate_command(2),
+        reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
+        writes=set(),
     )
 
     nodes["archive_result_t2"] = AgentNode(
@@ -842,10 +893,10 @@ def workflow() -> Workflow:
         writes={".factory/sorting/benchmark-result.json"},
     )
 
-    nodes["gate_accuracy_t3"] = GateNode(
-        id="gate_accuracy_t3",
+    nodes["gate_catastrophic_t3"] = GateNode(
+        id="gate_catastrophic_t3",
         evaluator_type="fn",
-        evaluator_command=_accuracy_gate_command(3),
+        evaluator_command=_catastrophic_gate_command(),
         reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
         writes=set(),
     )
@@ -865,6 +916,14 @@ def workflow() -> Workflow:
         writes={".factory/sorting/benchmark-result.json"},
     )
 
+    nodes["gate_accuracy_t3"] = GateNode(
+        id="gate_accuracy_t3",
+        evaluator_type="fn",
+        evaluator_command=_accuracy_gate_command(3),
+        reads={".factory/sorting/benchmark-result.json", ".factory/sorting/baseline.json"},
+        writes=set(),
+    )
+
     nodes["archive_result_t3"] = AgentNode(
         id="archive_result_t3",
         role=AgentRole.ARCHIVIST,
@@ -873,7 +932,7 @@ def workflow() -> Workflow:
         writes={".factory/sorting/experiments.jsonl"},
     )
 
-    # ── Edges (36 total) ──────────────────────────────────────────
+    # ── Edges (39 total) ──────────────────────────────────────────
 
     edges = [
         # Baseline + Tier Selection (2)
@@ -892,7 +951,8 @@ def workflow() -> Workflow:
         Edge(source="gate_is_tier3", target="researcher_explore_alternatives",
              condition=VerdictType.PROCEED),                                         # 7
 
-        # Tier 1 Subgraph — Config Sweep (10)
+        # Tier 1 Subgraph — Config Sweep (11)
+        # builder → code gate → benchmark → catastrophic gate → confirm → accuracy gate → archive
         Edge(source="researcher_discover_params", target="strategist_t1"),           # 8
         Edge(source="strategist_t1", target="builder_config_change"),                # 9
         Edge(source="builder_config_change", target="gate_no_code_changes"),         # 10
@@ -900,46 +960,54 @@ def workflow() -> Workflow:
              condition=VerdictType.PROCEED),                                         # 11
         Edge(source="gate_no_code_changes", target="builder_config_change",
              condition=VerdictType.RELOOP),                                          # 12
-        Edge(source="run_benchmark_t1", target="gate_accuracy_t1"),                  # 13
-        Edge(source="gate_accuracy_t1", target="confirm_benchmark_t1",
+        Edge(source="run_benchmark_t1", target="gate_catastrophic_t1"),              # 13
+        Edge(source="gate_catastrophic_t1", target="confirm_benchmark_t1",
              condition=VerdictType.PROCEED),                                         # 14
-        Edge(source="confirm_benchmark_t1", target="archive_result_t1"),             # 15
-        Edge(source="gate_accuracy_t1", target="builder_config_change",
-             condition=VerdictType.RELOOP),                                          # 16
+        Edge(source="gate_catastrophic_t1", target="archive_result_t1",
+             condition=VerdictType.HALT),                                            # 15
+        Edge(source="confirm_benchmark_t1", target="gate_accuracy_t1"),              # 16
         Edge(source="gate_accuracy_t1", target="archive_result_t1",
-             condition=VerdictType.HALT),                                            # 17
+             condition=VerdictType.PROCEED),                                         # 17
+        Edge(source="gate_accuracy_t1", target="archive_result_t1",
+             condition=VerdictType.HALT),                                            # 18
 
-        # Tier 2 Subgraph — Code Optimization (8)
-        Edge(source="researcher_profile_pipeline", target="strategist_t2"),          # 18
-        Edge(source="strategist_t2", target="builder_optimize_hotpath"),             # 19
-        Edge(source="builder_optimize_hotpath", target="run_benchmark_t2"),          # 20
-        Edge(source="run_benchmark_t2", target="gate_accuracy_t2"),                  # 21
-        Edge(source="gate_accuracy_t2", target="confirm_benchmark_t2",
-             condition=VerdictType.PROCEED),                                         # 22
-        Edge(source="confirm_benchmark_t2", target="archive_result_t2"),             # 23
-        Edge(source="gate_accuracy_t2", target="builder_optimize_hotpath",
-             condition=VerdictType.RELOOP),                                          # 24
+        # Tier 2 Subgraph — Code Optimization (9)
+        # builder → benchmark → catastrophic gate → confirm → accuracy gate → archive
+        Edge(source="researcher_profile_pipeline", target="strategist_t2"),          # 19
+        Edge(source="strategist_t2", target="builder_optimize_hotpath"),             # 20
+        Edge(source="builder_optimize_hotpath", target="run_benchmark_t2"),          # 21
+        Edge(source="run_benchmark_t2", target="gate_catastrophic_t2"),              # 22
+        Edge(source="gate_catastrophic_t2", target="confirm_benchmark_t2",
+             condition=VerdictType.PROCEED),                                         # 23
+        Edge(source="gate_catastrophic_t2", target="archive_result_t2",
+             condition=VerdictType.HALT),                                            # 24
+        Edge(source="confirm_benchmark_t2", target="gate_accuracy_t2"),              # 25
         Edge(source="gate_accuracy_t2", target="archive_result_t2",
-             condition=VerdictType.HALT),                                            # 25
+             condition=VerdictType.PROCEED),                                         # 26
+        Edge(source="gate_accuracy_t2", target="archive_result_t2",
+             condition=VerdictType.HALT),                                            # 27
 
-        # Tier 3 Subgraph — Algorithm Changes (11)
-        Edge(source="researcher_explore_alternatives", target="strategist_t3"),      # 26
-        Edge(source="strategist_t3", target="builder_implement_alternative"),        # 27
-        Edge(source="builder_implement_alternative", target="run_benchmark_t3"),     # 28
-        Edge(source="run_benchmark_t3", target="gate_accuracy_t3"),                  # 29
+        # Tier 3 Subgraph — Algorithm Changes (12)
+        # builder → benchmark → catastrophic gate → confirm → accuracy gate → per-unit gate → archive
+        Edge(source="researcher_explore_alternatives", target="strategist_t3"),      # 28
+        Edge(source="strategist_t3", target="builder_implement_alternative"),        # 29
+        Edge(source="builder_implement_alternative", target="run_benchmark_t3"),     # 30
+        Edge(source="run_benchmark_t3", target="gate_catastrophic_t3"),              # 31
+        Edge(source="gate_catastrophic_t3", target="confirm_benchmark_t3",
+             condition=VerdictType.PROCEED),                                         # 32
+        Edge(source="gate_catastrophic_t3", target="archive_result_t3",
+             condition=VerdictType.HALT),                                            # 33
+        Edge(source="confirm_benchmark_t3", target="gate_accuracy_t3"),              # 34
         Edge(source="gate_accuracy_t3", target="gate_per_unit_accuracy",
-             condition=VerdictType.PROCEED),                                         # 30
-        Edge(source="gate_accuracy_t3", target="builder_implement_alternative",
-             condition=VerdictType.RELOOP),                                          # 31
+             condition=VerdictType.PROCEED),                                         # 35
         Edge(source="gate_accuracy_t3", target="archive_result_t3",
-             condition=VerdictType.HALT),                                            # 32
-        Edge(source="gate_per_unit_accuracy", target="confirm_benchmark_t3",
-             condition=VerdictType.PROCEED),                                         # 33
-        Edge(source="confirm_benchmark_t3", target="archive_result_t3"),             # 34
-        Edge(source="gate_per_unit_accuracy", target="builder_implement_alternative",
-             condition=VerdictType.RELOOP),                                          # 35
-        Edge(source="gate_per_unit_accuracy", target="archive_result_t3",
              condition=VerdictType.HALT),                                            # 36
+        Edge(source="gate_per_unit_accuracy", target="archive_result_t3",
+             condition=VerdictType.PROCEED),                                         # 37
+        Edge(source="gate_per_unit_accuracy", target="builder_implement_alternative",
+             condition=VerdictType.RELOOP),                                          # 38
+        Edge(source="gate_per_unit_accuracy", target="archive_result_t3",
+             condition=VerdictType.HALT),                                            # 39
     ]
 
     # ── Trigger ───────────────────────────────────────────────────
