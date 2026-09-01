@@ -69,6 +69,13 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "with structural graph context included. "
             "Terminal mode — does not chain to other modes."
         ),
+        "optimize-sorting": (
+            "\n\nRun Optimize-sorting mode: iterative speed optimization of spike sorting "
+            "pipelines with hard accuracy constraints. Three tiers: config sweep, code "
+            "optimization, algorithm changes. One experiment per CEO invocation. "
+            "Tier routing is automatic (or overridden via --focus tier1/tier2/tier3). "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
     }
     if mode == "discover":
         if discover_only:
@@ -102,6 +109,11 @@ def _append_focus_directive(
     issue_url: str | None,
 ) -> str:
     if not focus or create_description or mode == "deep-research":
+        return ""
+    # Tier-keyword focus in optimize-sorting is structural routing, not a backlog item
+    if mode == "optimize-sorting" and _re.search(
+        r"tier\s*[123]|config|profil|algorithm", focus, _re.IGNORECASE
+    ):
         return ""
     _issue_numbers = issue_numbers or []
     _issue_urls = issue_urls or []

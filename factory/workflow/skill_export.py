@@ -93,6 +93,18 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
+    "optimize-sorting": {
+        "description": (
+            "Optimize-sorting mode — three-tier iterative speed optimization for "
+            "spike sorting pipelines with hard accuracy constraints. "
+            "Tier 1: config sweep (parameter tuning, zero code changes). "
+            "Tier 2: code optimization (preserve algorithmic behavior). "
+            "Tier 3: algorithm changes (strict 0.5% overall + 5% per-unit gates). "
+            "One experiment per CEO invocation. Terminal mode. "
+            "Use with --focus tier1/tier2/tier3 to target a specific tier."
+        ),
+        "argument_hint": "<project_path> [--focus tier1|tier2|tier3]",
+    },
 }
 
 

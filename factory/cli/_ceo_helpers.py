@@ -498,13 +498,14 @@ def _validate_late_flags(
             "study",
             "frontend-design",
             "frontend-design-discover",
+            "optimize-sorting",
         )
         and not design_existing
         and not just_plan
     ):
         print(
             f"Error: --focus (targeted mode) only works in design, research, create, create-v2, evolve, study, frontend-design, "
-            f"frontend-design-discover, or design (with --just-plan) mode, "
+            f"frontend-design-discover, optimize-sorting, or design (with --just-plan) mode, "
             f"got '{mode}'. The project must already be built before targeting specific items.",
             file=sys.stderr,
         )
@@ -582,9 +583,22 @@ def _execute_ceo(
         print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     if focus:
-        from factory.study import add_backlog_item
+        # optimize-sorting: write focus to .factory/sorting/focus.txt for tier routing
+        if mode == "optimize-sorting":
+            sorting_dir = project_path / ".factory" / "sorting"
+            sorting_dir.mkdir(parents=True, exist_ok=True)
+            (sorting_dir / "focus.txt").write_text(focus)
 
-        add_backlog_item(project_path, focus)
+        # Skip backlog item for tier-prefixed focus in optimize-sorting
+        # (tier routing is structural, not a backlog item)
+        if mode == "optimize-sorting" and re.search(
+            r"tier\s*[123]|config|profil|algorithm", focus, re.IGNORECASE
+        ):
+            pass
+        else:
+            from factory.study import add_backlog_item
+
+            add_backlog_item(project_path, focus)
 
     from factory.messages import mark_read, read_pending
 
