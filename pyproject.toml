@@ -55,6 +55,9 @@ version-file = "factory/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["factory"]
 
+[project.entry-points."factory.plugins"]
+composed_modes = "factory.workflow.packages:register"
+
 [project.scripts]
 factory = "factory.cli:main"
 

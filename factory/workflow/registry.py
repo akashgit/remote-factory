@@ -107,6 +107,28 @@ class WorkflowRegistry:
         return cls._entries
 
     @classmethod
+    def register_callable(
+        cls,
+        name: str,
+        fn: Any,
+        *,
+        source: str = "plugin",
+        description: str = "",
+    ) -> None:
+        """Register a workflow callable (e.g. from a Package composition).
+
+        The callable is stored lazily — it is only invoked when
+        get_workflow() is called for this name.
+        """
+        cls._entries[name] = WorkflowEntry(
+            name=name,
+            description=description or f"Composed mode: {name}",
+            path=f"<{source}>",
+            source=source,
+            _workflow_fn=fn,
+        )
+
+    @classmethod
     def _load_builtins(cls) -> None:
         """Load built-in workflows from definitions.py.
 
