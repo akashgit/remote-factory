@@ -1,0 +1,503 @@
+"""Reusable workflow Packages for mode composition.
+
+Each function returns a Package that can be composed with Sequential,
+Parallel, Loop, and Conditional operators. Modes become compositions
+of these building blocks rather than monolithic graph definitions.
+
+Example:
+    build_mode = Sequential(
+        study_package(),
+        research_package(researchers=BUILD_RESEARCHERS),
+        strategy_package(),
+        build_package(),
+        qa_package(),
+    )
+"""
+
+from __future__ import annotations
+
+from factory.workflow.package import (
+    Package,
+    Port,
+    Sequential,
+    StateContract,
+)
+from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
+    ArtifactCheck,
+    Edge,
+    FnNode,
+    ForkNode,
+    GateNode,
+    JoinNode,
+    Study,
+    VerdictType,
+    Workflow,
+)
+
+from factory.workflow.definitions import (
+    DOC_FRESHNESS_GATE_PROMPT,
+    ResearcherConfig,
+    _graph_explorer_prompt,
+)
+
+
+# ── Study Package ──────────────────────────────────────────────
+
+
+def study_package(*, focus: str | None = None) -> Package:
+    """Graph-powered codebase study: graph_update → study → graph_explorer → concat."""
+    graph_update = FnNode(
+        id="graph_update",
+        command="factory graph update {project_path}",
+        writes={"graph.json"},
+    )
+    study = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+        focus=focus,
+    )
+    graph_explorer = AgentNode(
+        id="graph_explorer",
+        role=AgentRole.RESEARCHER,
+        prompt_template=_graph_explorer_prompt(focus),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/graph-context.md"},
+    )
+    concat_study = FnNode(
+        id="concat_study",
+        command=(
+            "cat {project_path}/.factory/strategy/observations.md"
+            " {project_path}/.factory/strategy/graph-context.md"
+            " > {project_path}/.factory/strategy/study-combined.md"
+        ),
+        reads={".factory/strategy/observations.md", ".factory/strategy/graph-context.md"},
+        writes={".factory/strategy/study-combined.md"},
+    )
+
+    nodes = {
+        "graph_update": graph_update,
+        "study": study,
+        "graph_explorer": graph_explorer,
+        "concat_study": concat_study,
+    }
+    edges = [
+        Edge(source="graph_update", target="study"),
+        Edge(source="study", target="graph_explorer"),
+        Edge(source="graph_explorer", target="concat_study"),
+    ]
+
+    return Package(
+        name="study",
+        version="1.0.0",
+        description="Graph-powered codebase study and analysis",
+        outputs=[
+            Port(name="study", artifact_path=".factory/strategy/study-combined.md"),
+        ],
+        contract=StateContract(
+            produces=frozenset({"study_complete"}),
+        ),
+        graph=Workflow(
+            name="study", nodes=nodes, edges=edges, start_node="graph_update",
+        ),
+        entry_node="graph_update",
+        exit_node="concat_study",
+    )
+
+
+# ── Research Package ───────────────────────────────────────────
+
+
+def research_package(
+    *,
+    researchers: list[ResearcherConfig],
+    gate_prompt: str,
+) -> Package:
+    """Parallel research with CEO gate: fork → N researchers → join → gate."""
+    researcher_ids = [f"researcher_{r.id}" for r in researchers]
+    nodes: dict = {}
+
+    nodes["fork_research"] = ForkNode(
+        id="fork_research", targets=researcher_ids,
+    )
+
+    research_outputs = []
+    for r in researchers:
+        rid = f"researcher_{r.id}"
+        write_path = f".factory/strategy/research-{r.id}.md"
+        kwargs: dict = {
+            "id": rid,
+            "role": AgentRole.RESEARCHER,
+            "prompt_template": r.prompt_template,
+            "writes": {write_path},
+        }
+        if r.post_check_min_size is not None:
+            kwargs["post_checks"] = [
+                ArtifactCheck(path=write_path, must_exist=True, min_size=r.post_check_min_size)
+            ]
+        nodes[rid] = AgentNode(**kwargs)
+        research_outputs.append(
+            Port(name=f"research-{r.id}", artifact_path=write_path),
+        )
+
+    nodes["join_research"] = JoinNode(
+        id="join_research", sources=researcher_ids,
+    )
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=gate_prompt,
+        reads={f".factory/strategy/research-{r.id}.md" for r in researchers},
+    )
+
+    edges = [
+        *[Edge(source="fork_research", target=rid) for rid in researcher_ids],
+        *[Edge(source=rid, target="join_research") for rid in researcher_ids],
+        Edge(source="join_research", target="gate_research"),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+    ]
+
+    return Package(
+        name="research",
+        version="1.0.0",
+        description="Parallel research with CEO quality gate",
+        inputs=[
+            Port(name="study", artifact_path=".factory/strategy/study-combined.md"),
+        ],
+        outputs=research_outputs,
+        contract=StateContract(
+            requires=frozenset({"study_complete"}),
+            produces=frozenset({"research_complete"}),
+        ),
+        graph=Workflow(
+            name="research", nodes=nodes, edges=edges, start_node="fork_research",
+        ),
+        entry_node="fork_research",
+        exit_node="gate_research",
+    )
+
+
+# ── Strategy Package ──────────────────────────────────────────
+
+
+def strategy_package(
+    *,
+    research_reads: set[str] | None = None,
+    strategist_prompt: str = "",
+    gate_prompt: str = "",
+) -> Package:
+    """Strategist → CEO gate → archivist (async)."""
+    reads = research_reads or {
+        ".factory/strategy/research-similar.md",
+        ".factory/strategy/research-techstack.md",
+        ".factory/strategy/research-pitfalls.md",
+    }
+
+    if not strategist_prompt:
+        strategist_prompt = (
+            "Synthesize a project specification from study and research. "
+            "Read ALL research files at .factory/strategy/. "
+            "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
+            "Every Phase must have substantive What/Why/Expected impact fields. "
+            "Write the plan to .factory/strategy/current.md."
+        )
+
+    if not gate_prompt:
+        gate_prompt = (
+            "HARD GATE — Builder MUST NOT start until approved. Check: "
+            "1) Depth: every hypothesis has Category/What/Why/Expected impact. "
+            "2) Research grounding: architecture and rationale cite research findings. "
+            "3) Buildability: a Builder could implement each phase without clarifying questions. "
+            "4) Phase 1 is scaffold + eval harness. "
+            "Write PLAN APPROVED in verdict if all checks pass."
+        )
+
+    strategist = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=strategist_prompt,
+        reads=reads,
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+                must_contain=["### Phase 1", "### Architecture"],
+            )
+        ],
+    )
+    gate_strategy = GateNode(
+        id="gate_strategy",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=gate_prompt,
+        reads={".factory/strategy/current.md"},
+    )
+    archivist_plan = AgentNode(
+        id="archivist_plan",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the approved research and strategy.",
+        reads={".factory/strategy/current.md"},
+        writes={".factory/archive/plan.md"},
+        blocking=False,
+    )
+
+    nodes = {
+        "strategist": strategist,
+        "gate_strategy": gate_strategy,
+        "archivist_plan": archivist_plan,
+    }
+    edges = [
+        Edge(source="strategist", target="gate_strategy"),
+        Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+    ]
+
+    return Package(
+        name="strategy",
+        version="1.0.0",
+        description="Strategy synthesis with CEO approval gate",
+        inputs=[Port(name="research", artifact_path=".factory/strategy/research-similar.md")],
+        outputs=[Port(name="strategy", artifact_path=".factory/strategy/current.md")],
+        contract=StateContract(
+            requires=frozenset({"research_complete"}),
+            produces=frozenset({"strategy_complete"}),
+        ),
+        graph=Workflow(
+            name="strategy", nodes=nodes, edges=edges, start_node="strategist",
+        ),
+        entry_node="strategist",
+        exit_node="archivist_plan",
+    )
+
+
+# ── Build Package ─────────────────────────────────────────────
+
+
+def build_package() -> Package:
+    """Builder → CEO gate, with reloop on redirect."""
+    builder = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the next phase from .factory/strategy/current.md. "
+            "Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. "
+            "Read CLAUDE.md and factory.md if they exist. "
+            "Implement exactly what the current phase describes. Run tests. "
+            "Commit changes and open a draft PR."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/builder-latest.md",
+                must_exist=True,
+                min_size=500,
+                must_contain=["commit"],
+            )
+        ],
+    )
+    gate_build = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output. Check git log and diff. "
+            "Does the work match the plan for this phase? "
+            "REDIRECT if off-scope or missed key requirements."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes = {"builder": builder, "gate_build": gate_build}
+    edges = [
+        Edge(source="builder", target="gate_build"),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    return Package(
+        name="build",
+        version="1.0.0",
+        description="Builder with CEO review gate",
+        inputs=[Port(name="strategy", artifact_path=".factory/strategy/current.md")],
+        outputs=[Port(name="build", artifact_path=".factory/reviews/builder-latest.md")],
+        contract=StateContract(
+            requires=frozenset({"strategy_complete"}),
+            produces=frozenset({"build_complete"}),
+        ),
+        graph=Workflow(
+            name="build", nodes=nodes, edges=edges, start_node="builder",
+        ),
+        entry_node="builder",
+        exit_node="gate_build",
+    )
+
+
+# ── QA Package ────────────────────────────────────────────────
+
+
+def qa_package() -> Package:
+    """Deep QA: fork → [health, code_review, adversarial] → join → gates."""
+    health_checker = AgentNode(
+        id="health_checker",
+        role=AgentRole.HEALTH_CHECKER,
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
+        writes={".factory/reviews/health-check.md"},
+    )
+    code_reviewer = AgentNode(
+        id="code_reviewer",
+        role=AgentRole.CODE_REVIEWER,
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
+        writes={".factory/reviews/code-review.md"},
+    )
+    adversarial_tester = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.ADVERSARIAL_TESTER,
+        timeout=1800,
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
+        writes={".factory/reviews/adversarial-qa.md"},
+    )
+    fork_qa = ForkNode(id="fork_qa", targets=["health_checker", "code_reviewer", "adversarial_tester"])
+    join_qa = JoinNode(
+        id="join_qa",
+        sources=["health_checker", "code_reviewer", "adversarial_tester"],
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+    gate_qa = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt="Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3) if issues found.",
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+    gate_doc = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+    gate_precheck = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+    archivist_build = AgentNode(
+        id="archivist_build",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the build phase results.",
+        reads={".factory/reviews/adversarial-qa.md"},
+        writes={".factory/archive/build.md"},
+        blocking=False,
+    )
+
+    nodes = {
+        "fork_qa": fork_qa,
+        "health_checker": health_checker,
+        "code_reviewer": code_reviewer,
+        "adversarial_tester": adversarial_tester,
+        "join_qa": join_qa,
+        "gate_qa": gate_qa,
+        "gate_doc_freshness": gate_doc,
+        "gate_precheck": gate_precheck,
+        "archivist_build": archivist_build,
+    }
+    edges = [
+        Edge(source="fork_qa", target="health_checker"),
+        Edge(source="fork_qa", target="code_reviewer"),
+        Edge(source="fork_qa", target="adversarial_tester"),
+        Edge(source="health_checker", target="join_qa"),
+        Edge(source="code_reviewer", target="join_qa"),
+        Edge(source="adversarial_tester", target="join_qa"),
+        Edge(source="join_qa", target="gate_qa"),
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+    ]
+
+    return Package(
+        name="qa",
+        version="1.0.0",
+        description="Deep QA: health check, code review, adversarial testing",
+        inputs=[Port(name="build", artifact_path=".factory/reviews/builder-latest.md")],
+        outputs=[Port(name="qa", artifact_path=".factory/reviews/adversarial-qa.md")],
+        contract=StateContract(
+            requires=frozenset({"build_complete"}),
+            produces=frozenset({"qa_complete"}),
+        ),
+        graph=Workflow(
+            name="qa", nodes=nodes, edges=edges, start_node="fork_qa",
+        ),
+        entry_node="fork_qa",
+        exit_node="archivist_build",
+    )
+
+
+# ── Mode compositions ─────────────────────────────────────────
+
+BUILD_RESEARCHERS = [
+    ResearcherConfig(
+        id="similar",
+        prompt_template=(
+            "Similar projects research. "
+            "Read .factory/strategy/study-combined.md for project context. "
+            "Search the web for similar projects, existing solutions, and prior art. "
+            "Write findings to .factory/strategy/research-similar.md."
+        ),
+        post_check_min_size=50,
+    ),
+    ResearcherConfig(
+        id="techstack",
+        prompt_template=(
+            "Tech stack research. "
+            "Read .factory/strategy/study-combined.md for project context. "
+            "Identify the best technology stack for this type of project. "
+            "Write findings to .factory/strategy/research-techstack.md."
+        ),
+        post_check_min_size=50,
+    ),
+    ResearcherConfig(
+        id="pitfalls",
+        prompt_template=(
+            "Pitfalls and scope research. "
+            "Read .factory/strategy/study-combined.md for project context. "
+            "Identify potential pitfalls and common mistakes. "
+            "Write findings to .factory/strategy/research-pitfalls.md."
+        ),
+        post_check_min_size=50,
+    ),
+]
+
+
+def build_mode(*, focus: str | None = None) -> Package:
+    """Build mode as a Package composition.
+
+    study → research → strategy → build → qa
+    """
+    return Sequential(
+        study_package(focus=focus),
+        research_package(
+            researchers=BUILD_RESEARCHERS,
+            gate_prompt=(
+                "Is the research relevant? Does it cover the technology landscape adequately? "
+                "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
+            ),
+        ),
+        strategy_package(),
+        build_package(),
+        qa_package(),
+        name="build-mode",
+    )
