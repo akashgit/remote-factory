@@ -188,6 +188,7 @@ def strategy_package(
     research_reads: set[str] | None = None,
     strategist_prompt: str = "",
     gate_prompt: str = "",
+    gate_type: str = "agent",
 ) -> Package:
     """Strategist → CEO gate → archivist (async)."""
     reads = research_reads or {
@@ -230,13 +231,15 @@ def strategy_package(
             )
         ],
     )
-    gate_strategy = GateNode(
-        id="gate_strategy",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=gate_prompt,
-        reads={".factory/strategy/current.md"},
-    )
+    gate_kwargs: dict = {
+        "id": "gate_strategy",
+        "evaluator_type": gate_type,
+        "reads": {".factory/strategy/current.md"},
+    }
+    if gate_type == "agent":
+        gate_kwargs["evaluator_role"] = AgentRole.CEO
+        gate_kwargs["gate_prompt"] = gate_prompt
+    gate_strategy = GateNode(**gate_kwargs)
     archivist_plan = AgentNode(
         id="archivist_plan",
         role=AgentRole.ARCHIVIST,
@@ -612,7 +615,7 @@ def design_mode(*, focus: str | None = None) -> Package:
             ),
         ),
         strategy_package(
-            gate_prompt="USER_GATE",
+            gate_type="user",
         ),
         build_package(),
         qa_package(),
@@ -678,7 +681,7 @@ def design_with_frontend_mode(*, focus: str | None = None) -> Package:
                 ".factory/strategy/research-pitfalls.md",
                 ".factory/strategy/design-system.md",
             },
-            gate_prompt="USER_GATE",
+            gate_type="user",
         ),
         build_package(),
         qa_package(),
