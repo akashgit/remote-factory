@@ -39,6 +39,22 @@ class BenchmarkConfig(BaseModel):
     scoring_method: str = "partial_credit"
     scoring_weights: dict[str, float] = Field(default_factory=dict)
 
+    def to_task(self) -> object:
+        """Bridge method: convert this BenchmarkConfig to a Task.
+
+        Uses lazy import to avoid circular dependency.
+        """
+        from factory.task import Task
+
+        return Task.from_legacy(
+            name=self.name,
+            test_command=self.test_command,
+            test_format=self.test_format,
+            metric_path=self.metric_path,
+            instance_format=self.instance_format,
+            prep_command=self.prep_command,
+        )
+
 
 def load_benchmark_config(name: str, project_dir: Path | None = None) -> BenchmarkConfig:
     """Load a benchmark config by name from the search path.

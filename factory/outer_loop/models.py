@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -122,6 +123,32 @@ class SwarmConfig(BaseModel):
                 f"holdout_instances must not overlap with training_instances: {overlap}"
             )
         return v
+
+    # ── Task integration (not serialised — set at runtime) ───────
+
+    _task: Any = None  # set via set_task(), not a Pydantic field
+
+    def set_task(self, task: Any) -> None:
+        """Attach a Task object at runtime (not serialised)."""
+        object.__setattr__(self, "_task", task)
+
+    def get_task(self) -> Any:
+        """Return explicit task, or construct one from flat fields.
+
+        Uses lazy import to avoid circular dependency.
+        """
+        if self._task is not None:
+            return self._task
+        from factory.task import Task
+
+        return Task.from_legacy(
+            name=self.benchmark,
+            test_command=self.test_command,
+            test_format=self.test_format,
+            metric_path=self.metric_path,
+            instance_format=self.instance_format,
+            prep_command=self.prep_command,
+        )
 
 
 class OuterLoopState(BaseModel):

@@ -1,0 +1,25 @@
+[task]
+name = "chess-evolve"
+description = "Evolve a chess engine that beats the baseline"
+source = "https://github.com/lambdabaa/chess-evolve.git"
+
+[instances]
+format = "directory"
+source = "instances/"
+
+[setup]
+command = "pip install -e {instance_dir}"
+
+[prompt]
+text = "Improve the chess engine in src/engine.py to beat the baseline."
+
+[verify]
+command = "pytest tests/ -xvs"
+
+[scoring]
+method = "pytest"
+partial_credit = true
+
+[constraints]
+timeout = 3600
+max_retries = 3

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -84,6 +84,30 @@ class ResearchTarget(BaseModel):
     result_path: str
     result_parser: Literal["json"] = "json"
     timeout: int = 3600
+
+    def to_task(self) -> Any:
+        """Bridge: convert ResearchTarget to a Task with JSONScoring.
+
+        Uses lazy import to avoid circular dependency.
+        """
+        from factory.task import (
+            JSONScoring,
+            PromptConfig,
+            Task,
+            TaskConstraints,
+            TaskDefinition,
+            VerifyConfig,
+        )
+
+        defn = TaskDefinition(
+            name=f"research-{self.metric}",
+            description=self.objective,
+            scoring=JSONScoring(metric_path=self.result_path),
+            constraints=TaskConstraints(timeout=self.timeout),
+            prompt_config=PromptConfig(text=self.objective),
+            verify_config=VerifyConfig(command=self.run_command),
+        )
+        return Task(definition=defn)
 
 
 class AggregateMethod(str, Enum):

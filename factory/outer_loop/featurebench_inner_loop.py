@@ -8,6 +8,7 @@ partial credit scores).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -25,6 +26,10 @@ class FeatureBenchInnerLoop:
     Each candidate workflow is registered as an ephemeral mode. InnerLoop.step()
     runs it as a subprocess, and CycleAnalyzer reads execution artifacts into
     a CycleRecord with full exhaust.
+
+    When ``task`` is provided, evaluator selection delegates to
+    ``task.get_evaluator()`` — centralising evaluator derivation in the
+    scoring contract instead of string-matching ``test_format``.
     """
 
     def __init__(
@@ -36,14 +41,20 @@ class FeatureBenchInnerLoop:
         test_command: str = "",
         test_format: str = "pytest",
         metric_path: str = "score",
+        task: Any | None = None,
+        instance: Any | None = None,
     ) -> None:
         evaluator: Evaluator
-        if test_format == "pytest":
+        if task is not None:
+            evaluator = task.get_evaluator()
+        elif test_format == "pytest":
             evaluator = FeatureBenchEvaluator()
         else:
             from factory.outer_loop.evaluators import get_evaluator
             evaluator = get_evaluator(test_format, metric_path=metric_path)
         self._evaluator = evaluator
+        self._task = task
+        self._instance = instance
         self._inner_loop = InnerLoop(
             project_dir=project_dir,
             mode=mode,
@@ -53,6 +64,8 @@ class FeatureBenchInnerLoop:
             test_command=test_command,
             test_format=test_format,
             metric_path=metric_path,
+            task=task,
+            instance=instance,
         )
 
     @property

@@ -25,6 +25,72 @@ def _needs_shell(cmd: str) -> bool:
     return bool(_SHELL_OPERATORS_RE.search(cmd))
 
 
+def prepare_instances_raw(
+    prep_command: str,
+    instance_format: str,
+    instance_ids: list[str],
+    output_dir: Path,
+) -> list[Path]:
+    """Stateless variant of prepare_instances — no BenchmarkConfig dependency.
+
+    Can be used by Task.setup() default implementations without coupling to
+    the BenchmarkConfig model.
+    """
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared: list[Path] = []
+
+    for instance_id in instance_ids:
+        instance_dir = output_dir / instance_id
+        instance_dir.mkdir(parents=True, exist_ok=True)
+
+        if prep_command:
+            cmd = prep_command.replace(
+                "{instance_id}", instance_id
+            ).replace(
+                "{instance_dir}", str(instance_dir)
+            )
+
+            use_shell = _needs_shell(cmd)
+            log.info("prep_instance_raw", instance_id=instance_id, command=cmd, shell=use_shell)
+            try:
+                result = subprocess.run(
+                    cmd if use_shell else shlex.split(cmd),
+                    cwd=str(output_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    shell=use_shell,
+                )
+                if result.returncode != 0:
+                    log.error(
+                        "prep_instance_raw_failed",
+                        instance_id=instance_id,
+                        returncode=result.returncode,
+                        stderr=result.stderr[:500],
+                    )
+                    continue
+            except subprocess.TimeoutExpired:
+                log.error("prep_instance_raw_timeout", instance_id=instance_id)
+                continue
+            except Exception as exc:
+                log.error("prep_instance_raw_error", instance_id=instance_id, error=str(exc))
+                continue
+
+        if validate_instance(instance_dir, instance_format):
+            prepared.append(instance_dir)
+            log.info("prep_instance_raw_ok", instance_id=instance_id)
+        else:
+            log.warning(
+                "prep_instance_raw_invalid",
+                instance_id=instance_id,
+                format=instance_format,
+            )
+
+    return prepared
+
+
 def prepare_instances(
     config: BenchmarkConfig,
     instance_ids: list[str],

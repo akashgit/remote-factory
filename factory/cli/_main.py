@@ -105,7 +105,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "mempalace", "outer-loop"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph", "mempalace", "outer-loop", "task"]),
     (
         "Configuration",
         [
@@ -334,6 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
     mp_browse.add_argument("--drawer", help="Show full content of a specific drawer by ID")
     mp_browse.add_argument("--all", action="store_true", help="Show all wings (default: only this project's wing)")
 
+    # task — task management (create, validate, list)
+    from factory.cli.task import add_task_parser
+    add_task_parser(sub)
+
     # outer-loop — evolutionary workflow search
     from factory.cli.outer_loop import add_outer_loop_parser
     add_outer_loop_parser(sub)
@@ -436,6 +440,9 @@ def main(argv: list[str] | None = None) -> int:
             "factory.workflow.cli", fromlist=["cmd_workflow"]
         ).cmd_workflow(a),
         "plugins": _cmd_plugins,
+        "task": lambda a: __import__(
+            "factory.cli.task", fromlist=["cmd_task"]
+        ).cmd_task(a),
         "outer-loop": lambda a: __import__(
             "factory.cli.outer_loop", fromlist=["cmd_outer_loop"]
         ).cmd_outer_loop(a),
