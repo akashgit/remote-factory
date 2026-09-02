@@ -106,6 +106,12 @@ re:factory inherits Claude Code's authentication. Configure whichever method you
 | `CLAUDE_CODE_USE_VERTEX` | Set to `1` for Google Cloud Vertex AI |
 | `ANTHROPIC_VERTEX_PROJECT_ID` | Vertex AI project ID |
 | `CLOUD_ML_REGION` | Vertex AI region (e.g., `us-east5`) |
+| `CLAUDE_CODE_USE_BEDROCK` | Set to `1` for AWS Bedrock |
+
+When one of the variables above is set, re:factory's Claude Code subprocesses launch with
+`--bare` for faster startup (skips hooks, LSP, and plugin loading). `--bare` never reads the
+OAuth keychain, so it's skipped automatically for subscription (Pro/Max) logins — those keep
+working exactly as `claude` does on its own, just without the startup optimization.
 
 ### re:factory Configuration
 
