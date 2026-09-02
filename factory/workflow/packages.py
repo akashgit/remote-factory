@@ -407,6 +407,12 @@ def qa_package() -> Package:
         blocking=False,
     )
 
+    spec_generate = FnNode(
+        id="spec_generate",
+        command="factory workflow run spec-generate {project_path}",
+        blocking=False,
+    )
+
     nodes = {
         "fork_qa": fork_qa,
         "health_checker": health_checker,
@@ -417,6 +423,7 @@ def qa_package() -> Package:
         "gate_doc_freshness": gate_doc,
         "gate_precheck": gate_precheck,
         "archivist_build": archivist_build,
+        "spec_generate": spec_generate,
     }
     edges = [
         Edge(source="fork_qa", target="health_checker"),
@@ -429,6 +436,7 @@ def qa_package() -> Package:
         Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="archivist_build", target="spec_generate"),
     ]
 
     return Package(
@@ -445,7 +453,7 @@ def qa_package() -> Package:
             name="qa", nodes=nodes, edges=edges, start_node="fork_qa",
         ),
         entry_node="fork_qa",
-        exit_node="archivist_build",
+        exit_node="spec_generate",
     )
 
 

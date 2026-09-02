@@ -92,7 +92,7 @@ class TestBuildPackage:
 class TestQaPackage:
     def test_compiles(self):
         wf = qa_package().compile()
-        assert len(wf.nodes) == 9
+        assert len(wf.nodes) == 10
 
     def test_parallel_qa_agents(self):
         wf = qa_package().compile()
@@ -127,8 +127,8 @@ class TestBuildMode:
 
     def test_node_count_matches_expectation(self):
         wf = build_mode().compile()
-        assert len(wf.nodes) == 24
-        assert len(wf.edges) == 30
+        assert len(wf.nodes) == 25
+        assert len(wf.edges) == 31
 
 
 class TestDiscoveryPackage:
@@ -150,7 +150,7 @@ class TestDiscoveryPackage:
 class TestDesignMode:
     def test_compiles(self):
         wf = design_mode().compile()
-        assert len(wf.nodes) == 30
+        assert len(wf.nodes) == 31
 
     def test_has_discovery_and_study(self):
         wf = design_mode().compile()
@@ -164,11 +164,17 @@ class TestDesignMode:
         design_nodes = set(design_mode().compile().nodes.keys())
         assert build_nodes.issubset(design_nodes)
 
+    def test_matches_old_design_workflow(self):
+        from factory.workflow.definitions import design_workflow
+        old_nodes = set(design_workflow().nodes.keys())
+        new_nodes = set(design_mode().compile().nodes.keys())
+        assert old_nodes.issubset(new_nodes), f"Missing: {old_nodes - new_nodes}"
+
 
 class TestDesignWithFrontend:
     def test_compiles(self):
         wf = design_with_frontend_mode().compile()
-        assert len(wf.nodes) == 31
+        assert len(wf.nodes) == 32
 
     def test_has_frontend_discovery(self):
         wf = design_with_frontend_mode().compile()
