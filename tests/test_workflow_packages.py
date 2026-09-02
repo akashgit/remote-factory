@@ -6,6 +6,9 @@ from factory.workflow.packages import (
     BUILD_RESEARCHERS,
     build_mode,
     build_package,
+    design_mode,
+    design_with_frontend_mode,
+    discovery_package,
     qa_package,
     research_package,
     strategy_package,
@@ -126,3 +129,59 @@ class TestBuildMode:
         wf = build_mode().compile()
         assert len(wf.nodes) == 24
         assert len(wf.edges) == 30
+
+
+class TestDiscoveryPackage:
+    def test_compiles(self):
+        wf = discovery_package().compile()
+        assert "gate_has_factory" in wf.nodes
+        assert "discover" in wf.nodes
+
+    def test_has_bootstrap_path(self):
+        wf = discovery_package().compile()
+        assert "create_factory_md" in wf.nodes
+        assert "factory_init" in wf.nodes
+
+    def test_has_skip_path(self):
+        wf = discovery_package().compile()
+        assert "skip_bootstrap" in wf.nodes
+
+
+class TestDesignMode:
+    def test_compiles(self):
+        wf = design_mode().compile()
+        assert len(wf.nodes) == 30
+
+    def test_has_discovery_and_study(self):
+        wf = design_mode().compile()
+        assert "gate_has_factory" in wf.nodes
+        assert "study" in wf.nodes
+        assert "strategist" in wf.nodes
+        assert "builder" in wf.nodes
+
+    def test_superset_of_build(self):
+        build_nodes = set(build_mode().compile().nodes.keys())
+        design_nodes = set(design_mode().compile().nodes.keys())
+        assert build_nodes.issubset(design_nodes)
+
+
+class TestDesignWithFrontend:
+    def test_compiles(self):
+        wf = design_with_frontend_mode().compile()
+        assert len(wf.nodes) == 31
+
+    def test_has_frontend_discovery(self):
+        wf = design_with_frontend_mode().compile()
+        assert "frontend_discovery" in wf.nodes
+
+    def test_one_node_more_than_design(self):
+        design_nodes = set(design_mode().compile().nodes.keys())
+        frontend_nodes = set(design_with_frontend_mode().compile().nodes.keys())
+        extra = frontend_nodes - design_nodes
+        assert extra == {"frontend_discovery"}
+
+    def test_frontend_reads_study(self):
+        wf = design_with_frontend_mode().compile()
+        node = wf.nodes["frontend_discovery"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/strategy/study-combined.md" in node.reads

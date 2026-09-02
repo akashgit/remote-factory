@@ -482,6 +482,97 @@ BUILD_RESEARCHERS = [
 ]
 
 
+def discovery_package() -> Package:
+    """Bootstrap: detect project state, create factory.md + config.json if needed."""
+    gate_has_factory = GateNode(
+        id="gate_has_factory",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            'exists = Path("{project_path}/.factory/config.json").exists(); '
+            'print("PROCEED" if exists else "HALT")'
+            '"'
+        ),
+    )
+    discover = FnNode(
+        id="discover",
+        command="factory discover {project_path}",
+        writes={".factory/eval_profile.json"},
+    )
+    gate_factory_md = GateNode(
+        id="gate_factory_md_exists",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            'exists = Path("{project_path}/factory.md").exists(); '
+            'print("PROCEED" if exists else "HALT")'
+            '"'
+        ),
+    )
+    create_factory_md = AgentNode(
+        id="create_factory_md",
+        role=AgentRole.CEO,
+        prompt_template=(
+            "Create factory.md from template. "
+            "Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test."
+        ),
+        reads={".factory/eval_profile.json"},
+        writes={"factory.md"},
+    )
+    factory_init = FnNode(
+        id="factory_init",
+        command="factory init {project_path}",
+        reads={"factory.md"},
+        writes={".factory/config.json"},
+    )
+
+    # Bootstrap path: discover → gate_factory_md → [create_factory_md →] factory_init
+    bootstrap_nodes = {
+        "discover": discover,
+        "gate_factory_md_exists": gate_factory_md,
+        "create_factory_md": create_factory_md,
+        "factory_init": factory_init,
+    }
+    bootstrap_edges = [
+        Edge(source="discover", target="gate_factory_md_exists"),
+        Edge(source="gate_factory_md_exists", target="factory_init", condition=VerdictType.PROCEED),
+        Edge(source="gate_factory_md_exists", target="create_factory_md", condition=VerdictType.HALT),
+        Edge(source="create_factory_md", target="factory_init"),
+    ]
+    # All nodes in one graph: gate → [bootstrap path or skip]
+    skip_node = FnNode(
+        id="skip_bootstrap",
+        command='echo "Factory config exists, skipping bootstrap"',
+    )
+
+    all_nodes = {
+        "gate_has_factory": gate_has_factory,
+        "skip_bootstrap": skip_node,
+        **bootstrap_nodes,
+    }
+    all_edges = [
+        Edge(source="gate_has_factory", target="skip_bootstrap", condition=VerdictType.PROCEED),
+        Edge(source="gate_has_factory", target="discover", condition=VerdictType.HALT),
+        *bootstrap_edges,
+    ]
+
+    return Package(
+        name="discovery",
+        version="1.0.0",
+        description="Detect project state, bootstrap factory.md + config.json if needed",
+        outputs=[Port(name="config", artifact_path=".factory/config.json")],
+        contract=StateContract(produces=frozenset({"discovery_complete"})),
+        graph=Workflow(
+            name="discovery", nodes=all_nodes,
+            edges=all_edges, start_node="gate_has_factory",
+        ),
+        entry_node="gate_has_factory",
+        exit_node="skip_bootstrap",
+    )
+
+
 def build_mode(*, focus: str | None = None) -> Package:
     """Build mode as a Package composition.
 
@@ -500,4 +591,96 @@ def build_mode(*, focus: str | None = None) -> Package:
         build_package(),
         qa_package(),
         name="build-mode",
+    )
+
+
+def design_mode(*, focus: str | None = None) -> Package:
+    """Design mode: discovery → study → research → strategy (user gate) → build → qa.
+
+    Like build mode but with:
+    - Discovery/bootstrap for new projects
+    - User gate on strategy (instead of CEO gate)
+    """
+    return Sequential(
+        discovery_package(),
+        study_package(focus=focus),
+        research_package(
+            researchers=BUILD_RESEARCHERS,
+            gate_prompt=(
+                "Is the research relevant? Does it cover the technology landscape adequately? "
+                "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
+            ),
+        ),
+        strategy_package(
+            gate_prompt="USER_GATE",
+        ),
+        build_package(),
+        qa_package(),
+        name="design-mode",
+    )
+
+
+def design_with_frontend_mode(*, focus: str | None = None) -> Package:
+    """Design mode + frontend discovery.
+
+    Demonstrates Package composition: inject a frontend-specific
+    discovery step into the standard design pipeline.
+    """
+    frontend_discovery = AgentNode(
+        id="frontend_discovery",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Discover the project's frontend design system. "
+            "Find: design tokens (colors, spacing, typography), "
+            "component library (React/Vue/Svelte components), "
+            "layout patterns, data fetching conventions, "
+            "and styling approach (CSS modules, Tailwind, styled-components). "
+            "Write a structured design system reference to "
+            ".factory/strategy/design-system.md."
+        ),
+        reads={".factory/strategy/study-combined.md"},
+        writes={".factory/strategy/design-system.md"},
+    )
+    frontend_pkg = Package(
+        name="frontend-discovery",
+        version="1.0.0",
+        description="Discover frontend design system tokens, components, patterns",
+        inputs=[Port(name="study", artifact_path=".factory/strategy/study-combined.md")],
+        outputs=[Port(name="design-system", artifact_path=".factory/strategy/design-system.md")],
+        contract=StateContract(
+            requires=frozenset({"study_complete"}),
+            produces=frozenset({"frontend_discovery_complete"}),
+        ),
+        graph=Workflow(
+            name="frontend-discovery",
+            nodes={"frontend_discovery": frontend_discovery},
+            edges=[], start_node="frontend_discovery",
+        ),
+        entry_node="frontend_discovery",
+        exit_node="frontend_discovery",
+    )
+
+    return Sequential(
+        discovery_package(),
+        study_package(focus=focus),
+        frontend_pkg,
+        research_package(
+            researchers=BUILD_RESEARCHERS,
+            gate_prompt=(
+                "Is the research relevant? Does the frontend design system analysis "
+                "cover tokens, components, and patterns adequately?"
+            ),
+        ),
+        strategy_package(
+            research_reads={
+                ".factory/strategy/research-similar.md",
+                ".factory/strategy/research-techstack.md",
+                ".factory/strategy/research-pitfalls.md",
+                ".factory/strategy/design-system.md",
+            },
+            gate_prompt="USER_GATE",
+        ),
+        build_package(),
+        qa_package(),
+        name="frontend-design-mode",
     )
