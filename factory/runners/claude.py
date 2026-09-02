@@ -20,6 +20,25 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+# Boolean-flag env vars that switch Claude Code onto a 3P backend (their own credentials,
+# never the OAuth keychain), as opposed to ANTHROPIC_API_KEY which carries the key itself.
+_BARE_COMPATIBLE_BACKEND_FLAGS = ("CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK")
+
+
+def _supports_bare_mode(env: dict[str, str]) -> bool:
+    """True when the environment implies API-key-style auth, not OAuth/keychain login.
+
+    `--bare` skips keychain reads entirely (see `claude --help`), so it only works when
+    auth is ANTHROPIC_API_KEY or a 3P backend (Vertex/Bedrock). Passing it unconditionally
+    breaks subscription (Pro/Max) logins, which live in the keychain — see #1437.
+    """
+    if env.get("ANTHROPIC_API_KEY", "").strip():
+        return True
+    return any(
+        env.get(var, "").strip().lower() in ("1", "true", "yes")
+        for var in _BARE_COMPATIBLE_BACKEND_FLAGS
+    )
+
 
 def _make_ceo_message_emitter(project_path: Path) -> Callable[[bytes], None]:
     """Return a callback that emits ceo.message events for assistant JSONL lines."""
@@ -116,10 +135,10 @@ class ClaudeRunner:
             "--output-format",
             "stream-json",
             "--verbose",
-            "--bare",
-            "--disallowedTools",
-            "Agent",
         ]
+        if _supports_bare_mode(dict(os.environ)):
+            cmd.append("--bare")
+        cmd.extend(["--disallowedTools", "Agent"])
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
@@ -301,8 +320,9 @@ class ClaudeRunner:
             "claude",
             "--append-system-prompt-file",
             prompt_file.name,
-            "--bare",
         ]
+        if _supports_bare_mode(dict(os.environ)):
+            cmd.append("--bare")
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
