@@ -1,0 +1,805 @@
+lock_baseline:
+  type: FnNode
+  id: lock_baseline
+  command: cat > /tmp/_lock_baseline.py << 'PYEOF'
+  reads: []
+  writes:
+  - .factory/sorting/baseline.json
+  edges_out:
+  - target: select_tier
+    condition: null
+select_tier:
+  type: FnNode
+  id: select_tier
+  command: cat > /tmp/_select_tier.py << 'PYEOF'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/tier-selection.json
+  edges_out:
+  - target: gate_is_tier1
+    condition: null
+gate_is_tier1:
+  type: GateNode
+  id: gate_is_tier1
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';sel = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''tier-selection.json'')));t = sel.get(''tier'', 0);print(''pass:
+    tier matches'' if t == 1 else ''fail: tier is '' + str(t))"'
+  reads:
+  - .factory/sorting/tier-selection.json
+  edges_out:
+  - target: researcher_discover_params
+    condition: PROCEED
+  - target: gate_is_tier2
+    condition: HALT
+researcher_discover_params:
+  type: AgentNode
+  id: researcher_discover_params
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/research-params.md
+  edges_out:
+  - target: strategist_t1
+    condition: null
+  slots:
+    task_prompt_researcher_discover_params: 'You are a Researcher investigating tunable
+      configuration parameters for a Neuropixels-scale, GPU-accelerated spike sorting
+      pipeline.
+
+
+      ## Context
+
+      - Speed is the optimization target. Accuracy is a hard floor.
+
+      - Scale: 384+ channels, 30kHz sampling, millions of samples per recording.
+
+      - GPU-accelerated sorters (e.g. Kilosort, YASS) have many tunable parameters.
+
+
+      ## Your Task
+
+      1. Discover ALL config files in the project (YAML, JSON, TOML, INI, CFG).
+
+      2. Extract every tunable parameter with its current value, valid range, and
+      default.
+
+      3. Rank parameters by expected speed impact (highest first).
+
+      4. Note which parameters affect accuracy (these need careful testing).
+
+      5. Write your findings to `.factory/sorting/research-params.md`.
+
+
+      ## Output Format
+
+      A markdown file with:
+
+      - Table of all parameters (name, file, current value, range, speed impact estimate)
+
+      - Top 5 recommendations for speed improvement
+
+      - Accuracy-sensitive parameters flagged with warnings
+
+
+      Read: .factory/sorting/baseline.json
+
+      Write output to: .factory/sorting/research-params.md
+
+      Read: .factory/sorting/baseline.json
+
+      Write output to: .factory/sorting/research-params.md'
+    timeout_researcher_discover_params: '600'
+gate_is_tier2:
+  type: GateNode
+  id: gate_is_tier2
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';sel = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''tier-selection.json'')));t = sel.get(''tier'', 0);print(''pass:
+    tier matches'' if t == 2 else ''fail: tier is '' + str(t))"'
+  reads:
+  - .factory/sorting/tier-selection.json
+  edges_out:
+  - target: researcher_profile_pipeline
+    condition: PROCEED
+  - target: gate_is_tier3
+    condition: HALT
+strategist_t1:
+  type: AgentNode
+  id: strategist_t1
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/research-params.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: builder_config_change
+    condition: null
+  slots:
+    task_prompt_strategist_t1: "You are a Strategist selecting ONE configuration parameter\
+      \ variation to test for speed optimization of a spike sorting pipeline.\n\n\
+      ## Context\n- Speed is the optimization target. Accuracy is a hard floor.\n\
+      - Read the researcher's parameter discovery at `.factory/sorting/research-params.md`.\n\
+      - Read the baseline at `.factory/sorting/baseline.json` for current performance.\n\
+      - Check `.factory/sorting/experiments.jsonl` for prior attempts (avoid repeats).\n\
+      \n## Your Task\n1. Rank discovered parameters by: highest speed impact × lowest\
+      \ accuracy risk.\n2. Select ONE parameter variation to test this cycle.\n3.\
+      \ Justify why this variation is the best next experiment.\n4. Write the strategy\
+      \ to `.factory/strategy/current.md` with:\n   - Which parameter to change\n\
+      \   - What value to set (with rationale)\n   - Expected speed impact\n   - Accuracy\
+      \ risk assessment\n\nRead: .factory/sorting/baseline.json, .factory/sorting/research-params.md\n\
+      Write output to: .factory/strategy/current.md\nRead: .factory/sorting/baseline.json,\
+      \ .factory/sorting/research-params.md\nWrite output to: .factory/strategy/current.md"
+    timeout_strategist_t1: '600'
+researcher_profile_pipeline:
+  type: AgentNode
+  id: researcher_profile_pipeline
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/research-profile.md
+  - .factory/sorting/stage-timing.json
+  edges_out:
+  - target: strategist_t2
+    condition: null
+  slots:
+    task_prompt_researcher_profile_pipeline: "You are a Researcher profiling a Neuropixels-scale,\
+      \ GPU-accelerated spike sorting pipeline to identify performance bottlenecks.\n\
+      \n## Context\n- Speed is the optimization target. Accuracy is a hard floor.\n\
+      - Scale: 384+ channels, 30kHz sampling, millions of samples.\n- Read baseline\
+      \ at `.factory/sorting/baseline.json`.\n- **Baseline contains measured stage\
+      \ timing:** `.stage_timing` has\n  `{stage_name: {mean: <seconds>, std: <seconds>}`\
+      \ averaged from 3 runs.\n  These are ground-truth measurements — use them, do\
+      \ not estimate.\n\n## Your Task\n1. Identify all pipeline stages (preprocessing,\
+      \ detection, clustering, etc.).\n2. Read `.stage_timing` from `.factory/sorting/baseline.json`\
+      \ for actual\n   measured wall-clock time per stage. Use these as ground truth.\n\
+      3. Rank stages by measured time (highest `mean` first) — the slowest stage\n\
+      \   is the primary optimization target.\n4. For each stage, determine if it\
+      \ is GPU-bound or CPU-bound via code analysis.\n5. Identify memory allocation\
+      \ patterns and potential bottlenecks.\n\n## Gap Detection Analysis\n\nAfter\
+      \ profiling stage timings, perform gap detection:\n\n1. **Calculate gap**:\n\
+      \   - Read `speed_seconds.mean` from `baseline.json` (total elapsed time)\n\
+      \   - Sum all stage `mean` values from `.stage_timing` in `baseline.json`\n\
+      \   - Calculate: `gap_seconds = total_elapsed - sum_stage_times`\n   - Calculate:\
+      \ `gap_pct = (gap_seconds / total_elapsed) * 100`\n\n2. **Evaluate significance**:\n\
+      \   - Gap is significant if `gap_pct > 10.0`\n   - Gaps under 10% are normal\
+      \ measurement noise and overhead\n\n3. **Generate hypotheses** (if significant):\n\
+      \   - Inter-stage serialization (pickle/unpickle, file I/O between stages)\n\
+      \   - GPU memory transfers (host↔device copies between stages)\n   - I/O waits\
+      \ (disk reads/writes not captured in stage timers)\n   - Process orchestration\
+      \ (subprocess spawn, stage handoff logic)\n\n4. **Write gap analysis**:\n  \
+      \ - Add `gap_analysis` section to stage-timing.json (see output format below)\n\
+      \   - Include gap analysis section in the profiling report\n   - If gap > 10%,\
+      \ rank the gap as a potential optimization target alongside\n     hot stages\
+      \ — a 25% gap may be more impactful than the slowest individual\n     stage\n\
+      \   - If gap > 20%, flag it as a HIGH PRIORITY optimization target\n\n**Example**:\
+      \ If detection=120s, clustering=450s, refinement=158s (sum=728s),\nbut total\
+      \ benchmark time (`speed_seconds.mean`) is 960s, the 232s gap (24%)\nis a major\
+      \ optimization signal worth investigating before optimizing any\nindividual\
+      \ stage.\n\n## I/O Analysis\n\nIf `baseline.json` contains an `io_profile` section\
+      \ with `available: true`:\n1. Report the baseline I/O profile (read_bytes, write_bytes,\
+      \ syscr, syscw)\n2. Convert bytes to human-readable units (MB or GB)\n3. Note\
+      \ whether I/O volume is disproportionate to data size\n4. Include I/O insights\
+      \ in the profiling report under an \"I/O Profile\" section\n\nIf `io_profile`\
+      \ is missing or `available: false`, skip this section silently\n(do NOT warn\
+      \ — the platform may not support /proc/self/io).\n\n## Output\n\nWrite dual\
+      \ output:\n- `.factory/sorting/research-profile.md`: detailed profiling report\
+      \ with:\n  - Stages ranked by measured baseline time (slowest first)\n  - Gap\
+      \ detection analysis section (if gap > 10%)\n  - I/O profile analysis section\
+      \ (if available)\n  - GPU/CPU binding analysis per stage\n  - Memory allocation\
+      \ patterns\n- `.factory/sorting/stage-timing.json`: structured timing data with\
+      \ format:\n  ```json\n  {\n    \"total_elapsed_seconds\": <speed_seconds.mean\
+      \ from baseline>,\n    \"sum_stage_seconds\": <sum of all stage means>,\n  \
+      \  \"gap_analysis\": {\n      \"gap_seconds\": <float>,\n      \"gap_pct\":\
+      \ <float>,\n      \"gap_threshold_exceeded\": <bool>,\n      \"gap_threshold_pct\"\
+      : 10.0,\n      \"gap_hypotheses\": [<list of string hypotheses if gap > 10%>]\n\
+      \    },\n    \"stages\": {\n      \"<stage_name>\": {\n        \"baseline_mean\"\
+      : <float>,\n        \"baseline_std\": <float>,\n        \"pct_of_total\": <float>,\n\
+      \        \"gpu_bound\": <bool>,\n        \"notes\": \"<string>\"\n      }\n\
+      \    }\n  }\n  ```\n\nRead: .factory/sorting/baseline.json\nWrite output to:\
+      \ .factory/sorting/research-profile.md, .factory/sorting/stage-timing.json\n\
+      Read: .factory/sorting/baseline.json\nWrite output to: .factory/sorting/research-profile.md,\
+      \ .factory/sorting/stage-timing.json"
+    timeout_researcher_profile_pipeline: '600'
+gate_is_tier3:
+  type: GateNode
+  id: gate_is_tier3
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';sel = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''tier-selection.json'')));t = sel.get(''tier'', 0);print(''pass:
+    tier matches'' if t == 3 else ''fail: tier is '' + str(t))"'
+  reads:
+  - .factory/sorting/tier-selection.json
+  edges_out:
+  - target: researcher_explore_alternatives
+    condition: PROCEED
+builder_config_change:
+  type: AgentNode
+  id: builder_config_change
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  - .factory/sorting/config-diff.json
+  edges_out:
+  - target: gate_no_code_changes
+    condition: null
+  slots:
+    task_prompt_builder_config_change: 'You are a Builder applying a configuration
+      change to optimize spike sorting speed.
+
+
+      ## Context
+
+      - Speed is the optimization target. Accuracy is a hard floor.
+
+      - Neuropixels-scale: 384+ channels, 30kHz, millions of samples.
+
+      - Read the strategy at `.factory/strategy/current.md` for which parameter to
+      change.
+
+
+      ## STRICT RULES
+
+      - ONLY modify config/parameter files: .yaml, .json, .toml, .cfg, .ini, .conf,
+      .env
+
+      - ZERO source code changes: do NOT modify .py, .cu, .cpp, .c, .h, .pyx, .sh
+      files
+
+      - A gate will verify no code was changed — if you modify code, you''ll be sent
+      back
+
+
+      ## Reloop Handling
+
+      - If you were sent back from `gate_no_code_changes`: you modified source code.
+      Revert those changes and apply the config change using ONLY config files.
+
+
+      ## Your Task
+
+      1. Apply the parameter change specified in the strategy
+
+      2. Verify you only touched config files
+
+      3. Write a summary to `.factory/reviews/builder-latest.md`
+
+      4. Write the config diff to `.factory/sorting/config-diff.json`
+
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md, .factory/sorting/config-diff.json
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md, .factory/sorting/config-diff.json'
+    timeout_builder_config_change: '3600'
+strategist_t2:
+  type: AgentNode
+  id: strategist_t2
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/research-profile.md
+  - .factory/sorting/stage-timing.json
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: builder_optimize_hotpath
+    condition: null
+  slots:
+    task_prompt_strategist_t2: "You are a Strategist identifying ONE hot-path optimization\
+      \ for a spike sorting pipeline.\n\n## Context\n- Speed is the optimization target.\
+      \ Accuracy is a hard floor.\n- Read profiling at `.factory/sorting/research-profile.md`\
+      \ and `.factory/sorting/stage-timing.json`.\n- Read baseline at `.factory/sorting/baseline.json`.\n\
+      - Check `.factory/sorting/experiments.jsonl` for prior attempts.\n\n## Your\
+      \ Task\n1. Target the PRIMARY bottleneck stage for optimization.\n2. Validate\
+      \ the optimization preserves algorithmic behavior (same inputs → same outputs).\n\
+      3. Write strategy to `.factory/strategy/current.md` with:\n   - Which stage/function\
+      \ to optimize\n   - What optimization to apply\n   - Why it preserves correctness\n\
+      \   - Expected speed improvement\n\nRead: .factory/sorting/baseline.json, .factory/sorting/research-profile.md,\
+      \ .factory/sorting/stage-timing.json\nWrite output to: .factory/strategy/current.md\n\
+      Read: .factory/sorting/baseline.json, .factory/sorting/research-profile.md,\
+      \ .factory/sorting/stage-timing.json\nWrite output to: .factory/strategy/current.md"
+    timeout_strategist_t2: '600'
+researcher_explore_alternatives:
+  type: AgentNode
+  id: researcher_explore_alternatives
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/research-alternatives.md
+  edges_out:
+  - target: strategist_t3
+    condition: null
+  slots:
+    task_prompt_researcher_explore_alternatives: "You are a Researcher exploring alternative\
+      \ algorithmic approaches for Neuropixels-scale spike sorting.\n\n## Context\n\
+      - Speed is the optimization target. Accuracy is a hard floor.\n- Scale: 384+\
+      \ channels, 30kHz sampling, millions of samples, GPU-accelerated.\n- Read baseline\
+      \ at `.factory/sorting/baseline.json`.\n- Read stage timing at `.factory/sorting/stage-timing.json`\
+      \ (if available).\n\n## Your Task\n1. Explore alternative algorithmic approaches\
+      \ for the bottleneck stages.\n2. For each alternative, assess:\n   - Expected\
+      \ speed improvement\n   - Per-unit accuracy risk (which unit types might be\
+      \ affected)\n   - Implementation complexity\n   - Evidence from literature or\
+      \ benchmarks\n3. Include Neuropixels-scale validation considerations.\n4. Write\
+      \ findings to `.factory/sorting/research-alternatives.md`.\n\nRead: .factory/sorting/baseline.json\n\
+      Write output to: .factory/sorting/research-alternatives.md\nRead: .factory/sorting/baseline.json\n\
+      Write output to: .factory/sorting/research-alternatives.md"
+    timeout_researcher_explore_alternatives: '600'
+gate_no_code_changes:
+  type: GateNode
+  id: gate_no_code_changes
+  evaluator_type: fn
+  evaluator_command: 'cd {project_path} && FILES=$(git diff HEAD --name-only 2>/dev/null
+    || true) && if [ -z "$FILES" ]; then echo ''pass: no changes detected''; exit
+    0; fi && CODE_FILES=$(echo "$FILES" | grep -v -E ''\.(json|yaml|yml|toml|cfg|ini|conf|env)$''
+    || true) && if [ -z "$CODE_FILES" ]; then echo ''pass: config-only changes'';
+    exit 0; fi && echo "reloop: source code modified — $CODE_FILES"; exit 0'
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: run_benchmark_t1
+    condition: PROCEED
+  - target: builder_config_change
+    condition: RELOOP
+  slots:
+    max_iterations_gate_no_code_changes: '3'
+builder_optimize_hotpath:
+  type: AgentNode
+  id: builder_optimize_hotpath
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/sorting/stage-timing.json
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: run_benchmark_t2
+    condition: null
+  slots:
+    task_prompt_builder_optimize_hotpath: 'You are a Builder implementing a hot-path
+      optimization for spike sorting.
+
+
+      ## Context
+
+      - Speed is the optimization target. Accuracy is a hard floor.
+
+      - Neuropixels-scale: 384+ channels, 30kHz, millions of samples, GPU-accelerated.
+
+      - Read strategy at `.factory/strategy/current.md`.
+
+      - Read stage timing at `.factory/sorting/stage-timing.json`.
+
+
+      ## STRICT RULES
+
+      - Preserve algorithmic behavior: same inputs MUST produce same outputs.
+
+      - Run existing tests to verify correctness after changes.
+
+      - Focus on the specific optimization described in the strategy.
+
+
+      ## Your Task
+
+      1. Implement the optimization from the strategy
+
+      2. Run existing tests to verify correctness
+
+      3. Write summary to `.factory/reviews/builder-latest.md`
+
+
+      Read: .factory/sorting/stage-timing.json, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md
+
+      Read: .factory/sorting/stage-timing.json, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder_optimize_hotpath: '3600'
+strategist_t3:
+  type: AgentNode
+  id: strategist_t3
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/research-alternatives.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: builder_implement_alternative
+    condition: null
+  slots:
+    task_prompt_strategist_t3: "You are a Strategist evaluating algorithmic alternatives\
+      \ for spike sorting.\n\n## Context\n- Speed is the optimization target. Accuracy\
+      \ is a hard floor.\n- STRICT thresholds: 0.5% overall accuracy, 5% per-unit\
+      \ drop maximum.\n- Read alternatives at `.factory/sorting/research-alternatives.md`.\n\
+      - Read baseline at `.factory/sorting/baseline.json`.\n- Check `.factory/sorting/experiments.jsonl`\
+      \ for prior attempts.\n\n## Your Task\n1. Evaluate risk/reward for each alternative.\n\
+      2. Select ONE algorithmic change with lowest accuracy risk.\n3. Prefer incremental\
+      \ changes over wholesale replacements.\n4. Flag specific units that may be at\
+      \ risk.\n5. Write strategy to `.factory/strategy/current.md` with:\n   - Which\
+      \ algorithm/approach to change\n   - Risk assessment per unit type\n   - Fallback\
+      \ plan if accuracy drops\n   - Expected speed improvement\n\nRead: .factory/sorting/baseline.json,\
+      \ .factory/sorting/research-alternatives.md\nWrite output to: .factory/strategy/current.md\n\
+      Read: .factory/sorting/baseline.json, .factory/sorting/research-alternatives.md\n\
+      Write output to: .factory/strategy/current.md"
+    timeout_strategist_t3: '600'
+run_benchmark_t1:
+  type: FnNode
+  id: run_benchmark_t1
+  command: cat > /tmp/_run_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_catastrophic_t1
+    condition: null
+run_benchmark_t2:
+  type: FnNode
+  id: run_benchmark_t2
+  command: cat > /tmp/_run_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_catastrophic_t2
+    condition: null
+builder_implement_alternative:
+  type: AgentNode
+  id: builder_implement_alternative
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: run_benchmark_t3
+    condition: null
+  slots:
+    task_prompt_builder_implement_alternative: 'You are a Builder implementing an
+      algorithmic change for spike sorting.
+
+
+      ## Context
+
+      - Speed is the optimization target. Accuracy is a hard floor.
+
+      - Neuropixels-scale: 384+ channels, 30kHz, millions of samples, GPU-accelerated.
+
+      - STRICT accuracy: 0.5% overall threshold, 5% per-unit drop maximum.
+
+      - Read strategy at `.factory/strategy/current.md`.
+
+
+      ## STRICT RULES
+
+      - Consider per-unit impact — some unit types may be more sensitive.
+
+      - Prefer incremental changes over wholesale replacements.
+
+      - Run existing tests after implementation.
+
+
+      ## Reloop Handling
+
+      - If sent back from `gate_accuracy_t3`: overall accuracy dropped >0.5%. Investigate
+      which part of the algorithm caused the regression.
+
+      - If sent back from `gate_per_unit_accuracy`: specific units regressed >5%.
+      The feedback will list which units. Adjust the algorithm to handle those unit
+      types better, or add special-case handling.
+
+
+      ## Your Task
+
+      1. Implement the algorithmic change from the strategy
+
+      2. Run existing tests to verify correctness
+
+      3. Write summary to `.factory/reviews/builder-latest.md`
+
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder_implement_alternative: '3600'
+gate_catastrophic_t1:
+  type: GateNode
+  id: gate_catastrophic_t1
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));acc = br[''accuracy''];bl_mean
+    = bl[''accuracy''][''mean''];threshold = bl_mean * 0.9;print(f''pass: acc={acc:.4f}
+    >= catastrophic threshold={threshold:.4f}'' if acc >= threshold else f''fail:
+    catastrophic drop acc={acc:.4f} < {threshold:.4f} (>{10}% below baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: confirm_benchmark_t1
+    condition: PROCEED
+  - target: archive_result_t1
+    condition: HALT
+gate_catastrophic_t2:
+  type: GateNode
+  id: gate_catastrophic_t2
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));acc = br[''accuracy''];bl_mean
+    = bl[''accuracy''][''mean''];threshold = bl_mean * 0.9;print(f''pass: acc={acc:.4f}
+    >= catastrophic threshold={threshold:.4f}'' if acc >= threshold else f''fail:
+    catastrophic drop acc={acc:.4f} < {threshold:.4f} (>{10}% below baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: confirm_benchmark_t2
+    condition: PROCEED
+  - target: archive_result_t2
+    condition: HALT
+run_benchmark_t3:
+  type: FnNode
+  id: run_benchmark_t3
+  command: cat > /tmp/_run_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/baseline.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_catastrophic_t3
+    condition: null
+confirm_benchmark_t1:
+  type: FnNode
+  id: confirm_benchmark_t1
+  command: cat > /tmp/_confirm_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_accuracy_t1
+    condition: null
+confirm_benchmark_t2:
+  type: FnNode
+  id: confirm_benchmark_t2
+  command: cat > /tmp/_confirm_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_accuracy_t2
+    condition: null
+gate_catastrophic_t3:
+  type: GateNode
+  id: gate_catastrophic_t3
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));acc = br[''accuracy''];bl_mean
+    = bl[''accuracy''][''mean''];threshold = bl_mean * 0.9;print(f''pass: acc={acc:.4f}
+    >= catastrophic threshold={threshold:.4f}'' if acc >= threshold else f''fail:
+    catastrophic drop acc={acc:.4f} < {threshold:.4f} (>{10}% below baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: confirm_benchmark_t3
+    condition: PROCEED
+  - target: archive_result_t3
+    condition: HALT
+gate_accuracy_t1:
+  type: GateNode
+  id: gate_accuracy_t1
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));threshold = bl[''accuracy''][''mean'']
+    - bl[''accuracy''][''std''];acc = br[''accuracy''];acc = acc[''mean''] if isinstance(acc,
+    dict) else acc;bl_mean = bl[''accuracy''][''mean''];delta = acc - bl_mean;print(f''pass:
+    acc={acc:.4f} >= threshold={threshold:.4f} (delta={delta:+.4f})'' if acc >= threshold
+    else f''fail: acc={acc:.4f} < threshold={threshold:.4f} (delta={delta:+.4f}, baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: archive_result_t1
+    condition: PROCEED
+  - target: archive_result_t1
+    condition: HALT
+gate_accuracy_t2:
+  type: GateNode
+  id: gate_accuracy_t2
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));threshold = bl[''accuracy''][''mean'']
+    - bl[''accuracy''][''std''];acc = br[''accuracy''];acc = acc[''mean''] if isinstance(acc,
+    dict) else acc;bl_mean = bl[''accuracy''][''mean''];delta = acc - bl_mean;print(f''pass:
+    acc={acc:.4f} >= threshold={threshold:.4f} (delta={delta:+.4f})'' if acc >= threshold
+    else f''fail: acc={acc:.4f} < threshold={threshold:.4f} (delta={delta:+.4f}, baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: archive_result_t2
+    condition: PROCEED
+  - target: archive_result_t2
+    condition: HALT
+confirm_benchmark_t3:
+  type: FnNode
+  id: confirm_benchmark_t3
+  command: cat > /tmp/_confirm_benchmark.py << 'PYEOF'
+  reads:
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_accuracy_t3
+    condition: null
+archive_result_t1:
+  type: AgentNode
+  id: archive_result_t1
+  role: archivist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/experiments.jsonl
+  edges_out: []
+  slots:
+    task_prompt_archive_result_t1: "You are the Archivist recording the result of\
+      \ a sorting optimization experiment.\n\n## Your Task\n\n1. Read the benchmark\
+      \ result at `.factory/sorting/benchmark-result.json`\n   - If `accuracy` is\
+      \ a dict with `mean`/`std` keys, the file contains **averaged\n     3-run**\
+      \ data (from confirm_benchmark). Use `.accuracy.mean` and\n     `.speed_seconds.mean`\
+      \ for deltas.\n   - If `accuracy` is a plain float, it is a **single-run** result\
+      \ (catastrophic\n     gate halted before confirmation runs). Use `.accuracy`\
+      \ and `.speed_seconds`\n     directly.\n2. Read the baseline at `.factory/sorting/baseline.json`\n\
+      3. Compute deltas:\n   - `speed_delta = baseline_speed - result_speed` (positive\
+      \ = faster)\n   - `speed_delta_pct = (speed_delta / baseline_speed) * 100`\n\
+      \   - `accuracy_delta = result_accuracy - baseline_accuracy`\n   - `per_unit_deltas`:\
+      \ for each unit, `result - baseline_mean`\n   - `stage_timing_deltas`: iterate\
+      \ over the **union** of all stage names\n     from baseline `.stage_timing`\
+      \ and result `.stage_timing`:\n     - **Stage in both baseline and result:**\
+      \ Read baseline stage time from\n       `baseline.stage_timing[stage].mean`.\
+      \ Read result stage time: if result\n       `.stage_timing[stage]` is a dict\
+      \ with `mean`/`std`, use `.mean`; if it\n       is a plain float, use directly.\
+      \ Compute:\n       `delta = baseline_mean - result_time` (positive = faster),\n\
+      \       `pct = (delta / baseline_mean) * 100`.\n       Store as `{stage: {delta:\
+      \ float, pct: float`.\n     - **Stage in result but NOT in baseline (new stage):**\
+      \ Store as\n       `{stage: {delta: null, pct: null, status: \"new\""
+    timeout_archive_result_t1: '300'
+archive_result_t2:
+  type: AgentNode
+  id: archive_result_t2
+  role: archivist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/experiments.jsonl
+  edges_out: []
+  slots:
+    task_prompt_archive_result_t2: "You are the Archivist recording the result of\
+      \ a sorting optimization experiment.\n\n## Your Task\n\n1. Read the benchmark\
+      \ result at `.factory/sorting/benchmark-result.json`\n   - If `accuracy` is\
+      \ a dict with `mean`/`std` keys, the file contains **averaged\n     3-run**\
+      \ data (from confirm_benchmark). Use `.accuracy.mean` and\n     `.speed_seconds.mean`\
+      \ for deltas.\n   - If `accuracy` is a plain float, it is a **single-run** result\
+      \ (catastrophic\n     gate halted before confirmation runs). Use `.accuracy`\
+      \ and `.speed_seconds`\n     directly.\n2. Read the baseline at `.factory/sorting/baseline.json`\n\
+      3. Compute deltas:\n   - `speed_delta = baseline_speed - result_speed` (positive\
+      \ = faster)\n   - `speed_delta_pct = (speed_delta / baseline_speed) * 100`\n\
+      \   - `accuracy_delta = result_accuracy - baseline_accuracy`\n   - `per_unit_deltas`:\
+      \ for each unit, `result - baseline_mean`\n   - `stage_timing_deltas`: iterate\
+      \ over the **union** of all stage names\n     from baseline `.stage_timing`\
+      \ and result `.stage_timing`:\n     - **Stage in both baseline and result:**\
+      \ Read baseline stage time from\n       `baseline.stage_timing[stage].mean`.\
+      \ Read result stage time: if result\n       `.stage_timing[stage]` is a dict\
+      \ with `mean`/`std`, use `.mean`; if it\n       is a plain float, use directly.\
+      \ Compute:\n       `delta = baseline_mean - result_time` (positive = faster),\n\
+      \       `pct = (delta / baseline_mean) * 100`.\n       Store as `{stage: {delta:\
+      \ float, pct: float`.\n     - **Stage in result but NOT in baseline (new stage):**\
+      \ Store as\n       `{stage: {delta: null, pct: null, status: \"new\""
+    timeout_archive_result_t2: '300'
+gate_accuracy_t3:
+  type: GateNode
+  id: gate_accuracy_t3
+  evaluator_type: fn
+  evaluator_command: 'python3 -c "import json, os;p = ''{project_path}'';bl = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''baseline.json'')));br = json.load(open(os.path.join(p,
+    ''.factory'', ''sorting'', ''benchmark-result.json'')));threshold = bl[''accuracy''][''mean'']
+    - 0.005;acc = br[''accuracy''];acc = acc[''mean''] if isinstance(acc, dict) else
+    acc;bl_mean = bl[''accuracy''][''mean''];delta = acc - bl_mean;print(f''pass:
+    acc={acc:.4f} >= threshold={threshold:.4f} (delta={delta:+.4f})'' if acc >= threshold
+    else f''fail: acc={acc:.4f} < threshold={threshold:.4f} (delta={delta:+.4f}, baseline={bl_mean:.4f})'')"'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: gate_per_unit_accuracy
+    condition: PROCEED
+  - target: archive_result_t3
+    condition: HALT
+gate_per_unit_accuracy:
+  type: GateNode
+  id: gate_per_unit_accuracy
+  evaluator_type: fn
+  evaluator_command: cat > /tmp/_gate_per_unit.py << 'PYEOF'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  edges_out:
+  - target: archive_result_t3
+    condition: PROCEED
+  - target: builder_implement_alternative
+    condition: RELOOP
+  - target: archive_result_t3
+    condition: HALT
+  slots:
+    max_iterations_gate_per_unit_accuracy: '3'
+archive_result_t3:
+  type: AgentNode
+  id: archive_result_t3
+  role: archivist
+  blocking: 'true'
+  reads:
+  - .factory/sorting/baseline.json
+  - .factory/sorting/benchmark-result.json
+  writes:
+  - .factory/sorting/experiments.jsonl
+  edges_out: []
+  slots:
+    task_prompt_archive_result_t3: "You are the Archivist recording the result of\
+      \ a sorting optimization experiment.\n\n## Your Task\n\n1. Read the benchmark\
+      \ result at `.factory/sorting/benchmark-result.json`\n   - If `accuracy` is\
+      \ a dict with `mean`/`std` keys, the file contains **averaged\n     3-run**\
+      \ data (from confirm_benchmark). Use `.accuracy.mean` and\n     `.speed_seconds.mean`\
+      \ for deltas.\n   - If `accuracy` is a plain float, it is a **single-run** result\
+      \ (catastrophic\n     gate halted before confirmation runs). Use `.accuracy`\
+      \ and `.speed_seconds`\n     directly.\n2. Read the baseline at `.factory/sorting/baseline.json`\n\
+      3. Compute deltas:\n   - `speed_delta = baseline_speed - result_speed` (positive\
+      \ = faster)\n   - `speed_delta_pct = (speed_delta / baseline_speed) * 100`\n\
+      \   - `accuracy_delta = result_accuracy - baseline_accuracy`\n   - `per_unit_deltas`:\
+      \ for each unit, `result - baseline_mean`\n   - `stage_timing_deltas`: iterate\
+      \ over the **union** of all stage names\n     from baseline `.stage_timing`\
+      \ and result `.stage_timing`:\n     - **Stage in both baseline and result:**\
+      \ Read baseline stage time from\n       `baseline.stage_timing[stage].mean`.\
+      \ Read result stage time: if result\n       `.stage_timing[stage]` is a dict\
+      \ with `mean`/`std`, use `.mean`; if it\n       is a plain float, use directly.\
+      \ Compute:\n       `delta = baseline_mean - result_time` (positive = faster),\n\
+      \       `pct = (delta / baseline_mean) * 100`.\n       Store as `{stage: {delta:\
+      \ float, pct: float`.\n     - **Stage in result but NOT in baseline (new stage):**\
+      \ Store as\n       `{stage: {delta: null, pct: null, status: \"new\""
+    timeout_archive_result_t3: '300'
