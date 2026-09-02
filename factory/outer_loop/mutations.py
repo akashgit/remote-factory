@@ -547,9 +547,11 @@ def default_prompt_rewriter(
         f"any contradictory or redundant instructions. "
         f"Output ONLY the new prompt text, nothing else."
     )
+    from factory.runners.claude import _claude_bin
+
     try:
         proc = subprocess.run(
-            ["claude", "-p", prompt, "--model", "opus",
+            [_claude_bin(), "-p", prompt, "--model", "opus",
              "--append-system-prompt", "Output only the prompt text.",
              "--max-turns", "1", "--output-format", "text"],
             capture_output=True, text=True, timeout=120,
@@ -586,9 +588,11 @@ async def async_prompt_rewriter(
         f"any contradictory or redundant instructions. "
         f"Output ONLY the new prompt text, nothing else."
     )
+    from factory.runners.claude import _claude_bin
+
     try:
         proc = await _asyncio.create_subprocess_exec(
-            "claude", "-p", prompt, "--model", "opus",
+            _claude_bin(), "-p", prompt, "--model", "opus",
             "--append-system-prompt", "Output only the prompt text.",
             "--max-turns", "1", "--output-format", "text",
             stdout=_asyncio.subprocess.PIPE,
@@ -691,9 +695,11 @@ def default_knob_expander(
         f"Write ONLY the new value (a short name if it's a prompt knob, "
         f"or a number if it's a threshold). Nothing else."
     )
+    from factory.runners.claude import _claude_bin
+
     try:
         proc = subprocess.run(
-            ["claude", "-p", prompt, "--model", "opus",
+            [_claude_bin(), "-p", prompt, "--model", "opus",
              "--append-system-prompt", "Output only the value, no explanation.",
              "--max-turns", "1", "--output-format", "text"],
             capture_output=True, text=True, timeout=120,

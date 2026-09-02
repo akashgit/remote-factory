@@ -184,6 +184,16 @@ class TestFactoryClaudeBin:
         )
         assert cmd[0] == "claude"
 
+    def test_empty_string_falls_back_to_claude(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("FACTORY_CLAUDE_BIN", "")
+        runner = ClaudeRunner()
+        cmd, _, _ = runner.build_command(
+            AgentRunRequest(prompt="test", task="hi", cwd=tmp_path, timeout=10.0)
+        )
+        assert cmd[0] == "claude"
+
 
 class TestInteractiveBackupRestore:
     def test_restores_backup_after_interactive_run(self, tmp_path: Path) -> None:

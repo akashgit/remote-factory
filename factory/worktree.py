@@ -381,9 +381,11 @@ def _has_active_sessions(worktree_path: Path) -> bool:
     Returns True if active sessions found, False otherwise.
     Fails open: returns False on any error so removal proceeds.
     """
+    from factory.runners.claude import _claude_bin
+
     try:
         result = subprocess.run(
-            ["claude", "agents", "--json", "--cwd", str(worktree_path)],
+            [_claude_bin(), "agents", "--json", "--cwd", str(worktree_path)],
             capture_output=True,
             text=True,
             timeout=5,

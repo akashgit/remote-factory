@@ -75,7 +75,7 @@ def _parse_usage(data: dict) -> AgentUsage:
 
 def _claude_bin() -> str:
     """Return the Claude CLI binary name, respecting FACTORY_CLAUDE_BIN override."""
-    return os.environ.get("FACTORY_CLAUDE_BIN", "claude")
+    return os.environ.get("FACTORY_CLAUDE_BIN") or "claude"
 
 
 class ClaudeRunner:
