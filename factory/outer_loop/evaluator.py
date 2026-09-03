@@ -1,7 +1,7 @@
 """Fitness evaluation for workflow candidates in the evolutionary search.
 
 Supports both legacy EvaluatorFn protocol (DirectFeatureBenchEvaluator) and
-InnerLoop-based evaluation (FeatureBenchInnerLoop). CycleRecordCache provides
+InnerLoop-based evaluation via compose(). CycleRecordCache provides
 content-addressable caching keyed by workflow hash.
 """
 
@@ -300,8 +300,13 @@ class SwarmEvaluator:
         instances: list[str],
         individual_id: str | None = None,
     ) -> EvalResult:
-        """Evaluate using InnerLoop.step() in an isolated worktree."""
-        from factory.outer_loop.featurebench_inner_loop import FeatureBenchInnerLoop
+        """Evaluate using InnerLoop.step() in an isolated worktree.
+
+        When a Task is available via self._config.get_task(), uses compose()
+        to construct a task-attached InnerLoop. Falls back to InnerLoop()
+        directly for backward compat with legacy flat-field configs.
+        """
+        from factory.inner_loop import InnerLoop
 
         cached_record = self._cycle_cache.get(workflow)
         if cached_record is not None:
@@ -319,15 +324,27 @@ class SwarmEvaluator:
             label = individual_id[:8] if individual_id else mode_name[:12]
             wt_path = self._create_worktree(project_dir, label)
 
-            loop = FeatureBenchInnerLoop(
-                project_dir=wt_path,
-                mode=mode_name,
-                workflow=workflow,
-                frozen_nodes=frozenset(self._config.frozen_node_ids),
-                test_command=self._config.test_command,
-                test_format=self._config.test_format,
-                metric_path=self._config.metric_path,
-            )
+            task = self._config.get_task() if hasattr(self._config, "get_task") else None
+
+            if task is not None:
+                from factory.compose import compose
+
+                loop = compose(workflow, task, wt_path)
+                loop.mode = mode_name
+                loop.frozen_nodes = frozenset(self._config.frozen_node_ids)
+                loop.test_command = self._config.test_command
+                loop.test_format = self._config.test_format or "pytest"
+                loop.metric_path = self._config.metric_path
+            else:
+                loop = InnerLoop(
+                    project_dir=wt_path,
+                    mode=mode_name,
+                    workflow=workflow,
+                    frozen_nodes=frozenset(self._config.frozen_node_ids),
+                    test_command=self._config.test_command,
+                    test_format=self._config.test_format,
+                    metric_path=self._config.metric_path,
+                )
             record = loop.step()
 
             summary_data = self._read_cycle_summary(wt_path, loop.mode)

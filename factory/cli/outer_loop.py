@@ -56,7 +56,7 @@ def _make_inner_loop_factory(
     """Build a callable that finds the existing registered mode for a workflow.
 
     Looks up by structural hash instead of creating eval-copy modes.
-    This bridges SwarmEvaluator → FeatureBenchInnerLoop: without it,
+    This bridges SwarmEvaluator → compose() / InnerLoop: without it,
     _inner_loop_factory is None and evaluation returns a dummy score=0.0.
     """
     _hash_to_mode: dict[str, str] = {}

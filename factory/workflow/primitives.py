@@ -274,6 +274,7 @@ class Workflow(BaseModel):
     edges: list[Edge]
     start_node: str
     terminal: bool = False
+    task: str | None = Field(default=None)
     trigger: TriggerFn | None = Field(default=None, exclude=True)
     knob_values: dict[str, str | float] = Field(default_factory=dict)
     knob_bounds: dict[str, list[str | float]] = Field(default_factory=dict)
@@ -326,6 +327,8 @@ class Workflow(BaseModel):
             "start_node": self.start_node,
             "terminal": self.terminal,
         }
+        if self.task is not None:
+            result["task"] = self.task
         if self.knob_values:
             result["knob_values"] = dict(self.knob_values)
         if self.knob_bounds:
@@ -370,6 +373,7 @@ class Workflow(BaseModel):
             edges=edges,
             start_node=data["start_node"],
             terminal=data.get("terminal", False),
+            task=data.get("task"),
             knob_values=data.get("knob_values", {}),
             knob_bounds={k: list(v) for k, v in data.get("knob_bounds", {}).items()},
             knob_expandable=data.get("knob_expandable", {}),

@@ -505,6 +505,119 @@ class TestTaskIndependence:
 # ── Review fix tests ────────────────────────────────────────────
 
 
+class TestShellRename:
+    """Task.run() was renamed to Task.shell() — shell-command utility."""
+
+    def test_shell_method_exists(self):
+        task = Task()
+        assert hasattr(task, "shell")
+        assert callable(task.shell)
+
+    def test_shell_runs_command(self, tmp_path: Path):
+        from factory.task import _RunResult
+
+        task = Task()
+        result = task.shell("echo hello", cwd=tmp_path)
+        assert isinstance(result, _RunResult)
+        assert result.returncode == 0
+        assert "hello" in result.stdout
+
+    def test_shell_called_by_setup(self, tmp_path: Path):
+        """setup() uses shell() internally."""
+        marker = tmp_path / "setup_ran"
+        defn = TaskDefinition(
+            name="test",
+            setup_config=__import__("factory.task", fromlist=["SetupConfig"]).SetupConfig(
+                command=f"touch {marker}",
+            ),
+        )
+        task = Task(definition=defn)
+        inst = TaskInstance(id="t1")
+        task.setup(inst, tmp_path)
+        assert marker.exists()
+
+
+class TestTaskRun:
+    """New Task.run() — unified execution entrypoint."""
+
+    def test_run_returns_verify_result(self, tmp_path: Path, monkeypatch):
+        """run() returns a VerifyResult after setup → subprocess → verify."""
+        import subprocess as sp
+
+        calls: list[list[str]] = []
+
+        def fake_run(*args, **kwargs):
+            if isinstance(args[0], list):
+                calls.append(args[0])
+            return sp.CompletedProcess(args=args, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        defn = TaskDefinition(
+            name="test-run",
+            verify_config=__import__("factory.task", fromlist=["VerifyConfig"]).VerifyConfig(
+                command="echo done",
+            ),
+            scoring=ExitCodeScoring(),
+        )
+        task = Task(definition=defn)
+        inst = TaskInstance(id="t1")
+
+        result = task.run(inst, tmp_path)
+        assert isinstance(result, VerifyResult)
+
+    def test_run_writes_prompt_to_temp_file(self, tmp_path: Path, monkeypatch):
+        """run() writes prompt to a temp file and passes --prompt <file>."""
+        import subprocess as sp
+
+        captured_cmds: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list):
+                captured_cmds.append(cmd)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        defn = TaskDefinition(
+            name="test-prompt",
+            prompt_config=__import__("factory.task", fromlist=["PromptConfig"]).PromptConfig(
+                text="My custom prompt",
+            ),
+            scoring=ExitCodeScoring(),
+        )
+        task = Task(definition=defn)
+        inst = TaskInstance(id="t1")
+        task.run(inst, tmp_path)
+
+        ceo_calls = [c for c in captured_cmds if "factory" in " ".join(c)]
+        assert len(ceo_calls) >= 1
+        ceo_cmd = ceo_calls[0]
+        assert "--prompt" in ceo_cmd
+
+    def test_run_cleans_up_prompt_file(self, tmp_path: Path, monkeypatch):
+        """Prompt temp file is cleaned up after run()."""
+        import subprocess as sp
+
+        prompt_path_holder: list[str] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "--prompt" in cmd:
+                idx = cmd.index("--prompt")
+                prompt_path_holder.append(cmd[idx + 1])
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        task = Task(definition=TaskDefinition(
+            name="cleanup-test", scoring=ExitCodeScoring(),
+        ))
+        task.run(TaskInstance(id="t1"), tmp_path)
+
+        if prompt_path_holder:
+            assert not Path(prompt_path_holder[0]).exists()
+
+
 class TestNeedsShell:
     """Item 1: _needs_shell detects shell operators."""
 

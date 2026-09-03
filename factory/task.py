@@ -411,7 +411,7 @@ class Task:
         expanded = cmd.replace("{instance_id}", instance.id)
         if instance.path is not None:
             expanded = expanded.replace("{instance_dir}", str(instance.path))
-        self.run(expanded, cwd=workspace)
+        self.shell(expanded, cwd=workspace)
 
     def prompt(self, instance: TaskInstance) -> str:
         """What should the agent do for this instance?
@@ -432,7 +432,7 @@ class Task:
         if not cmd:
             return VerifyResult(passed=False, score=0.0)
 
-        result = self.run(cmd, cwd=workspace)
+        result = self.shell(cmd, cwd=workspace)
         scoring = self._definition.scoring
 
         if isinstance(scoring, PytestScoring):
@@ -460,7 +460,7 @@ class Task:
 
     # ── Utilities ────────────────────────────────────────────────
 
-    def run(self, cmd: str, cwd: Path | None = None) -> _RunResult:
+    def shell(self, cmd: str, cwd: Path | None = None) -> _RunResult:
         """Run a shell command and return a _RunResult."""
         import shlex as _shlex
 
@@ -498,6 +498,53 @@ class Task:
                 stderr=f"{exc}\n{traceback.format_exc()}",
                 score=0.0,
             )
+
+    def run(
+        self,
+        instance: TaskInstance,
+        workspace: Path,
+        workflow: Any = None,
+    ) -> VerifyResult:
+        """Unified execution entrypoint: setup → CEO subprocess → verify.
+
+        Subclasses can override for bundled execution (e.g. HarborTask).
+        Does NOT import from factory/workflow/ or factory/agents/ — shells out.
+        """
+        import sys as _sys
+        import tempfile
+
+        self.setup(instance, workspace)
+
+        prompt_text = self.prompt(instance)
+        prompt_file = Path(tempfile.mktemp(
+            suffix=".md", prefix="task-prompt-", dir=str(workspace),
+        ))
+        prompt_file.write_text(prompt_text)
+
+        mode_name = "improve"
+        if workflow is not None:
+            mode_name = getattr(workflow, "name", "improve")
+
+        cmd = [
+            _sys.executable, "-m", "factory", "ceo", str(workspace),
+            "--mode", mode_name, "--headless", "--no-worktree",
+            "--prompt", str(prompt_file),
+        ]
+        try:
+            subprocess.run(
+                cmd,
+                cwd=str(workspace),
+                timeout=self._definition.constraints.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            log.warning("task_run_timeout", instance=instance.id)
+        except Exception:
+            log.error("task_run_failed", instance=instance.id, exc_info=True)
+        finally:
+            if prompt_file.exists():
+                prompt_file.unlink()
+
+        return self.verify(instance, workspace)
 
     def get_evaluator(self) -> Any:
         """Delegate to TaskDefinition.get_evaluator()."""

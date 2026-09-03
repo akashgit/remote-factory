@@ -210,7 +210,15 @@ def validate_composition(workflow: Any, task: Any) -> None:
 
 
 def compose(workflow: Any, task: Any, project_dir: str | Path) -> Any:
-    """Compose a workflow + task into a task-attached InnerLoop (outer-loop instance wiring pending).
+    """Compose a workflow + task into a task-attached InnerLoop.
+
+    InnerLoop.step() executes the task end-to-end when task is set:
+    iterates task.instances(), calls task.run() per instance, and
+    aggregates scores via AggregateMethod.
+
+    Known gap: capability compatibility is not re-validated after
+    outer-loop mutations (e.g. NODE_REMOVE stripping the Builder).
+    Mismatches should be scored as failures (score=0), not crashes.
 
     1. Protocol check — is this a valid Task?
     2. Composition validation — can this mode run this task?
