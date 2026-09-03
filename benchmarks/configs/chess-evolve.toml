@@ -5,7 +5,7 @@ source = "https://github.com/lambdabaa/chess-evolve.git"
 
 [instances]
 format = "directory"
-source = "instances/"
+source = ""
 
 [setup]
 command = "pip install -e {instance_dir}"

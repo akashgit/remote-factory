@@ -133,7 +133,7 @@ class SwarmConfig(BaseModel):
         object.__setattr__(self, "_task", task)
 
     def get_task(self) -> Any:
-        """Return explicit task, or construct one from flat fields.
+        """Return explicit task, or construct one from flat fields (cached).
 
         Uses lazy import to avoid circular dependency.
         """
@@ -141,7 +141,7 @@ class SwarmConfig(BaseModel):
             return self._task
         from factory.task import Task
 
-        return Task.from_legacy(
+        task = Task.from_legacy(
             name=self.benchmark,
             test_command=self.test_command,
             test_format=self.test_format,
@@ -149,6 +149,8 @@ class SwarmConfig(BaseModel):
             instance_format=self.instance_format,
             prep_command=self.prep_command,
         )
+        object.__setattr__(self, "_task", task)
+        return task
 
 
 class OuterLoopState(BaseModel):

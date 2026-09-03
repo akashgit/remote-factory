@@ -117,7 +117,7 @@ class InnerLoop:
         workflow: Workflow | None = None,
         frozen_nodes: frozenset[str] = frozenset(),
         test_command: str = "",
-        test_format: str = "pytest",
+        test_format: str | None = None,
         metric_path: str = "score",
         task: Any | None = None,
         instance: Any | None = None,
@@ -129,7 +129,7 @@ class InnerLoop:
         self.workflow = workflow
         self.frozen_nodes = frozenset(frozen_nodes)
         self.test_command = test_command
-        self.test_format = test_format
+        self.test_format = test_format or "pytest"
         self.metric_path = metric_path
         self.task = task
         self.instance = instance
@@ -146,7 +146,7 @@ class InnerLoop:
                 if hasattr(defn, "scoring"):
                     scoring = defn.scoring
                     method = getattr(scoring, "method", "pytest")
-                    if not test_format or test_format == "pytest":
+                    if test_format is None:
                         self.test_format = method
 
     def _validate_frozen_nodes(self) -> None:

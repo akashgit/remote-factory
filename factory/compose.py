@@ -1,39 +1,17 @@
 """Mode × Task composition validation layer.
 
 Validates that a workflow (mode) can run a task by checking capability
-compatibility, then wires up a ready-to-run InnerLoop.
+compatibility, then wires up a task-attached InnerLoop.
 
 Imports from factory.task and factory.workflow.primitives directly.
 """
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-
-# ── Capability StrEnum ───────────────────────────────────────────
-
-
-class Capability(StrEnum):
-    """Closed set of capabilities that modes provide and tasks require."""
-
-    CAN_MODIFY_CODE = "can_modify_code"
-    CAN_RUN_TESTS = "can_run_tests"
-    HAS_BUILDER = "has_builder"
-    HAS_RESEARCHER = "has_researcher"
-    HAS_STRATEGIST = "has_strategist"
-    HAS_QUALITY_GATE = "has_quality_gate"
-    HAS_PARALLELISM = "has_parallelism"
-    HAS_CODE_REVIEW = "has_code_review"
-    HAS_ADVERSARIAL_QA = "has_adversarial_qa"
-    HAS_ARCHIVIST = "has_archivist"
-    CAN_GENERATE_PROMPTS = "can_generate_prompts"
-    CAN_RUN_SUBPROCESS = "can_run_subprocess"
-    CAN_ACCESS_NETWORK = "can_access_network"
-    HAS_HEALTH_CHECK = "has_health_check"
-    CAN_ITERATE = "can_iterate"
+from factory.task import Capability
 
 
 # ── IncompatibleCompositionError ─────────────────────────────────
@@ -167,6 +145,19 @@ class TaskCapabilities:
             PytestScoring,
         )
 
+        constraints = getattr(task, "constraints", None)
+        if constraints is None:
+            defn = getattr(task, "definition", None)
+            if defn is not None:
+                constraints = defn.constraints
+
+        explicit_caps: list[Capability] = []
+        if constraints is not None:
+            explicit_caps = list(getattr(constraints, "required_capabilities", []))
+
+        if explicit_caps:
+            return cls(frozenset(explicit_caps))
+
         caps: set[Capability] = set()
 
         scoring = getattr(task, "scoring", None)
@@ -185,19 +176,6 @@ class TaskCapabilities:
             caps.add(Capability.HAS_BUILDER)
         elif isinstance(scoring, ExactMatchScoring):
             caps.add(Capability.CAN_RUN_SUBPROCESS)
-
-        # Add explicit required_capabilities from constraints
-        constraints = getattr(task, "constraints", None)
-        if constraints is None:
-            defn = getattr(task, "definition", None)
-            if defn is not None:
-                constraints = defn.constraints
-        if constraints is not None:
-            for cap_str in getattr(constraints, "required_capabilities", []):
-                try:
-                    caps.add(Capability(cap_str))
-                except ValueError:
-                    pass
 
         return cls(frozenset(caps))
 
@@ -231,7 +209,7 @@ def validate_composition(workflow: Any, task: Any) -> None:
 
 
 def compose(workflow: Any, task: Any, project_dir: str | Path) -> Any:
-    """Compose a workflow + task into a ready-to-run InnerLoop.
+    """Compose a workflow + task into a task-attached InnerLoop (outer-loop instance wiring pending).
 
     1. Protocol check — is this a valid Task?
     2. Composition validation — can this mode run this task?

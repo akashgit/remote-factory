@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from factory.task import (
+    Capability,
     ExactMatchScoring,
     ExitCodeScoring,
     InstancesConfig,
@@ -18,6 +19,7 @@ from factory.task import (
     TaskDefinition,
     TaskInstance,
     VerifyResult,
+    _needs_shell,
 )
 
 
@@ -108,9 +110,14 @@ class TestTaskConstraints:
         assert tc.required_capabilities == []
 
     def test_custom(self):
-        tc = TaskConstraints(timeout=3600, max_retries=3, required_capabilities=["can_run_tests"])
+        tc = TaskConstraints(
+            timeout=3600,
+            max_retries=3,
+            required_capabilities=[Capability.CAN_RUN_TESTS],
+        )
         assert tc.timeout == 3600
         assert tc.max_retries == 3
+        assert tc.required_capabilities == [Capability.CAN_RUN_TESTS]
 
 
 # ── TaskDefinition tests ────────────────────────────────────────
@@ -384,11 +391,11 @@ class TestBackwardCompat:
             project_dir=Path("/tmp/fake"),
             mode="test",
             test_command="echo ok",
-            test_format="pytest",
         )
         assert loop.task is None
         assert loop.instance is None
         assert loop.test_command == "echo ok"
+        assert loop.test_format == "pytest"  # default when None
 
     def test_inner_loop_with_task(self, tmp_path: Path):
         """InnerLoop accepts task parameter and derives flat fields."""
@@ -479,14 +486,8 @@ class TestTaskIndependence:
         ]
 
         violations = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                # Check it's at module level (not inside a function)
-                # ast.walk doesn't give parent info easily, so we check
-                # by looking at the top-level body directly
-                pass
 
-        # More thorough: only check top-level statements
+        # Check top-level statements only (not function-scoped imports)
         for stmt in tree.body:
             if isinstance(stmt, ast.ImportFrom) and stmt.module:
                 for prefix in forbidden_prefixes:
@@ -499,3 +500,246 @@ class TestTaskIndependence:
                             violations.append(f"line {stmt.lineno}: import {alias.name}")
 
         assert violations == [], "Forbidden module-level imports in task.py:\n" + "\n".join(violations)
+
+
+# ── Review fix tests ────────────────────────────────────────────
+
+
+class TestNeedsShell:
+    """Item 1: _needs_shell detects shell operators."""
+
+    def test_simple_command(self):
+        assert _needs_shell("pytest -xvs") is False
+
+    def test_and_operator(self):
+        assert _needs_shell("cd /tmp && pytest") is True
+
+    def test_or_operator(self):
+        assert _needs_shell("test -f x || echo no") is True
+
+    def test_semicolon(self):
+        assert _needs_shell("echo a; echo b") is True
+
+    def test_pipe(self):
+        assert _needs_shell("grep foo | wc -l") is True
+
+
+class TestTrustedExpectedAnswer:
+    """Item 2: _parse_exact_match_verify reads from instance.path first."""
+
+    def test_reads_from_instance_path(self, tmp_path: Path):
+        instance_dir = tmp_path / "instance"
+        instance_dir.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        (instance_dir / "expected_answer.txt").write_text("trusted")
+        (workspace / "expected_answer.txt").write_text("forged")
+
+        from factory.task import ExactMatchScoring, _RunResult
+
+        result = _RunResult(returncode=0, stdout="trusted\n", stderr="")
+        scoring = ExactMatchScoring()
+        inst = TaskInstance(id="t1", path=instance_dir)
+
+        vr = Task._parse_exact_match_verify(result, scoring, workspace, inst)
+        assert vr.passed is True
+        assert vr.score == 1.0
+
+    def test_falls_back_to_workspace(self, tmp_path: Path):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / "expected_answer.txt").write_text("answer")
+
+        from factory.task import ExactMatchScoring, _RunResult
+
+        result = _RunResult(returncode=0, stdout="answer\n", stderr="")
+        scoring = ExactMatchScoring()
+
+        vr = Task._parse_exact_match_verify(result, scoring, workspace, None)
+        assert vr.passed is True
+
+
+class TestUnknownScoringRaises:
+    """Item 5: from_toml raises ValueError on unknown scoring method."""
+
+    def test_unknown_method(self, tmp_path: Path):
+        toml_content = """
+[task]
+name = "bad-task"
+
+[scoring]
+method = "bogus"
+"""
+        f = tmp_path / "bad.toml"
+        f.write_text(toml_content)
+        with pytest.raises(ValueError, match="Unknown scoring method"):
+            TaskDefinition.from_toml(f)
+
+    def test_binary_alias_removed(self, tmp_path: Path):
+        toml_content = """
+[task]
+name = "bin-task"
+
+[scoring]
+method = "binary"
+"""
+        f = tmp_path / "bin.toml"
+        f.write_text(toml_content)
+        with pytest.raises(ValueError, match="Unknown scoring method"):
+            TaskDefinition.from_toml(f)
+
+
+class TestSwarmConfigCaching:
+    """Item 6: SwarmConfig.get_task() returns the same object on repeated calls."""
+
+    def test_caches_result(self):
+        from factory.outer_loop.models import SwarmConfig
+
+        config = SwarmConfig(
+            benchmark="test-bench",
+            budget=10,
+            test_command="pytest",
+        )
+        t1 = config.get_task()
+        t2 = config.get_task()
+        assert t1 is t2
+
+
+class TestRegistryProjectPath:
+    """Item 7: TaskRegistry rediscovers when project_path changes."""
+
+    def test_different_project_rediscovers(self, tmp_path: Path):
+        from factory.task_registry import TaskRegistry
+
+        proj_a = tmp_path / "a"
+        proj_b = tmp_path / "b"
+        for p in (proj_a, proj_b):
+            task_dir = p / ".factory" / "tasks"
+            task_dir.mkdir(parents=True)
+            (task_dir / "local.toml").write_text(f"""
+[task]
+name = "local-{p.name}"
+description = "From project {p.name}"
+
+[scoring]
+method = "exit_code"
+""")
+
+        TaskRegistry.reset()
+        TaskRegistry.discover(proj_a)
+        assert "local-a" in TaskRegistry._entries
+
+        TaskRegistry.discover(proj_b)
+        assert "local-b" in TaskRegistry._entries
+
+
+class TestTestFormatSentinel:
+    """Item 9: InnerLoop test_format sentinel — only infer when None."""
+
+    def test_explicit_pytest_preserved_with_exit_code_task(self, tmp_path: Path):
+        from factory.inner_loop import InnerLoop
+
+        task = Task.from_legacy(
+            name="exit-test",
+            test_command="python run.py",
+            test_format="exit_code",
+        )
+        loop = InnerLoop(
+            project_dir=tmp_path,
+            mode="test",
+            task=task,
+            test_format="pytest",
+        )
+        assert loop.test_format == "pytest"
+
+    def test_none_infers_from_task(self, tmp_path: Path):
+        from factory.inner_loop import InnerLoop
+
+        task = Task.from_legacy(
+            name="exit-test",
+            test_command="python run.py",
+            test_format="exit_code",
+        )
+        loop = InnerLoop(
+            project_dir=tmp_path,
+            mode="test",
+            task=task,
+        )
+        assert loop.test_format == "exit_code"
+
+
+class TestVersionField:
+    """Item 10a: TaskDefinition has a version field."""
+
+    def test_default_empty(self):
+        defn = TaskDefinition(name="t")
+        assert defn.version == ""
+
+    def test_from_toml_parses_version(self, tmp_path: Path):
+        toml_content = """
+[task]
+name = "versioned"
+version = "1.2.3"
+"""
+        f = tmp_path / "v.toml"
+        f.write_text(toml_content)
+        defn = TaskDefinition.from_toml(f)
+        assert defn.version == "1.2.3"
+
+
+class TestCapabilityTyping:
+    """Item 10b: required_capabilities uses Capability enum."""
+
+    def test_pydantic_validates_capabilities(self):
+        tc = TaskConstraints(
+            required_capabilities=[Capability.CAN_RUN_TESTS, Capability.HAS_BUILDER],
+        )
+        assert all(isinstance(c, Capability) for c in tc.required_capabilities)
+
+    def test_string_coerced_to_capability(self):
+        tc = TaskConstraints(required_capabilities=["can_run_tests"])
+        assert tc.required_capabilities[0] == Capability.CAN_RUN_TESTS
+
+    def test_invalid_capability_raises(self):
+        with pytest.raises(Exception):
+            TaskConstraints(required_capabilities=["nonexistent"])
+
+
+class TestEvaluatorRefAlignment:
+    """Item 4: EvaluatorRef('pytest') resolves to FeatureBenchEvaluator."""
+
+    def test_shorthand_matches_isinstance_path(self):
+        from factory.outer_loop.featurebench_evaluator import FeatureBenchEvaluator
+        from factory.task import EvaluatorRef
+
+        evaluator = EvaluatorRef(ref="pytest").resolve()
+        assert isinstance(evaluator, FeatureBenchEvaluator)
+
+
+class TestTaskCreateNameDerivation:
+    """Item 13: _cmd_task_create handles URLs with trailing slashes."""
+
+    def test_url_trailing_slash(self, tmp_path: Path):
+        import argparse
+
+        from factory.cli.task import _cmd_task_create
+
+        args = argparse.Namespace(
+            source="https://github.com/user/my-repo/",
+            project=str(tmp_path),
+        )
+        _cmd_task_create(args)
+        assert (tmp_path / ".factory" / "tasks" / "my-repo.toml").exists()
+
+    def test_url_with_query_params(self, tmp_path: Path):
+        import argparse
+
+        from factory.cli.task import _cmd_task_create
+
+        args = argparse.Namespace(
+            source="https://github.com/user/my-repo?tab=code",
+            project=str(tmp_path),
+        )
+        _cmd_task_create(args)
+        assert (tmp_path / ".factory" / "tasks" / "my-repo.toml").exists()

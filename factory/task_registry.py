@@ -42,15 +42,21 @@ class TaskRegistry:
     """Registry for discovering and loading Task definitions.
 
     Three-layer discovery with project > user > builtin shadowing.
+    Entries are keyed by project_path to avoid cross-contamination
+    between different projects.
     """
 
+    _entries_by_project: dict[str, dict[str, TaskEntry]] = {}
     _entries: dict[str, TaskEntry] = {}
+    _last_project: str = ""
     _initialized: bool = False
 
     @classmethod
     def reset(cls) -> None:
         """Reset registry state. Useful for testing."""
         cls._entries.clear()
+        cls._entries_by_project.clear()
+        cls._last_project = ""
         cls._initialized = False
 
     @classmethod
@@ -59,6 +65,8 @@ class TaskRegistry:
 
         Returns name → TaskEntry mapping. Project shadows user shadows builtin.
         """
+        project_key = str(project_path) if project_path else ""
+        cls._last_project = project_key
         cls._entries.clear()
 
         # Layer 1: built-in tasks (lowest priority)
@@ -76,6 +84,7 @@ class TaskRegistry:
                 cls._discover_in_directory(project_task_dir, "project")
 
         cls._initialized = True
+        cls._entries_by_project[project_key] = dict(cls._entries)
         log.info("task_registry.discovered", count=len(cls._entries))
         return cls._entries
 
@@ -168,7 +177,8 @@ class TaskRegistry:
 
         Returns a Task instance. Raises KeyError if not found.
         """
-        if not cls._entries:
+        project_key = str(project_path) if project_path else ""
+        if not cls._entries or cls._last_project != project_key:
             cls.discover(project_path)
 
         entry = cls._entries.get(name)
@@ -188,7 +198,8 @@ class TaskRegistry:
         cls, project_path: Path | None = None
     ) -> list[TaskEntry]:
         """List all discovered tasks."""
-        if not cls._entries:
+        project_key = str(project_path) if project_path else ""
+        if not cls._entries or cls._last_project != project_key:
             cls.discover(project_path)
         return sorted(
             cls._entries.values(),
@@ -223,6 +234,7 @@ def _load_task_py_file(path: Path) -> tuple[dict[str, Any], Any]:
     meta = getattr(module, "meta", None)
     task_fn = getattr(module, "task", None)
 
+    # Avoid sys.modules pollution from dynamic task files; tradeoff: re-imports re-execute the module.
     sys.modules.pop(spec.name, None)
 
     if not isinstance(meta, dict) or "name" not in meta:

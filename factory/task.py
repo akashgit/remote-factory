@@ -11,11 +11,23 @@ from __future__ import annotations
 
 import re
 import subprocess
+import traceback
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Iterator, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import structlog
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+log = structlog.get_logger()
+
+_SHELL_OPERATORS_RE = re.compile(r"&&|\|\||[;|]")
+
+
+def _needs_shell(cmd: str) -> bool:
+    """Return True if cmd contains shell operators that require shell=True."""
+    return bool(_SHELL_OPERATORS_RE.search(cmd))
 
 
 # ── Supporting Models ────────────────────────────────────────────
@@ -82,6 +94,29 @@ class ExactMatchScoring(BaseModel):
 ScoringContract = PytestScoring | ExitCodeScoring | JSONScoring | ExactMatchScoring
 
 
+# ── Capability StrEnum ───────────────────────────────────────────
+
+
+class Capability(StrEnum):
+    """Closed set of capabilities that modes provide and tasks require."""
+
+    CAN_MODIFY_CODE = "can_modify_code"
+    CAN_RUN_TESTS = "can_run_tests"
+    HAS_BUILDER = "has_builder"
+    HAS_RESEARCHER = "has_researcher"
+    HAS_STRATEGIST = "has_strategist"
+    HAS_QUALITY_GATE = "has_quality_gate"
+    HAS_PARALLELISM = "has_parallelism"
+    HAS_CODE_REVIEW = "has_code_review"
+    HAS_ADVERSARIAL_QA = "has_adversarial_qa"
+    HAS_ARCHIVIST = "has_archivist"
+    CAN_GENERATE_PROMPTS = "can_generate_prompts"
+    CAN_RUN_SUBPROCESS = "can_run_subprocess"
+    CAN_ACCESS_NETWORK = "can_access_network"
+    HAS_HEALTH_CHECK = "has_health_check"
+    CAN_ITERATE = "can_iterate"
+
+
 # ── Task Constraints ─────────────────────────────────────────────
 
 
@@ -92,7 +127,14 @@ class TaskConstraints(BaseModel):
 
     timeout: int = 600
     max_retries: int = 1
-    required_capabilities: list[str] = Field(default_factory=list)
+    required_capabilities: list[Capability] = Field(default_factory=list)
+
+    @field_validator("required_capabilities", mode="before")
+    @classmethod
+    def _coerce_capabilities(cls, v: object) -> list[Capability]:
+        if isinstance(v, list):
+            return [Capability(x) if isinstance(x, str) else x for x in v]
+        return v  # type: ignore[return-value]
 
 
 # ── Evaluator Reference ─────────────────────────────────────────
@@ -106,7 +148,7 @@ class EvaluatorRef(BaseModel):
     ref: str = ""  # "module.path:ClassName" or shorthand
 
     _SHORTHANDS: dict[str, str] = {
-        "pytest": "factory.outer_loop.evaluators.pytest_evaluator:PytestEvaluator",
+        "pytest": "factory.outer_loop.featurebench_evaluator:FeatureBenchEvaluator",
         "exit_code": "factory.outer_loop.evaluators.exit_code:ExitCodeEvaluator",
         "json": "factory.outer_loop.evaluators.json_evaluator:JSONEvaluator",
         "exact_match": "factory.outer_loop.evaluators.exact_match:ExactMatchEvaluator",
@@ -179,6 +221,7 @@ class TaskDefinition(BaseModel):
 
     name: str
     description: str = ""
+    version: str = ""
     source: str = ""
     scoring: ScoringContract = Field(
         default_factory=PytestScoring,
@@ -215,7 +258,7 @@ class TaskDefinition(BaseModel):
             scoring = PytestScoring(
                 partial_credit=scoring_section.get("partial_credit", True),
             )
-        elif method == "exit_code" or method == "binary":
+        elif method == "exit_code":
             scoring = ExitCodeScoring()
         elif method == "json":
             scoring = JSONScoring(
@@ -226,11 +269,12 @@ class TaskDefinition(BaseModel):
                 answer_extraction=scoring_section.get("answer_extraction", ""),
             )
         else:
-            scoring = PytestScoring()
+            raise ValueError(f"Unknown scoring method: {method}")
 
         return cls(
             name=task_section.get("name", Path(path).stem),
             description=task_section.get("description", ""),
+            version=task_section.get("version", ""),
             source=task_section.get("source", ""),
             scoring=scoring,
             constraints=TaskConstraints(
@@ -407,7 +451,7 @@ class Task:
             return self._parse_json_verify(result, scoring.metric_path)
 
         if isinstance(scoring, ExactMatchScoring):
-            return self._parse_exact_match_verify(result, scoring, workspace)
+            return self._parse_exact_match_verify(result, scoring, workspace, instance)
 
         return VerifyResult(
             passed=result.returncode == 0,
@@ -421,12 +465,19 @@ class Task:
         import shlex as _shlex
 
         try:
+            if _needs_shell(cmd):
+                argv: str | list[str] = cmd
+                use_shell = True
+            else:
+                argv = _shlex.split(cmd)
+                use_shell = False
             proc = subprocess.run(
-                _shlex.split(cmd),
+                argv,
                 cwd=str(cwd) if cwd else None,
                 capture_output=True,
                 text=True,
                 timeout=self._definition.constraints.timeout,
+                shell=use_shell,
             )
             score = 0.0
             if proc.returncode == 0:
@@ -440,8 +491,12 @@ class Task:
         except subprocess.TimeoutExpired:
             return _RunResult(returncode=-1, stdout="", stderr="timeout", score=0.0)
         except Exception as exc:
+            log.error("task_run_failed", cmd=cmd, exc_info=True)
             return _RunResult(
-                returncode=-1, stdout="", stderr=str(exc), score=0.0
+                returncode=-1,
+                stdout="",
+                stderr=f"{exc}\n{traceback.format_exc()}",
+                score=0.0,
             )
 
     def get_evaluator(self) -> Any:
@@ -504,6 +559,7 @@ class Task:
     @staticmethod
     def _parse_pytest_score(stdout: str) -> float:
         """Parse pytest stdout for pass/fail counts → fraction score."""
+        # Collection/fixture errors are included in the denominator and score 0.0.
         # Match patterns like "5 passed, 3 failed" or "8 passed"
         passed = 0
         failed = 0
@@ -552,6 +608,7 @@ class Task:
         result: _RunResult,
         scoring: ExactMatchScoring,
         workspace: Path,
+        instance: TaskInstance | None = None,
     ) -> VerifyResult:
         """Compare output to expected answer."""
         output = result.stdout.strip()
@@ -560,10 +617,24 @@ class Task:
             if m:
                 output = m.group(1)
 
-        expected_path = workspace / "expected_answer.txt"
-        if not expected_path.exists():
-            expected_path = workspace / "expected.txt"
-        if not expected_path.exists():
+        # Read expected answer from the trusted instance path first,
+        # falling back to workspace only when instance.path is unavailable.
+        search_dirs: list[Path] = []
+        if instance is not None and instance.path is not None:
+            search_dirs.append(instance.path)
+        search_dirs.append(workspace)
+
+        expected_path: Path | None = None
+        for d in search_dirs:
+            for name in ("expected_answer.txt", "expected.txt"):
+                candidate = d / name
+                if candidate.exists():
+                    expected_path = candidate
+                    break
+            if expected_path is not None:
+                break
+
+        if expected_path is None:
             return VerifyResult(
                 passed=False,
                 score=0.0,

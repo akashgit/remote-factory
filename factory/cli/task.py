@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import urllib.parse
 from pathlib import Path
 
 
@@ -189,8 +190,9 @@ def _cmd_task_create(args: argparse.Namespace) -> int:
     task_dir = project / ".factory" / "tasks"
     task_dir.mkdir(parents=True, exist_ok=True)
 
-    # Derive name from source
-    name = Path(source).stem.replace("_", "-").replace(" ", "-").lower()
+    # Derive name from source — strip URL artifacts first
+    cleaned = urllib.parse.urlparse(source).path.rstrip("/")
+    name = Path(cleaned).stem.replace("_", "-").replace(" ", "-").lower()
     if name.endswith(".git"):
         name = name[:-4]
 
