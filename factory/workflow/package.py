@@ -110,6 +110,7 @@ class Package(BaseModel):
     knobs: list[OptKnob] = Field(default_factory=list)
     frozen: bool = False
     memory: list[MemoryDeclaration] = Field(default_factory=list)
+    terminal: bool = False
 
     @property
     def input_paths(self) -> set[str]:
@@ -165,6 +166,7 @@ class Package(BaseModel):
                         )
                     except Exception:
                         pass
+        wf.terminal = self.terminal
         return wf
 
 
@@ -227,8 +229,24 @@ def _merge_contracts(packages: list[Package]) -> StateContract:
     )
 
 
-def Sequential(*packages: Package, name: str = "") -> Package:
-    """Compose packages in sequence: exit of A wires to entry of B."""
+def Sequential(
+    *packages: Package,
+    name: str = "",
+    extra_edges: list[Edge] | None = None,
+    terminal: bool | None = None,
+) -> Package:
+    """Compose packages in sequence: exit of A wires to entry of B.
+
+    ``extra_edges`` lets a composition declare cross-package back-edges that
+    plain sequential wiring can't express — e.g. a QA gate in a later package
+    relooping to a builder node in an earlier one.  These are forwarded to the
+    graph merge alongside the forward bridge edges.
+
+    Bridge edges (exit → next entry) carry ``PROCEED`` when the exit node is a
+    ``GateNode``: a gate's forward path is its PROCEED branch, and its RELOOP
+    branch is internal to the package.  Non-gate exit nodes keep an
+    unconditional bridge, matching prior behaviour.
+    """
     pkg_list = list(packages)
     if not pkg_list:
         raise ValueError("Sequential requires at least one package")
@@ -237,9 +255,18 @@ def Sequential(*packages: Package, name: str = "") -> Package:
 
     bridge_edges = []
     for i in range(len(pkg_list) - 1):
+        src_pkg = pkg_list[i]
+        exit_node = src_pkg.graph.nodes.get(src_pkg.exit_node)
+        condition = VerdictType.PROCEED if isinstance(exit_node, GateNode) else None
         bridge_edges.append(
-            Edge(source=pkg_list[i].exit_node, target=pkg_list[i + 1].entry_node)
+            Edge(
+                source=src_pkg.exit_node,
+                target=pkg_list[i + 1].entry_node,
+                condition=condition,
+            )
         )
+    if extra_edges:
+        bridge_edges.extend(extra_edges)
 
     composed_name = name or "seq_" + "_".join(p.name for p in pkg_list)
     graph = _merge_graphs(
@@ -253,6 +280,7 @@ def Sequential(*packages: Package, name: str = "") -> Package:
     all_outputs = pkg_list[-1].outputs
     all_knobs = [k for p in pkg_list for k in p.knobs]
     all_memory = [m for p in pkg_list for m in p.memory]
+    is_terminal = terminal if terminal is not None else any(p.terminal for p in pkg_list)
 
     return Package(
         name=composed_name,
@@ -264,6 +292,7 @@ def Sequential(*packages: Package, name: str = "") -> Package:
         exit_node=pkg_list[-1].exit_node,
         knobs=all_knobs,
         memory=all_memory,
+        terminal=is_terminal,
     )
 
 

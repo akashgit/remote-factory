@@ -52,6 +52,7 @@ def study_package(*, focus: str | None = None) -> Package:
         id="graph_update",
         command="factory graph update {project_path}",
         writes={"graph.json"},
+        notes="Extract or incrementally update the code knowledge graph before study.",
     )
     study = Study(
         id="study",
@@ -114,8 +115,14 @@ def research_package(
     *,
     researchers: list[ResearcherConfig],
     gate_prompt: str,
+    study_read: str | None = ".factory/strategy/study-combined.md",
 ) -> Package:
-    """Parallel research with CEO gate: fork → N researchers → join → gate."""
+    """Parallel research with CEO gate: fork → N researchers → join → gate.
+
+    ``study_read`` is injected into every researcher's ``reads`` so the study
+    output flows into research.  Set to ``None`` when composing without a
+    preceding study phase.
+    """
     researcher_ids = [f"researcher_{r.id}" for r in researchers]
     nodes: dict = {}
 
@@ -127,11 +134,15 @@ def research_package(
     for r in researchers:
         rid = f"researcher_{r.id}"
         write_path = f".factory/strategy/research-{r.id}.md"
+        reads: set[str] = set()
+        if study_read:
+            reads.add(study_read)
         kwargs: dict = {
             "id": rid,
             "role": AgentRole.RESEARCHER,
             "prompt_template": r.prompt_template,
             "writes": {write_path},
+            "reads": reads,
         }
         if r.post_check_min_size is not None:
             kwargs["post_checks"] = [
@@ -189,20 +200,32 @@ def strategy_package(
     strategist_prompt: str = "",
     gate_prompt: str = "",
     gate_type: str = "agent",
+    study_read: str | None = ".factory/strategy/study-combined.md",
 ) -> Package:
-    """Strategist → CEO gate → archivist (async)."""
+    """Strategist → CEO gate → archivist (async).
+
+    ``study_read`` is added to the strategist's reads so the study output
+    flows into strategy synthesis.  Set to ``None`` when composing without a
+    preceding study phase.
+    """
     reads = research_reads or {
         ".factory/strategy/research-similar.md",
         ".factory/strategy/research-techstack.md",
         ".factory/strategy/research-pitfalls.md",
     }
+    if study_read:
+        reads = set(reads) | {study_read}
 
     if not strategist_prompt:
         strategist_prompt = (
             "Synthesize a project specification from study and research. "
-            "Read ALL research files at .factory/strategy/. "
+            "If .factory/strategy/study-combined.md exists, read it for project "
+            "observations and structural graph analysis. "
+            "Read ALL research files at .factory/strategy/research-similar.md, "
+            "research-techstack.md, and research-pitfalls.md. "
             "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
             "Every Phase must have substantive What/Why/Expected impact fields. "
+            "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
             "Write the plan to .factory/strategy/current.md."
         )
 
@@ -311,6 +334,7 @@ def build_package() -> Package:
         gate_prompt=(
             "Read builder output. Check git log and diff. "
             "Does the work match the plan for this phase? "
+            "If the Builder opened a PR, read it. "
             "REDIRECT if off-scope or missed key requirements."
         ),
         reads={".factory/reviews/builder-latest.md"},
@@ -378,7 +402,7 @@ def qa_package() -> Package:
         id="gate_qa",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
-        gate_prompt="Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3) if issues found.",
+        gate_prompt="Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.",
         reads={
             ".factory/reviews/health-check.md",
             ".factory/reviews/code-review.md",
@@ -411,6 +435,7 @@ def qa_package() -> Package:
         id="spec_generate",
         command="factory workflow run spec-generate {project_path}",
         blocking=False,
+        notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
     )
 
     nodes = {
@@ -436,6 +461,7 @@ def qa_package() -> Package:
         Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
         Edge(source="archivist_build", target="spec_generate"),
     ]
 
@@ -464,9 +490,14 @@ BUILD_RESEARCHERS = [
         id="similar",
         prompt_template=(
             "Similar projects research. "
-            "Read .factory/strategy/study-combined.md for project context. "
+            "Read .factory/strategy/study-combined.md for project context "
+            "(observations + structural graph analysis). "
             "Search the web for similar projects, existing solutions, and prior art. "
-            "Write findings to .factory/strategy/research-similar.md."
+            "Analyze their strengths, weaknesses, and market positioning. "
+            "Check .factory/archive/ for prior knowledge on similar builds. "
+            "Write findings to .factory/strategy/research-similar.md covering: "
+            "similar projects found (with links), what they do well and what's missing, "
+            "differentiation opportunities."
         ),
         post_check_min_size=50,
     ),
@@ -474,9 +505,14 @@ BUILD_RESEARCHERS = [
         id="techstack",
         prompt_template=(
             "Tech stack research. "
-            "Read .factory/strategy/study-combined.md for project context. "
+            "Read .factory/strategy/study-combined.md for project context "
+            "(observations + structural graph analysis). "
             "Identify the best technology stack for this type of project. "
-            "Write findings to .factory/strategy/research-techstack.md."
+            "Find architecture patterns and best practices. "
+            "Evaluate framework/library options with trade-offs. "
+            "Write findings to .factory/strategy/research-techstack.md covering: "
+            "recommended tech stack with rationale, architecture patterns, "
+            "framework comparisons."
         ),
         post_check_min_size=50,
     ),
@@ -484,9 +520,14 @@ BUILD_RESEARCHERS = [
         id="pitfalls",
         prompt_template=(
             "Pitfalls and scope research. "
-            "Read .factory/strategy/study-combined.md for project context. "
-            "Identify potential pitfalls and common mistakes. "
-            "Write findings to .factory/strategy/research-pitfalls.md."
+            "Read .factory/strategy/study-combined.md for project context "
+            "(observations + structural graph analysis). "
+            "Identify potential pitfalls and common mistakes for this type of project. "
+            "Research MVP scope best practices. "
+            "Check .factory/archive/ for lessons from past builds. "
+            "Write findings to .factory/strategy/research-pitfalls.md covering: "
+            "potential pitfalls to avoid, MVP scope recommendation, "
+            "lessons from similar past builds."
         ),
         post_check_min_size=50,
     ),
@@ -527,7 +568,11 @@ def discovery_package() -> Package:
         role=AgentRole.CEO,
         prompt_template=(
             "Create factory.md from template. "
-            "Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test."
+            "Copy the factory config template to the project root. "
+            "Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test. "
+            "If .factory/eval_spec.json exists, populate the Eval Spec section. "
+            "If .factory/strategy/current.md has a Research Configuration section, "
+            "populate research sections (Research Target, Mutable/Fixed Surfaces, etc.)."
         ),
         reads={".factory/eval_profile.json"},
         writes={"factory.md"},
@@ -537,6 +582,7 @@ def discovery_package() -> Package:
         command="factory init {project_path}",
         reads={"factory.md"},
         writes={".factory/config.json"},
+        notes="Parse factory.md and generate .factory/config.json. Must run after factory.md is created.",
     )
 
     # Bootstrap path: discover → gate_factory_md → [create_factory_md →] factory_init
@@ -584,6 +630,16 @@ def discovery_package() -> Package:
     )
 
 
+# Cross-package back-edges: QA gates reloop to the builder (which lives in an
+# earlier package). Sequential can only add forward bridge edges, so these
+# reloops are declared explicitly via extra_edges. Mirrors the monolithic
+# build_workflow's "gate_qa → builder (max 3)" and doc-freshness reloop.
+_QA_RELOOP_EDGES = [
+    Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+    Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
+]
+
+
 def build_mode(*, focus: str | None = None) -> Package:
     """Build mode as a Package composition.
 
@@ -601,7 +657,9 @@ def build_mode(*, focus: str | None = None) -> Package:
         strategy_package(),
         build_package(),
         qa_package(),
-        name="build-mode",
+        name="build",
+        extra_edges=_QA_RELOOP_EDGES,
+        terminal=True,
     )
 
 
@@ -627,7 +685,9 @@ def design_mode(*, focus: str | None = None) -> Package:
         ),
         build_package(),
         qa_package(),
-        name="design-mode",
+        name="design",
+        extra_edges=_QA_RELOOP_EDGES,
+        terminal=True,
     )
 
 
