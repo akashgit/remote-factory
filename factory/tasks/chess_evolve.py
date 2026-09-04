@@ -128,7 +128,7 @@ def _play_game(
     max_moves: int = 80,
 ) -> dict[str, Any]:
     """Play one game: evolved (white) vs base (black). Returns result dict."""
-    import chess
+    import chess  # type: ignore[import-not-found]
 
     board = chess.Board(start_fen)
     move_count = 0
