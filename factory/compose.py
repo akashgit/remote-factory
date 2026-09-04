@@ -11,7 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from factory.task import Capability
+import structlog
+
+from factory.task import CAPABILITY_ALIASES, Capability
+
+log = structlog.get_logger()
 
 
 # ── IncompatibleCompositionError ─────────────────────────────────
@@ -123,6 +127,15 @@ class ModeCapabilities:
             elif isinstance(node, FnNode):
                 caps.add(Capability.CAN_RUN_SUBPROCESS)
 
+        declared = getattr(workflow, "declared_capabilities", frozenset())
+        if declared:
+            for cap_str in declared:
+                mapped = CAPABILITY_ALIASES.get(cap_str)
+                if mapped is not None:
+                    caps.add(mapped)
+                else:
+                    log.warning("unmapped_capability", capability=cap_str)
+
         return cls(frozenset(caps))
 
 
@@ -204,6 +217,19 @@ def validate_composition(workflow: Any, task: Any) -> None:
             mode_missing={str(c) for c in mode_missing},
             hint="Try a mode with builder/test capabilities (e.g. 'improve').",
         )
+
+
+def check_mode_task_compat(
+    workflow: Any, task: Any
+) -> tuple[bool, frozenset[Capability]]:
+    """Check mode-task compatibility without raising.
+
+    Returns (compatible, missing_capabilities).
+    """
+    mode_caps = ModeCapabilities.from_workflow(workflow)
+    task_caps = TaskCapabilities.from_task(task)
+    missing = task_caps.requires - mode_caps.provides
+    return (len(missing) == 0, missing)
 
 
 # ── compose() public API ────────────────────────────────────────

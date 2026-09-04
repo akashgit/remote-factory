@@ -12,15 +12,18 @@ from factory.compose import (
     ModeCapabilities,
     TaskCapabilities,
     TaskProtocol,
+    check_mode_task_compat,
     compose,
     validate_composition,
 )
 from factory.task import (
+    CAPABILITY_ALIASES,
     ExactMatchScoring,
     ExitCodeScoring,
     JSONScoring,
     PytestScoring,
     Task,
+    TaskConstraints,
     TaskDefinition,
 )
 
@@ -272,3 +275,187 @@ class TestCompositionMatrix:
         else:
             with pytest.raises(IncompatibleCompositionError):
                 validate_composition(wf, task)
+
+
+# ── CAPABILITY_ALIASES mapping tests ───────────────────────────
+
+
+class TestCapabilityAliases:
+    @pytest.mark.parametrize(
+        "alias,expected",
+        [
+            ("codebase-analysis", Capability.HAS_RESEARCHER),
+            ("code-generation", Capability.CAN_MODIFY_CODE),
+            ("health-check", Capability.HAS_HEALTH_CHECK),
+            ("code-review", Capability.HAS_CODE_REVIEW),
+            ("adversarial-qa", Capability.HAS_ADVERSARIAL_QA),
+            ("observation", Capability.HAS_RESEARCHER),
+        ],
+    )
+    def test_mapping_coverage(self, alias, expected):
+        assert CAPABILITY_ALIASES[alias] is expected
+
+    def test_all_values_are_capability_members(self):
+        for key, val in CAPABILITY_ALIASES.items():
+            assert isinstance(val, Capability), f"{key} maps to non-Capability {val!r}"
+
+
+# ── Package + Task integration tests ──────────────────────────
+
+
+class TestPackageTaskIntegration:
+    def _make_package_with_caps(self, capabilities: list[str]):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+        from factory.workflow.package import Package, StateContract
+
+        builder = AgentNode(id="b", role=AgentRole.BUILDER, prompt_template="build")
+        wf = Workflow(
+            name="pkg-wf",
+            nodes={"b": builder},
+            edges=[],
+            start_node="b",
+        )
+        return Package(
+            name="test-pkg",
+            graph=wf,
+            entry_node="b",
+            exit_node="b",
+            contract=StateContract(capabilities=capabilities),
+        )
+
+    def test_compile_preserves_declared_capabilities(self):
+        pkg = self._make_package_with_caps(["code-generation", "health-check"])
+        compiled = pkg.compile()
+        assert compiled.declared_capabilities == frozenset(["code-generation", "health-check"])
+
+    def test_check_mode_task_compat_with_package(self):
+        pkg = self._make_package_with_caps(["code-generation", "health-check"])
+        compiled = pkg.compile()
+        task = Task(
+            definition=TaskDefinition(
+                name="t",
+                scoring=PytestScoring(),
+                constraints=TaskConstraints(
+                    required_capabilities=[Capability.CAN_MODIFY_CODE, Capability.HAS_HEALTH_CHECK],
+                ),
+            )
+        )
+        compat, missing = check_mode_task_compat(compiled, task)
+        assert compat is True
+        assert len(missing) == 0
+
+    def test_check_mode_task_compat_missing_caps(self):
+        pkg = self._make_package_with_caps(["observation"])
+        compiled = pkg.compile()
+        task = Task(
+            definition=TaskDefinition(
+                name="t",
+                scoring=PytestScoring(),
+                constraints=TaskConstraints(
+                    required_capabilities=[Capability.HAS_CODE_REVIEW],
+                ),
+            )
+        )
+        compat, missing = check_mode_task_compat(compiled, task)
+        assert compat is False
+        assert Capability.HAS_CODE_REVIEW in missing
+
+
+# ── Backward compat tests ─────────────────────────────────────
+
+
+class TestDeclaredCapabilitiesBackwardCompat:
+    def test_raw_workflow_no_declared_capabilities(self):
+        wf = _make_workflow(builder=True, researcher=True)
+        caps = ModeCapabilities.from_workflow(wf)
+        assert Capability.CAN_MODIFY_CODE in caps.provides
+        assert Capability.HAS_RESEARCHER in caps.provides
+        assert Capability.HAS_BUILDER in caps.provides
+
+    def test_empty_declared_capabilities_identical_to_none(self):
+        from factory.workflow.primitives import Workflow
+
+        wf = Workflow(name="empty-decl", nodes={}, edges=[], start_node="s")
+        assert wf.declared_capabilities == frozenset()
+        caps = ModeCapabilities.from_workflow(wf)
+        assert len(caps.provides) == 0
+
+
+# ── Unknown capability warning test ────────────────────────────
+
+
+class TestUnmappedCapabilityWarning:
+    def test_unmapped_capability_warns_and_excluded(self):
+        import structlog
+
+        captured = []
+        def capture_processor(logger, method_name, event_dict):
+            captured.append(event_dict)
+            raise structlog.DropEvent
+
+        old_config = structlog.get_config()
+        try:
+            structlog.configure(processors=[capture_processor])
+            from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+            from factory.workflow.package import Package, StateContract
+
+            builder = AgentNode(id="b", role=AgentRole.BUILDER, prompt_template="build")
+            wf = Workflow(name="w", nodes={"b": builder}, edges=[], start_node="b")
+            pkg = Package(
+                name="p",
+                graph=wf,
+                entry_node="b",
+                exit_node="b",
+                contract=StateContract(capabilities=["unknown-xyz", "code-generation"]),
+            )
+            compiled = pkg.compile()
+            caps = ModeCapabilities.from_workflow(compiled)
+            assert Capability.CAN_MODIFY_CODE in caps.provides
+            warnings = [e for e in captured if e.get("event") == "unmapped_capability"]
+            assert len(warnings) == 1
+            assert warnings[0]["capability"] == "unknown-xyz"
+        finally:
+            structlog.configure(**old_config)
+
+
+# ── Round-trip serialization test ──────────────────────────────
+
+
+class TestDeclaredCapabilitiesRoundTrip:
+    def test_model_dump_validate_round_trip(self):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+        from factory.workflow.package import Package, StateContract
+
+        builder = AgentNode(id="b", role=AgentRole.BUILDER, prompt_template="build")
+        wf = Workflow(name="w", nodes={"b": builder}, edges=[], start_node="b")
+        pkg = Package(
+            name="p",
+            graph=wf,
+            entry_node="b",
+            exit_node="b",
+            contract=StateContract(capabilities=["code-generation", "health-check"]),
+        )
+        compiled = pkg.compile()
+        assert compiled.declared_capabilities == frozenset(["code-generation", "health-check"])
+
+        dumped = compiled.model_dump(mode="json")
+        restored = Workflow.model_validate(dumped, strict=False)
+        assert restored.declared_capabilities == frozenset(["code-generation", "health-check"])
+
+    def test_to_dict_from_dict_round_trip(self):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+        from factory.workflow.package import Package, StateContract
+
+        builder = AgentNode(id="b", role=AgentRole.BUILDER, prompt_template="build")
+        wf = Workflow(name="w", nodes={"b": builder}, edges=[], start_node="b")
+        pkg = Package(
+            name="p",
+            graph=wf,
+            entry_node="b",
+            exit_node="b",
+            contract=StateContract(capabilities=["code-generation", "health-check"]),
+        )
+        compiled = pkg.compile()
+        d = compiled.to_dict()
+        restored = Workflow.from_dict(d)
+        assert restored.declared_capabilities == frozenset(["code-generation", "health-check"])

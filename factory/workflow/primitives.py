@@ -279,6 +279,7 @@ class Workflow(BaseModel):
     knob_values: dict[str, str | float] = Field(default_factory=dict)
     knob_bounds: dict[str, list[str | float]] = Field(default_factory=dict)
     knob_expandable: dict[str, str] = Field(default_factory=dict)
+    declared_capabilities: frozenset[str] = frozenset()
 
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""
@@ -335,6 +336,8 @@ class Workflow(BaseModel):
             result["knob_bounds"] = {k: list(v) for k, v in self.knob_bounds.items()}
         if self.knob_expandable:
             result["knob_expandable"] = dict(self.knob_expandable)
+        if self.declared_capabilities:
+            result["declared_capabilities"] = sorted(self.declared_capabilities)
         return result
 
     @classmethod
@@ -377,6 +380,7 @@ class Workflow(BaseModel):
             knob_values=data.get("knob_values", {}),
             knob_bounds={k: list(v) for k, v in data.get("knob_bounds", {}).items()},
             knob_expandable=data.get("knob_expandable", {}),
+            declared_capabilities=frozenset(data.get("declared_capabilities", [])),
         )
 
 
