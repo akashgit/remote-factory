@@ -141,8 +141,8 @@ Modes are registered via `EphemeralModeRegistry` which:
 | `evaluators/` | Pluggable test output parsers: `pytest`, `exit_code`, `json`, `exact_match` |
 | `benchmark_config.py` | TOML-based benchmark config registry |
 | `instance_prep.py` | Instance preparation and validation |
-| `featurebench_evaluator.py` | pytest output parser for partial credit scoring (backward compat) |
-| `featurebench_inner_loop.py` | Bridges outer loop evaluation to InnerLoop.step() |
+| `benchmark_evaluator.py` | pytest output parser for partial credit scoring (backward compat) |
+| `benchmark_inner_loop.py` | Bridges outer loop evaluation to InnerLoop.step() |
 | `filesystem.py` | Directory initialization, config/checkpoint persistence |
 | `overfit.py` | Training vs holdout score comparison |
 
