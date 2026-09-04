@@ -1,4 +1,5 @@
-"""ChessEvolveTask — demonstrates the Task contract with a real chess engine evolution loop.
+"""ChessEvolveTask — demonstrates the Task contract with per-move eval curves and blunder detection,
+matching the chess-evolve repo pattern.
 
 Uses the python-chess library for legal move generation, board state, and game management.
 The inner loop evolves a minimax engine with alpha-beta pruning via self-play evaluation.
@@ -119,6 +120,32 @@ def _ensure_chess_available() -> bool:
     return importlib.util.find_spec("chess") is not None
 
 
+def _evaluate_board_cp(board: Any) -> int:
+    """Evaluate a board position in centipawns from white's perspective."""
+    import chess  # type: ignore[import-not-found]
+
+    if board.is_checkmate():
+        return -99999 if board.turn == chess.WHITE else 99999
+    if board.is_stalemate() or board.is_insufficient_material():
+        return 0
+
+    piece_values = {
+        chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330,
+        chess.ROOK: 500, chess.QUEEN: 900, chess.KING: 20000,
+    }
+    score = 0
+    for square in chess.SQUARES:
+        piece = board.piece_at(square)
+        if piece is None:
+            continue
+        value = piece_values.get(piece.piece_type, 0)
+        if piece.color == chess.WHITE:
+            score += value
+        else:
+            score -= value
+    return score
+
+
 def _play_game(
     engine_module: Any,
     base_module: Any,
@@ -127,11 +154,13 @@ def _play_game(
     start_fen: str,
     max_moves: int = 80,
 ) -> dict[str, Any]:
-    """Play one game: evolved (white) vs base (black). Returns result dict."""
+    """Play one game: evolved (white) vs base (black). Returns result dict with per-move data."""
     import chess  # type: ignore[import-not-found]
 
     board = chess.Board(start_fen)
     move_count = 0
+    eval_curve: list[int] = []
+    move_list: list[str] = []
 
     while not board.is_game_over() and move_count < max_moves:
         if board.turn == chess.WHITE:
@@ -141,7 +170,9 @@ def _play_game(
 
         if move is None:
             break
+        move_list.append(move.uci())
         board.push(move)
+        eval_curve.append(_evaluate_board_cp(board))
         move_count += 1
 
     result = board.result()
@@ -160,6 +191,8 @@ def _play_game(
         "termination": termination,
         "moves": move_count,
         "fen": board.fen(),
+        "eval_curve": eval_curve,
+        "move_list": move_list,
     }
 
 
@@ -271,7 +304,10 @@ class ChessEvolveTask(Task):
         wins = 0
         draws = 0
         losses = 0
-        game_results = []
+        game_results: list[dict[str, Any]] = []
+        all_evals: list[int] = []
+        total_moves = 0
+        blunder_count = 0
 
         for game_idx in range(num_games):
             try:
@@ -291,6 +327,14 @@ class ChessEvolveTask(Task):
                         losses += 1
                     else:
                         draws += 1
+
+                curve = result.get("eval_curve", [])
+                all_evals.extend(curve)
+                total_moves += result.get("moves", 0)
+                for i in range(1, len(curve)):
+                    if abs(curve[i] - curve[i - 1]) > 200:
+                        blunder_count += 1
+
                 game_results.append(result)
             except Exception as exc:
                 game_results.append({"error": str(exc)})
@@ -298,6 +342,7 @@ class ChessEvolveTask(Task):
 
         total = wins + draws + losses
         win_rate = (wins + 0.5 * draws) / total if total > 0 else 0.0
+        avg_eval = sum(all_evals) / len(all_evals) if all_evals else 0.0
 
         return VerifyResult(
             passed=win_rate >= 0.5,
@@ -309,6 +354,9 @@ class ChessEvolveTask(Task):
                 "win_rate": win_rate,
                 "games": game_results,
                 "depth": depth,
+                "blunder_count": blunder_count,
+                "avg_eval": avg_eval,
+                "total_moves": total_moves,
             },
         )
 
