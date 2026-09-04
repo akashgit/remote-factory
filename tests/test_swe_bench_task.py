@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-from factory.compose import compose
-from factory.inner_loop import InnerLoop
-from factory.task import Task, TaskInstance, VerifyResult
-from factory.tasks.swe_bench import SWEBenchTask
+sys.path.insert(0, str(Path(__file__).parent.parent / "examples"))
+
+from factory.compose import compose  # noqa: E402
+from factory.inner_loop import InnerLoop  # noqa: E402
+from factory.task import Task, TaskInstance, VerifyResult  # noqa: E402
+from swe_bench_task import SWEBenchTask  # noqa: E402
 
 
 # ── Registration ─────────────────────────────────────────────────
@@ -23,7 +26,7 @@ class TestRegistration:
         task_dir.mkdir(parents=True)
 
         import shutil
-        src = Path(__file__).parent.parent / "factory" / "tasks" / "swe_bench.py"
+        src = Path(__file__).parent.parent / "examples" / "swe_bench_task.py"
         shutil.copy(src, task_dir / "swe_bench.py")
 
         TaskRegistry.reset()
@@ -31,7 +34,7 @@ class TestRegistration:
         assert "swe-bench" in entries
 
     def test_task_meta_and_factory_function(self):
-        from factory.tasks.swe_bench import meta, task
+        from swe_bench_task import meta, task
 
         assert meta["name"] == "swe-bench"
         assert "description" in meta

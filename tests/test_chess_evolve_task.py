@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,10 +10,12 @@ import pytest
 
 chess = pytest.importorskip("chess", reason="python-chess required for chess evolve tests")
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "examples"))
+
 from factory.compose import compose  # noqa: E402
 from factory.inner_loop import InnerLoop  # noqa: E402
 from factory.task import TaskInstance, VerifyResult  # noqa: E402
-from factory.tasks.chess_evolve import ChessEvolveTask, _load_engine_module, _play_game  # noqa: E402
+from chess_evolve_task import ChessEvolveTask, _load_engine_module, _play_game  # noqa: E402
 
 
 # ── Registration ─────────────────────────────────────────────────
@@ -26,7 +29,7 @@ class TestRegistration:
         task_dir.mkdir(parents=True)
 
         import shutil
-        src = Path(__file__).parent.parent / "factory" / "tasks" / "chess_evolve.py"
+        src = Path(__file__).parent.parent / "examples" / "chess_evolve_task.py"
         shutil.copy(src, task_dir / "chess_evolve.py")
 
         TaskRegistry.reset()
@@ -34,7 +37,7 @@ class TestRegistration:
         assert "chess-evolve" in entries
 
     def test_task_meta_and_factory_function(self):
-        from factory.tasks.chess_evolve import meta, task
+        from chess_evolve_task import meta, task
 
         assert meta["name"] == "chess-evolve"
         t = task()
@@ -370,7 +373,7 @@ class TestHelpers:
         assert move is not None
 
     def test_play_game_completes(self, tmp_path: Path):
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         engine_path = tmp_path / "e.py"
         engine_path.write_text(BASE_ENGINE_SOURCE)
@@ -389,7 +392,7 @@ class TestHelpers:
     def test_play_game_checkmate(self, tmp_path: Path):
         """Game ending in checkmate (not max_moves) — covers outcome branch."""
         fen = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         engine_path = tmp_path / "e_cm.py"
         engine_path.write_text(BASE_ENGINE_SOURCE)
@@ -413,7 +416,7 @@ class TestHelpers:
         none_engine = MagicMock()
         none_engine.best_move.return_value = None
 
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         base_path = tmp_path / "base_e.py"
         base_path.write_text(BASE_ENGINE_SOURCE)
@@ -442,7 +445,7 @@ class TestVerifyEdgeCases:
             metadata={"depth": 1, "num_games": 2, "opening_fen": "x"},
         )
 
-        with patch("factory.tasks.chess_evolve._ensure_chess_available", return_value=False):
+        with patch("chess_evolve_task._ensure_chess_available", return_value=False):
             result = t.verify(inst, tmp_path)
 
         assert result.passed is False
@@ -477,7 +480,7 @@ class TestApplyMutation:
 
     def test_apply_mutation_research_adds_pst(self, tmp_path: Path):
         """'research' strategy adds piece-square tables to engine source."""
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         (tmp_path / "src").mkdir(parents=True)
         (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
@@ -490,7 +493,7 @@ class TestApplyMutation:
 
     def test_apply_mutation_design_adds_pst(self, tmp_path: Path):
         """'design' strategy also adds piece-square tables."""
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         (tmp_path / "src").mkdir(parents=True)
         (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
@@ -503,7 +506,7 @@ class TestApplyMutation:
 
     def test_apply_mutation_noop_for_improve(self, tmp_path: Path):
         """'improve' strategy does not trigger mutation (handled by run())."""
-        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+        from chess_evolve_task import BASE_ENGINE_SOURCE
 
         (tmp_path / "src").mkdir(parents=True)
         (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
