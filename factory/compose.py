@@ -11,7 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from factory.task import Capability
+import structlog
+
+from factory.task import CAPABILITY_ALIASES, Capability, VerifyResult
+
+log = structlog.get_logger()
 
 
 # ── IncompatibleCompositionError ─────────────────────────────────
@@ -57,7 +61,7 @@ class TaskProtocol(Protocol):
     def instances(self) -> Any: ...
     def setup(self, instance: Any, workspace: Path) -> None: ...
     def prompt(self, instance: Any) -> str: ...
-    def verify(self, instance: Any, workspace: Path) -> Any: ...
+    def verify(self, instance: Any, workspace: Path) -> VerifyResult: ...
     def get_evaluator(self) -> Any: ...
 
 
@@ -123,6 +127,15 @@ class ModeCapabilities:
             elif isinstance(node, FnNode):
                 caps.add(Capability.CAN_RUN_SUBPROCESS)
 
+        declared: frozenset[str] = getattr(workflow, "declared_capabilities", frozenset())
+        if declared:
+            for cap_str in declared:
+                mapped = CAPABILITY_ALIASES.get(cap_str)
+                if mapped is not None:
+                    caps.add(mapped)
+                else:
+                    log.warning("unmapped_capability", capability=cap_str)
+
         return cls(frozenset(caps))
 
 
@@ -140,11 +153,7 @@ class TaskCapabilities:
     @classmethod
     def from_task(cls, task: Any) -> TaskCapabilities:
         """Infer required capabilities from a task's scoring contract."""
-        from factory.task import (
-            ExactMatchScoring,
-            ExitCodeScoring,
-            PytestScoring,
-        )
+        from factory.task import ScoringContract
 
         constraints = getattr(task, "constraints", None)
         if constraints is None:
@@ -167,16 +176,10 @@ class TaskCapabilities:
             if defn is not None:
                 scoring = defn.scoring
 
-        if isinstance(scoring, PytestScoring):
+        if isinstance(scoring, ScoringContract) and scoring.method == "exit_code":
             caps.add(Capability.CAN_MODIFY_CODE)
             caps.add(Capability.CAN_RUN_TESTS)
             caps.add(Capability.HAS_BUILDER)
-        elif isinstance(scoring, ExitCodeScoring):
-            caps.add(Capability.CAN_MODIFY_CODE)
-            caps.add(Capability.CAN_RUN_TESTS)
-            caps.add(Capability.HAS_BUILDER)
-        elif isinstance(scoring, ExactMatchScoring):
-            caps.add(Capability.CAN_RUN_SUBPROCESS)
 
         return cls(frozenset(caps))
 
@@ -206,11 +209,32 @@ def validate_composition(workflow: Any, task: Any) -> None:
         )
 
 
+def check_mode_task_compat(
+    workflow: Any, task: Any
+) -> tuple[bool, frozenset[Capability]]:
+    """Check mode-task compatibility without raising.
+
+    Returns (compatible, missing_capabilities).
+    """
+    mode_caps = ModeCapabilities.from_workflow(workflow)
+    task_caps = TaskCapabilities.from_task(task)
+    missing = task_caps.requires - mode_caps.provides
+    return (len(missing) == 0, missing)
+
+
 # ── compose() public API ────────────────────────────────────────
 
 
 def compose(workflow: Any, task: Any, project_dir: str | Path) -> Any:
-    """Compose a workflow + task into a task-attached InnerLoop (outer-loop instance wiring pending).
+    """Compose a workflow + task into a task-attached InnerLoop.
+
+    InnerLoop.step() executes the task end-to-end when task is set:
+    iterates task.instances(), calls task.run() per instance, and
+    aggregates scores via AggregateMethod.
+
+    Known gap: capability compatibility is not re-validated after
+    outer-loop mutations (e.g. NODE_REMOVE stripping the Builder).
+    Mismatches should be scored as failures (score=0), not crashes.
 
     1. Protocol check — is this a valid Task?
     2. Composition validation — can this mode run this task?
