@@ -46,6 +46,7 @@ CEO_MODES = [
     "deep-research",
     "outer-loop",
     "create-v2",
+    "optimize-sorting",
 ]
 
 
