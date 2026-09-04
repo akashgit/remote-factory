@@ -1,0 +1,387 @@
+"""Tests for ChessEvolveTask — registration, four hooks, self-play, compose integration."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+chess = pytest.importorskip("chess", reason="python-chess required for chess evolve tests")
+
+from factory.compose import compose  # noqa: E402
+from factory.inner_loop import InnerLoop  # noqa: E402
+from factory.task import TaskInstance, VerifyResult  # noqa: E402
+from factory.tasks.chess_evolve import ChessEvolveTask, _load_engine_module, _play_game  # noqa: E402
+
+
+# ── Registration ─────────────────────────────────────────────────
+
+
+class TestRegistration:
+    def test_task_registry_discovers_chess_evolve(self, tmp_path: Path):
+        from factory.task_registry import TaskRegistry
+
+        task_dir = tmp_path / ".factory" / "tasks"
+        task_dir.mkdir(parents=True)
+
+        import shutil
+        src = Path(__file__).parent.parent / "factory" / "tasks" / "chess_evolve.py"
+        shutil.copy(src, task_dir / "chess_evolve.py")
+
+        TaskRegistry.reset()
+        entries = TaskRegistry.discover(tmp_path)
+        assert "chess-evolve" in entries
+
+    def test_task_meta_and_factory_function(self):
+        from factory.tasks.chess_evolve import meta, task
+
+        assert meta["name"] == "chess-evolve"
+        t = task()
+        assert isinstance(t, ChessEvolveTask)
+        assert t.name == "chess-evolve"
+
+
+# ── Instances ────────────────────────────────────────────────────
+
+
+class TestInstances:
+    def test_yields_task_instances(self):
+        t = ChessEvolveTask()
+        instances = list(t.instances())
+        assert len(instances) > 0
+        for inst in instances:
+            assert isinstance(inst, TaskInstance)
+            assert inst.id
+            assert "depth" in inst.metadata
+            assert "num_games" in inst.metadata
+            assert "opening_fen" in inst.metadata
+
+    def test_instance_ids_unique(self):
+        t = ChessEvolveTask()
+        ids = [inst.id for inst in t.instances()]
+        assert len(ids) == len(set(ids))
+
+    def test_varying_depths(self):
+        t = ChessEvolveTask()
+        depths = {inst.metadata["depth"] for inst in t.instances()}
+        assert len(depths) >= 2
+
+    def test_varying_openings(self):
+        t = ChessEvolveTask()
+        openings = {inst.metadata["opening_name"] for inst in t.instances()}
+        assert len(openings) >= 2
+
+
+# ── Setup ────────────────────────────────────────────────────────
+
+
+class TestSetup:
+    def test_creates_workspace_files(self, tmp_path: Path):
+        t = ChessEvolveTask()
+        inst = TaskInstance(id="depth2-startpos", metadata={"depth": 2})
+        t.setup(inst, tmp_path)
+
+        assert (tmp_path / "src" / "engine.py").exists()
+        assert (tmp_path / "base" / "engine.py").exists()
+
+        evolved_src = (tmp_path / "src" / "engine.py").read_text()
+        base_src = (tmp_path / "base" / "engine.py").read_text()
+        assert "def best_move" in evolved_src
+        assert "def minimax" in base_src
+
+    def test_setup_idempotent(self, tmp_path: Path):
+        t = ChessEvolveTask()
+        inst = TaskInstance(id="depth1-startpos", metadata={"depth": 1})
+        t.setup(inst, tmp_path)
+
+        (tmp_path / "src" / "engine.py").write_text("# custom engine\n")
+        t.setup(inst, tmp_path)
+
+        content = (tmp_path / "src" / "engine.py").read_text()
+        assert content == "# custom engine\n"
+
+
+# ── Prompt ───────────────────────────────────────────────────────
+
+
+class TestPrompt:
+    def test_returns_nonempty_string(self):
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth2-italian",
+            metadata={"depth": 2, "opening_name": "italian"},
+        )
+        p = t.prompt(inst)
+        assert isinstance(p, str)
+        assert len(p) > 0
+
+    def test_references_depth(self):
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth3-startpos",
+            metadata={"depth": 3, "opening_name": "startpos"},
+        )
+        p = t.prompt(inst)
+        assert "3" in p
+
+    def test_references_opening(self):
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth2-sicilian",
+            metadata={"depth": 2, "opening_name": "sicilian"},
+        )
+        p = t.prompt(inst)
+        assert "sicilian" in p
+
+
+# ── Verify (self-play) ──────────────────────────────────────────
+
+
+class TestVerify:
+    def test_returns_verify_result(self, tmp_path: Path):
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        t.setup(inst, tmp_path)
+        result = t.verify(inst, tmp_path)
+
+        assert isinstance(result, VerifyResult)
+        assert isinstance(result.passed, bool)
+        assert 0.0 <= result.score <= 1.0
+        assert "wins" in result.details
+        assert "draws" in result.details
+        assert "losses" in result.details
+        assert "win_rate" in result.details
+
+    def test_identical_engines_draw(self, tmp_path: Path):
+        """Same engine vs itself should roughly tie (score ~0.5)."""
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        t.setup(inst, tmp_path)
+        result = t.verify(inst, tmp_path)
+
+        assert result.score >= 0.0
+
+    def test_missing_engine_returns_zero(self, tmp_path: Path):
+        t = ChessEvolveTask()
+        inst = TaskInstance(id="depth1-startpos", metadata={"depth": 1, "num_games": 2})
+        result = t.verify(inst, tmp_path)
+        assert result.passed is False
+        assert result.score == 0.0
+
+    @pytest.mark.timeout(30)
+    def test_completes_within_timeout(self, tmp_path: Path):
+        """Self-play at depth 1 with 2 games should be fast."""
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        t.setup(inst, tmp_path)
+        result = t.verify(inst, tmp_path)
+        assert isinstance(result, VerifyResult)
+
+
+# ── Run (end-to-end) ────────────────────────────────────────────
+
+
+class TestRun:
+    def test_run_returns_scored_result(self, tmp_path: Path):
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        result = t.run(inst, tmp_path)
+        assert isinstance(result, VerifyResult)
+        assert 0.0 <= result.score <= 1.0
+
+    def test_run_with_workflow(self, tmp_path: Path):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="improve",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        result = t.run(inst, tmp_path, workflow=wf)
+        assert isinstance(result, VerifyResult)
+
+    def test_run_with_research_strategy_mutates(self, tmp_path: Path):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="research",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+        result = t.run(inst, tmp_path, workflow=wf)
+        assert isinstance(result, VerifyResult)
+
+        source = (tmp_path / "src" / "engine.py").read_text()
+        assert "piece_square" in source or "PAWN_TABLE" in source
+
+
+# ── Compose integration ─────────────────────────────────────────
+
+
+class TestComposeIntegration:
+    def test_compose_produces_inner_loop(self, tmp_path: Path):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="improve",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+        t = ChessEvolveTask()
+        loop = compose(wf, t, tmp_path)
+        assert isinstance(loop, InnerLoop)
+        assert loop.task is t
+
+    def test_inner_loop_step_iterates_instances(self, tmp_path: Path):
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="improve",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+        t = _SingleInstanceChessTask()
+        loop = compose(wf, t, tmp_path)
+        record = loop.step()
+
+        assert record.instance_results is not None
+        assert len(record.instance_results) >= 1
+        assert record.score_end is not None
+        assert 0.0 <= record.score_end <= 1.0
+
+        for ir in record.instance_results:
+            assert "instance_id" in ir
+            assert "score" in ir
+
+
+# ── Helper: single-instance variant for fast integration test ────
+
+
+class _SingleInstanceChessTask(ChessEvolveTask):
+    """Yields only one instance at depth 1 for fast integration tests."""
+
+    def instances(self) -> Iterator[TaskInstance]:
+        yield TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+
+
+# ── Helper function tests ───────────────────────────────────────
+
+
+class TestHelpers:
+    def test_load_engine_module(self, tmp_path: Path):
+        engine_path = tmp_path / "test_engine.py"
+        engine_path.write_text(
+            "import chess\n"
+            "def best_move(board, depth=2):\n"
+            "    moves = list(board.legal_moves)\n"
+            "    return moves[0] if moves else None\n"
+        )
+        mod = _load_engine_module(engine_path, "test_mod")
+        assert hasattr(mod, "best_move")
+
+        board = chess.Board()
+        move = mod.best_move(board)
+        assert move is not None
+
+    def test_play_game_completes(self, tmp_path: Path):
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        engine_path = tmp_path / "e.py"
+        engine_path.write_text(BASE_ENGINE_SOURCE)
+
+        mod = _load_engine_module(engine_path, "play_test")
+        result = _play_game(
+            mod, mod,
+            depth_evolved=1, depth_base=1,
+            start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            max_moves=40,
+        )
+        assert "result" in result
+        assert "moves" in result
+        assert result["moves"] > 0

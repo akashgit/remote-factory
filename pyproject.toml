@@ -36,6 +36,7 @@ Issues = "https://github.com/akashgit/remote-factory/issues"
 [project.optional-dependencies]
 migrate = ["tomli_w>=1.0"]
 telemetry = ["langfuse>=3.0"]  # kept for backward compat; langfuse is now a core dep
+chess = ["chess>=1.0"]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
