@@ -364,6 +364,24 @@ class _RunResult:
     score: float = 0.0
 
 
+def _build_verify_details(
+    scoring_name: str,
+    result: _RunResult,
+    passed: bool,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build a consistent details dict for VerifyResult across all scoring branches."""
+    details: dict[str, Any] = {
+        "scoring_contract": scoring_name,
+        "returncode": result.returncode,
+    }
+    if not passed:
+        details["stdout"] = result.stdout[:2000]
+        details["stderr"] = result.stderr[:2000]
+    details.update(extra)
+    return details
+
+
 class Task:
     """Base class implementing the four-hook interface.
 
@@ -447,15 +465,21 @@ class Task:
 
         if isinstance(scoring, PytestScoring):
             score = self._parse_pytest_score(result.stdout)
+            passed = result.returncode == 0
             return VerifyResult(
-                passed=result.returncode == 0,
+                passed=passed,
                 score=score,
-                details={"returncode": result.returncode},
+                details=_build_verify_details("PytestScoring", result, passed),
             )
 
         if isinstance(scoring, ExitCodeScoring):
-            s = 1.0 if result.returncode == 0 else 0.0
-            return VerifyResult(passed=result.returncode == 0, score=s)
+            passed = result.returncode == 0
+            s = 1.0 if passed else 0.0
+            return VerifyResult(
+                passed=passed,
+                score=s,
+                details=_build_verify_details("ExitCodeScoring", result, passed),
+            )
 
         if isinstance(scoring, JSONScoring):
             return self._parse_json_verify(result, scoring.metric_path)
@@ -463,9 +487,11 @@ class Task:
         if isinstance(scoring, ExactMatchScoring):
             return self._parse_exact_match_verify(result, scoring, workspace, instance)
 
+        passed = result.returncode == 0
         return VerifyResult(
-            passed=result.returncode == 0,
-            score=1.0 if result.returncode == 0 else 0.0,
+            passed=passed,
+            score=1.0 if passed else 0.0,
+            details=_build_verify_details("unknown", result, passed),
         )
 
     # ── Utilities ────────────────────────────────────────────────
@@ -648,16 +674,23 @@ class Task:
             for key in metric_path.split("."):
                 obj = obj[key]
             score = float(obj)
+            passed = score > 0
             return VerifyResult(
-                passed=score > 0,
+                passed=passed,
                 score=min(max(score, 0.0), 1.0),
-                details={"metric_path": metric_path, "raw_score": score},
+                details=_build_verify_details(
+                    "JSONScoring", result, passed,
+                    metric_path=metric_path, raw_value=score,
+                ),
             )
         except (Exception,):
             return VerifyResult(
                 passed=False,
                 score=0.0,
-                details={"error": "json_parse_failed"},
+                details=_build_verify_details(
+                    "JSONScoring", result, False,
+                    error="json_parse_failed",
+                ),
             )
 
     @staticmethod
@@ -695,9 +728,19 @@ class Task:
             return VerifyResult(
                 passed=False,
                 score=0.0,
-                details={"error": "expected_answer_file_missing"},
+                details=_build_verify_details(
+                    "ExactMatchScoring", result, False,
+                    error="expected_answer_file_missing",
+                ),
             )
 
         expected = expected_path.read_text(errors="replace").strip()
-        match = output == expected
-        return VerifyResult(passed=match, score=1.0 if match else 0.0)
+        matched = output == expected
+        return VerifyResult(
+            passed=matched,
+            score=1.0 if matched else 0.0,
+            details=_build_verify_details(
+                "ExactMatchScoring", result, matched,
+                matched=matched,
+            ),
+        )

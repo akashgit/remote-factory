@@ -19,6 +19,8 @@ from factory.task import (
     TaskDefinition,
     TaskInstance,
     VerifyResult,
+    _RunResult,
+    _build_verify_details,
     _needs_shell,
 )
 
@@ -1034,3 +1036,130 @@ class TestTaskCreateNameDerivation:
         )
         _cmd_task_create(args)
         assert (tmp_path / ".factory" / "tasks" / "my-repo.toml").exists()
+
+
+# ── _build_verify_details tests ─────────────────────────────────
+
+
+class TestBuildVerifyDetails:
+    def test_scoring_contract_always_present(self):
+        result = _RunResult(returncode=0, stdout="ok", stderr="")
+        details = _build_verify_details("PytestScoring", result, True)
+        assert details["scoring_contract"] == "PytestScoring"
+
+    def test_returncode_always_present(self):
+        result = _RunResult(returncode=42, stdout="", stderr="")
+        details = _build_verify_details("ExitCodeScoring", result, False)
+        assert details["returncode"] == 42
+
+    def test_passed_true_omits_stdout_stderr(self):
+        result = _RunResult(returncode=0, stdout="output", stderr="err")
+        details = _build_verify_details("PytestScoring", result, True)
+        assert "stdout" not in details
+        assert "stderr" not in details
+
+    def test_passed_false_includes_stdout_stderr(self):
+        result = _RunResult(returncode=1, stdout="fail output", stderr="fail err")
+        details = _build_verify_details("PytestScoring", result, False)
+        assert details["stdout"] == "fail output"
+        assert details["stderr"] == "fail err"
+
+    def test_truncation_at_2000_chars(self):
+        long_out = "x" * 3000
+        long_err = "y" * 3000
+        result = _RunResult(returncode=1, stdout=long_out, stderr=long_err)
+        details = _build_verify_details("ExitCodeScoring", result, False)
+        assert len(details["stdout"]) == 2000
+        assert len(details["stderr"]) == 2000
+
+    def test_extra_kwargs_merged(self):
+        result = _RunResult(returncode=0, stdout="", stderr="")
+        details = _build_verify_details(
+            "JSONScoring", result, True,
+            metric_path="score", raw_value=0.95,
+        )
+        assert details["metric_path"] == "score"
+        assert details["raw_value"] == 0.95
+
+    def test_all_scoring_names(self):
+        result = _RunResult(returncode=0, stdout="", stderr="")
+        for name in ("PytestScoring", "ExitCodeScoring", "JSONScoring", "ExactMatchScoring", "unknown"):
+            details = _build_verify_details(name, result, True)
+            assert details["scoring_contract"] == name
+            assert "returncode" in details
+
+
+class TestVerifyDetailsConsistency:
+    """Verify that each scoring branch in Task.verify() populates details consistently."""
+
+    def _make_task(self, scoring, verify_cmd="echo ok"):
+        from factory.task import VerifyConfig
+        defn = TaskDefinition(
+            name="test",
+            scoring=scoring,
+            verify_config=VerifyConfig(command=verify_cmd),
+        )
+        return Task(definition=defn)
+
+    def test_pytest_scoring_has_scoring_contract(self, tmp_path: Path):
+        task = self._make_task(PytestScoring(), verify_cmd="echo '1 passed'")
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "PytestScoring"
+        assert "returncode" in result.details
+
+    def test_exit_code_scoring_has_scoring_contract(self, tmp_path: Path):
+        task = self._make_task(ExitCodeScoring())
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "ExitCodeScoring"
+        assert "returncode" in result.details
+
+    def test_exit_code_failure_includes_stdout_stderr(self, tmp_path: Path):
+        task = self._make_task(ExitCodeScoring(), verify_cmd="false")
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "ExitCodeScoring"
+        assert "stdout" in result.details
+        assert "stderr" in result.details
+
+    def test_json_scoring_has_scoring_contract(self, tmp_path: Path):
+        task = self._make_task(
+            JSONScoring(metric_path="score"),
+            verify_cmd='echo \'{"score": 0.8}\'',
+        )
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "JSONScoring"
+        assert result.details["metric_path"] == "score"
+        assert result.details["raw_value"] == 0.8
+        assert "returncode" in result.details
+
+    def test_json_scoring_failure_has_scoring_contract(self, tmp_path: Path):
+        task = self._make_task(
+            JSONScoring(metric_path="score"),
+            verify_cmd="echo not-json",
+        )
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "JSONScoring"
+        assert result.details["error"] == "json_parse_failed"
+        assert "returncode" in result.details
+
+    def test_exact_match_scoring_has_scoring_contract(self, tmp_path: Path):
+        (tmp_path / "expected_answer.txt").write_text("hello")
+        task = self._make_task(ExactMatchScoring(), verify_cmd="echo hello")
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "ExactMatchScoring"
+        assert result.details["matched"] is True
+        assert "returncode" in result.details
+
+    def test_exact_match_failure_includes_stdout_stderr(self, tmp_path: Path):
+        (tmp_path / "expected_answer.txt").write_text("expected")
+        task = self._make_task(ExactMatchScoring(), verify_cmd="echo wrong")
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "ExactMatchScoring"
+        assert result.details["matched"] is False
+        assert "stdout" in result.details
+        assert "stderr" in result.details
+
+    def test_exact_match_missing_answer_file(self, tmp_path: Path):
+        task = self._make_task(ExactMatchScoring(), verify_cmd="echo hello")
+        result = task.verify(TaskInstance(id="t1"), tmp_path)
+        assert result.details["scoring_contract"] == "ExactMatchScoring"
+        assert result.details["error"] == "expected_answer_file_missing"
