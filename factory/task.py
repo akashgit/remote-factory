@@ -53,45 +53,24 @@ class VerifyResult(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── Scoring Contract (discriminated union) ───────────────────────
+# ── Scoring Contract ─────────────────────────────────────────────
 
 
-class PytestScoring(BaseModel):
-    """Pytest partial-credit scoring."""
+class ScoringContract(BaseModel):
+    """Unified scoring configuration.
 
-    model_config = ConfigDict(strict=True, extra="forbid")
+    Two modes:
+    - 'json': verify command outputs JSON with 'passed' (bool) and 'score' (float)
+    - 'exit_code': binary pass/fail from subprocess exit code (exit 0 = 1.0, else 0.0)
 
-    method: Literal["pytest"] = "pytest"
-    partial_credit: bool = True
-
-
-class ExitCodeScoring(BaseModel):
-    """Binary pass/fail from subprocess exit code."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    method: Literal["exit_code"] = "exit_code"
-
-
-class JSONScoring(BaseModel):
-    """Extract numeric metric from JSON output."""
+    If the verify command outputs valid JSON with 'passed' and 'score' keys,
+    those values are used regardless of the configured method.
+    """
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    method: Literal["json"] = "json"
+    method: Literal["json", "exit_code"] = "exit_code"
     metric_path: str = "score"
-
-
-class ExactMatchScoring(BaseModel):
-    """Exact-match comparison against expected answer."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    method: Literal["exact_match"] = "exact_match"
-    answer_extraction: str = ""
-
-
-ScoringContract = PytestScoring | ExitCodeScoring | JSONScoring | ExactMatchScoring
 
 
 # ── Capability StrEnum ───────────────────────────────────────────
@@ -158,10 +137,8 @@ class EvaluatorRef(BaseModel):
     ref: str = ""  # "module.path:ClassName" or shorthand
 
     _SHORTHANDS: dict[str, str] = {
-        "pytest": "factory.outer_loop.featurebench_evaluator:FeatureBenchEvaluator",
         "exit_code": "factory.outer_loop.evaluators.exit_code:ExitCodeEvaluator",
         "json": "factory.outer_loop.evaluators.json_evaluator:JSONEvaluator",
-        "exact_match": "factory.outer_loop.evaluators.exact_match:ExactMatchEvaluator",
     }
 
     def resolve(self) -> Any:
@@ -233,10 +210,7 @@ class TaskDefinition(BaseModel):
     description: str = ""
     version: str = ""
     source: str = ""
-    scoring: ScoringContract = Field(
-        default_factory=PytestScoring,
-        discriminator="method",
-    )
+    scoring: ScoringContract = Field(default_factory=ScoringContract)
     constraints: TaskConstraints = Field(default_factory=TaskConstraints)
     evaluator_ref: EvaluatorRef = Field(default_factory=EvaluatorRef)
     instances_config: InstancesConfig = Field(default_factory=InstancesConfig)
@@ -262,24 +236,15 @@ class TaskDefinition(BaseModel):
         constraints_section = raw.get("constraints", {})
 
         # Build scoring contract from [scoring] section
-        method = scoring_section.get("method", "pytest")
-        scoring: ScoringContract
-        if method == "pytest":
-            scoring = PytestScoring(
-                partial_credit=scoring_section.get("partial_credit", True),
-            )
-        elif method == "exit_code":
-            scoring = ExitCodeScoring()
-        elif method == "json":
-            scoring = JSONScoring(
-                metric_path=scoring_section.get("metric_path", "score"),
-            )
-        elif method == "exact_match":
-            scoring = ExactMatchScoring(
-                answer_extraction=scoring_section.get("answer_extraction", ""),
-            )
-        else:
+        method = scoring_section.get("method", "exit_code")
+        if method in ("pytest", "exact_match"):
+            method = "exit_code"
+        if method not in ("json", "exit_code"):
             raise ValueError(f"Unknown scoring method: {method}")
+        scoring = ScoringContract(
+            method=method,
+            metric_path=scoring_section.get("metric_path", "score"),
+        )
 
         return cls(
             name=task_section.get("name", Path(path).stem),
@@ -324,31 +289,14 @@ class TaskDefinition(BaseModel):
         if self.evaluator_ref.ref:
             return self.evaluator_ref.resolve()
 
-        if isinstance(self.scoring, PytestScoring):
-            from factory.outer_loop.featurebench_evaluator import (
-                FeatureBenchEvaluator,
-            )
-
-            return FeatureBenchEvaluator()
-
-        if isinstance(self.scoring, ExitCodeScoring):
-            from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
-
-            return ExitCodeEvaluator()
-
-        if isinstance(self.scoring, JSONScoring):
+        if self.scoring.method == "json":
             from factory.outer_loop.evaluators.json_evaluator import JSONEvaluator
 
             return JSONEvaluator(metric_path=self.scoring.metric_path)
 
-        if isinstance(self.scoring, ExactMatchScoring):
-            from factory.outer_loop.evaluators.exact_match import ExactMatchEvaluator
+        from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
 
-            return ExactMatchEvaluator()
-
-        raise TypeError(
-            f"Unknown scoring contract type: {type(self.scoring).__name__}"
-        )
+        return ExitCodeEvaluator()
 
 
 # ── Task base class (four-hook interface) ────────────────────────
@@ -454,7 +402,9 @@ class Task:
     def verify(self, instance: TaskInstance, workspace: Path) -> VerifyResult:
         """Did it work? Returns unified VerifyResult with pass/fail + score.
 
-        Default: run verify_config.command and parse based on scoring contract.
+        Default: run verify_config.command and parse output.
+        If the command outputs valid JSON with 'passed' and 'score' keys, use those.
+        Otherwise fall back to exit code scoring (exit 0 = pass/1.0).
         """
         cmd = self._definition.verify_config.command
         if not cmd:
@@ -463,35 +413,20 @@ class Task:
         result = self.shell(cmd, cwd=workspace)
         scoring = self._definition.scoring
 
-        if isinstance(scoring, PytestScoring):
-            score = self._parse_pytest_score(result.stdout)
-            passed = result.returncode == 0
-            return VerifyResult(
-                passed=passed,
-                score=score,
-                details=_build_verify_details("PytestScoring", result, passed),
-            )
+        if scoring.method == "json":
+            return self._parse_json_output(result, scoring.metric_path)
 
-        if isinstance(scoring, ExitCodeScoring):
-            passed = result.returncode == 0
-            s = 1.0 if passed else 0.0
-            return VerifyResult(
-                passed=passed,
-                score=s,
-                details=_build_verify_details("ExitCodeScoring", result, passed),
-            )
-
-        if isinstance(scoring, JSONScoring):
-            return self._parse_json_verify(result, scoring.metric_path)
-
-        if isinstance(scoring, ExactMatchScoring):
-            return self._parse_exact_match_verify(result, scoring, workspace, instance)
+        # exit_code: try JSON first, fall back to exit code
+        json_result = self._try_parse_json_output(result)
+        if json_result is not None:
+            return json_result
 
         passed = result.returncode == 0
+        s = 1.0 if passed else 0.0
         return VerifyResult(
             passed=passed,
-            score=1.0 if passed else 0.0,
-            details=_build_verify_details("unknown", result, passed),
+            score=s,
+            details=_build_verify_details("exit_code", result, passed),
         )
 
     # ── Utilities ────────────────────────────────────────────────
@@ -603,19 +538,13 @@ class Task:
         prep_command: str = "",
     ) -> Task:
         """Construct a Task from legacy flat fields (backward compat)."""
-        scoring: ScoringContract
-        if test_format == "exit_code":
-            scoring = ExitCodeScoring()
-        elif test_format == "json":
-            scoring = JSONScoring(metric_path=metric_path)
-        elif test_format == "exact_match":
-            scoring = ExactMatchScoring()
-        else:
-            scoring = PytestScoring()
+        method: Literal["json", "exit_code"] = "exit_code"
+        if test_format == "json":
+            method = "json"
 
         defn = TaskDefinition(
             name=name,
-            scoring=scoring,
+            scoring=ScoringContract(method=method, metric_path=metric_path),
             instances_config=InstancesConfig(format=instance_format),
             setup_config=SetupConfig(command=prep_command),
             verify_config=VerifyConfig(command=test_command),
@@ -635,41 +564,24 @@ class Task:
         cls_name = type(self).__name__
         if cls_name == "Task":
             return "default"
-        # CamelCase → kebab-case
         s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1-\2", cls_name)
         return re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", s1).lower()
 
     @staticmethod
-    def _parse_pytest_score(stdout: str) -> float:
-        """Parse pytest stdout for pass/fail counts → fraction score."""
-        # Collection/fixture errors are included in the denominator and score 0.0.
-        # Match patterns like "5 passed, 3 failed" or "8 passed"
-        passed = 0
-        failed = 0
-        errors = 0
-        m = re.search(r"(\d+) passed", stdout)
-        if m:
-            passed = int(m.group(1))
-        m = re.search(r"(\d+) failed", stdout)
-        if m:
-            failed = int(m.group(1))
-        m = re.search(r"(\d+) error", stdout)
-        if m:
-            errors = int(m.group(1))
-        total = passed + failed + errors
-        if total == 0:
-            return 0.0
-        return passed / total
-
-    @staticmethod
-    def _parse_json_verify(
-        result: _RunResult, metric_path: str
-    ) -> VerifyResult:
-        """Parse JSON stdout and extract metric."""
+    def _parse_json_output(result: _RunResult, metric_path: str) -> VerifyResult:
+        """Parse JSON stdout and extract metric at metric_path."""
         import json
 
         try:
             data = json.loads(result.stdout)
+            if "passed" in data and "score" in data:
+                passed = bool(data["passed"])
+                score = min(max(float(data["score"]), 0.0), 1.0)
+                return VerifyResult(
+                    passed=passed,
+                    score=score,
+                    details=_build_verify_details("json", result, passed),
+                )
             obj: Any = data
             for key in metric_path.split("."):
                 obj = obj[key]
@@ -679,68 +591,35 @@ class Task:
                 passed=passed,
                 score=min(max(score, 0.0), 1.0),
                 details=_build_verify_details(
-                    "JSONScoring", result, passed,
+                    "json", result, passed,
                     metric_path=metric_path, raw_value=score,
                 ),
             )
-        except (Exception,):
+        except Exception:
             return VerifyResult(
                 passed=False,
                 score=0.0,
                 details=_build_verify_details(
-                    "JSONScoring", result, False,
+                    "json", result, False,
                     error="json_parse_failed",
                 ),
             )
 
     @staticmethod
-    def _parse_exact_match_verify(
-        result: _RunResult,
-        scoring: ExactMatchScoring,
-        workspace: Path,
-        instance: TaskInstance | None = None,
-    ) -> VerifyResult:
-        """Compare output to expected answer."""
-        output = result.stdout.strip()
-        if scoring.answer_extraction:
-            m = re.search(scoring.answer_extraction, output)
-            if m:
-                output = m.group(1)
+    def _try_parse_json_output(result: _RunResult) -> VerifyResult | None:
+        """Try to parse JSON with 'passed' and 'score' keys. Return None if not valid."""
+        import json
 
-        # Read expected answer from the trusted instance path first,
-        # falling back to workspace only when instance.path is unavailable.
-        search_dirs: list[Path] = []
-        if instance is not None and instance.path is not None:
-            search_dirs.append(instance.path)
-        search_dirs.append(workspace)
-
-        expected_path: Path | None = None
-        for d in search_dirs:
-            for name in ("expected_answer.txt", "expected.txt"):
-                candidate = d / name
-                if candidate.exists():
-                    expected_path = candidate
-                    break
-            if expected_path is not None:
-                break
-
-        if expected_path is None:
-            return VerifyResult(
-                passed=False,
-                score=0.0,
-                details=_build_verify_details(
-                    "ExactMatchScoring", result, False,
-                    error="expected_answer_file_missing",
-                ),
-            )
-
-        expected = expected_path.read_text(errors="replace").strip()
-        matched = output == expected
-        return VerifyResult(
-            passed=matched,
-            score=1.0 if matched else 0.0,
-            details=_build_verify_details(
-                "ExactMatchScoring", result, matched,
-                matched=matched,
-            ),
-        )
+        try:
+            data = json.loads(result.stdout)
+            if isinstance(data, dict) and "passed" in data and "score" in data:
+                passed = bool(data["passed"])
+                score = min(max(float(data["score"]), 0.0), 1.0)
+                return VerifyResult(
+                    passed=passed,
+                    score=score,
+                    details=_build_verify_details("json", result, passed),
+                )
+        except Exception:
+            pass
+        return None

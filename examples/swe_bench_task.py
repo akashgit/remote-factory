@@ -14,7 +14,7 @@ from typing import Any, Iterator
 import structlog
 
 from factory.task import (
-    ExitCodeScoring,
+    ScoringContract,
     Task,
     TaskConstraints,
     TaskDefinition,
@@ -151,7 +151,7 @@ class SWEBenchTask(Task):
         defn = TaskDefinition(
             name="swe-bench",
             description="SWE-bench style bug-fix task using default run() pipeline",
-            scoring=ExitCodeScoring(),
+            scoring=ScoringContract(method="exit_code"),
             constraints=TaskConstraints(timeout=300, max_retries=1),
         )
         super().__init__(definition=defn)

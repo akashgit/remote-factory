@@ -8,12 +8,9 @@ import pytest
 
 from factory.task import (
     Capability,
-    ExactMatchScoring,
-    ExitCodeScoring,
     InstancesConfig,
-    JSONScoring,
     PromptConfig,
-    PytestScoring,
+    ScoringContract,
     Task,
     TaskConstraints,
     TaskDefinition,
@@ -67,38 +64,27 @@ class TestVerifyResult:
 
 
 class TestScoringContract:
-    def test_pytest_scoring(self):
-        s = PytestScoring()
-        assert s.method == "pytest"
-        assert s.partial_credit is True
+    def test_default_exit_code(self):
+        s = ScoringContract()
+        assert s.method == "exit_code"
+        assert s.metric_path == "score"
 
     def test_exit_code_scoring(self):
-        s = ExitCodeScoring()
+        s = ScoringContract(method="exit_code")
         assert s.method == "exit_code"
 
     def test_json_scoring(self):
-        s = JSONScoring(metric_path="stats.accuracy")
+        s = ScoringContract(method="json", metric_path="stats.accuracy")
         assert s.method == "json"
         assert s.metric_path == "stats.accuracy"
 
-    def test_exact_match_scoring(self):
-        s = ExactMatchScoring(answer_extraction=r"\d+")
-        assert s.method == "exact_match"
-        assert s.answer_extraction == r"\d+"
-
-    def test_discriminated_union_pytest(self):
+    def test_in_task_definition(self):
         defn = TaskDefinition(
             name="test",
-            scoring=PytestScoring(),
+            scoring=ScoringContract(method="json", metric_path="result.score"),
         )
-        assert isinstance(defn.scoring, PytestScoring)
-
-    def test_discriminated_union_json(self):
-        defn = TaskDefinition(
-            name="test",
-            scoring=JSONScoring(metric_path="result.score"),
-        )
-        assert isinstance(defn.scoring, JSONScoring)
+        assert defn.scoring.method == "json"
+        assert defn.scoring.metric_path == "result.score"
 
 
 # ── TaskConstraints tests ───────────────────────────────────────
@@ -129,7 +115,7 @@ class TestTaskDefinition:
     def test_create_minimal(self):
         defn = TaskDefinition(name="test-task")
         assert defn.name == "test-task"
-        assert isinstance(defn.scoring, PytestScoring)
+        assert defn.scoring.method == "exit_code"
 
     def test_from_toml(self, tmp_path: Path):
         toml_content = """
@@ -151,8 +137,7 @@ text = "Do the thing."
 command = "pytest -xvs"
 
 [scoring]
-method = "pytest"
-partial_credit = true
+method = "exit_code"
 
 [constraints]
 timeout = 1800
@@ -164,8 +149,7 @@ max_retries = 2
         defn = TaskDefinition.from_toml(toml_file)
         assert defn.name == "my-task"
         assert defn.description == "A test task"
-        assert isinstance(defn.scoring, PytestScoring)
-        assert defn.scoring.partial_credit is True
+        assert defn.scoring.method == "exit_code"
         assert defn.constraints.timeout == 1800
         assert defn.constraints.max_retries == 2
         assert defn.instances_config.format == "directory"
@@ -173,6 +157,34 @@ max_retries = 2
         assert defn.setup_config.command == "pip install -e ."
         assert defn.prompt_config.text == "Do the thing."
         assert defn.verify_config.command == "pytest -xvs"
+
+    def test_from_toml_pytest_maps_to_exit_code(self, tmp_path: Path):
+        """Legacy 'pytest' method maps to 'exit_code' for backward compat."""
+        toml_content = """
+[task]
+name = "legacy-task"
+
+[scoring]
+method = "pytest"
+"""
+        f = tmp_path / "legacy.toml"
+        f.write_text(toml_content)
+        defn = TaskDefinition.from_toml(f)
+        assert defn.scoring.method == "exit_code"
+
+    def test_from_toml_exact_match_maps_to_exit_code(self, tmp_path: Path):
+        """Legacy 'exact_match' method maps to 'exit_code' for backward compat."""
+        toml_content = """
+[task]
+name = "math-task"
+
+[scoring]
+method = "exact_match"
+"""
+        f = tmp_path / "math.toml"
+        f.write_text(toml_content)
+        defn = TaskDefinition.from_toml(f)
+        assert defn.scoring.method == "exit_code"
 
     def test_from_toml_exit_code(self, tmp_path: Path):
         toml_content = """
@@ -185,7 +197,7 @@ method = "exit_code"
         f = tmp_path / "swe.toml"
         f.write_text(toml_content)
         defn = TaskDefinition.from_toml(f)
-        assert isinstance(defn.scoring, ExitCodeScoring)
+        assert defn.scoring.method == "exit_code"
 
     def test_from_toml_json_scoring(self, tmp_path: Path):
         toml_content = """
@@ -199,34 +211,21 @@ metric_path = "results.accuracy"
         f = tmp_path / "json.toml"
         f.write_text(toml_content)
         defn = TaskDefinition.from_toml(f)
-        assert isinstance(defn.scoring, JSONScoring)
+        assert defn.scoring.method == "json"
         assert defn.scoring.metric_path == "results.accuracy"
-
-    def test_from_toml_exact_match(self, tmp_path: Path):
-        toml_content = """
-[task]
-name = "math-task"
-
-[scoring]
-method = "exact_match"
-"""
-        f = tmp_path / "math.toml"
-        f.write_text(toml_content)
-        defn = TaskDefinition.from_toml(f)
-        assert isinstance(defn.scoring, ExactMatchScoring)
 
     def test_toml_roundtrip(self):
         """Serialise via model_dump and deserialise via model_validate."""
         defn = TaskDefinition(
             name="roundtrip",
             description="Test roundtrip",
-            scoring=JSONScoring(metric_path="a.b"),
+            scoring=ScoringContract(method="json", metric_path="a.b"),
             constraints=TaskConstraints(timeout=999, max_retries=5),
         )
         data = defn.model_dump(mode="json")
         restored = TaskDefinition.model_validate(data)
         assert restored.name == "roundtrip"
-        assert isinstance(restored.scoring, JSONScoring)
+        assert restored.scoring.method == "json"
         assert restored.scoring.metric_path == "a.b"
         assert restored.constraints.timeout == 999
 
@@ -256,7 +255,6 @@ class TestTask:
         """Default setup() is a no-op when no command is set."""
         task = Task()
         inst = TaskInstance(id="t1")
-        # Should not raise
         task.setup(inst, tmp_path)
 
     def test_default_prompt(self):
@@ -319,7 +317,7 @@ class TestTask:
             test_format="pytest",
         )
         assert task.name == "legacy-test"
-        assert isinstance(task.scoring, PytestScoring)
+        assert task.scoring.method == "exit_code"
         assert task.definition.verify_config.command == "pytest -v"
 
     def test_from_legacy_exit_code(self):
@@ -328,7 +326,7 @@ class TestTask:
             test_command="python run.py",
             test_format="exit_code",
         )
-        assert isinstance(task.scoring, ExitCodeScoring)
+        assert task.scoring.method == "exit_code"
 
     def test_from_legacy_json(self):
         task = Task.from_legacy(
@@ -337,48 +335,34 @@ class TestTask:
             test_format="json",
             metric_path="result.score",
         )
-        assert isinstance(task.scoring, JSONScoring)
+        assert task.scoring.method == "json"
 
-    def test_from_legacy_exact_match(self):
+    def test_from_legacy_exact_match_maps_to_exit_code(self):
         task = Task.from_legacy(
             name="math",
             test_command="python solve.py",
             test_format="exact_match",
         )
-        assert isinstance(task.scoring, ExactMatchScoring)
+        assert task.scoring.method == "exit_code"
 
 
 # ── get_evaluator tests ─────────────────────────────────────────
 
 
 class TestGetEvaluator:
-    def test_pytest_evaluator(self):
-        defn = TaskDefinition(name="test", scoring=PytestScoring())
-        evaluator = defn.get_evaluator()
-        from factory.outer_loop.featurebench_evaluator import FeatureBenchEvaluator
-
-        assert isinstance(evaluator, FeatureBenchEvaluator)
-
     def test_exit_code_evaluator(self):
-        defn = TaskDefinition(name="test", scoring=ExitCodeScoring())
+        defn = TaskDefinition(name="test", scoring=ScoringContract(method="exit_code"))
         evaluator = defn.get_evaluator()
         from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
 
         assert isinstance(evaluator, ExitCodeEvaluator)
 
     def test_json_evaluator(self):
-        defn = TaskDefinition(name="test", scoring=JSONScoring(metric_path="a.b"))
+        defn = TaskDefinition(name="test", scoring=ScoringContract(method="json", metric_path="a.b"))
         evaluator = defn.get_evaluator()
         from factory.outer_loop.evaluators.json_evaluator import JSONEvaluator
 
         assert isinstance(evaluator, JSONEvaluator)
-
-    def test_exact_match_evaluator(self):
-        defn = TaskDefinition(name="test", scoring=ExactMatchScoring())
-        evaluator = defn.get_evaluator()
-        from factory.outer_loop.evaluators.exact_match import ExactMatchEvaluator
-
-        assert isinstance(evaluator, ExactMatchEvaluator)
 
 
 # ── Backward compatibility tests ────────────────────────────────
@@ -428,7 +412,7 @@ class TestBackwardCompat:
         )
         task = config.get_task()
         assert task.name == "featurebench"
-        assert isinstance(task.scoring, PytestScoring)
+        assert task.scoring.method == "exit_code"
 
     def test_swarm_config_get_task_explicit(self):
         """SwarmConfig.get_task() returns explicit task when set."""
@@ -451,10 +435,10 @@ class TestBackwardCompat:
         )
         task = bc.to_task()
         assert task.name == "featurebench"
-        assert isinstance(task.scoring, PytestScoring)
+        assert task.scoring.method == "exit_code"
 
     def test_research_target_to_task(self):
-        """ResearchTarget.to_task() produces a Task with JSONScoring."""
+        """ResearchTarget.to_task() produces a Task with JSON scoring."""
         from factory.models import ResearchTarget
 
         rt = ResearchTarget(
@@ -465,7 +449,7 @@ class TestBackwardCompat:
             result_path="metrics.speed",
         )
         task = rt.to_task()
-        assert isinstance(task.scoring, JSONScoring)
+        assert task.scoring.method == "json"
         assert task.name == "research-speed_ms"
 
 
@@ -560,7 +544,7 @@ class TestTaskRun:
             verify_config=__import__("factory.task", fromlist=["VerifyConfig"]).VerifyConfig(
                 command="echo done",
             ),
-            scoring=ExitCodeScoring(),
+            scoring=ScoringContract(method="exit_code"),
         )
         task = Task(definition=defn)
         inst = TaskInstance(id="t1")
@@ -586,7 +570,7 @@ class TestTaskRun:
             prompt_config=__import__("factory.task", fromlist=["PromptConfig"]).PromptConfig(
                 text="My custom prompt",
             ),
-            scoring=ExitCodeScoring(),
+            scoring=ScoringContract(method="exit_code"),
         )
         task = Task(definition=defn)
         inst = TaskInstance(id="t1")
@@ -612,7 +596,7 @@ class TestTaskRun:
         monkeypatch.setattr(sp, "run", fake_run)
 
         task = Task(definition=TaskDefinition(
-            name="cleanup-test", scoring=ExitCodeScoring(),
+            name="cleanup-test", scoring=ScoringContract(method="exit_code"),
         ))
         task.run(TaskInstance(id="t1"), tmp_path)
 
@@ -637,42 +621,6 @@ class TestNeedsShell:
 
     def test_pipe(self):
         assert _needs_shell("grep foo | wc -l") is True
-
-
-class TestTrustedExpectedAnswer:
-    """Item 2: _parse_exact_match_verify reads from instance.path first."""
-
-    def test_reads_from_instance_path(self, tmp_path: Path):
-        instance_dir = tmp_path / "instance"
-        instance_dir.mkdir()
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-
-        (instance_dir / "expected_answer.txt").write_text("trusted")
-        (workspace / "expected_answer.txt").write_text("forged")
-
-        from factory.task import ExactMatchScoring, _RunResult
-
-        result = _RunResult(returncode=0, stdout="trusted\n", stderr="")
-        scoring = ExactMatchScoring()
-        inst = TaskInstance(id="t1", path=instance_dir)
-
-        vr = Task._parse_exact_match_verify(result, scoring, workspace, inst)
-        assert vr.passed is True
-        assert vr.score == 1.0
-
-    def test_falls_back_to_workspace(self, tmp_path: Path):
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        (workspace / "expected_answer.txt").write_text("answer")
-
-        from factory.task import ExactMatchScoring, _RunResult
-
-        result = _RunResult(returncode=0, stdout="answer\n", stderr="")
-        scoring = ExactMatchScoring()
-
-        vr = Task._parse_exact_match_verify(result, scoring, workspace, None)
-        assert vr.passed is True
 
 
 class TestUnknownScoringRaises:
@@ -822,14 +770,21 @@ class TestCapabilityTyping:
 
 
 class TestEvaluatorRefAlignment:
-    """Item 4: EvaluatorRef('pytest') resolves to FeatureBenchEvaluator."""
+    """EvaluatorRef shorthands resolve to correct evaluator classes."""
 
-    def test_shorthand_matches_isinstance_path(self):
-        from factory.outer_loop.featurebench_evaluator import FeatureBenchEvaluator
+    def test_exit_code_shorthand(self):
+        from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
         from factory.task import EvaluatorRef
 
-        evaluator = EvaluatorRef(ref="pytest").resolve()
-        assert isinstance(evaluator, FeatureBenchEvaluator)
+        evaluator = EvaluatorRef(ref="exit_code").resolve()
+        assert isinstance(evaluator, ExitCodeEvaluator)
+
+    def test_json_shorthand(self):
+        from factory.outer_loop.evaluators.json_evaluator import JSONEvaluator
+        from factory.task import EvaluatorRef
+
+        evaluator = EvaluatorRef(ref="json").resolve()
+        assert isinstance(evaluator, JSONEvaluator)
 
 
 class TestTaskRunSubprocess:
@@ -875,7 +830,7 @@ class TestTaskRunSubprocess:
 
         monkeypatch.setattr(sp, "run", fake_run)
 
-        task = Task(definition=TaskDefinition(name="args-test", scoring=ExitCodeScoring()))
+        task = Task(definition=TaskDefinition(name="args-test", scoring=ScoringContract(method="exit_code")))
         task.run(TaskInstance(id="t1"), tmp_path)
 
         assert captured_cmd[0] == sys.executable
@@ -899,7 +854,7 @@ class TestTaskRunSubprocess:
 
         monkeypatch.setattr(sp, "run", fake_run)
 
-        task = Task(definition=TaskDefinition(name="mode-test", scoring=ExitCodeScoring()))
+        task = Task(definition=TaskDefinition(name="mode-test", scoring=ScoringContract(method="exit_code")))
         task.run(TaskInstance(id="t1"), tmp_path, workflow=None)
 
         mode_idx = captured_cmd.index("--mode")
@@ -922,7 +877,7 @@ class TestTaskRunSubprocess:
         workflow = MagicMock()
         workflow.name = "research"
 
-        task = Task(definition=TaskDefinition(name="wf-test", scoring=ExitCodeScoring()))
+        task = Task(definition=TaskDefinition(name="wf-test", scoring=ScoringContract(method="exit_code")))
         task.run(TaskInstance(id="t1"), tmp_path, workflow=workflow)
 
         mode_idx = captured_cmd.index("--mode")
@@ -949,7 +904,7 @@ class TestTaskRunSubprocess:
                 verify_called["called"] = True
                 return VerifyResult(passed=False, score=0.0)
 
-        task = TimeoutTask(definition=TaskDefinition(name="timeout-test", scoring=ExitCodeScoring()))
+        task = TimeoutTask(definition=TaskDefinition(name="timeout-test", scoring=ScoringContract(method="exit_code")))
         result = task.run(TaskInstance(id="t1"), tmp_path)
 
         assert call_count["subprocess"] == 1
@@ -974,7 +929,7 @@ class TestTaskRunSubprocess:
                 verify_called["called"] = True
                 return VerifyResult(passed=False, score=0.0)
 
-        task = ErrorTask(definition=TaskDefinition(name="err-test", scoring=ExitCodeScoring()))
+        task = ErrorTask(definition=TaskDefinition(name="err-test", scoring=ScoringContract(method="exit_code")))
         result = task.run(TaskInstance(id="t1"), tmp_path)
 
         assert verify_called["called"]
@@ -1000,7 +955,7 @@ class TestTaskRunSubprocess:
         defn = TaskDefinition(
             name="prompt-test",
             prompt_config=PromptConfig(text="Hello world"),
-            scoring=ExitCodeScoring(),
+            scoring=ScoringContract(method="exit_code"),
         )
         task = Task(definition=defn)
         task.run(TaskInstance(id="t1"), tmp_path)
@@ -1044,23 +999,23 @@ class TestTaskCreateNameDerivation:
 class TestBuildVerifyDetails:
     def test_scoring_contract_always_present(self):
         result = _RunResult(returncode=0, stdout="ok", stderr="")
-        details = _build_verify_details("PytestScoring", result, True)
-        assert details["scoring_contract"] == "PytestScoring"
+        details = _build_verify_details("exit_code", result, True)
+        assert details["scoring_contract"] == "exit_code"
 
     def test_returncode_always_present(self):
         result = _RunResult(returncode=42, stdout="", stderr="")
-        details = _build_verify_details("ExitCodeScoring", result, False)
+        details = _build_verify_details("exit_code", result, False)
         assert details["returncode"] == 42
 
     def test_passed_true_omits_stdout_stderr(self):
         result = _RunResult(returncode=0, stdout="output", stderr="err")
-        details = _build_verify_details("PytestScoring", result, True)
+        details = _build_verify_details("exit_code", result, True)
         assert "stdout" not in details
         assert "stderr" not in details
 
     def test_passed_false_includes_stdout_stderr(self):
         result = _RunResult(returncode=1, stdout="fail output", stderr="fail err")
-        details = _build_verify_details("PytestScoring", result, False)
+        details = _build_verify_details("exit_code", result, False)
         assert details["stdout"] == "fail output"
         assert details["stderr"] == "fail err"
 
@@ -1068,14 +1023,14 @@ class TestBuildVerifyDetails:
         long_out = "x" * 3000
         long_err = "y" * 3000
         result = _RunResult(returncode=1, stdout=long_out, stderr=long_err)
-        details = _build_verify_details("ExitCodeScoring", result, False)
+        details = _build_verify_details("exit_code", result, False)
         assert len(details["stdout"]) == 2000
         assert len(details["stderr"]) == 2000
 
     def test_extra_kwargs_merged(self):
         result = _RunResult(returncode=0, stdout="", stderr="")
         details = _build_verify_details(
-            "JSONScoring", result, True,
+            "json", result, True,
             metric_path="score", raw_value=0.95,
         )
         assert details["metric_path"] == "score"
@@ -1083,7 +1038,7 @@ class TestBuildVerifyDetails:
 
     def test_all_scoring_names(self):
         result = _RunResult(returncode=0, stdout="", stderr="")
-        for name in ("PytestScoring", "ExitCodeScoring", "JSONScoring", "ExactMatchScoring", "unknown"):
+        for name in ("exit_code", "json", "unknown"):
             details = _build_verify_details(name, result, True)
             assert details["scoring_contract"] == name
             assert "returncode" in details
@@ -1101,65 +1056,46 @@ class TestVerifyDetailsConsistency:
         )
         return Task(definition=defn)
 
-    def test_pytest_scoring_has_scoring_contract(self, tmp_path: Path):
-        task = self._make_task(PytestScoring(), verify_cmd="echo '1 passed'")
-        result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "PytestScoring"
-        assert "returncode" in result.details
-
     def test_exit_code_scoring_has_scoring_contract(self, tmp_path: Path):
-        task = self._make_task(ExitCodeScoring())
+        task = self._make_task(ScoringContract(method="exit_code"))
         result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "ExitCodeScoring"
+        assert result.details["scoring_contract"] == "exit_code"
         assert "returncode" in result.details
 
     def test_exit_code_failure_includes_stdout_stderr(self, tmp_path: Path):
-        task = self._make_task(ExitCodeScoring(), verify_cmd="false")
+        task = self._make_task(ScoringContract(method="exit_code"), verify_cmd="false")
         result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "ExitCodeScoring"
+        assert result.details["scoring_contract"] == "exit_code"
         assert "stdout" in result.details
         assert "stderr" in result.details
 
     def test_json_scoring_has_scoring_contract(self, tmp_path: Path):
         task = self._make_task(
-            JSONScoring(metric_path="score"),
+            ScoringContract(method="json", metric_path="score"),
             verify_cmd='echo \'{"score": 0.8}\'',
         )
         result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "JSONScoring"
+        assert result.details["scoring_contract"] == "json"
         assert result.details["metric_path"] == "score"
         assert result.details["raw_value"] == 0.8
         assert "returncode" in result.details
 
     def test_json_scoring_failure_has_scoring_contract(self, tmp_path: Path):
         task = self._make_task(
-            JSONScoring(metric_path="score"),
+            ScoringContract(method="json", metric_path="score"),
             verify_cmd="echo not-json",
         )
         result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "JSONScoring"
+        assert result.details["scoring_contract"] == "json"
         assert result.details["error"] == "json_parse_failed"
         assert "returncode" in result.details
 
-    def test_exact_match_scoring_has_scoring_contract(self, tmp_path: Path):
-        (tmp_path / "expected_answer.txt").write_text("hello")
-        task = self._make_task(ExactMatchScoring(), verify_cmd="echo hello")
+    def test_exit_code_with_json_output_uses_json(self, tmp_path: Path):
+        """When exit_code method receives JSON with passed/score, it uses those values."""
+        task = self._make_task(
+            ScoringContract(method="exit_code"),
+            verify_cmd='echo \'{"passed": true, "score": 0.75}\'',
+        )
         result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "ExactMatchScoring"
-        assert result.details["matched"] is True
-        assert "returncode" in result.details
-
-    def test_exact_match_failure_includes_stdout_stderr(self, tmp_path: Path):
-        (tmp_path / "expected_answer.txt").write_text("expected")
-        task = self._make_task(ExactMatchScoring(), verify_cmd="echo wrong")
-        result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "ExactMatchScoring"
-        assert result.details["matched"] is False
-        assert "stdout" in result.details
-        assert "stderr" in result.details
-
-    def test_exact_match_missing_answer_file(self, tmp_path: Path):
-        task = self._make_task(ExactMatchScoring(), verify_cmd="echo hello")
-        result = task.verify(TaskInstance(id="t1"), tmp_path)
-        assert result.details["scoring_contract"] == "ExactMatchScoring"
-        assert result.details["error"] == "expected_answer_file_missing"
+        assert result.passed is True
+        assert result.score == 0.75

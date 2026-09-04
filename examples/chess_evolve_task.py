@@ -17,7 +17,7 @@ from typing import Any, Iterator
 import structlog
 
 from factory.task import (
-    JSONScoring,
+    ScoringContract,
     Task,
     TaskConstraints,
     TaskDefinition,
@@ -220,7 +220,7 @@ class ChessEvolveTask(Task):
         defn = TaskDefinition(
             name="chess-evolve",
             description="Evolve a chess engine that beats the baseline via self-play",
-            scoring=JSONScoring(metric_path="win_rate"),
+            scoring=ScoringContract(method="json", metric_path="win_rate"),
             constraints=TaskConstraints(timeout=120, max_retries=1),
         )
         super().__init__(definition=defn)

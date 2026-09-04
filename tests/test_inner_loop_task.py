@@ -10,7 +10,7 @@ import pytest
 from factory.cycle_analyzer import CycleRecord
 from factory.inner_loop import InnerLoop
 from factory.task import (
-    ExitCodeScoring,
+    ScoringContract,
     TaskDefinition,
     TaskInstance,
     VerifyResult,
@@ -49,7 +49,7 @@ class TestStepWithTask:
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="inst-1")]
         task.run.return_value = VerifyResult(passed=True, score=0.8)
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
         record = loop.step()
@@ -77,7 +77,7 @@ class TestStepWithTask:
             VerifyResult(passed=True, score=0.5),
             VerifyResult(passed=False, score=0.0),
         ]
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
         record = loop.step()
@@ -93,7 +93,7 @@ class TestStepWithTask:
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="fail")]
         task.run.side_effect = RuntimeError("boom")
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
         record = loop.step()
@@ -109,7 +109,7 @@ class TestStepWithTask:
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="x")]
         task.run.return_value = VerifyResult(passed=True, score=1.0)
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
         r1 = loop.step()
@@ -125,7 +125,7 @@ class TestStepWithTask:
 
         task = MagicMock()
         task.instances.return_value = []
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
         record = loop.step()
@@ -152,7 +152,7 @@ class TestStepAggregatesMethods:
         task.run.side_effect = [
             VerifyResult(passed=s >= 0.5, score=s) for s in scores
         ]
-        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
 
         loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
 

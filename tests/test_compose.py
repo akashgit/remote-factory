@@ -18,10 +18,7 @@ from factory.compose import (
 )
 from factory.task import (
     CAPABILITY_ALIASES,
-    ExactMatchScoring,
-    ExitCodeScoring,
-    JSONScoring,
-    PytestScoring,
+    ScoringContract,
     Task,
     TaskConstraints,
     TaskDefinition,
@@ -136,27 +133,17 @@ class TestModeCapabilities:
 
 
 class TestTaskCapabilities:
-    def test_pytest_requires_builder(self):
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
+    def test_exit_code_requires_builder(self):
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         caps = TaskCapabilities.from_task(task)
         assert Capability.CAN_MODIFY_CODE in caps.requires
         assert Capability.CAN_RUN_TESTS in caps.requires
         assert Capability.HAS_BUILDER in caps.requires
 
-    def test_exit_code_requires_builder(self):
-        task = Task(definition=TaskDefinition(name="t", scoring=ExitCodeScoring()))
-        caps = TaskCapabilities.from_task(task)
-        assert Capability.CAN_MODIFY_CODE in caps.requires
-
     def test_json_scoring_minimal_requirements(self):
-        task = Task(definition=TaskDefinition(name="t", scoring=JSONScoring()))
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="json")))
         caps = TaskCapabilities.from_task(task)
         assert Capability.CAN_MODIFY_CODE not in caps.requires
-
-    def test_exact_match_requires_subprocess(self):
-        task = Task(definition=TaskDefinition(name="t", scoring=ExactMatchScoring()))
-        caps = TaskCapabilities.from_task(task)
-        assert Capability.CAN_RUN_SUBPROCESS in caps.requires
 
 
 # ── validate_composition tests ───────────────────────────────────
@@ -164,16 +151,15 @@ class TestTaskCapabilities:
 
 class TestValidateComposition:
     def test_compatible(self):
-        """Builder workflow + pytest task = compatible."""
+        """Builder workflow + exit_code task = compatible."""
         wf = _make_workflow(builder=True)
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
-        # Should not raise
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         validate_composition(wf, task)
 
     def test_incompatible_research_only(self):
-        """Research-only workflow + pytest task = incompatible."""
+        """Research-only workflow + exit_code task = incompatible."""
         wf = _make_workflow(researcher=True, name="research")
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         with pytest.raises(IncompatibleCompositionError) as exc_info:
             validate_composition(wf, task)
         assert "can_modify_code" in str(exc_info.value).lower() or "has_builder" in str(exc_info.value).lower()
@@ -181,13 +167,12 @@ class TestValidateComposition:
     def test_json_task_with_any_workflow(self):
         """JSON scoring requires minimal capabilities."""
         wf = _make_workflow(researcher=True, fn=True)
-        task = Task(definition=TaskDefinition(name="t", scoring=JSONScoring()))
-        # Should not raise — JSON scoring has no requirements
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="json")))
         validate_composition(wf, task)
 
     def test_error_message_has_mode_and_task_name(self):
         wf = _make_workflow(researcher=True, name="design")
-        task = Task(definition=TaskDefinition(name="chess-evolve", scoring=PytestScoring()))
+        task = Task(definition=TaskDefinition(name="chess-evolve", scoring=ScoringContract(method="exit_code")))
         with pytest.raises(IncompatibleCompositionError) as exc_info:
             validate_composition(wf, task)
         err = exc_info.value
@@ -202,7 +187,7 @@ class TestValidateComposition:
 class TestCompose:
     def test_compose_returns_inner_loop(self, tmp_path: Path):
         wf = _make_workflow(builder=True)
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         loop = compose(wf, task, tmp_path)
         from factory.inner_loop import InnerLoop
 
@@ -210,7 +195,7 @@ class TestCompose:
 
     def test_compose_incompatible_raises(self, tmp_path: Path):
         wf = _make_workflow(researcher=True, name="research-only")
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         with pytest.raises(IncompatibleCompositionError):
             compose(wf, task, tmp_path)
 
@@ -221,7 +206,7 @@ class TestCompose:
 
     def test_compose_sets_task_on_loop(self, tmp_path: Path):
         wf = _make_workflow(builder=True)
-        task = Task(definition=TaskDefinition(name="t", scoring=PytestScoring()))
+        task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
         loop = compose(wf, task, tmp_path)
         assert loop.task is task
 
@@ -247,24 +232,18 @@ class TestCompositionMatrix:
     @pytest.mark.parametrize(
         "workflow_kwargs,scoring,should_pass",
         [
-            # Full workflow (builder + gate) × pytest → pass
-            (dict(builder=True, gate=True), PytestScoring(), True),
-            # Builder-only × pytest → pass
-            (dict(builder=True), PytestScoring(), True),
-            # Research-only × pytest → fail
-            (dict(researcher=True), PytestScoring(), False),
-            # Builder × exit_code → pass
-            (dict(builder=True), ExitCodeScoring(), True),
+            # Full workflow (builder + gate) × exit_code → pass
+            (dict(builder=True, gate=True), ScoringContract(method="exit_code"), True),
+            # Builder-only × exit_code → pass
+            (dict(builder=True), ScoringContract(method="exit_code"), True),
+            # Research-only × exit_code → fail
+            (dict(researcher=True), ScoringContract(method="exit_code"), False),
             # Builder × json → pass
-            (dict(builder=True), JSONScoring(), True),
-            # Builder × exact_match → pass
-            (dict(builder=True), ExactMatchScoring(), True),
+            (dict(builder=True), ScoringContract(method="json"), True),
             # Research × json → pass (no code mod needed)
-            (dict(researcher=True, fn=True), JSONScoring(), True),
-            # Empty workflow × pytest → fail
-            (dict(fn=True), PytestScoring(), False),
-            # Research × exact_match → pass (only needs subprocess)
-            (dict(researcher=True, fn=True), ExactMatchScoring(), True),
+            (dict(researcher=True, fn=True), ScoringContract(method="json"), True),
+            # Empty workflow × exit_code → fail
+            (dict(fn=True), ScoringContract(method="exit_code"), False),
         ],
     )
     def test_composition(self, workflow_kwargs, scoring, should_pass):
@@ -334,7 +313,7 @@ class TestPackageTaskIntegration:
         task = Task(
             definition=TaskDefinition(
                 name="t",
-                scoring=PytestScoring(),
+                scoring=ScoringContract(method="exit_code"),
                 constraints=TaskConstraints(
                     required_capabilities=[Capability.CAN_MODIFY_CODE, Capability.HAS_HEALTH_CHECK],
                 ),
@@ -350,7 +329,7 @@ class TestPackageTaskIntegration:
         task = Task(
             definition=TaskDefinition(
                 name="t",
-                scoring=PytestScoring(),
+                scoring=ScoringContract(method="exit_code"),
                 constraints=TaskConstraints(
                     required_capabilities=[Capability.HAS_CODE_REVIEW],
                 ),

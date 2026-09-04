@@ -153,11 +153,7 @@ class TaskCapabilities:
     @classmethod
     def from_task(cls, task: Any) -> TaskCapabilities:
         """Infer required capabilities from a task's scoring contract."""
-        from factory.task import (
-            ExactMatchScoring,
-            ExitCodeScoring,
-            PytestScoring,
-        )
+        from factory.task import ScoringContract
 
         constraints = getattr(task, "constraints", None)
         if constraints is None:
@@ -180,16 +176,10 @@ class TaskCapabilities:
             if defn is not None:
                 scoring = defn.scoring
 
-        if isinstance(scoring, PytestScoring):
+        if isinstance(scoring, ScoringContract) and scoring.method == "exit_code":
             caps.add(Capability.CAN_MODIFY_CODE)
             caps.add(Capability.CAN_RUN_TESTS)
             caps.add(Capability.HAS_BUILDER)
-        elif isinstance(scoring, ExitCodeScoring):
-            caps.add(Capability.CAN_MODIFY_CODE)
-            caps.add(Capability.CAN_RUN_TESTS)
-            caps.add(Capability.HAS_BUILDER)
-        elif isinstance(scoring, ExactMatchScoring):
-            caps.add(Capability.CAN_RUN_SUBPROCESS)
 
         return cls(frozenset(caps))
 
