@@ -159,6 +159,23 @@ class TestVerify:
         assert "draws" in result.details
         assert "losses" in result.details
         assert "win_rate" in result.details
+        assert "blunder_count" in result.details
+        assert isinstance(result.details["blunder_count"], int)
+        assert "avg_eval" in result.details
+        assert isinstance(result.details["avg_eval"], float)
+        assert "total_moves" in result.details
+        assert isinstance(result.details["total_moves"], int)
+        assert result.details["total_moves"] > 0
+
+        games = result.details["games"]
+        assert len(games) == 2
+        for game in games:
+            assert "eval_curve" in game
+            assert "move_list" in game
+            assert isinstance(game["eval_curve"], list)
+            assert isinstance(game["move_list"], list)
+            assert len(game["eval_curve"]) == game["moves"]
+            assert len(game["move_list"]) == game["moves"]
 
     def test_identical_engines_draw(self, tmp_path: Path):
         """Same engine vs itself should roughly tie (score ~0.5)."""
@@ -385,6 +402,12 @@ class TestHelpers:
         assert "result" in result
         assert "moves" in result
         assert result["moves"] > 0
+        assert "eval_curve" in result
+        assert "move_list" in result
+        assert len(result["eval_curve"]) == result["moves"]
+        assert len(result["move_list"]) == result["moves"]
+        assert all(isinstance(e, int) for e in result["eval_curve"])
+        assert all(isinstance(m, str) for m in result["move_list"])
 
     def test_play_game_checkmate(self, tmp_path: Path):
         """Game ending in checkmate (not max_moves) — covers outcome branch."""
@@ -405,6 +428,8 @@ class TestHelpers:
         assert result["winner"] is not None or result["termination"] in (
             "STALEMATE", "INSUFFICIENT_MATERIAL", "stalemate", "insufficient_material",
         )
+        assert len(result["eval_curve"]) == result["moves"]
+        assert len(result["move_list"]) == result["moves"]
 
     def test_play_game_move_is_none(self, tmp_path: Path):
         """When engine returns None for a move, the game should end."""
