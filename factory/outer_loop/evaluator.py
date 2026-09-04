@@ -374,6 +374,23 @@ class SwarmEvaluator:
                 if "test_details" in summary_data:
                     details["test_details"] = summary_data["test_details"]
 
+            if isinstance(record.instance_results, list) and record.instance_results:
+                from factory.outer_loop.verify_adapter import (
+                    eval_result_from_verify_results,
+                )
+                from factory.task import VerifyResult
+
+                verify_results: list[VerifyResult] = []
+                for ir in record.instance_results:
+                    if isinstance(ir, dict):
+                        verify_results.append(VerifyResult(
+                            passed=bool(ir.get("passed", False)),
+                            score=float(ir.get("score", 0.0)),
+                            details=ir.get("details", {}),
+                        ))
+                adapted = eval_result_from_verify_results(verify_results)
+                details["verify"] = adapted.details
+
             return EvalResult(
                 score=composite,
                 benchmark_score=score,
