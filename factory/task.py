@@ -117,6 +117,16 @@ class Capability(StrEnum):
     CAN_ITERATE = "can_iterate"
 
 
+CAPABILITY_ALIASES: dict[str, Capability] = {
+    "codebase-analysis": Capability.HAS_RESEARCHER,
+    "code-generation": Capability.CAN_MODIFY_CODE,
+    "health-check": Capability.HAS_HEALTH_CHECK,
+    "code-review": Capability.HAS_CODE_REVIEW,
+    "adversarial-qa": Capability.HAS_ADVERSARIAL_QA,
+    "observation": Capability.HAS_RESEARCHER,
+}
+
+
 # ── Task Constraints ─────────────────────────────────────────────
 
 
