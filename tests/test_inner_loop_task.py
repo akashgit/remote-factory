@@ -134,6 +134,84 @@ class TestStepWithTask:
         assert record.instance_results == []
 
 
+class TestStepAggregatesMethods:
+    """Test non-default aggregation methods in _step_with_task (lines 300-320)."""
+
+    def _make_loop_with_aggregate(self, tmp_path: Path, aggregate_method: str, scores: list[float]):
+        """Helper: create InnerLoop with mocked task and patched aggregate."""
+        from unittest.mock import patch
+
+        from factory.models import AggregateMethod, InnerLoopConfig
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir(exist_ok=True)
+
+        task = MagicMock()
+        instances = [TaskInstance(id=f"i{i}") for i in range(len(scores))]
+        task.instances.return_value = instances
+        task.run.side_effect = [
+            VerifyResult(passed=s >= 0.5, score=s) for s in scores
+        ]
+        task.definition = TaskDefinition(name="mock", scoring=ExitCodeScoring())
+
+        loop = InnerLoop(project_dir=tmp_path, mode="test", task=task)
+
+        with patch("factory.models.InnerLoopConfig") as mock_config_cls:
+            mock_config = MagicMock(spec=InnerLoopConfig)
+            mock_config.aggregate = AggregateMethod(aggregate_method)
+            mock_config_cls.return_value = mock_config
+            record = loop.step()
+
+        return record
+
+    def test_step_aggregates_median(self, tmp_path: Path):
+        """AggregateMethod.median computes the median of scores."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "median", [0.2, 0.5, 0.9]
+        )
+        assert record.score_end == pytest.approx(0.5)
+
+    def test_step_aggregates_median_even(self, tmp_path: Path):
+        """Median with even number of scores averages the two middle values."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "median", [0.0, 0.4, 0.6, 1.0]
+        )
+        assert record.score_end == pytest.approx(0.5)
+
+    def test_step_aggregates_max(self, tmp_path: Path):
+        """AggregateMethod.max returns the highest score."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "max", [0.1, 0.3, 0.9]
+        )
+        assert record.score_end == pytest.approx(0.9)
+
+    def test_step_aggregates_max_single(self, tmp_path: Path):
+        """Max with a single score returns that score."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "max", [0.42]
+        )
+        assert record.score_end == pytest.approx(0.42)
+
+    def test_step_aggregates_all_pass_true(self, tmp_path: Path):
+        """AggregateMethod.all_pass returns 1.0 when all scores >= 1.0."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "all_pass", [1.0, 1.0, 1.0]
+        )
+        assert record.score_end == pytest.approx(1.0)
+
+    def test_step_aggregates_all_pass_false(self, tmp_path: Path):
+        """AggregateMethod.all_pass returns 0.0 when any score < 1.0."""
+        record = self._make_loop_with_aggregate(
+            tmp_path, "all_pass", [1.0, 0.9, 1.0]
+        )
+        assert record.score_end == pytest.approx(0.0)
+
+    def test_step_aggregates_all_pass_empty(self, tmp_path: Path):
+        """Empty scores with any aggregate returns 0.0."""
+        result = self._make_loop_with_aggregate(tmp_path, "all_pass", [])
+        assert result.score_end == pytest.approx(0.0)
+
+
 class TestCycleRecordInstanceResults:
     """CycleRecord.instance_results field."""
 

@@ -830,6 +830,184 @@ class TestEvaluatorRefAlignment:
         assert isinstance(evaluator, FeatureBenchEvaluator)
 
 
+class TestTaskRunSubprocess:
+    """Task.run() subprocess path — covers lines 516-547."""
+
+    def test_run_calls_hooks_in_order(self, tmp_path: Path, monkeypatch):
+        """run() calls setup(), prompt(), verify() in the correct order."""
+        import subprocess as sp
+
+        call_order: list[str] = []
+
+        class OrderTrackingTask(Task):
+            def setup(self, instance, workspace):
+                call_order.append("setup")
+
+            def prompt(self, instance):
+                call_order.append("prompt")
+                return "test prompt"
+
+            def verify(self, instance, workspace):
+                call_order.append("verify")
+                return VerifyResult(passed=True, score=1.0)
+
+        monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(args=a, returncode=0))
+
+        task = OrderTrackingTask(definition=TaskDefinition(name="order-test"))
+        result = task.run(TaskInstance(id="t1"), tmp_path)
+
+        assert call_order == ["setup", "prompt", "verify"]
+        assert result.passed is True
+
+    def test_run_passes_correct_command_args(self, tmp_path: Path, monkeypatch):
+        """run() passes correct command args to subprocess."""
+        import subprocess as sp
+        import sys
+
+        captured_cmd: list[str] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and len(cmd) > 3:
+                captured_cmd.extend(cmd)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        task = Task(definition=TaskDefinition(name="args-test", scoring=ExitCodeScoring()))
+        task.run(TaskInstance(id="t1"), tmp_path)
+
+        assert captured_cmd[0] == sys.executable
+        assert captured_cmd[1:3] == ["-m", "factory"]
+        assert "ceo" in captured_cmd
+        assert str(tmp_path) in captured_cmd
+        assert "--mode" in captured_cmd
+        assert "--headless" in captured_cmd
+        assert "--no-worktree" in captured_cmd
+
+    def test_run_defaults_to_improve_mode(self, tmp_path: Path, monkeypatch):
+        """run() defaults to 'improve' mode when workflow is None."""
+        import subprocess as sp
+
+        captured_cmd: list[str] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "--mode" in cmd:
+                captured_cmd.extend(cmd)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        task = Task(definition=TaskDefinition(name="mode-test", scoring=ExitCodeScoring()))
+        task.run(TaskInstance(id="t1"), tmp_path, workflow=None)
+
+        mode_idx = captured_cmd.index("--mode")
+        assert captured_cmd[mode_idx + 1] == "improve"
+
+    def test_run_uses_workflow_name_as_mode(self, tmp_path: Path, monkeypatch):
+        """run() uses workflow.name as the mode when workflow is provided."""
+        import subprocess as sp
+        from unittest.mock import MagicMock
+
+        captured_cmd: list[str] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "--mode" in cmd:
+                captured_cmd.extend(cmd)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        workflow = MagicMock()
+        workflow.name = "research"
+
+        task = Task(definition=TaskDefinition(name="wf-test", scoring=ExitCodeScoring()))
+        task.run(TaskInstance(id="t1"), tmp_path, workflow=workflow)
+
+        mode_idx = captured_cmd.index("--mode")
+        assert captured_cmd[mode_idx + 1] == "research"
+
+    def test_run_handles_timeout_expired(self, tmp_path: Path, monkeypatch):
+        """run() handles subprocess.TimeoutExpired gracefully."""
+        import subprocess as sp
+
+        call_count = {"subprocess": 0}
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "factory" in str(cmd):
+                call_count["subprocess"] += 1
+                raise sp.TimeoutExpired(cmd=cmd, timeout=600)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        verify_called = {"called": False}
+
+        class TimeoutTask(Task):
+            def verify(self, instance, workspace):
+                verify_called["called"] = True
+                return VerifyResult(passed=False, score=0.0)
+
+        task = TimeoutTask(definition=TaskDefinition(name="timeout-test", scoring=ExitCodeScoring()))
+        result = task.run(TaskInstance(id="t1"), tmp_path)
+
+        assert call_count["subprocess"] == 1
+        assert verify_called["called"]
+        assert isinstance(result, VerifyResult)
+
+    def test_run_handles_generic_exception(self, tmp_path: Path, monkeypatch):
+        """run() handles generic exceptions and still calls verify()."""
+        import subprocess as sp
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "factory" in str(cmd):
+                raise OSError("connection refused")
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        verify_called = {"called": False}
+
+        class ErrorTask(Task):
+            def verify(self, instance, workspace):
+                verify_called["called"] = True
+                return VerifyResult(passed=False, score=0.0)
+
+        task = ErrorTask(definition=TaskDefinition(name="err-test", scoring=ExitCodeScoring()))
+        result = task.run(TaskInstance(id="t1"), tmp_path)
+
+        assert verify_called["called"]
+        assert isinstance(result, VerifyResult)
+
+    def test_run_writes_and_cleans_prompt_file(self, tmp_path: Path, monkeypatch):
+        """run() writes prompt to a temp file and cleans it up."""
+        import subprocess as sp
+
+        prompt_file_during_run: list[Path] = []
+        prompt_existed: list[bool] = []
+
+        def fake_run(cmd, **kwargs):
+            if isinstance(cmd, list) and "--prompt" in cmd:
+                idx = cmd.index("--prompt")
+                p = Path(cmd[idx + 1])
+                prompt_file_during_run.append(p)
+                prompt_existed.append(p.exists())
+            return sp.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        defn = TaskDefinition(
+            name="prompt-test",
+            prompt_config=PromptConfig(text="Hello world"),
+            scoring=ExitCodeScoring(),
+        )
+        task = Task(definition=defn)
+        task.run(TaskInstance(id="t1"), tmp_path)
+
+        assert len(prompt_file_during_run) == 1
+        assert prompt_existed[0] is True
+        assert not prompt_file_during_run[0].exists()
+
+
 class TestTaskCreateNameDerivation:
     """Item 13: _cmd_task_create handles URLs with trailing slashes."""
 

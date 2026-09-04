@@ -385,3 +385,136 @@ class TestHelpers:
         assert "result" in result
         assert "moves" in result
         assert result["moves"] > 0
+
+    def test_play_game_checkmate(self, tmp_path: Path):
+        """Game ending in checkmate (not max_moves) — covers outcome branch."""
+        fen = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        engine_path = tmp_path / "e_cm.py"
+        engine_path.write_text(BASE_ENGINE_SOURCE)
+        mod = _load_engine_module(engine_path, "checkmate_test")
+
+        result = _play_game(
+            mod, mod,
+            depth_evolved=1, depth_base=1,
+            start_fen=fen,
+            max_moves=200,
+        )
+        assert result["termination"] != "max_moves"
+        assert result["winner"] is not None or result["termination"] in (
+            "STALEMATE", "INSUFFICIENT_MATERIAL", "stalemate", "insufficient_material",
+        )
+
+    def test_play_game_move_is_none(self, tmp_path: Path):
+        """When engine returns None for a move, the game should end."""
+        from unittest.mock import MagicMock
+
+        none_engine = MagicMock()
+        none_engine.best_move.return_value = None
+
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        base_path = tmp_path / "base_e.py"
+        base_path.write_text(BASE_ENGINE_SOURCE)
+        base_mod = _load_engine_module(base_path, "base_none_test")
+
+        result = _play_game(
+            none_engine, base_mod,
+            depth_evolved=1, depth_base=1,
+            start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            max_moves=80,
+        )
+        assert result["moves"] == 0
+        assert result["termination"] == "max_moves" or result["winner"] is None
+
+
+class TestVerifyEdgeCases:
+    """Verify edge cases — chess unavailable, engine load failure."""
+
+    def test_verify_chess_unavailable(self, tmp_path: Path):
+        """verify() returns score=0 when chess library is not available."""
+        from unittest.mock import patch
+
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={"depth": 1, "num_games": 2, "opening_fen": "x"},
+        )
+
+        with patch("factory.tasks.chess_evolve._ensure_chess_available", return_value=False):
+            result = t.verify(inst, tmp_path)
+
+        assert result.passed is False
+        assert result.score == 0.0
+        assert result.details.get("error") == "chess library not available"
+
+    def test_verify_engine_load_fails(self, tmp_path: Path):
+        """verify() returns score=0 when engine file is corrupt."""
+        t = ChessEvolveTask()
+        inst = TaskInstance(
+            id="depth1-startpos",
+            metadata={
+                "depth": 1,
+                "num_games": 2,
+                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            },
+        )
+
+        (tmp_path / "src").mkdir(parents=True)
+        (tmp_path / "base").mkdir(parents=True)
+        (tmp_path / "src" / "engine.py").write_text("this is not valid python !!@#$")
+        (tmp_path / "base" / "engine.py").write_text("also invalid !!@#$")
+
+        result = t.verify(inst, tmp_path)
+        assert result.passed is False
+        assert result.score == 0.0
+        assert "engine load failed" in result.details.get("error", "")
+
+
+class TestApplyMutation:
+    """_apply_mutation modifies engine source based on strategy."""
+
+    def test_apply_mutation_research_adds_pst(self, tmp_path: Path):
+        """'research' strategy adds piece-square tables to engine source."""
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        (tmp_path / "src").mkdir(parents=True)
+        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
+
+        t = ChessEvolveTask()
+        t._apply_mutation(tmp_path, "research")
+
+        source = (tmp_path / "src" / "engine.py").read_text()
+        assert "piece_square" in source or "PAWN_TABLE" in source
+
+    def test_apply_mutation_design_adds_pst(self, tmp_path: Path):
+        """'design' strategy also adds piece-square tables."""
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        (tmp_path / "src").mkdir(parents=True)
+        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
+
+        t = ChessEvolveTask()
+        t._apply_mutation(tmp_path, "design")
+
+        source = (tmp_path / "src" / "engine.py").read_text()
+        assert "PAWN_TABLE" in source
+
+    def test_apply_mutation_noop_for_improve(self, tmp_path: Path):
+        """'improve' strategy does not trigger mutation (handled by run())."""
+        from factory.tasks.chess_evolve import BASE_ENGINE_SOURCE
+
+        (tmp_path / "src").mkdir(parents=True)
+        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
+        original = (tmp_path / "src" / "engine.py").read_text()
+
+        t = ChessEvolveTask()
+        t._apply_mutation(tmp_path, "improve")
+
+        assert (tmp_path / "src" / "engine.py").read_text() == original
+
+    def test_apply_mutation_no_engine_file(self, tmp_path: Path):
+        """_apply_mutation is a no-op when engine file doesn't exist."""
+        t = ChessEvolveTask()
+        t._apply_mutation(tmp_path, "research")
