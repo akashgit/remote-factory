@@ -95,6 +95,7 @@ class CycleRecord:
     mutable_node_ids: list[str] = field(default_factory=list)
 
     instance_results: list[dict] | None = None
+    eval_details: dict[str, object] | None = None
 
 
 class CycleAnalyzer:

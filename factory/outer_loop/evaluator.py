@@ -391,6 +391,8 @@ class SwarmEvaluator:
                 adapted = eval_result_from_verify_results(verify_results)
                 details["verify"] = adapted.details
 
+            record.eval_details = details
+
             return EvalResult(
                 score=composite,
                 benchmark_score=score,
