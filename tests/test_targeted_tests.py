@@ -207,6 +207,8 @@ class TestFindDependentTests:
         nodes = [
             {"id": "mod_a", "source_file": "src/a.py"},
             {"id": "test_a", "source_file": "tests/test_a.py"},
+            # Unrelated tests to stay under fan-out threshold
+            *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
         ]
         edges = [
             {"source": "test_a", "target": "mod_a", "relation": "calls"},
@@ -214,7 +216,83 @@ class TestFindDependentTests:
         _make_graph(tmp_path, nodes, edges)
         result = find_dependent_tests(tmp_path, ["src/a.py"])
         assert result is not None
+        # BFS finds nothing (non-import edge), but naming convention catches test_a
+        assert "tests/test_a.py" in result
+        assert len(result) == 1
+
+
+class TestNamingConventionHeuristic:
+    """Tests for the naming-convention fallback that catches inline imports."""
+
+    @patch("factory.graph.is_graph_stale", return_value=False)
+    def test_naming_convention_adds_test_not_found_by_bfs(
+        self, _stale: MagicMock, tmp_path: Path,
+    ) -> None:
+        """A test file matching by name but with no import edge is added."""
+        nodes = [
+            {"id": "mod_runner", "source_file": "factory/runners/claude.py"},
+            {"id": "test_runner", "source_file": "tests/test_claude.py"},
+            # Unrelated tests to stay under fan-out
+            *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
+        ]
+        # No import edge from test_runner → mod_runner (simulates inline import)
+        edges: list[dict] = []
+        _make_graph(tmp_path, nodes, edges)
+        result = find_dependent_tests(tmp_path, ["factory/runners/claude.py"])
+        assert result is not None
+        assert "tests/test_claude.py" in result
+
+    @patch("factory.graph.is_graph_stale", return_value=False)
+    def test_naming_convention_no_duplicates(
+        self, _stale: MagicMock, tmp_path: Path,
+    ) -> None:
+        """A test already found by BFS is not duplicated."""
+        nodes = [
+            {"id": "mod_a", "source_file": "factory/a.py"},
+            {"id": "test_a", "source_file": "tests/test_a.py"},
+            *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
+        ]
+        edges = [
+            {"source": "test_a", "target": "mod_a", "relation": "imports"},
+        ]
+        _make_graph(tmp_path, nodes, edges)
+        result = find_dependent_tests(tmp_path, ["factory/a.py"])
+        assert result is not None
+        assert "tests/test_a.py" in result
+        assert len([t for t in result if t == "tests/test_a.py"]) == 1
+
+    @patch("factory.graph.is_graph_stale", return_value=False)
+    def test_naming_convention_only_existing_files(
+        self, _stale: MagicMock, tmp_path: Path,
+    ) -> None:
+        """A naming match that doesn't exist in the graph's test set is ignored."""
+        nodes = [
+            {"id": "mod_z", "source_file": "factory/z.py"},
+            # tests/test_z.py does NOT exist in the graph
+            *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
+        ]
+        edges: list[dict] = []
+        _make_graph(tmp_path, nodes, edges)
+        result = find_dependent_tests(tmp_path, ["factory/z.py"])
+        assert result is not None
+        assert "tests/test_z.py" not in result
         assert len(result) == 0
+
+    @patch("factory.graph.is_graph_stale", return_value=False)
+    def test_naming_convention_path_preserving_match(
+        self, _stale: MagicMock, tmp_path: Path,
+    ) -> None:
+        """Path-preserving pattern tests/test_subdir/test_module.py is matched."""
+        nodes = [
+            {"id": "mod_mutations", "source_file": "factory/outer_loop/mutations.py"},
+            {"id": "test_mutations", "source_file": "tests/test_outer_loop/test_mutations.py"},
+            *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
+        ]
+        edges: list[dict] = []
+        _make_graph(tmp_path, nodes, edges)
+        result = find_dependent_tests(tmp_path, ["factory/outer_loop/mutations.py"])
+        assert result is not None
+        assert "tests/test_outer_loop/test_mutations.py" in result
 
 
 class TestPythonEvaluatorTestPaths:

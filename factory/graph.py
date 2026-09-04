@@ -245,6 +245,31 @@ def find_dependent_tests(
         if cf in all_test_files:
             dependent_test_files.add(cf)
 
+    # Naming-convention heuristic: catch tests that only import inline
+    for cf in changed_files:
+        if not cf.endswith(".py"):
+            continue
+        parts = Path(cf).parts
+        if len(parts) < 2:
+            continue
+        stem = Path(cf).stem
+        candidates: list[str] = []
+        # Basename match: tests/test_<stem>.py
+        candidates.append(f"tests/test_{stem}.py")
+        # Path-preserving match: tests/test_<dir>/test_<stem>.py
+        if len(parts) > 2:
+            inner_dirs = parts[1:-1]
+            sub = "/".join(f"test_{d}" for d in inner_dirs)
+            candidates.append(f"tests/{sub}/test_{stem}.py")
+        for candidate in candidates:
+            if candidate in all_test_files and candidate not in dependent_test_files:
+                dependent_test_files.add(candidate)
+                log.info(
+                    "targeted.naming_convention_match",
+                    changed_file=cf,
+                    test_file=candidate,
+                )
+
     if not dependent_test_files:
         return dependent_test_files
 
