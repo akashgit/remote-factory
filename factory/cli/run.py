@@ -20,6 +20,7 @@ from factory.cli._helpers import (
     _ensure_dashboard,
     _print_banner,
     _read_target_branch,
+    _resolve_inactivity_timeout,
     _run,
     warn_deprecated_mode,
 )
@@ -141,7 +142,7 @@ def _run_single_cycle(
                 "ceo",
                 task,
                 wt_path,
-                timeout=7200.0,
+                timeout=_resolve_inactivity_timeout(),
                 dangerously_skip_permissions=True,
                 model=model,
                 use_profile=use_profile,

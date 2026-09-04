@@ -27,6 +27,12 @@ DEAD_MODES: dict[str, str] = {
 
 DESIGN_MODES = ("design", "design-v2")
 
+
+def _resolve_inactivity_timeout() -> float:
+    """Resolve sub-agent inactivity timeout from env or default (7200s)."""
+    return float(os.environ.get('FACTORY_AGENT_INACTIVITY_TIMEOUT', '7200'))
+
+
 CEO_MODES = [
     "auto",
     "auto-fresh",

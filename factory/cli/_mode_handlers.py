@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from factory.cli._helpers import _print_banner, _resolve_runner, _run
+from factory.cli._helpers import _print_banner, _resolve_inactivity_timeout, _resolve_runner, _run
 
 
 def _resolve_model(args: argparse.Namespace) -> str | None:
@@ -179,7 +179,7 @@ def handle_review_mode(
             mode="review",
             runner_name=runner_name,
             model=model,
-            timeout=7200.0,
+            timeout=_resolve_inactivity_timeout(),
             max_respawns=1,
         )
     )
@@ -278,7 +278,7 @@ def handle_deep_qa_mode(
             mode="deep-qa",
             runner_name=runner_name,
             model=model,
-            timeout=7200.0,
+            timeout=_resolve_inactivity_timeout(),
             max_respawns=1,
         )
     )

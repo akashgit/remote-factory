@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from factory.cli._helpers import _resolve_inactivity_timeout
+
 if TYPE_CHECKING:
     from factory.outer_loop.evaluator import CycleRecord
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
@@ -175,7 +177,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
                     id="builder",
                     role=AgentRole.BUILDER,
                     model="opus",
-                    timeout=7200,
+                    timeout=int(_resolve_inactivity_timeout()),
                     writes={".factory/reviews/builder-latest.md"},
                 ),
             },
