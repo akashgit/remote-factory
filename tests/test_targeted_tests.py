@@ -216,37 +216,40 @@ class TestFindDependentTests:
         _make_graph(tmp_path, nodes, edges)
         result = find_dependent_tests(tmp_path, ["src/a.py"])
         assert result is not None
-        # BFS finds nothing (non-import edge), but naming convention catches test_a
-        assert "tests/test_a.py" in result
-        assert len(result) == 1
+        assert len(result) == 0
 
 
-class TestNamingConventionHeuristic:
-    """Tests for the naming-convention fallback that catches inline imports."""
+class TestGrepInlineImportScan:
+    """Tests for the grep-based inline import scan that catches inline imports."""
 
     @patch("factory.graph.is_graph_stale", return_value=False)
-    def test_naming_convention_adds_test_not_found_by_bfs(
+    def test_grep_finds_test_with_inline_import_not_found_by_bfs(
         self, _stale: MagicMock, tmp_path: Path,
     ) -> None:
-        """A test file matching by name but with no import edge is added."""
+        """A test file with an inline import (not in graph edges) is found by grep."""
         nodes = [
             {"id": "mod_runner", "source_file": "factory/runners/claude.py"},
             {"id": "test_runner", "source_file": "tests/test_claude.py"},
-            # Unrelated tests to stay under fan-out
             *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
         ]
-        # No import edge from test_runner → mod_runner (simulates inline import)
         edges: list[dict] = []
         _make_graph(tmp_path, nodes, edges)
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_claude.py").write_text(
+            "def test_it():\n    from factory.runners.claude import run\n    run()\n"
+        )
+        for i in range(10):
+            (tests_dir / f"test_u{i}.py").write_text("def test_pass(): pass\n")
         result = find_dependent_tests(tmp_path, ["factory/runners/claude.py"])
         assert result is not None
         assert "tests/test_claude.py" in result
 
     @patch("factory.graph.is_graph_stale", return_value=False)
-    def test_naming_convention_no_duplicates(
+    def test_grep_does_not_duplicate_bfs_results(
         self, _stale: MagicMock, tmp_path: Path,
     ) -> None:
-        """A test already found by BFS is not duplicated."""
+        """A test already found by BFS is not duplicated by grep."""
         nodes = [
             {"id": "mod_a", "source_file": "factory/a.py"},
             {"id": "test_a", "source_file": "tests/test_a.py"},
@@ -256,43 +259,54 @@ class TestNamingConventionHeuristic:
             {"source": "test_a", "target": "mod_a", "relation": "imports"},
         ]
         _make_graph(tmp_path, nodes, edges)
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_a.py").write_text("import factory.a\n")
+        for i in range(10):
+            (tests_dir / f"test_u{i}.py").write_text("def test_pass(): pass\n")
         result = find_dependent_tests(tmp_path, ["factory/a.py"])
         assert result is not None
         assert "tests/test_a.py" in result
         assert len([t for t in result if t == "tests/test_a.py"]) == 1
 
     @patch("factory.graph.is_graph_stale", return_value=False)
-    def test_naming_convention_only_existing_files(
+    def test_grep_failure_silently_skipped(
         self, _stale: MagicMock, tmp_path: Path,
     ) -> None:
-        """A naming match that doesn't exist in the graph's test set is ignored."""
+        """If grep fails (e.g. subprocess error), the function still returns a set, not None."""
         nodes = [
-            {"id": "mod_z", "source_file": "factory/z.py"},
-            # tests/test_z.py does NOT exist in the graph
+            {"id": "mod_a", "source_file": "factory/a.py"},
             *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
         ]
         edges: list[dict] = []
         _make_graph(tmp_path, nodes, edges)
-        result = find_dependent_tests(tmp_path, ["factory/z.py"])
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        for i in range(10):
+            (tests_dir / f"test_u{i}.py").write_text("def test_pass(): pass\n")
+        with patch("factory.graph.subprocess.run", side_effect=OSError("grep not found")):
+            result = find_dependent_tests(tmp_path, ["factory/a.py"])
         assert result is not None
-        assert "tests/test_z.py" not in result
-        assert len(result) == 0
+        assert isinstance(result, set)
 
     @patch("factory.graph.is_graph_stale", return_value=False)
-    def test_naming_convention_path_preserving_match(
+    def test_grep_skips_non_python_changed_files(
         self, _stale: MagicMock, tmp_path: Path,
     ) -> None:
-        """Path-preserving pattern tests/test_subdir/test_module.py is matched."""
+        """Non-.py changed files are not processed by the grep scan."""
         nodes = [
-            {"id": "mod_mutations", "source_file": "factory/outer_loop/mutations.py"},
-            {"id": "test_mutations", "source_file": "tests/test_outer_loop/test_mutations.py"},
+            {"id": "mod_readme", "source_file": "factory/README.md"},
+            {"id": "mod_a", "source_file": "factory/a.py"},
             *[{"id": f"test_u{i}", "source_file": f"tests/test_u{i}.py"} for i in range(10)],
         ]
         edges: list[dict] = []
         _make_graph(tmp_path, nodes, edges)
-        result = find_dependent_tests(tmp_path, ["factory/outer_loop/mutations.py"])
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        for i in range(10):
+            (tests_dir / f"test_u{i}.py").write_text("def test_pass(): pass\n")
+        result = find_dependent_tests(tmp_path, ["factory/a.py", "factory/README.md"])
         assert result is not None
-        assert "tests/test_outer_loop/test_mutations.py" in result
 
 
 class TestPythonEvaluatorTestPaths:
