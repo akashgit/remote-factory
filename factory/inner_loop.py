@@ -257,6 +257,7 @@ class InnerLoop:
 
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Task-driven step: iterate instances, call task.run(), aggregate."""
+        assert self.task is not None  # caller guarantees
         import statistics
 
         from factory.models import AggregateMethod, InnerLoopConfig
