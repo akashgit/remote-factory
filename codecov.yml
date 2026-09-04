@@ -13,3 +13,5 @@ ignore:
   - "docs/"
   - "factory/outer_loop/evaluators/"
   - "factory/outer_loop/featurebench_inner_loop.py"
+  - "factory/outer_loop/featurebench_evaluator.py"
+  - "factory/outer_loop/benchmark_inner_loop.py"
