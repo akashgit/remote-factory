@@ -31,6 +31,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    NodeType,
     Study,
     VerdictType,
     Workflow,
@@ -78,7 +79,7 @@ def study_package(*, focus: str | None = None) -> Package:
         writes={".factory/strategy/study-combined.md"},
     )
 
-    nodes = {
+    nodes: dict[str, NodeType] = {
         "graph_update": graph_update,
         "study": study,
         "graph_explorer": graph_explorer,
@@ -124,7 +125,7 @@ def research_package(
     preceding study phase.
     """
     researcher_ids = [f"researcher_{r.id}" for r in researchers]
-    nodes: dict = {}
+    nodes: dict[str, NodeType] = {}
 
     nodes["fork_research"] = ForkNode(
         id="fork_research", targets=researcher_ids,
@@ -272,7 +273,7 @@ def strategy_package(
         blocking=False,
     )
 
-    nodes = {
+    nodes: dict[str, NodeType] = {
         "strategist": strategist,
         "gate_strategy": gate_strategy,
         "archivist_plan": archivist_plan,
@@ -340,7 +341,7 @@ def build_package() -> Package:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes = {"builder": builder, "gate_build": gate_build}
+    nodes: dict[str, NodeType] = {"builder": builder, "gate_build": gate_build}
     edges = [
         Edge(source="builder", target="gate_build"),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
@@ -438,7 +439,7 @@ def qa_package() -> Package:
         notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
     )
 
-    nodes = {
+    nodes: dict[str, NodeType] = {
         "fork_qa": fork_qa,
         "health_checker": health_checker,
         "code_reviewer": code_reviewer,
@@ -586,7 +587,7 @@ def discovery_package() -> Package:
     )
 
     # Bootstrap path: discover → gate_factory_md → [create_factory_md →] factory_init
-    bootstrap_nodes = {
+    bootstrap_nodes: dict[str, NodeType] = {
         "discover": discover,
         "gate_factory_md_exists": gate_factory_md,
         "create_factory_md": create_factory_md,
@@ -604,7 +605,7 @@ def discovery_package() -> Package:
         command='echo "Factory config exists, skipping bootstrap"',
     )
 
-    all_nodes = {
+    all_nodes: dict[str, NodeType] = {
         "gate_has_factory": gate_has_factory,
         "skip_bootstrap": skip_node,
         **bootstrap_nodes,
