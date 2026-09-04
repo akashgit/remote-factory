@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -255,3 +256,297 @@ class TestPythonEvaluatorTestPaths:
             ev.run_tests(Path("/fake"), timeout=60, test_paths=["tests/test_x.py"])
             cmd = mock_run.call_args[0][0]
             assert "tests/test_x.py" in cmd
+
+
+# ── CLI integration: _compute_targeted_test_paths ──────────────────
+
+
+def _make_merge_base_result(returncode: int = 0, stdout: str = "abc123\n") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(
+        args=["git", "merge-base", "HEAD", "main"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr="",
+    )
+
+
+def _make_diff_result(returncode: int = 0, stdout: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(
+        args=["git", "diff", "--name-only", "abc123..HEAD"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr="",
+    )
+
+
+class TestComputeTargetedTestPaths:
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.graph.find_dependent_tests", return_value={"tests/test_a.py", "tests/test_b.py"})
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_success_path(
+        self, mock_run: MagicMock, mock_find: MagicMock, _branch: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(stdout="abc123\n"),
+            _make_diff_result(stdout="src/foo.py\nsrc/bar.py\n"),
+        ]
+        result = _compute_targeted_test_paths(tmp_path)
+        assert result == ["tests/test_a.py", "tests/test_b.py"]
+        mock_find.assert_called_once_with(tmp_path, ["src/foo.py", "src/bar.py"])
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_merge_base_fails(self, mock_run: MagicMock, _branch: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.return_value = _make_merge_base_result(returncode=1)
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_diff_fails(self, mock_run: MagicMock, _branch: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(),
+            _make_diff_result(returncode=1),
+        ]
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_merge_base_timeout(self, mock_run: MagicMock, _branch: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=10)
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_diff_timeout(self, mock_run: MagicMock, _branch: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(),
+            subprocess.TimeoutExpired(cmd=["git"], timeout=10),
+        ]
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_empty_changed_files(self, mock_run: MagicMock, _branch: MagicMock, tmp_path: Path) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(),
+            _make_diff_result(stdout="\n"),
+        ]
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.graph.find_dependent_tests", return_value=None)
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_find_dependent_tests_returns_none(
+        self, mock_run: MagicMock, mock_find: MagicMock, _branch: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(),
+            _make_diff_result(stdout="src/foo.py\n"),
+        ]
+        assert _compute_targeted_test_paths(tmp_path) is None
+
+    @patch("factory.cli.eval_cmds._read_target_branch", return_value="main")
+    @patch("factory.graph.find_dependent_tests", return_value={"tests/test_x.py"})
+    @patch("factory.cli.eval_cmds.subprocess.run")
+    def test_result_is_sorted(
+        self, mock_run: MagicMock, _find: MagicMock, _branch: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import _compute_targeted_test_paths
+
+        mock_run.side_effect = [
+            _make_merge_base_result(),
+            _make_diff_result(stdout="src/z.py\n"),
+        ]
+        result = _compute_targeted_test_paths(tmp_path)
+        assert result == sorted(result)
+
+
+# ── Hygiene: _collect_test_and_coverage inspect.signature guard ────
+
+
+class TestCollectTestAndCoverageSignatureGuard:
+    def test_passes_test_paths_when_evaluator_supports_it(self, tmp_path: Path) -> None:
+        from factory.eval.hygiene import _collect_test_and_coverage
+        from factory.eval.languages.base import EvalFragment
+
+        mock_evaluator = MagicMock()
+        captured_kwargs: dict = {}
+
+        def fake_run_tests_with_coverage(
+            project_path: Path, timeout: int = 300, test_paths: list[str] | None = None,
+        ) -> tuple:
+            captured_kwargs["test_paths"] = test_paths
+            return (
+                EvalFragment(passed=10, failed=0, score=1.0, details="ok"),
+                EvalFragment(passed=10, failed=0, score=0.9, details="ok", coverage_pct=90.0),
+            )
+
+        mock_evaluator.run_tests_with_coverage = fake_run_tests_with_coverage
+
+        with patch("factory.eval.hygiene._find_sub_projects", return_value=[tmp_path]), \
+             patch("factory.eval.hygiene.detect_languages", return_value=[mock_evaluator]):
+            test_result, cov_result = _collect_test_and_coverage(
+                tmp_path, test_paths=["tests/test_a.py"],
+            )
+        assert test_result["score"] == 1.0
+        assert cov_result["score"] == 0.9
+        assert captured_kwargs["test_paths"] == ["tests/test_a.py"]
+
+    def test_omits_test_paths_when_evaluator_lacks_param(self, tmp_path: Path) -> None:
+        from factory.eval.hygiene import _collect_test_and_coverage
+        from factory.eval.languages.base import EvalFragment
+
+        mock_evaluator = MagicMock()
+        captured_kwargs: dict = {}
+
+        def fake_run_tests_with_coverage(project_path: Path, timeout: int = 300) -> tuple:
+            captured_kwargs["timeout"] = timeout
+            return (
+                EvalFragment(passed=8, failed=2, score=0.8, details="ok"),
+                EvalFragment(passed=7, failed=3, score=0.7, details="ok", coverage_pct=70.0),
+            )
+
+        mock_evaluator.run_tests_with_coverage = fake_run_tests_with_coverage
+
+        with patch("factory.eval.hygiene._find_sub_projects", return_value=[tmp_path]), \
+             patch("factory.eval.hygiene.detect_languages", return_value=[mock_evaluator]):
+            test_result, cov_result = _collect_test_and_coverage(
+                tmp_path, test_paths=["tests/test_a.py"],
+            )
+        assert test_result["score"] == 0.8
+        assert "test_paths" not in captured_kwargs
+
+    def test_no_test_paths_skips_signature_check(self, tmp_path: Path) -> None:
+        from factory.eval.hygiene import _collect_test_and_coverage
+        from factory.eval.languages.base import EvalFragment
+
+        mock_evaluator = MagicMock()
+
+        def fake_run_tests_with_coverage(project_path: Path, timeout: int = 300) -> tuple:
+            return (
+                EvalFragment(passed=10, failed=0, score=1.0, details="ok"),
+                None,
+            )
+
+        mock_evaluator.run_tests_with_coverage = fake_run_tests_with_coverage
+
+        with patch("factory.eval.hygiene._find_sub_projects", return_value=[tmp_path]), \
+             patch("factory.eval.hygiene.detect_languages", return_value=[mock_evaluator]):
+            test_result, cov_result = _collect_test_and_coverage(tmp_path)
+        assert test_result["score"] == 1.0
+        assert cov_result["score"] == 0.5  # neutral — no coverage fragment
+
+
+# ── cmd_eval --targeted flag wiring ────────────────────────────────
+
+
+class TestCmdEvalTargetedFlag:
+    @patch("factory.cli.eval_cmds._emit_cli_event")
+    @patch("factory.cli.eval_cmds._run")
+    @patch("factory.cli.eval_cmds._compute_targeted_test_paths", return_value=["tests/test_a.py"])
+    def test_targeted_flag_passes_test_paths_to_run_eval(
+        self, mock_compute: MagicMock, mock_run: MagicMock, _event: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import cmd_eval
+
+        mock_config = MagicMock()
+        mock_config.eval_command = "pytest"
+        mock_config.project_eval = None
+        mock_config.eval_weights = None
+        mock_config.eval_threshold = 0.7
+        mock_config.test_timeout = 300
+
+        mock_score = MagicMock()
+        mock_score.total = 0.9
+        mock_score.passed = True
+        mock_score.results = []
+        mock_score.model_dump.return_value = {"total": 0.9}
+
+        mock_run.side_effect = [mock_config, mock_score]
+
+        args = MagicMock()
+        args.path = str(tmp_path)
+        args.targeted = True
+        args.skip_project_eval = False
+
+        result = cmd_eval(args)
+        assert result == 0
+        mock_compute.assert_called_once_with(tmp_path)
+
+    @patch("factory.cli.eval_cmds._emit_cli_event")
+    @patch("factory.cli.eval_cmds._run")
+    @patch("factory.cli.eval_cmds._compute_targeted_test_paths", return_value=None)
+    def test_targeted_fallback_to_full(
+        self, mock_compute: MagicMock, mock_run: MagicMock, _event: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import cmd_eval
+
+        mock_config = MagicMock()
+        mock_config.eval_command = "pytest"
+        mock_config.project_eval = None
+        mock_config.eval_weights = None
+        mock_config.eval_threshold = 0.7
+        mock_config.test_timeout = 300
+
+        mock_score = MagicMock()
+        mock_score.total = 0.85
+        mock_score.passed = True
+        mock_score.results = []
+        mock_score.model_dump.return_value = {"total": 0.85}
+
+        mock_run.side_effect = [mock_config, mock_score]
+
+        args = MagicMock()
+        args.path = str(tmp_path)
+        args.targeted = True
+        args.skip_project_eval = False
+
+        result = cmd_eval(args)
+        assert result == 0
+        mock_compute.assert_called_once()
+
+    @patch("factory.cli.eval_cmds._emit_cli_event")
+    @patch("factory.cli.eval_cmds._run")
+    def test_no_targeted_flag_skips_compute(
+        self, mock_run: MagicMock, _event: MagicMock, tmp_path: Path,
+    ) -> None:
+        from factory.cli.eval_cmds import cmd_eval
+
+        mock_config = MagicMock()
+        mock_config.eval_command = "pytest"
+        mock_config.project_eval = None
+        mock_config.eval_weights = None
+        mock_config.eval_threshold = 0.7
+        mock_config.test_timeout = 300
+
+        mock_score = MagicMock()
+        mock_score.total = 0.9
+        mock_score.passed = True
+        mock_score.results = []
+        mock_score.model_dump.return_value = {"total": 0.9}
+
+        mock_run.side_effect = [mock_config, mock_score]
+
+        args = MagicMock()
+        args.path = str(tmp_path)
+        args.targeted = False
+        args.skip_project_eval = False
+
+        with patch("factory.cli.eval_cmds._compute_targeted_test_paths") as mock_compute:
+            result = cmd_eval(args)
+            mock_compute.assert_not_called()
+        assert result == 0
