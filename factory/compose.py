@@ -127,7 +127,7 @@ class ModeCapabilities:
             elif isinstance(node, FnNode):
                 caps.add(Capability.CAN_RUN_SUBPROCESS)
 
-        declared = getattr(workflow, "declared_capabilities", frozenset())
+        declared: frozenset[str] = getattr(workflow, "declared_capabilities", frozenset())
         if declared:
             for cap_str in declared:
                 mapped = CAPABILITY_ALIASES.get(cap_str)
