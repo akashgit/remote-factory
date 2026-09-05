@@ -948,6 +948,23 @@ class WorkflowExecutor:
             reloop_targets=", ".join(reloop_targets) if reloop_targets else "(use exact node IDs)",
         )
 
+    @staticmethod
+    def _strip_markdown_decorators(line: str) -> str:
+        """Strip leading/trailing markdown formatting from a verdict line."""
+        import re
+
+        s = line.strip()
+        prev = None
+        while s != prev:
+            prev = s
+            s = re.sub(r"^#{1,6}\s+", "", s)
+            s = re.sub(r"^>\s?", "", s)
+            s = re.sub(r"^(?:\d+\.\s+|[-*]\s+)", "", s)
+            s = re.sub(r"^(`{1,3})|(`{1,3})$", "", s)
+            s = re.sub(r"^(\*{1,3}|_{1,3})|(\*{1,3}|_{1,3})$", "", s)
+            s = s.strip()
+        return s
+
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse agent output into a Verdict by examining the last non-empty line."""
         import re
@@ -959,7 +976,7 @@ class WorkflowExecutor:
                 last_line = line.strip()
                 break
 
-        text = last_line.upper()
+        text = self._strip_markdown_decorators(last_line).upper()
 
         if text.startswith("HALT") or re.match(r"^HALT\b", text):
             reason_match = re.search(r'REASON="([^"]+)"', last_line, re.IGNORECASE)
@@ -995,7 +1012,7 @@ class WorkflowExecutor:
                 break
 
         if first_line and first_line != last_line:
-            ft = first_line.upper()
+            ft = self._strip_markdown_decorators(first_line).upper()
 
             if ft.startswith("HALT") or re.match(r"^HALT\b", ft):
                 reason_match = re.search(r'REASON="([^"]+)"', first_line, re.IGNORECASE)

@@ -579,6 +579,58 @@ class TestGateVerdictFailClosed:
         assert verdict.target == "a"
         assert verdict.feedback == "try again"
 
+    def test_agent_bold_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("**PROCEED**", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_italic_reloop(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            '*RELOOP target="node_a" feedback="try again"*', "gate"
+        )
+        assert verdict.type == VerdictType.RELOOP
+
+    def test_agent_underscore_bold_halt(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            '__HALT reason="failed"__', "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+        assert verdict.reason == "failed"
+
+    def test_agent_backtick_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("`PROCEED`", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_heading_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("## PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_blockquote_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("> PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_list_marker_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("- PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_numbered_list_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("1. PROCEED", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_bold_backtick_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("**`PROCEED`**", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_triple_star_proceed(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict("***PROCEED***", "gate")
+        assert verdict.type == VerdictType.PROCEED
+
+    def test_agent_triple_underscore_halt(self) -> None:
+        verdict = _make_gate_executor()._parse_agent_verdict(
+            '___HALT reason="failed"___', "gate"
+        )
+        assert verdict.type == VerdictType.HALT
+        assert verdict.reason == "failed"
+
     def test_fn_pass_proceeds(self) -> None:
         verdict = _make_gate_executor()._parse_fn_verdict("pass", "gate")
         assert verdict.type == VerdictType.PROCEED
