@@ -453,6 +453,89 @@ class TestBackwardCompat:
         assert task.name == "research-speed_ms"
 
 
+# ── TaskRef tests ──────────────────────────────────────────────
+
+
+class TestTaskRef:
+    def test_task_ref_resolve_valid(self):
+        """TaskRef resolves a valid Task subclass."""
+        from factory.task import TaskRef
+
+        ref = TaskRef(ref="factory.task:Task")
+        task = ref.resolve()
+        assert isinstance(task, Task)
+
+    def test_task_ref_resolve_bad_module(self):
+        """TaskRef raises ImportError on non-existent module."""
+        from factory.task import TaskRef
+
+        ref = TaskRef(ref="nonexistent.module:SomeTask")
+        with pytest.raises(ImportError, match="Could not import module"):
+            ref.resolve()
+
+    def test_task_ref_resolve_bad_class(self):
+        """TaskRef raises ImportError on valid module but missing class."""
+        from factory.task import TaskRef
+
+        ref = TaskRef(ref="factory.task:NonExistentClass")
+        with pytest.raises(ImportError, match="has no attribute"):
+            ref.resolve()
+
+    def test_task_ref_resolve_no_colon(self):
+        """TaskRef raises ValueError on malformed ref without ':'."""
+        from factory.task import TaskRef
+
+        ref = TaskRef(ref="factory.task.Task")
+        with pytest.raises(ValueError, match="Expected 'module.path:ClassName'"):
+            ref.resolve()
+
+    def test_task_ref_resolve_not_task_subclass(self):
+        """TaskRef raises TypeError when resolved class is not a Task subclass."""
+        from factory.task import TaskRef
+
+        ref = TaskRef(ref="factory.task:EvaluatorRef")
+        with pytest.raises(TypeError, match="not a Task subclass"):
+            ref.resolve()
+
+    def test_swarm_config_get_task_from_task_module(self):
+        """SwarmConfig.get_task() resolves task_module when set."""
+        from factory.outer_loop.models import SwarmConfig
+
+        config = SwarmConfig(
+            benchmark="test",
+            budget=10,
+            task_module="factory.task:Task",
+        )
+        task = config.get_task()
+        assert isinstance(task, Task)
+
+    def test_swarm_config_get_task_precedence(self):
+        """set_task() wins over task_module."""
+        from factory.outer_loop.models import SwarmConfig
+
+        config = SwarmConfig(
+            benchmark="test",
+            budget=10,
+            task_module="factory.task:Task",
+        )
+        explicit = Task.from_legacy(name="explicit")
+        config.set_task(explicit)
+        assert config.get_task() is explicit
+
+    def test_swarm_config_task_module_serializes(self):
+        """task_module survives model_dump → SwarmConfig round-trip."""
+        from factory.outer_loop.models import SwarmConfig
+
+        config = SwarmConfig(
+            benchmark="test",
+            budget=10,
+            task_module="my_project.task:MyTask",
+        )
+        data = config.model_dump(mode="json")
+        restored = SwarmConfig(**data)
+        assert restored.task_module == "my_project.task:MyTask"
+
+
 # ── Task independence test ───────────────────────────────────────
 
 

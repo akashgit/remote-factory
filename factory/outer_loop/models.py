@@ -111,6 +111,7 @@ class SwarmConfig(BaseModel):
     instance_format: str = "directory"
     prep_command: str = ""
     early_stop_unchanged: int = 3
+    task_module: str = ""
 
     @field_validator("holdout_instances")
     @classmethod
@@ -133,12 +134,20 @@ class SwarmConfig(BaseModel):
         object.__setattr__(self, "_task", task)
 
     def get_task(self) -> Any:
-        """Return explicit task, or construct one from flat fields (cached).
+        """Return task via 3-tier precedence: set_task() > task_module > from_legacy().
 
         Uses lazy import to avoid circular dependency.
         """
         if self._task is not None:
             return self._task
+
+        if self.task_module:
+            from factory.task import TaskRef
+
+            task = TaskRef(ref=self.task_module).resolve()
+            object.__setattr__(self, "_task", task)
+            return task
+
         from factory.task import Task
 
         task = Task.from_legacy(

@@ -157,6 +157,50 @@ class EvaluatorRef(BaseModel):
         return cls()
 
 
+# ── Task Reference ─────────────────────────────────────────────
+
+
+class TaskRef(BaseModel):
+    """Serialisable reference to a Task class via 'module.path:ClassName'."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ref: str = ""
+
+    def resolve(self) -> Task:
+        """Dynamically import and return a Task instance.
+
+        Split error handling (Django pattern): ImportError for module-not-found,
+        separate ImportError for class-not-found in module.
+        """
+        import importlib
+
+        if ":" not in self.ref:
+            raise ValueError(
+                f"Invalid task ref {self.ref!r}. "
+                f"Expected 'module.path:ClassName' format."
+            )
+        module_path, class_name = self.ref.rsplit(":", 1)
+        try:
+            mod = importlib.import_module(module_path)
+        except ImportError as exc:
+            raise ImportError(
+                f"Could not import module {module_path!r} from task ref {self.ref!r}. "
+                f"Ensure the package is installed (e.g. pip install -e <project>)."
+            ) from exc
+        cls = getattr(mod, class_name, None)
+        if cls is None:
+            raise ImportError(
+                f"Module {module_path!r} has no attribute {class_name!r} "
+                f"(from task ref {self.ref!r})."
+            )
+        if not (isinstance(cls, type) and issubclass(cls, Task)):
+            raise TypeError(
+                f"{self.ref!r} resolved to {cls!r}, which is not a Task subclass."
+            )
+        return cls()
+
+
 # ── Instances / Setup / Prompt / Verify config sections ──────────
 
 
