@@ -14,7 +14,7 @@ class SubsetSelector(Protocol):
     """Protocol for selecting which benchmark instances to evaluate per generation."""
 
     def select(
-        self, all_instances: list[str], generation: int, budget_remaining: int
+        self, all_instances: list[str], generation: int = 0, budget_remaining: int = 0
     ) -> list[str]: ...
 
 
@@ -25,6 +25,6 @@ class FixedSubsetSelector:
         self._training_instances = list(training_instances)
 
     def select(
-        self, all_instances: list[str], generation: int, budget_remaining: int
+        self, all_instances: list[str], generation: int = 0, budget_remaining: int = 0
     ) -> list[str]:
         return list(self._training_instances)
