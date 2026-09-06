@@ -87,8 +87,8 @@ class CycleRecordCache:
                 if not line:
                     continue
                 try:
-                    entry = json.loads(line)
-                    existing_hashes.add(entry.get("workflow_hash", ""))
+                    existing = json.loads(line)
+                    existing_hashes.add(existing.get("workflow_hash", ""))
                 except json.JSONDecodeError:
                     continue
 
@@ -96,7 +96,7 @@ class CycleRecordCache:
         for wf_hash, record in self._cache.items():
             if wf_hash in existing_hashes:
                 continue
-            entry = {
+            entry: dict[str, Any] = {
                 "workflow_hash": wf_hash,
                 "score": record.score_end,
                 "cost": record.total_cost_usd,
@@ -104,6 +104,10 @@ class CycleRecordCache:
                 "reverted": record.reverted,
                 "timestamp": record.ended_at or record.started_at,
             }
+            if record.eval_details is not None:
+                entry["eval_details"] = record.eval_details
+            if record.instance_results is not None:
+                entry["instance_results"] = record.instance_results
             new_entries.append(json.dumps(entry, separators=(",", ":")))
 
         if new_entries:
@@ -144,6 +148,8 @@ class CycleRecordCache:
                 kept=entry.get("kept", 0),
                 reverted=entry.get("reverted", 0),
                 total_cost_usd=entry.get("cost", 0.0),
+                instance_results=entry.get("instance_results"),
+                eval_details=entry.get("eval_details"),
             )
             self._cache[wf_hash] = record
             loaded += 1
