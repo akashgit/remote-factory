@@ -112,11 +112,53 @@ class TestEvaluateViaInnerLoopCompose:
 
             evaluator.evaluate(wf, str(tmp_path), ["inst1"])
 
-        assert mock_loop.mode == "my-mode"
+        assert mock_loop.mode == "task-eval"
         assert mock_loop.frozen_nodes == frozenset(["builder"])
         assert mock_loop.test_command == "pytest -v"
         assert mock_loop.test_format == "exit_code"
         assert mock_loop.metric_path == "results.score"
+
+
+    def test_inner_loop_factory_not_called_when_task_set(self, tmp_path: Path):
+        """When task is available, _inner_loop_factory must NOT be called."""
+        from factory.cycle_analyzer import CycleRecord
+
+        config = SwarmConfig(benchmark="test", budget=10)
+        mock_task = MagicMock()
+        config.set_task(mock_task)
+
+        wf = _make_simple_workflow()
+        mock_record = CycleRecord(
+            cycle_number=1,
+            mode="test",
+            started_at=None,
+            ended_at=None,
+            duration_s=1.0,
+            score_start=None,
+            score_end=0.8,
+            score_delta=None,
+        )
+
+        factory_fn = MagicMock(return_value="evolve-gen0-abc12345")
+        evaluator = SwarmEvaluator(
+            config=config,
+            inner_loop_factory=factory_fn,
+        )
+
+        with (
+            patch.object(SwarmEvaluator, "_create_worktree", return_value=tmp_path),
+            patch.object(SwarmEvaluator, "_cleanup_worktree"),
+            patch("factory.compose.compose") as mock_compose,
+        ):
+            mock_loop = MagicMock()
+            mock_loop.step.return_value = mock_record
+            mock_loop.mode = "task-eval"
+            mock_compose.return_value = mock_loop
+
+            evaluator.evaluate(wf, str(tmp_path), ["inst1"])
+
+        factory_fn.assert_not_called()
+        mock_compose.assert_called_once()
 
 
 class TestEvaluateViaInnerLoopFallback:
