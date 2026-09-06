@@ -923,7 +923,7 @@ class TestTaskRunSubprocess:
         assert "--mode" in captured_cmd
         assert "--headless" in captured_cmd
         assert "--no-worktree" in captured_cmd
-        assert "--dangerously-skip-permissions" in captured_cmd
+        assert "--dangerously-skip-permissions" not in captured_cmd
 
     def test_run_defaults_to_improve_mode(self, tmp_path: Path, monkeypatch):
         """run() defaults to 'improve' mode when workflow is None."""

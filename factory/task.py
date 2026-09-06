@@ -544,7 +544,6 @@ class Task:
             _sys.executable, "-m", "factory", "ceo", str(workspace),
             "--mode", mode_name, "--headless", "--no-worktree",
             "--prompt", str(prompt_file),
-            "--dangerously-skip-permissions",
         ]
         try:
             subprocess.run(
