@@ -147,6 +147,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         resolved_instance_format = bench_config.instance_format if bench_config else "directory"
         resolved_prep_command = bench_config.prep_command if bench_config else ""
 
+        task_module = getattr(args, "task_module", "")
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -160,7 +161,10 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             seed_workflow=resolved_seed_workflow,
             instance_format=resolved_instance_format,
             prep_command=resolved_prep_command,
+            task_module=task_module,
         )
+        if task_module:
+            _log.info("task_module_resolved", ref=task_module)
 
     root = init_filesystem(project_path, config)
 
@@ -245,6 +249,11 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     if config is None:
         print("Error: no outer loop config found. Run 'factory outer-loop calibrate' first.", file=sys.stderr)
         return 1
+
+    cli_task_module = getattr(args, "task_module", "")
+    if cli_task_module:
+        config = config.model_copy(update={"task_module": cli_task_module})
+        _log.info("task_module_override", ref=cli_task_module)
 
     eval_project_dir = getattr(args, "project_dir", None)
     if eval_project_dir is not None:
@@ -613,6 +622,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         default="",
         help="Test output format: pytest, exit_code, json, exact_match (auto-detected from benchmark config if omitted)",
     )
+    cal.add_argument(
+        "--task-module",
+        default="",
+        help="Task class ref as 'module.path:ClassName' (e.g. chess_evolve.task:ChessEvolveTask)",
+    )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")
     ev.add_argument("project_path", nargs="?", default=".")
@@ -621,6 +635,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--project-dir",
         default=None,
         help="Target project dir for sub-CEO evaluation (defaults to project_path)",
+    )
+    ev.add_argument(
+        "--task-module",
+        default="",
+        help="Task class ref as 'module.path:ClassName' (overrides config value)",
     )
 
     ref = outer_sub.add_parser("reflect", help="Run reflection on generation")

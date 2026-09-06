@@ -334,3 +334,48 @@ factory outer-loop calibrate <project> \
   --test-command "pytest -xvs" \    # override test command
   --population-size 4
 ```
+
+## Task Discovery
+
+Projects with custom `Task` subclasses (e.g. `chess-evolve`, `harbor`) can pass their task class to the outer loop via the `--task-module` flag. This uses the same `module:ClassName` import-string pattern as `EvaluatorRef`.
+
+### Format
+
+```
+module.path:ClassName
+```
+
+The module is imported via `importlib.import_module()` and the class is resolved via `getattr()`. The class must be a subclass of `factory.task.Task`.
+
+### Precondition
+
+The task's package must be importable — install it first:
+
+```bash
+pip install -e /path/to/my-project
+```
+
+### Usage
+
+```bash
+# Calibrate with a custom task
+factory outer-loop calibrate /path/to/factory \
+  --benchmark chess-evolve \
+  --task-module chess_evolve.task:ChessEvolveTask \
+  --project-dir /path/to/chess-evolve
+
+# Evaluate with a custom task (overrides persisted config)
+factory outer-loop evaluate /path/to/factory \
+  --generation 0 \
+  --task-module chess_evolve.task:ChessEvolveTask
+```
+
+### Precedence
+
+`SwarmConfig.get_task()` resolves tasks with 3-tier precedence:
+
+1. **`set_task()`** — explicit runtime attachment (highest, used by tests and in-process callers)
+2. **`task_module`** — `module:ClassName` string from CLI flag or persisted config
+3. **`Task.from_legacy()`** — constructed from flat fields (`test_command`, `test_format`, etc.)
+
+The `task_module` field is serialized with `SwarmConfig`, so it persists across `save_config`/`load_config` — no need to re-specify it on every `evaluate` invocation after `calibrate`.

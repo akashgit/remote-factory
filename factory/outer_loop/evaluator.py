@@ -319,12 +319,15 @@ class SwarmEvaluator:
 
         wt_path: Path | None = None
         try:
-            mode_name = self._inner_loop_factory(workflow) if callable(self._inner_loop_factory) else "evolve"
+            task = self._config.get_task() if hasattr(self._config, "get_task") else None
+
+            if task is not None:
+                mode_name = "task-eval"
+            else:
+                mode_name = self._inner_loop_factory(workflow) if callable(self._inner_loop_factory) else "evolve"
 
             label = individual_id[:8] if individual_id else mode_name[:12]
             wt_path = self._create_worktree(project_dir, label)
-
-            task = self._config.get_task() if hasattr(self._config, "get_task") else None
 
             if task is not None:
                 from factory.compose import compose

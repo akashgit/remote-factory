@@ -212,7 +212,7 @@ class TestSwarmEvaluator:
             duration_s=60.0, score_start=0.0, score_end=0.7, score_delta=0.7,
             kept=1, reverted=0, total_cost_usd=0.5,
         )
-        mock_loop.mode = "evolve"
+        mock_loop.mode = "task-eval"
         mock_loop.instance_results = None
 
         def fake_compose(workflow: object, task: object, project_dir: object) -> MagicMock:
@@ -221,9 +221,7 @@ class TestSwarmEvaluator:
 
         instances = ["inst_a", "inst_b"]
 
-        def factory_fn(wf: object) -> str:
-            return "evolve"
-
+        factory_fn = MagicMock()
         evaluator = SwarmEvaluator(config, inner_loop_factory=factory_fn)
 
         with patch("factory.compose.compose", fake_compose):
@@ -232,6 +230,7 @@ class TestSwarmEvaluator:
             )
 
         assert len(captured_loop) == 1
+        factory_fn.assert_not_called()
         assert hasattr(mock_loop, "_subset_selector")
         sel = mock_loop._subset_selector
         assert isinstance(sel, FixedSubsetSelector)
@@ -258,15 +257,13 @@ class TestSwarmEvaluator:
             duration_s=60.0, score_start=0.0, score_end=0.7, score_delta=0.7,
             kept=1, reverted=0, total_cost_usd=0.5,
         )
-        mock_loop.mode = "evolve"
+        mock_loop.mode = "task-eval"
         mock_loop.instance_results = None
 
         def fake_compose(workflow: object, task: object, project_dir: object) -> MagicMock:
             return mock_loop
 
-        def factory_fn(wf: object) -> str:
-            return "evolve"
-
+        factory_fn = MagicMock()
         evaluator = SwarmEvaluator(config, inner_loop_factory=factory_fn)
 
         with patch("factory.compose.compose", fake_compose):
@@ -274,6 +271,7 @@ class TestSwarmEvaluator:
                 _make_simple_workflow(), str(tmp_path), []
             )
 
+        factory_fn.assert_not_called()
         assert not isinstance(getattr(mock_loop, "_subset_selector", None), FixedSubsetSelector)
 
     def test_loads_cache_from_disk(self, tmp_path: Path) -> None:
