@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from factory.cycle_analyzer import CycleRecord
 from factory.outer_loop.evaluator import CycleRecordCache, FitnessCache, SwarmEvaluator
 from factory.outer_loop.models import EvalResult, SwarmConfig
+from factory.outer_loop.subset import FixedSubsetSelector
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -186,6 +188,54 @@ class TestSwarmEvaluator:
         wf = _make_simple_workflow()
         result = evaluator.evaluate(wf, "/tmp/test", ["t1"])
         assert result.details.get("note") == "no_evaluator_fn_configured"
+
+    @patch("factory.outer_loop.evaluator.SwarmEvaluator._cleanup_worktree")
+    @patch("factory.outer_loop.evaluator.SwarmEvaluator._create_worktree")
+    def test_task_path_wires_subset_selector(
+        self, mock_create_wt: MagicMock, mock_cleanup_wt: MagicMock, tmp_path: Path
+    ) -> None:
+        """When _evaluate_via_inner_loop uses the task path with instances, it sets _subset_selector."""
+        wt_path = tmp_path / "wt"
+        wt_path.mkdir()
+        mock_create_wt.return_value = wt_path
+
+        captured_loop: list[object] = []
+
+        mock_task = MagicMock()
+        config = _make_config()
+        config.set_task(mock_task)
+
+        mock_loop = MagicMock()
+        mock_loop.step.return_value = CycleRecord(
+            cycle_number=1, mode="test",
+            started_at="2026-01-01T00:00:00", ended_at="2026-01-01T00:01:00",
+            duration_s=60.0, score_start=0.0, score_end=0.7, score_delta=0.7,
+            kept=1, reverted=0, total_cost_usd=0.5,
+        )
+        mock_loop.mode = "evolve"
+        mock_loop.instance_results = None
+
+        def fake_compose(workflow: object, task: object, project_dir: object) -> MagicMock:
+            captured_loop.append(mock_loop)
+            return mock_loop
+
+        instances = ["inst_a", "inst_b"]
+
+        def factory_fn(wf: object) -> str:
+            return "evolve"
+
+        evaluator = SwarmEvaluator(config, inner_loop_factory=factory_fn)
+
+        with patch("factory.compose.compose", fake_compose):
+            evaluator._evaluate_via_inner_loop(
+                _make_simple_workflow(), str(tmp_path), instances
+            )
+
+        assert len(captured_loop) == 1
+        assert hasattr(mock_loop, "_subset_selector")
+        sel = mock_loop._subset_selector
+        assert isinstance(sel, FixedSubsetSelector)
+        assert sel._training_instances == instances
 
     def test_loads_cache_from_disk(self, tmp_path: Path) -> None:
         config = _make_config()

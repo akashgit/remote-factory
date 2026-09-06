@@ -335,6 +335,9 @@ class SwarmEvaluator:
                 loop.test_command = self._config.test_command
                 loop.test_format = self._config.test_format or "pytest"
                 loop.metric_path = self._config.metric_path
+                if instances:
+                    from factory.outer_loop.subset import FixedSubsetSelector
+                    loop._subset_selector = FixedSubsetSelector(instances)
             else:
                 loop = InnerLoop(
                     project_dir=wt_path,
