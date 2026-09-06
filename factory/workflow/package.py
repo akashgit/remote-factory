@@ -167,6 +167,8 @@ class Package(BaseModel):
                     except Exception:
                         pass
         wf.terminal = self.terminal
+        if self.contract.capabilities:
+            wf.declared_capabilities = frozenset(self.contract.capabilities)
         return wf
 
 

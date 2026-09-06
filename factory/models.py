@@ -86,13 +86,13 @@ class ResearchTarget(BaseModel):
     timeout: int = 3600
 
     def to_task(self) -> Any:
-        """Bridge: convert ResearchTarget to a Task with JSONScoring.
+        """Bridge: convert ResearchTarget to a Task with JSON scoring.
 
         Uses lazy import to avoid circular dependency.
         """
         from factory.task import (
-            JSONScoring,
             PromptConfig,
+            ScoringContract,
             Task,
             TaskConstraints,
             TaskDefinition,
@@ -102,7 +102,7 @@ class ResearchTarget(BaseModel):
         defn = TaskDefinition(
             name=f"research-{self.metric}",
             description=self.objective,
-            scoring=JSONScoring(metric_path=self.result_path),
+            scoring=ScoringContract(method="json", metric_path=self.result_path),
             constraints=TaskConstraints(timeout=self.timeout),
             prompt_config=PromptConfig(text=self.objective),
             verify_config=VerifyConfig(command=self.run_command),

@@ -19,10 +19,6 @@ from factory.compose import (
     validate_composition,
 )
 from factory.task import (
-    ExactMatchScoring,
-    ExitCodeScoring,
-    JSONScoring,
-    PytestScoring,
     Task,
     TaskDefinition,
     TaskInstance,
@@ -63,11 +59,10 @@ class TestChessEvolveE2E:
         assert defn.name == "chess-evolve"
         assert defn.description == "Evolve a chess engine that beats the baseline"
 
-    # AC-1.2: scoring is PytestScoring
-    def test_scoring_is_pytest(self):
+    # AC-1.2: scoring maps to exit_code (legacy 'pytest' method)
+    def test_scoring_is_exit_code(self):
         defn = TaskDefinition.from_toml(_CHESS_EVOLVE_TOML)
-        assert isinstance(defn.scoring, PytestScoring)
-        assert defn.scoring.partial_credit is True
+        assert defn.scoring.method == "exit_code"
 
     # AC-1.3: instances() yields at least one TaskInstance
     def test_instances_yields_instance(self):
@@ -114,7 +109,7 @@ class TestChessEvolveE2E:
         data = defn.model_dump(mode="json")
         restored = TaskDefinition.model_validate(data)
         assert restored.name == defn.name
-        assert type(restored.scoring).__name__ == type(defn.scoring).__name__
+        assert restored.scoring.method == defn.scoring.method
 
     # AC-1.9: isinstance(task, Task) and Protocol
     def test_isinstance_check(self):
@@ -148,12 +143,12 @@ class TestChessEvolveE2E:
         validate_composition(wf, task)  # should not raise
 
     # AC-3.2: get_evaluator returns correct type
-    def test_get_evaluator_pytest(self):
+    def test_get_evaluator(self):
         task = Task.from_toml(_CHESS_EVOLVE_TOML)
         evaluator = task.get_evaluator()
-        from factory.outer_loop.featurebench_evaluator import FeatureBenchEvaluator
+        from factory.outer_loop.evaluators.exit_code import ExitCodeEvaluator
 
-        assert isinstance(evaluator, FeatureBenchEvaluator)
+        assert isinstance(evaluator, ExitCodeEvaluator)
 
     # AC-3.3: prompt comes from task
     def test_prompt_from_task(self):
@@ -194,7 +189,7 @@ class TestChessEvolveE2E:
         )
         task = bc.to_task()
         assert isinstance(task, Task)
-        assert isinstance(task.scoring, PytestScoring)
+        assert task.scoring.method == "exit_code"
 
     # AC-4.3: BenchmarkConfig.to_task() for swebench
     def test_benchmark_config_to_task_swebench(self):
@@ -206,9 +201,9 @@ class TestChessEvolveE2E:
             test_command="pytest -xvs",
         )
         task = bc.to_task()
-        assert isinstance(task.scoring, ExitCodeScoring)
+        assert task.scoring.method == "exit_code"
 
-    # AC-4.4: BenchmarkConfig.to_task() for AIME
+    # AC-4.4: BenchmarkConfig.to_task() for AIME (exact_match maps to exit_code)
     def test_benchmark_config_to_task_aime(self):
         from factory.outer_loop.benchmark_config import BenchmarkConfig
 
@@ -217,7 +212,7 @@ class TestChessEvolveE2E:
             test_format="exact_match",
         )
         task = bc.to_task()
-        assert isinstance(task.scoring, ExactMatchScoring)
+        assert task.scoring.method == "exit_code"
 
     # AC-4.5: ResearchTarget.to_task()
     def test_research_target_to_task(self):
@@ -231,7 +226,7 @@ class TestChessEvolveE2E:
             result_path="metrics.speed",
         )
         task = rt.to_task()
-        assert isinstance(task.scoring, JSONScoring)
+        assert task.scoring.method == "json"
 
 
 # ── TaskRegistry tests ──────────────────────────────────────────
@@ -246,8 +241,6 @@ class TestTaskRegistry:
         names = set(entries.keys())
         # chess-evolve uses [task] format — always discoverable
         assert "chess-evolve" in names
-        # featurebench uses legacy [meta] format with method="partial_credit",
-        # which is not a valid TaskDefinition scoring method
 
     def test_load_chess_evolve(self):
         from factory.task_registry import TaskRegistry
@@ -255,7 +248,7 @@ class TestTaskRegistry:
         TaskRegistry.reset()
         task = TaskRegistry.load_task("chess-evolve")
         assert task.name == "chess-evolve"
-        assert isinstance(task.scoring, PytestScoring)
+        assert task.scoring.method == "exit_code"
 
     def test_load_nonexistent_raises(self):
         from factory.task_registry import TaskRegistry
