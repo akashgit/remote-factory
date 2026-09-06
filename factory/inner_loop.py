@@ -330,6 +330,16 @@ class InnerLoop:
         record.frozen_nodes = sorted(self.frozen_nodes)
         record.mutable_node_ids = sorted(self.mutable_nodes())
 
+        self._write_cycle_summary(
+            returncode=0,
+            event_offset=0,
+            duration_ms=int(duration_s * 1000),
+            builder_committed=False,
+            experiments=0,
+            test_score=aggregate_score,
+            instance_results=instance_results,
+        )
+
         self._step_count += 1
         self._history.append(record)
         return record
@@ -505,6 +515,9 @@ class InnerLoop:
         experiments: int,
         test_score: float | None = None,
         test_details: dict[str, Any] | None = None,
+        instance_results: list[dict[str, Any]] | None = None,
+        kept: int = 0,
+        reverted: int = 0,
     ) -> Path:
         """Write a structured summary of observable outcomes from this cycle."""
         events_path = self.factory_dir / "events.jsonl"
@@ -566,9 +579,28 @@ class InnerLoop:
             "experiments": experiments,
             "duration_ms": duration_ms,
             "errors": errors,
+            "kept": kept,
+            "reverted": reverted,
         }
         if test_details:
             summary["test_details"] = test_details
+
+        if instance_results:
+            summary["instance_results"] = instance_results
+            from factory.outer_loop.verify_adapter import eval_result_from_verify_results
+            from factory.task import VerifyResult
+
+            verify_results = [
+                VerifyResult(
+                    passed=bool(ir.get("passed", False)),
+                    score=float(ir.get("score", 0.0)),
+                    details=ir.get("details") or {},
+                )
+                for ir in instance_results
+                if isinstance(ir, dict)
+            ]
+            adapted = eval_result_from_verify_results(verify_results)
+            summary["verify"] = adapted.details
 
         summary_dir = self.factory_dir / "outer_loop" / "runs" / self.mode
         summary_dir.mkdir(parents=True, exist_ok=True)

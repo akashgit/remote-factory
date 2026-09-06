@@ -325,6 +325,25 @@ def _load_cycle_summary(project_path: Path, mode_name: str) -> CycleRecord | Non
     try:
         data = json.loads(summary_path.read_text())
         duration_ms = data.get("duration_ms", 0)
+
+        instance_results = data.get("instance_results")
+
+        eval_details: dict[str, object] | None = None
+        verify = data.get("verify")
+        test_details = data.get("test_details")
+        if verify is not None or test_details is not None:
+            eval_details = {}
+            if verify is not None:
+                eval_details["verify"] = verify
+            if test_details is not None:
+                eval_details["test_details"] = test_details
+            rejected = data.get("rejected")
+            if rejected is not None:
+                eval_details["rejected"] = rejected
+            error = data.get("error")
+            if isinstance(error, str):
+                eval_details["error"] = error
+
         return CR(
             cycle_number=0,
             mode=mode_name,
@@ -338,6 +357,8 @@ def _load_cycle_summary(project_path: Path, mode_name: str) -> CycleRecord | Non
             reverted=data.get("reverted", 0),
             errored=data.get("agents_failed", 0),
             total_cost_usd=data.get("cost_usd", 0.0),
+            instance_results=instance_results,
+            eval_details=eval_details,
         )
     except (json.JSONDecodeError, OSError, ValueError, TypeError):
         return None
