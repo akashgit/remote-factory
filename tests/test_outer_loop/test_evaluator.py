@@ -237,6 +237,45 @@ class TestSwarmEvaluator:
         assert isinstance(sel, FixedSubsetSelector)
         assert sel._training_instances == instances
 
+    @patch("factory.outer_loop.evaluator.SwarmEvaluator._cleanup_worktree")
+    @patch("factory.outer_loop.evaluator.SwarmEvaluator._create_worktree")
+    def test_task_path_no_subset_selector_when_empty_instances(
+        self, mock_create_wt: MagicMock, mock_cleanup_wt: MagicMock, tmp_path: Path
+    ) -> None:
+        """When instances is empty, _subset_selector should NOT be set."""
+        wt_path = tmp_path / "wt"
+        wt_path.mkdir()
+        mock_create_wt.return_value = wt_path
+
+        mock_task = MagicMock()
+        config = _make_config()
+        config.set_task(mock_task)
+
+        mock_loop = MagicMock()
+        mock_loop.step.return_value = CycleRecord(
+            cycle_number=1, mode="test",
+            started_at="2026-01-01T00:00:00", ended_at="2026-01-01T00:01:00",
+            duration_s=60.0, score_start=0.0, score_end=0.7, score_delta=0.7,
+            kept=1, reverted=0, total_cost_usd=0.5,
+        )
+        mock_loop.mode = "evolve"
+        mock_loop.instance_results = None
+
+        def fake_compose(workflow: object, task: object, project_dir: object) -> MagicMock:
+            return mock_loop
+
+        def factory_fn(wf: object) -> str:
+            return "evolve"
+
+        evaluator = SwarmEvaluator(config, inner_loop_factory=factory_fn)
+
+        with patch("factory.compose.compose", fake_compose):
+            evaluator._evaluate_via_inner_loop(
+                _make_simple_workflow(), str(tmp_path), []
+            )
+
+        assert not isinstance(getattr(mock_loop, "_subset_selector", None), FixedSubsetSelector)
+
     def test_loads_cache_from_disk(self, tmp_path: Path) -> None:
         config = _make_config()
         wf = _make_simple_workflow()
