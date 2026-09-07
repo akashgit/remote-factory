@@ -318,7 +318,7 @@ class TestApplyRandomMutationWithReflection:
             mock_random.sample = __import__("random").sample
             mock_random.randint = __import__("random").randint
 
-            result = apply_random_mutation(
+            apply_random_mutation(
                 simple_workflow, strategy, generation=1,
                 reflection_report=report,
                 max_attempts=20,

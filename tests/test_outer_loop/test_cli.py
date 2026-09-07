@@ -446,7 +446,7 @@ class TestEvolveLoadsReflectionReport:
         import argparse
         import json
         from pathlib import Path
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from factory.outer_loop.models import SwarmConfig
 
