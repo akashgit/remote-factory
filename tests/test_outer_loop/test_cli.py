@@ -440,6 +440,101 @@ class TestReflectReadsCachedData:
         assert data["kept"] == 2
 
 
+class TestEvolveLoadsReflectionReport:
+    def test_evolve_loads_persisted_reflection_json(self, tmp_path: object) -> None:
+        """_cmd_evolve should load reflections/gen0.json and pass it to apply_random_mutation."""
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        reflections_dir = project / ".factory" / "outer_loop" / "reflections"
+        reflections_dir.mkdir(parents=True)
+
+        report_data = {
+            "generation": 0,
+            "failure_patterns": ["Agent builder failed"],
+            "success_patterns": ["Winner used researcher"],
+            "mutation_suggestions": ["NODE_INSERT: Add researcher"],
+            "prompt_improvements": [],
+            "structural_recommendations": [],
+            "top_k_ids": ["w1"],
+            "bottom_k_ids": ["l1"],
+        }
+        (reflections_dir / "gen0.json").write_text(json.dumps(report_data))
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop import mutations as _mutations_mod
+
+        original_apply = _mutations_mod.apply_random_mutation
+
+        def spy_apply(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_apply(*args, **kwargs)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=spy_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            _cmd_evolve(ns)
+
+        assert len(captured_kwargs) > 0
+        assert captured_kwargs[0].get("reflection_report") is not None
+
+    def test_evolve_works_without_reflection_file(self, tmp_path: object) -> None:
+        """_cmd_evolve should still work when no reflection JSON exists."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_evolve(ns)
+            assert rc == 0
+
+
 class TestOuterLoopWorkflowGraph:
     def test_workflow_validates(self) -> None:
         from factory.workflow.contributed.outer_loop.workflow import workflow

@@ -394,6 +394,11 @@ class OuterLoopReflector:
                     f"outperforms {knob}={display_worst} "
                     f"({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
                 )
+                if is_prompt:
+                    report.prompt_improvements.append(
+                        f"Reinforce approach from prompt knob {knob} "
+                        f"with value '{display_best}' which correlates with higher scores"
+                    )
 
         # Top-K vs bottom-K: which knobs differ consistently?
         top_ids = {id_ for id_, _, _ in top_k}

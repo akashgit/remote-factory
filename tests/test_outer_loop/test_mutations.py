@@ -299,6 +299,57 @@ class TestKnobMutate:
         assert not called
 
 
+class TestApplyRandomMutationWithReflection:
+    def test_guided_operator_selection_with_reflection(self, simple_workflow: Workflow) -> None:
+        from unittest.mock import patch
+
+        from factory.outer_loop.reflector import ReflectionReport
+
+        report = ReflectionReport(
+            mutation_suggestions=["NODE_INSERT: Add researcher agent"],
+            structural_recommendations=[],
+        )
+        strategy = WeightedRandomStrategy()
+
+        with patch("factory.outer_loop.mutations.random") as mock_random:
+            mock_random.random.return_value = 0.3
+            mock_random.choice = __import__("random").choice
+            mock_random.choices = __import__("random").choices
+            mock_random.sample = __import__("random").sample
+            mock_random.randint = __import__("random").randint
+
+            result = apply_random_mutation(
+                simple_workflow, strategy, generation=1,
+                reflection_report=report,
+                max_attempts=20,
+            )
+            mock_random.random.assert_called()
+
+    def test_no_reflection_uses_random_operator(self, simple_workflow: Workflow) -> None:
+        strategy = WeightedRandomStrategy()
+        result = apply_random_mutation(
+            simple_workflow, strategy, generation=1,
+            reflection_report=None,
+            max_attempts=20,
+        )
+        if result is not None:
+            _, rec = result
+            assert isinstance(rec.operator, MutationType)
+
+
+class TestPromptVariantsDomainNeutral:
+    def test_no_coding_specific_keywords(self) -> None:
+        from factory.outer_loop.mutations import _PROMPT_VARIANTS
+
+        coding_phrases = ["codebase", "failing tests", "tests first"]
+        for variant in _PROMPT_VARIANTS:
+            lower = variant.lower()
+            for phrase in coding_phrases:
+                assert phrase not in lower, (
+                    f"_PROMPT_VARIANTS contains coding-specific phrase '{phrase}' in: {variant}"
+                )
+
+
 class TestKnobPreservation:
     def test_insert_node_preserves_knobs(self, simple_workflow: Workflow) -> None:
         wf = simple_workflow.model_copy(update={
