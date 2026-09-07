@@ -186,6 +186,17 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             edges=[],
             start_node="builder",
             terminal=True,
+            knob_values={
+                "agent_timeout": 7200,
+                "agent_model": "opus",
+            },
+            knob_bounds={
+                "agent_timeout": [300, 600, 900, 1200, 1800, 3600, 7200],
+                "agent_model": ["sonnet", "opus", "haiku"],
+            },
+            knob_expandable={
+                "agent_timeout": "Agent timeout in seconds for the builder node",
+            },
         )
     else:
         try:
@@ -422,7 +433,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
             config, inner_loop_factory=_make_inner_loop_factory(registry),
         )
         for mode_name, wf in needs_eval:
-            ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances)
+            ev = evaluator.evaluate(wf, eval_project_dir, config.training_instances, individual_id=mode_name)
             cycle_rec = evaluator.get_cycle_record(mode_name)
             records.append((mode_name, ev.score, cycle_rec))
 
@@ -430,7 +441,13 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
         print("Not enough candidates for reflection (need >= 2).", file=sys.stderr)
         return 1
 
-    report = reflector.reflect(records, generation)
+    knob_values_by_id: dict[str, dict[str, object]] = {}
+    for mode_name in registry.list_modes():
+        wf = registry.load(mode_name)
+        if wf is not None and wf.knob_values:
+            knob_values_by_id[mode_name] = dict(wf.knob_values)
+
+    report = reflector.reflect(records, generation, knob_values_by_id=knob_values_by_id or None)
     print(f"Reflection complete: {len(report.failure_patterns)} failures, "
           f"{len(report.success_patterns)} successes, "
           f"{len(report.mutation_suggestions)} suggestions")
@@ -446,6 +463,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     from factory.outer_loop.filesystem import load_config
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.mutations import WeightedRandomStrategy, apply_random_mutation
+    from factory.outer_loop.reflector import ReflectionReport
 
     config = load_config(project_path)
     if config is None:
@@ -463,6 +481,24 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         print("Error: no ephemeral modes to evolve.", file=sys.stderr)
         return 1
 
+    reflection_report: ReflectionReport | None = None
+    reflect_path = project_path / ".factory" / "outer_loop" / "reflections" / f"gen{generation}.json"
+    if reflect_path.exists():
+        try:
+            data = json.loads(reflect_path.read_text())
+            reflection_report = ReflectionReport(
+                failure_patterns=data.get("failure_patterns", []),
+                success_patterns=data.get("success_patterns", []),
+                mutation_suggestions=data.get("mutation_suggestions", []),
+                prompt_improvements=data.get("prompt_improvements", []),
+                structural_recommendations=data.get("structural_recommendations", []),
+                top_k_ids=data.get("top_k_ids", []),
+                bottom_k_ids=data.get("bottom_k_ids", []),
+            )
+            _log.info("reflection_loaded", generation=generation, suggestions=len(reflection_report.mutation_suggestions))
+        except (json.JSONDecodeError, OSError) as exc:
+            _log.warning("reflection_load_failed", generation=generation, error=str(exc))
+
     strategy = WeightedRandomStrategy(mutation_rate=config.mutation_rate)
     offspring_count = 0
 
@@ -473,6 +509,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         result = apply_random_mutation(
             wf, strategy, generation + 1,
             frozen_nodes=set(config.frozen_node_ids),
+            reflection_report=reflection_report,
         )
         if result is not None:
             child_wf, mutation_rec = result

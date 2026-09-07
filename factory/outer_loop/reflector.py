@@ -328,6 +328,17 @@ class OuterLoopReflector:
                     f"({', '.join(s.role for s in timeout_failures)})"
                 )
 
+            failed_roles = [s.role for s in rec.steps if not s.succeeded]
+            successful_roles = [s.role for s in rec.steps if s.succeeded]
+            if failed_roles and successful_roles:
+                report.structural_recommendations.append(
+                    f"EDGE_REDIRECT: Reroute output away from failing agents "
+                    f"({', '.join(failed_roles)}) toward successful ones "
+                    f"({', '.join(successful_roles)})"
+                )
+
+        top_has_parallel = False
+        bottom_has_parallel = False
         for _, score, rec in top_k:
             if rec is None:
                 continue
@@ -337,11 +348,44 @@ class OuterLoopReflector:
                     if nt.node_type == "ForkNode"
                 ]
                 if parallel_nodes:
+                    top_has_parallel = True
                     report.structural_recommendations.append(
                         "PARALLELIZE: Winners use parallel execution — "
                         "consider parallelizing independent agents"
                     )
                     break
+
+        for _, score, rec in bottom_k:
+            if rec is None:
+                continue
+            if rec.node_trace:
+                parallel_nodes = [
+                    nid for nid, nt in rec.node_trace.items()
+                    if nt.node_type == "ForkNode"
+                ]
+                if parallel_nodes:
+                    bottom_has_parallel = True
+                    break
+
+        if bottom_has_parallel and not top_has_parallel:
+            report.structural_recommendations.append(
+                "SERIALIZE: Losers use parallel execution but winners don't — "
+                "consider serializing parallel agents to enforce ordering"
+            )
+
+        for _, score, rec in bottom_k:
+            if rec is None:
+                continue
+            if len(rec.steps) >= 2:
+                for i in range(len(rec.steps) - 1):
+                    cur = rec.steps[i]
+                    nxt = rec.steps[i + 1]
+                    if cur.succeeded and not nxt.succeeded:
+                        report.structural_recommendations.append(
+                            f"SERIALIZE: Agent {nxt.role} depends on {cur.role} output "
+                            f"but may execute too early — consider enforcing sequential order"
+                        )
+                        break
 
     def _extract_knob_patterns(
         self,
@@ -394,6 +438,11 @@ class OuterLoopReflector:
                     f"outperforms {knob}={display_worst} "
                     f"({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
                 )
+                if is_prompt:
+                    report.prompt_improvements.append(
+                        f"Adopt prompt strategy from top performers for {knob}: "
+                        f"{display_best}"
+                    )
 
         # Top-K vs bottom-K: which knobs differ consistently?
         top_ids = {id_ for id_, _, _ in top_k}

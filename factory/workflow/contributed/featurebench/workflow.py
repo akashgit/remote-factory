@@ -195,4 +195,15 @@ def workflow() -> Workflow:
         start_node="study",
         terminal=True,
         trigger=trigger,
+        knob_values={
+            "agent_timeout": 7200,
+            "agent_model": "opus",
+        },
+        knob_bounds={
+            "agent_timeout": [300, 600, 900, 1200, 1800, 3600, 7200],
+            "agent_model": ["sonnet", "opus", "haiku"],
+        },
+        knob_expandable={
+            "agent_timeout": "Agent timeout in seconds for the builder node",
+        },
     )

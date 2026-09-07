@@ -25,6 +25,42 @@ from factory.outer_loop.reflector import ReflectionReport
 log = structlog.get_logger()
 
 
+_MUTATION_TYPE_NAMES = {t.value.upper(): t for t in MutationType}
+
+
+def parse_operator_from_suggestion(suggestion: str) -> MutationType | None:
+    """Extract a MutationType from a suggestion string.
+
+    Supports two formats:
+    1. Prefix: "OPERATOR_NAME: rest of suggestion"
+    2. Substring: any MutationType name appearing in the text
+
+    Longer names are checked first to avoid partial matches
+    (e.g. KNOB_MUTATE before PARAM_MUTATE won't shadow each other).
+    """
+    upper = suggestion.upper()
+    colon_pos = upper.find(":")
+    if colon_pos > 0:
+        prefix = upper[:colon_pos].strip()
+        if prefix in _MUTATION_TYPE_NAMES:
+            return _MUTATION_TYPE_NAMES[prefix]
+
+    for name in sorted(_MUTATION_TYPE_NAMES, key=len, reverse=True):
+        if name in upper:
+            return _MUTATION_TYPE_NAMES[name]
+    return None
+
+
+def parse_direction_from_suggestion(suggestion: str) -> str | None:
+    """Extract a direction hint ('increase' or 'decrease') from a suggestion."""
+    lower = suggestion.lower()
+    if "increase" in lower:
+        return "increase"
+    if "decrease" in lower or "reduce" in lower or "lower" in lower:
+        return "decrease"
+    return None
+
+
 @runtime_checkable
 class MutationStrategy(Protocol):
     """Protocol for pluggable mutation operator selection."""
@@ -65,6 +101,20 @@ class WeightedRandomStrategy:
     ) -> MutationType:
         types = list(MutationType)
         w = [self.weights.get(t.value, 0.1) for t in types]
+
+        diversity = archive_stats.get("diversity")
+        if isinstance(diversity, (int, float)) and diversity < 0.3:
+            structural_ops = {
+                MutationType.NODE_INSERT,
+                MutationType.PARALLELIZE,
+                MutationType.EDGE_REDIRECT,
+            }
+            boost = 1.5
+            w = [
+                weight * boost if t in structural_ops else weight
+                for t, weight in zip(types, w)
+            ]
+
         return random.choices(types, weights=w, k=1)[0]
 
     def select_guided_operator(
@@ -73,22 +123,16 @@ class WeightedRandomStrategy:
         generation: int,
         reflection: ReflectionReport,
     ) -> MutationType:
-        """Select an operator guided by reflection suggestions."""
+        """Select an operator guided by reflection suggestions.
+
+        Parses suggestions using structured prefix matching against all
+        MutationType enum names, making all 8 operators reachable by guidance.
+        """
         op_counts: dict[MutationType, int] = {}
         for suggestion in reflection.mutation_suggestions + reflection.structural_recommendations:
-            upper = suggestion.upper()
-            if "NODE_INSERT" in upper:
-                op_counts[MutationType.NODE_INSERT] = op_counts.get(MutationType.NODE_INSERT, 0) + 1
-            elif "NODE_REMOVE" in upper:
-                op_counts[MutationType.NODE_REMOVE] = op_counts.get(MutationType.NODE_REMOVE, 0) + 1
-            elif "PARALLELIZE" in upper:
-                op_counts[MutationType.PARALLELIZE] = op_counts.get(MutationType.PARALLELIZE, 0) + 1
-            elif "PARAM_MUTATE" in upper:
-                op_counts[MutationType.PARAM_MUTATE] = op_counts.get(MutationType.PARAM_MUTATE, 0) + 1
-            elif "PROMPT_MUTATE" in upper:
-                op_counts[MutationType.PROMPT_MUTATE] = op_counts.get(MutationType.PROMPT_MUTATE, 0) + 1
-            elif "KNOB" in upper:
-                op_counts[MutationType.KNOB_MUTATE] = op_counts.get(MutationType.KNOB_MUTATE, 0) + 1
+            parsed = parse_operator_from_suggestion(suggestion)
+            if parsed is not None:
+                op_counts[parsed] = op_counts.get(parsed, 0) + 1
 
         if not op_counts:
             return self.select_operator(parent, generation, {})
@@ -753,6 +797,7 @@ def mutate_knob(
     generate a new value.
     """
     if not workflow.knob_values:
+        log.info("knob_mutate_skipped", reason="empty_knob_values")
         return None
 
     wf = _deep_copy_workflow(workflow)
@@ -877,6 +922,24 @@ def apply_random_mutation(
     return None
 
 
+def _extract_param_direction(
+    reflection_report: object,
+    target_node: str,
+) -> str | None:
+    """Extract a direction hint for PARAM_MUTATE from reflection suggestions."""
+    if not isinstance(reflection_report, ReflectionReport):
+        return None
+    for suggestion in reflection_report.structural_recommendations + reflection_report.mutation_suggestions:
+        parsed_op = parse_operator_from_suggestion(suggestion)
+        if parsed_op != MutationType.PARAM_MUTATE:
+            continue
+        if target_node in suggestion or target_node.split("_")[0] in suggestion.lower():
+            return parse_direction_from_suggestion(suggestion)
+    for suggestion in reflection_report.structural_recommendations:
+        return parse_direction_from_suggestion(suggestion)
+    return None
+
+
 def _extract_prompt_hint(report: ReflectionReport) -> str | None:
     """Extract a prompt improvement hint from a ReflectionReport."""
     if report.prompt_improvements:
@@ -952,8 +1015,19 @@ def _try_mutation(
             return None
         target = random.choice(agent_nodes)
         param = random.choice(["timeout", "model"])
+        direction = _extract_param_direction(kwargs.get("reflection_report"), target)
         if param == "timeout":
-            changes: dict[str, object] = {"timeout": random.choice([300, 600, 900, 1200, 1800])}
+            timeout_options = [300, 600, 900, 1200, 1800]
+            current_timeout = getattr(workflow.nodes[target], "timeout", 600) or 600
+            if direction == "increase":
+                candidates = [t for t in timeout_options if t > current_timeout]
+                chosen = random.choice(candidates) if candidates else max(timeout_options)
+            elif direction == "decrease":
+                candidates = [t for t in timeout_options if t < current_timeout]
+                chosen = random.choice(candidates) if candidates else min(timeout_options)
+            else:
+                chosen = random.choice(timeout_options)
+            changes: dict[str, object] = {"timeout": chosen}
         else:
             changes = {"model": random.choice(["sonnet", "opus", "haiku"])}
         return mutate_params(workflow, target, changes, frozen_nodes=frozen)
