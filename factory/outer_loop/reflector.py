@@ -568,6 +568,9 @@ class OuterLoopReflector:
             if start >= 0 and end > start:
                 raw = raw[start:end]
             data = json.loads(raw)
+            if not isinstance(data, dict):
+                log.warning("llm_reflect_non_dict_json", type=type(data).__name__)
+                return
             improvements = data.get("prompt_improvements", [])
             if isinstance(improvements, list):
                 for item in improvements:

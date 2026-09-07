@@ -299,6 +299,57 @@ class TestKnobMutate:
         assert not called
 
 
+class TestParseKnobSuggestionEmptyValue:
+    def test_empty_string_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="",
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+    def test_whitespace_only_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="   ",
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+    def test_valid_value_returns_tuple(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="focused",
+        )
+        result = _parse_knob_suggestion(suggestion)
+        assert result == ("style", "focused")
+
+    def test_none_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value=None,
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+
 class TestApplyRandomMutationWithReflection:
     def test_guided_operator_selection_with_reflection(self, simple_workflow: Workflow) -> None:
         from unittest.mock import patch

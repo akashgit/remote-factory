@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from factory.cycle_analyzer import AgentStep, CycleRecord
-from factory.outer_loop.reflector import OuterLoopReflector
+from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
 
 
 def _make_record(
@@ -156,6 +156,34 @@ class TestOuterLoopReflector:
         assert len(knob_suggestions) > 0
 
         assert len(report.prompt_improvements) > 0
+
+    def test_llm_reflect_non_dict_json_gracefully_returns(self) -> None:
+        """_llm_reflect should not crash when LLM returns non-dict JSON."""
+        from unittest.mock import patch, MagicMock
+
+        reflector = OuterLoopReflector(k=1, llm_reflect=True)
+
+        records = [
+            ("w1", 0.9, _make_record(0.9, [_make_step("builder")], kept=2)),
+            ("l1", 0.1, _make_record(0.1, [_make_step("builder", succeeded=False)], errored=1)),
+        ]
+
+        non_dict_payloads = [
+            '[1, 2, 3]',       # JSON array
+            '42',              # JSON number
+            '"hello"',         # JSON string
+            'null',            # JSON null
+            'true',            # JSON boolean
+        ]
+
+        for payload in non_dict_payloads:
+            mock_proc = MagicMock()
+            mock_proc.stdout = payload
+            mock_proc.returncode = 0
+
+            with patch("subprocess.run", return_value=mock_proc):
+                report = reflector.reflect(records, generation=0)
+                assert isinstance(report, ReflectionReport)
 
     def test_reflect_without_knob_values_no_knob_suggestions(self) -> None:
         reflector = OuterLoopReflector(k=1)

@@ -742,7 +742,7 @@ def _parse_knob_suggestion(
     Accepts either a typed MutationSuggestion or a legacy string.
     """
     if isinstance(suggestion, MutationSuggestion):
-        if suggestion.operator == "knob_mutate" and suggestion.value is not None:
+        if suggestion.operator == "knob_mutate" and suggestion.value is not None and suggestion.value.strip():
             return (suggestion.target, suggestion.value)
         return None
     if not suggestion.startswith("KNOB_MUTATE:"):
