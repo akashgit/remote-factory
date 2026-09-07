@@ -134,3 +134,40 @@ class TestOuterLoopReflector:
         report = reflector.reflect(records, generation=0)
         assert len(report.top_k_ids) == 2
         assert len(report.bottom_k_ids) == 2
+
+    def test_reflect_with_knob_values_produces_suggestions(self) -> None:
+        reflector = OuterLoopReflector(k=1)
+
+        records = [
+            ("w1", 0.9, _make_record(0.9, [_make_step("builder")], kept=2)),
+            ("l1", 0.1, _make_record(0.1, [_make_step("builder", succeeded=False)], errored=1)),
+        ]
+
+        kvbi = {
+            "w1": {"style": "focused", "_prompt_builder": "Be precise"},
+            "l1": {"style": "broad", "_prompt_builder": "Be creative"},
+        }
+
+        report = reflector.reflect(records, generation=0, knob_values_by_id=kvbi)
+
+        knob_suggestions = [
+            s for s in report.mutation_suggestions if "KNOB_MUTATE" in s or "PROMPT_MUTATE" in s
+        ]
+        assert len(knob_suggestions) > 0
+
+        assert len(report.prompt_improvements) > 0
+
+    def test_reflect_without_knob_values_no_knob_suggestions(self) -> None:
+        reflector = OuterLoopReflector(k=1)
+
+        records = [
+            ("w1", 0.9, _make_record(0.9, [_make_step("builder")], kept=2)),
+            ("l1", 0.1, _make_record(0.1, [_make_step("builder", succeeded=False)], errored=1)),
+        ]
+
+        report = reflector.reflect(records, generation=0)
+
+        knob_suggestions = [
+            s for s in report.mutation_suggestions if "KNOB_MUTATE" in s
+        ]
+        assert len(knob_suggestions) == 0

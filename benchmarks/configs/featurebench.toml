@@ -11,7 +11,7 @@ timeout = 600
 format = "directory"
 
 [seed_workflow]
-name = "improve"
+name = ""
 
 [scoring]
 method = "partial_credit"

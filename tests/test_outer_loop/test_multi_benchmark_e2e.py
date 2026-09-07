@@ -425,7 +425,7 @@ class TestE2EFeatureBenchBackwardCompat:
         config = load_benchmark_config("featurebench")
         assert config.test_format == "pytest"
         assert config.instance_format == "directory"
-        assert config.seed_workflow == "improve"
+        assert config.seed_workflow == ""
 
     def test_featurebench_evaluator_is_pytest(self):
         ev = get_evaluator("pytest")

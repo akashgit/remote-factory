@@ -430,7 +430,13 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
         print("Not enough candidates for reflection (need >= 2).", file=sys.stderr)
         return 1
 
-    report = reflector.reflect(records, generation)
+    kvbi: dict[str, dict[str, object]] = {}
+    for mode_name_r, _, _ in records:
+        wf = registry.load(mode_name_r)
+        if wf is not None and wf.knob_values:
+            kvbi[mode_name_r] = dict(wf.knob_values)
+
+    report = reflector.reflect(records, generation, knob_values_by_id=kvbi)
     print(f"Reflection complete: {len(report.failure_patterns)} failures, "
           f"{len(report.success_patterns)} successes, "
           f"{len(report.mutation_suggestions)} suggestions")
@@ -446,6 +452,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     from factory.outer_loop.filesystem import load_config
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.mutations import WeightedRandomStrategy, apply_random_mutation
+    from factory.outer_loop.reflector import ReflectionReport
 
     config = load_config(project_path)
     if config is None:
@@ -463,6 +470,20 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         print("Error: no ephemeral modes to evolve.", file=sys.stderr)
         return 1
 
+    reflection_report: ReflectionReport | None = None
+    reflection_path = (
+        project_path / ".factory" / "outer_loop" / "reflections" / f"gen{generation}.json"
+    )
+    if reflection_path.exists():
+        try:
+            data = json.loads(reflection_path.read_text())
+            reflection_report = ReflectionReport(
+                **{k: v for k, v in data.items() if k != "generation"}
+            )
+            _log.info("reflection_report_loaded", generation=generation)
+        except (json.JSONDecodeError, OSError, TypeError) as exc:
+            _log.warning("reflection_report_load_failed", error=str(exc))
+
     strategy = WeightedRandomStrategy(mutation_rate=config.mutation_rate)
     offspring_count = 0
 
@@ -473,6 +494,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         result = apply_random_mutation(
             wf, strategy, generation + 1,
             frozen_nodes=set(config.frozen_node_ids),
+            reflection_report=reflection_report,
         )
         if result is not None:
             child_wf, mutation_rec = result

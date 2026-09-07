@@ -514,11 +514,11 @@ def mutate_params(
 
 _PROMPT_VARIANTS = [
     "Think step by step. Analyze the problem carefully before proposing changes.",
-    "Focus on the failing tests. Read error messages, trace root causes, fix precisely.",
+    "Focus on identifying the root cause of failures. Read error messages and trace back precisely.",
     "Prioritize minimal changes. Change only what is necessary to solve the problem.",
-    "Start by reading all relevant files. Map dependencies before editing anything.",
-    "Write tests first, then implement. Verify each change passes tests before moving on.",
-    "Look for existing patterns in the codebase and follow them consistently.",
+    "Start by reading all relevant context. Map dependencies before making changes.",
+    "Verify each change before moving on. Confirm correctness at every step.",
+    "Follow established patterns and conventions consistently.",
     "Check edge cases explicitly. Validate inputs and handle error paths.",
     "Consider performance implications. Avoid O(n^2) patterns when O(n) alternatives exist.",
 ]
