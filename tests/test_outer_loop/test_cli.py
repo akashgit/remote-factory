@@ -440,6 +440,132 @@ class TestReflectReadsCachedData:
         assert data["kept"] == 2
 
 
+class TestReflectPassesKnobValues:
+    def test_reflect_passes_knob_values_by_id(self, tmp_path: object) -> None:
+        """_cmd_reflect builds knob_values_by_id from registry workflows and passes to reflect."""
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf1 = Workflow(
+            name="mode-a",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"temperature": 0.7, "strategy": "greedy"},
+        )
+        wf2 = Workflow(
+            name="mode-b",
+            nodes={"b": AgentNode(id="b", role=AgentRole.RESEARCHER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"temperature": 0.9},
+        )
+
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        name_a = registry.register("aaa", 0, wf1)
+        name_b = registry.register("bbb", 0, wf2)
+
+        gen_results = {
+            name_a: {"score": 0.85, "cost_usd": 1.0},
+            name_b: {"score": 0.72, "cost_usd": 0.5},
+        }
+        (results_dir / "gen0.json").write_text(json.dumps(gen_results))
+
+        for name, score in [(name_a, 0.85), (name_b, 0.72)]:
+            runs_dir = project / ".factory" / "outer_loop" / "runs" / name
+            runs_dir.mkdir(parents=True)
+            summary = {"mode": name, "score": score, "cost_usd": 0.5, "kept": 2, "reverted": 1}
+            (runs_dir / "cycle_summary.json").write_text(json.dumps(summary))
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
+
+        def spy_reflect(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return ReflectionReport()
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(OuterLoopReflector, "reflect", side_effect=spy_reflect):
+            from factory.cli.outer_loop import _cmd_reflect
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_reflect(ns)
+            assert rc == 0
+
+        assert len(captured_kwargs) == 1
+        kvbi = captured_kwargs[0].get("knob_values_by_id")
+        assert kvbi is not None
+        assert len(kvbi) == 2
+        assert kvbi[name_a] == {"temperature": 0.7, "strategy": "greedy"}
+        assert kvbi[name_b] == {"temperature": 0.9}
+
+
+class TestEvolveHandlesMalformedReflection:
+    def test_evolve_handles_malformed_reflection_json(self, tmp_path: object) -> None:
+        """_cmd_evolve gracefully handles malformed reflection JSON (returns 0, report=None)."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        reflections_dir = project / ".factory" / "outer_loop" / "reflections"
+        reflections_dir.mkdir(parents=True)
+
+        (reflections_dir / "gen0.json").write_text("not json {{{")
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop import mutations as _mutations_mod
+
+        original_apply = _mutations_mod.apply_random_mutation
+
+        def spy_apply(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_apply(*args, **kwargs)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=spy_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_evolve(ns)
+            assert rc == 0
+
+        assert len(captured_kwargs) > 0
+        assert captured_kwargs[0].get("reflection_report") is None
+
+
 class TestEvolveLoadsReflectionReport:
     def test_evolve_loads_persisted_reflection_json(self, tmp_path: object) -> None:
         """_cmd_evolve should load reflections/gen0.json and pass it to apply_random_mutation."""

@@ -267,6 +267,50 @@ class TestSwarmEngineEvolve:
         assert hp.population_size > 0
 
 
+class TestEvolveGenerationKnobValues:
+    def test_evolve_generation_builds_knob_values_by_id(self) -> None:
+        """evolve_generation builds knob_values_by_id from population and passes to reflect."""
+        from unittest.mock import patch
+
+        wf_with_knobs = Workflow(
+            name="knobbed",
+            nodes={
+                "builder": AgentNode(
+                    id="builder", role=AgentRole.BUILDER,
+                    writes={".factory/build.md"},
+                ),
+            },
+            edges=[],
+            start_node="builder",
+            terminal=True,
+            knob_values={"temperature": 0.8, "strategy": "explore"},
+        )
+
+        config = _make_config(budget=50, population_size=2)
+        evaluator = _make_deterministic_evaluator()
+        engine = SwarmEngine(config, evaluator)
+        pop = engine.seed(wf_with_knobs)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
+
+        def spy_reflect(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return ReflectionReport()
+
+        with patch.object(OuterLoopReflector, "reflect", side_effect=spy_reflect):
+            engine.evolve_generation(pop, generation=1)
+
+        assert len(captured_kwargs) >= 1
+        kvbi = captured_kwargs[0].get("knob_values_by_id")
+        assert kvbi is not None
+        assert len(kvbi) > 0
+        has_original_knobs = any(
+            knobs.get("temperature") == 0.8 for knobs in kvbi.values()
+        )
+        assert has_original_knobs
+
+
 class TestSwarmEngineRun:
     def test_run_terminates_on_budget(self) -> None:
         config = _make_config(budget=30, population_size=2)
