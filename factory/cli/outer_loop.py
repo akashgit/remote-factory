@@ -198,6 +198,31 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
             return 1
 
+    # If a seed_workflow is configured, try to load it and merge knob fields
+    # onto the base_workflow — Package.compile() produces knob_values/bounds/expandable
+    # that must survive into the seed population.
+    if config.seed_workflow:
+        from factory.workflow.registry import WorkflowRegistry
+
+        registry_wf = WorkflowRegistry.get_workflow(config.seed_workflow)
+        if registry_wf is not None:
+            _log.info("seed_workflow_knobs_from_registry", name=config.seed_workflow)
+            base_workflow = registry_wf
+
+    # If a task_module is configured and its Task provides a workflow via
+    # get_task(), try to extract knob fields from it.
+    if config.task_module:
+        try:
+            task = config.get_task()
+            task_wf = getattr(task, "workflow", None)
+            if callable(task_wf):
+                tw = task_wf()
+                if hasattr(tw, "knob_values") and tw.knob_values:
+                    base_workflow = tw
+                    _log.info("seed_workflow_from_task", knobs=list(tw.knob_values.keys()))
+        except Exception:
+            _log.info("task_workflow_not_available")
+
     target_dir = Path(config.target_project) if config.target_project else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
     registry.prune_stale_modes()
@@ -387,7 +412,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
 
     target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
-    reflector = OuterLoopReflector(project_dir=project_path)
+    reflector = OuterLoopReflector(project_dir=project_path, llm_reflect=True)
 
     results_path = project_path / ".factory" / "outer_loop" / "results" / f"gen{generation}.json"
     saved_results: dict[str, dict[str, float]] = {}
@@ -477,10 +502,24 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     if reflection_path.exists():
         try:
             data = json.loads(reflection_path.read_text())
-            reflection_report = ReflectionReport(
-                **{k: v for k, v in data.items() if k != "generation"}
-            )
-            _log.info("reflection_report_loaded", generation=generation)
+            from factory.outer_loop.reflector import MutationSuggestion
+
+            raw_typed = data.pop("typed_suggestions", [])
+            filtered = {k: v for k, v in data.items() if k != "generation"}
+            reflection_report = ReflectionReport(**filtered)
+            if isinstance(raw_typed, list):
+                for item in raw_typed:
+                    if isinstance(item, dict):
+                        reflection_report.typed_suggestions.append(
+                            MutationSuggestion(
+                                operator=item.get("operator", ""),
+                                target=item.get("target", ""),
+                                rationale=item.get("rationale", ""),
+                                value=item.get("value"),
+                            )
+                        )
+            _log.info("reflection_report_loaded", generation=generation,
+                      typed_suggestions=len(reflection_report.typed_suggestions))
         except (json.JSONDecodeError, OSError, TypeError) as exc:
             _log.warning("reflection_report_load_failed", error=str(exc))
 

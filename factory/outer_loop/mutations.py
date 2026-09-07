@@ -20,7 +20,7 @@ from factory.workflow.primitives import (
     Workflow,
 )
 
-from factory.outer_loop.reflector import ReflectionReport
+from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
 
 log = structlog.get_logger()
 
@@ -73,22 +73,35 @@ class WeightedRandomStrategy:
         generation: int,
         reflection: ReflectionReport,
     ) -> MutationType:
-        """Select an operator guided by reflection suggestions."""
+        """Select an operator guided by reflection suggestions.
+
+        Prefers typed_suggestions (direct enum matching) over string-based
+        substring matching. Falls back to string path when typed_suggestions
+        is empty (backward compat with persisted reflections from prior runs).
+        """
         op_counts: dict[MutationType, int] = {}
-        for suggestion in reflection.mutation_suggestions + reflection.structural_recommendations:
-            upper = suggestion.upper()
-            if "NODE_INSERT" in upper:
-                op_counts[MutationType.NODE_INSERT] = op_counts.get(MutationType.NODE_INSERT, 0) + 1
-            elif "NODE_REMOVE" in upper:
-                op_counts[MutationType.NODE_REMOVE] = op_counts.get(MutationType.NODE_REMOVE, 0) + 1
-            elif "PARALLELIZE" in upper:
-                op_counts[MutationType.PARALLELIZE] = op_counts.get(MutationType.PARALLELIZE, 0) + 1
-            elif "PARAM_MUTATE" in upper:
-                op_counts[MutationType.PARAM_MUTATE] = op_counts.get(MutationType.PARAM_MUTATE, 0) + 1
-            elif "PROMPT_MUTATE" in upper:
-                op_counts[MutationType.PROMPT_MUTATE] = op_counts.get(MutationType.PROMPT_MUTATE, 0) + 1
-            elif "KNOB" in upper:
-                op_counts[MutationType.KNOB_MUTATE] = op_counts.get(MutationType.KNOB_MUTATE, 0) + 1
+
+        if reflection.typed_suggestions:
+            _VALID_OPS = {t.value for t in MutationType}
+            for ts in reflection.typed_suggestions:
+                if ts.operator in _VALID_OPS:
+                    mt = MutationType(ts.operator)
+                    op_counts[mt] = op_counts.get(mt, 0) + 1
+        else:
+            for suggestion in reflection.mutation_suggestions + reflection.structural_recommendations:
+                upper = suggestion.upper()
+                if "NODE_INSERT" in upper:
+                    op_counts[MutationType.NODE_INSERT] = op_counts.get(MutationType.NODE_INSERT, 0) + 1
+                elif "NODE_REMOVE" in upper:
+                    op_counts[MutationType.NODE_REMOVE] = op_counts.get(MutationType.NODE_REMOVE, 0) + 1
+                elif "PARALLELIZE" in upper:
+                    op_counts[MutationType.PARALLELIZE] = op_counts.get(MutationType.PARALLELIZE, 0) + 1
+                elif "PARAM_MUTATE" in upper:
+                    op_counts[MutationType.PARAM_MUTATE] = op_counts.get(MutationType.PARAM_MUTATE, 0) + 1
+                elif "PROMPT_MUTATE" in upper:
+                    op_counts[MutationType.PROMPT_MUTATE] = op_counts.get(MutationType.PROMPT_MUTATE, 0) + 1
+                elif "KNOB" in upper:
+                    op_counts[MutationType.KNOB_MUTATE] = op_counts.get(MutationType.KNOB_MUTATE, 0) + 1
 
         if not op_counts:
             return self.select_operator(parent, generation, {})
@@ -722,12 +735,18 @@ def default_knob_expander(
 
 
 def _parse_knob_suggestion(
-    suggestion: str,
+    suggestion: str | MutationSuggestion,
 ) -> tuple[str, str] | None:
-    """Extract (knob_name, best_value) from a KNOB_MUTATE suggestion string."""
+    """Extract (knob_name, best_value) from a KNOB_MUTATE suggestion.
+
+    Accepts either a typed MutationSuggestion or a legacy string.
+    """
+    if isinstance(suggestion, MutationSuggestion):
+        if suggestion.operator == "knob_mutate" and suggestion.value is not None:
+            return (suggestion.target, suggestion.value)
+        return None
     if not suggestion.startswith("KNOB_MUTATE:"):
         return None
-    # Format: "KNOB_MUTATE: name=value (avg score +X) outperforms ..."
     rest = suggestion[len("KNOB_MUTATE:"):].strip()
     if "=" not in rest:
         return None
@@ -762,9 +781,17 @@ def mutate_knob(
     guided_knob: str | None = None
     guided_val: str | float | None = None
     if reflection_report and random.random() < 0.7:
-        suggestions = [
-            _parse_knob_suggestion(s) for s in reflection_report.mutation_suggestions
+        # Prefer typed suggestions over string parsing
+        typed_knobs = [
+            ts for ts in reflection_report.typed_suggestions
+            if ts.operator == "knob_mutate" and ts.value is not None
         ]
+        if typed_knobs:
+            suggestions = [_parse_knob_suggestion(ts) for ts in typed_knobs]
+        else:
+            suggestions = [
+                _parse_knob_suggestion(s) for s in reflection_report.mutation_suggestions
+            ]
         valid = [(k, v) for parsed in suggestions if parsed
                  for k, v in [parsed] if k in wf.knob_values]
         if valid:
@@ -850,7 +877,9 @@ def apply_random_mutation(
     use_guided = (
         reflection_report is not None
         and hasattr(strategy, "select_guided_operator")
-        and (reflection_report.mutation_suggestions or reflection_report.structural_recommendations)
+        and (reflection_report.typed_suggestions
+             or reflection_report.mutation_suggestions
+             or reflection_report.structural_recommendations)
     )
 
     for attempt in range(max_attempts):
