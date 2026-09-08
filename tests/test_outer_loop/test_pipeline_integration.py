@@ -21,6 +21,22 @@ from factory.cli import main
 from factory.outer_loop.filesystem import load_checkpoint, load_config
 from factory.outer_loop.models import EvalResult
 from factory.outer_loop.population import Population
+from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+_SEED_WORKFLOW = Workflow(
+    name="test-seed",
+    nodes={
+        "builder": AgentNode(
+            id="builder",
+            role=AgentRole.BUILDER,
+            model="opus",
+            timeout=7200,
+        ),
+    },
+    edges=[],
+    start_node="builder",
+    terminal=True,
+)
 
 
 def _outer_loop_project(tmp_path: Path) -> Path:
@@ -66,12 +82,14 @@ def _run_calibrate(project: Path) -> int:
     with (
         patch("factory.cli.outer_loop.shutil.disk_usage", return_value=_AMPLE_DISK),
         patch("factory.agents.runner.invoke_agent", side_effect=RuntimeError("should not call agent")),
+        patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=_SEED_WORKFLOW),
     ):
         return main([
             "outer-loop", "calibrate", str(project),
             "--benchmark", "featurebench",
             "--budget", "20",
             "--population-size", "2",
+            "--seed-workflow", "test.module:build_pipeline",
         ])
 
 
@@ -154,6 +172,7 @@ def _run_calibrate_with_project_dir(project: Path, target: Path) -> int:
     with (
         patch("factory.cli.outer_loop.shutil.disk_usage", return_value=_AMPLE_DISK),
         patch("factory.agents.runner.invoke_agent", side_effect=RuntimeError("should not call agent")),
+        patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=_SEED_WORKFLOW),
     ):
         return main([
             "outer-loop", "calibrate", str(project),
@@ -161,6 +180,7 @@ def _run_calibrate_with_project_dir(project: Path, target: Path) -> int:
             "--budget", "20",
             "--population-size", "2",
             "--project-dir", str(target),
+            "--seed-workflow", "test.module:build_pipeline",
         ])
 
 
@@ -416,8 +436,6 @@ class TestOuterLoopCLIPipeline:
 
     def test_calibrate_knob_propagation(self, tmp_path: Path) -> None:
         """Seed workflow knob_values/bounds/expandable survive into population."""
-        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
-
         knob_workflow = Workflow(
             name="knob-seed",
             nodes={
@@ -441,34 +459,14 @@ class TestOuterLoopCLIPipeline:
         with (
             patch("factory.cli.outer_loop.shutil.disk_usage", return_value=_AMPLE_DISK),
             patch("factory.agents.runner.invoke_agent", side_effect=RuntimeError("should not call agent")),
-            patch(
-                "factory.workflow.registry.WorkflowRegistry.get_workflow",
-                return_value=knob_workflow,
-            ),
-            patch(
-                "factory.outer_loop.engine.WorkflowRegistry.get_workflow",
-                return_value=knob_workflow,
-            ),
+            patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=knob_workflow),
         ):
-            ol_dir = project / ".factory" / "outer_loop"
-            ol_dir.mkdir(parents=True, exist_ok=True)
-            from factory.outer_loop.models import SwarmConfig
-
-            config = SwarmConfig(
-                benchmark="featurebench",
-                budget=20,
-                population_size=2,
-                seed_workflow="test-seed",
-            )
-            (ol_dir / "config.json").write_text(
-                json.dumps(config.model_dump(mode="json"), indent=2),
-            )
-
             rc = main([
                 "outer-loop", "calibrate", str(project),
                 "--benchmark", "featurebench",
                 "--budget", "20",
                 "--population-size", "2",
+                "--seed-workflow", "test:knob_pipeline",
             ])
 
         assert rc == 0
