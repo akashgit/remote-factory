@@ -1411,3 +1411,285 @@ class TestOuterLoopWorkflowGraph:
         assert restored.name == wf.name
         assert set(restored.nodes.keys()) == set(wf.nodes.keys())
         assert len(restored.edges) == len(wf.edges)
+
+
+class TestEvaluatePropagatesScoresToPopulation:
+    """_cmd_evaluate must write scores back to population/population.json.
+
+    Without this the population keeps score=0.0 for every individual and the
+    evolve step has no fitness signal for parent selection.
+    """
+
+    @staticmethod
+    def _builder_workflow(name: str) -> object:
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        return Workflow(
+            name=name,
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+
+    def test_population_scores_updated_from_results(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.outer_loop.models import EvalResult, SwarmConfig
+        from factory.outer_loop.population import Population
+
+        project = Path(str(tmp_path))
+        (project / ".factory" / "outer_loop" / "modes").mkdir(parents=True)
+        pop_dir = project / ".factory" / "outer_loop" / "population"
+
+        registry = EphemeralModeRegistry(project)
+        population = Population()
+        scores_by_mode: dict[str, float] = {}
+        expected: dict[str, float] = {}
+        for i, score in enumerate([0.25, 0.75]):
+            wf = self._builder_workflow(f"seed-{i}")
+            ind = Population.make_individual(wf, generation=0)
+            population.add(ind)
+            mode_name = registry.register(ind.id, 0, wf)
+            scores_by_mode[mode_name] = score
+            expected[ind.id] = score
+        population.save(pop_dir)
+
+        assert all(i.score == 0.0 for i in Population.load(pop_dir).individuals)
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.side_effect = lambda wf, *a, **k: EvalResult(
+            score=scores_by_mode[wf.name],
+            benchmark_score=scores_by_mode[wf.name],
+            cost_usd=scores_by_mode[wf.name] * 10,
+        )
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.load_checkpoint", return_value=None), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator", return_value=mock_evaluator):
+            from factory.cli.outer_loop import _cmd_evaluate
+
+            ns = argparse.Namespace(project_path=str(project), generation=0, project_dir=None)
+            assert _cmd_evaluate(ns) == 0
+
+        reloaded = Population.load(pop_dir)
+        assert reloaded.size == 2
+        for ind in reloaded.individuals:
+            assert ind.score == expected[ind.id]
+            assert ind.cost_usd == expected[ind.id] * 10
+
+        results = json.loads(
+            (project / ".factory" / "outer_loop" / "results" / "gen0.json").read_text()
+        )
+        by_id = {i.id: i.score for i in reloaded.individuals}
+        for mode_name, entry in results.items():
+            suffix = mode_name[len("evolve-gen0-"):]
+            match = next(iid for iid in by_id if iid.startswith(suffix))
+            assert by_id[match] == entry["score"]
+
+    def test_missing_population_file_is_tolerated(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _propagate_scores_to_population
+
+        project = Path(str(tmp_path))
+        updated = _propagate_scores_to_population(
+            project, 0, {"evolve-gen0-abc": {"score": 0.5, "cost_usd": 1.0}}
+        )
+        assert updated == 0
+        assert not (project / ".factory" / "outer_loop" / "population").exists()
+
+    def test_unmatched_mode_is_skipped(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _propagate_scores_to_population
+        from factory.outer_loop.population import Population
+
+        project = Path(str(tmp_path))
+        pop_dir = project / ".factory" / "outer_loop" / "population"
+        population = Population()
+        ind = Population.make_individual(self._builder_workflow("seed"), generation=0)
+        population.add(ind)
+        population.save(pop_dir)
+
+        updated = _propagate_scores_to_population(
+            project, 0, {"evolve-gen0-zzzzzzzz": {"score": 0.9, "cost_usd": 1.0}}
+        )
+        assert updated == 0
+        assert Population.load(pop_dir).get(ind.id).score == 0.0
+
+
+class TestLoadModeScores:
+    def test_missing_results_file_returns_empty(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _load_mode_scores
+
+        assert _load_mode_scores(Path(str(tmp_path)), 0) == {}
+
+    def test_scores_parsed_from_results(self, tmp_path: object) -> None:
+        import json
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _load_mode_scores
+
+        project = Path(str(tmp_path))
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+        (results_dir / "gen0.json").write_text(json.dumps({
+            "evolve-gen0-aaa": {"score": 8.11, "cost_usd": 1.0},
+            "evolve-gen0-bbb": {"score": 4.81, "cost_usd": 2.0},
+        }))
+
+        assert _load_mode_scores(project, 0) == {
+            "evolve-gen0-aaa": 8.11,
+            "evolve-gen0-bbb": 4.81,
+        }
+
+    def test_malformed_results_returns_empty(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from factory.cli.outer_loop import _load_mode_scores
+
+        project = Path(str(tmp_path))
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+        (results_dir / "gen0.json").write_text("{not json")
+
+        assert _load_mode_scores(project, 0) == {}
+
+
+class TestSelectParent:
+    def test_empty_modes_returns_none(self) -> None:
+        from factory.cli.outer_loop import _select_parent
+
+        assert _select_parent([], {}) is None
+
+    def test_single_mode_always_selected(self) -> None:
+        from factory.cli.outer_loop import _select_parent
+
+        assert _select_parent(["only"], {"only": 0.0}) == "only"
+
+    def test_worst_parent_never_wins_a_tournament(self) -> None:
+        from factory.cli.outer_loop import _select_parent
+
+        modes = ["a", "b", "c", "d"]
+        scores = {"a": 8.11, "b": 6.0, "c": 5.5, "d": 4.81}
+        counts = dict.fromkeys(modes, 0)
+        for _ in range(400):
+            counts[_select_parent(modes, scores)] += 1
+
+        assert counts["d"] == 0
+        assert counts["a"] > counts["b"] > counts["c"]
+
+    def test_unscored_modes_degrade_to_uniform(self) -> None:
+        from factory.cli.outer_loop import _select_parent
+
+        modes = ["a", "b", "c", "d"]
+        counts = dict.fromkeys(modes, 0)
+        for _ in range(400):
+            counts[_select_parent(modes, {})] += 1
+
+        assert all(c > 0 for c in counts.values())
+
+
+class TestEvolveSelectionPressure:
+    """_cmd_evolve must bias offspring toward higher-scoring parents."""
+
+    def test_offspring_biased_toward_high_scoring_parents(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop import mutations as _mutations_mod
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.outer_loop.models import MutationRecord, MutationType, SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        (project / ".factory" / "outer_loop" / "modes").mkdir(parents=True)
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+
+        registry = EphemeralModeRegistry(project)
+        labelled_scores = {"best0000": 8.11, "mid00000": 6.0, "low00000": 5.5, "worst000": 4.81}
+        results: dict[str, dict[str, float]] = {}
+        for ind_id, score in labelled_scores.items():
+            wf = Workflow(
+                name=f"wf-{ind_id}",
+                nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+                edges=[], start_node="b", terminal=True,
+            )
+            mode_name = registry.register(ind_id, 0, wf)
+            results[mode_name] = {"score": score, "cost_usd": 1.0}
+        (results_dir / "gen0.json").write_text(json.dumps(results))
+
+        parents: list[str] = []
+
+        def fake_apply(wf, *args, **kwargs):
+            # Stubbed: the real operators can call out to an LLM (PROMPT_MUTATE),
+            # which would make a 200-trial statistical test take minutes.
+            parents.append(wf.name)
+            return wf, MutationRecord(operator=MutationType.PARAM_MUTATE)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50, population_size=200)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.load_checkpoint", return_value=None), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=fake_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            assert _cmd_evolve(ns) == 0
+
+        assert len(parents) == 200
+        counts = {ind_id: 0 for ind_id in labelled_scores}
+        for name in parents:
+            counts[name[len("evolve-gen0-"):]] += 1
+
+        assert counts["worst000"] == 0
+        assert counts["best0000"] > counts["mid00000"]
+        assert counts["best0000"] > counts["low00000"]
+
+    def test_only_current_generation_modes_are_parents(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop import mutations as _mutations_mod
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+        from factory.outer_loop.models import MutationRecord, MutationType, SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        (project / ".factory" / "outer_loop" / "modes").mkdir(parents=True)
+
+        registry = EphemeralModeRegistry(project)
+        for gen, ind_id in ((0, "genzero0"), (1, "genone000")):
+            wf = Workflow(
+                name=f"wf-{ind_id}",
+                nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+                edges=[], start_node="b", terminal=True,
+            )
+            registry.register(ind_id, gen, wf)
+
+        parents: list[str] = []
+
+        def fake_apply(wf, *args, **kwargs):
+            parents.append(wf.name)
+            return wf, MutationRecord(operator=MutationType.PARAM_MUTATE)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50, population_size=10)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=fake_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            assert _cmd_evolve(ns) == 0
+
+        assert parents
+        assert all(p.startswith("evolve-gen0-") for p in parents)

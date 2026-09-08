@@ -295,6 +295,115 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mode_suffix(mode_name: str, generation: int) -> str:
+    """Strip the ``evolve-gen{N}-`` prefix from a mode name.
+
+    The registry names modes ``evolve-gen{N}-{individual_id[:8]}``, so the
+    remainder identifies the individual it was registered from.
+    """
+    prefix = f"evolve-gen{generation}-"
+    return mode_name[len(prefix):] if mode_name.startswith(prefix) else mode_name
+
+
+def _propagate_scores_to_population(
+    project_path: Path,
+    generation: int,
+    results: dict[str, dict[str, float]],
+) -> int:
+    """Write evaluation scores back into ``population/population.json``.
+
+    Without this the population keeps ``score=0.0`` for every individual and
+    the next generation's parent selection has no fitness signal to act on.
+    Returns the number of individuals updated.
+    """
+    from factory.outer_loop.population import Population
+
+    pop_dir = project_path / ".factory" / "outer_loop" / "population"
+    if not (pop_dir / "population.json").exists():
+        _log.debug("population_not_found_skipping_score_propagation", path=str(pop_dir))
+        return 0
+
+    population = Population.load(pop_dir)
+    if population.size == 0:
+        return 0
+
+    updated = 0
+    for mode_name, res in results.items():
+        suffix = _mode_suffix(mode_name, generation)
+        ind = population.get(suffix)
+        if ind is None:
+            ind = next(
+                (i for i in population.individuals if i.id.startswith(suffix)),
+                None,
+            )
+        if ind is None:
+            _log.debug("population_individual_not_found", mode=mode_name, suffix=suffix)
+            continue
+        updated_ind = ind.model_copy(update={
+            "score": res.get("score", 0.0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        })
+        population.remove(ind.id)
+        population.add(updated_ind)
+        updated += 1
+
+    if updated:
+        population.save(pop_dir)
+        _log.info("population_scores_updated", generation=generation, count=updated)
+    return updated
+
+
+def _load_mode_scores(project_path: Path, generation: int) -> dict[str, float]:
+    """Load ``results/gen{N}.json`` as a ``{mode_name: score}`` mapping.
+
+    Returns an empty mapping when the generation has not been evaluated yet.
+    """
+    results_path = (
+        project_path / ".factory" / "outer_loop" / "results" / f"gen{generation}.json"
+    )
+    if not results_path.exists():
+        return {}
+    try:
+        data = json.loads(results_path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        _log.warning("mode_scores_load_failed", generation=generation, error=str(exc))
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
+    scores: dict[str, float] = {}
+    for mode_name, entry in data.items():
+        if isinstance(entry, dict):
+            value = entry.get("score", 0.0)
+        else:
+            value = entry
+        try:
+            scores[mode_name] = float(value)
+        except (TypeError, ValueError):
+            scores[mode_name] = 0.0
+    return scores
+
+
+def _select_parent(
+    modes: list[str],
+    mode_scores: dict[str, float],
+    tournament_size: int = 2,
+) -> str | None:
+    """Tournament selection over mode names, ranked by evaluation score.
+
+    Picks ``tournament_size`` candidates uniformly at random and returns the
+    highest-scoring one. Unevaluated modes score 0.0, so an all-unevaluated
+    generation degrades to uniform random selection.
+    """
+    import random
+
+    if not modes:
+        return None
+    k = min(tournament_size, len(modes))
+    contenders = random.sample(modes, k)
+    return max(contenders, key=lambda m: mode_scores.get(m, 0.0))
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate the current generation's population."""
     project_path = Path(getattr(args, "project_path", ".")).resolve()
@@ -359,6 +468,10 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     results_dir.mkdir(parents=True, exist_ok=True)
     results_path = results_dir / f"gen{generation}.json"
     results_path.write_text(json.dumps(results, indent=2))
+
+    updated = _propagate_scores_to_population(project_path, generation, results)
+    if updated:
+        print(f"Updated {updated} population individuals with evaluation scores")
 
     state = load_checkpoint(project_path) or OuterLoopState(budget_remaining=config.budget)
     gen_best = max((r["score"] for r in results.values()), default=0.0)
@@ -557,11 +670,26 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         except (json.JSONDecodeError, OSError, TypeError) as exc:
             _log.warning("reflection_report_load_failed", error=str(exc))
 
+    mode_scores = _load_mode_scores(project_path, generation)
+    gen_prefix = f"evolve-gen{generation}-"
+    eval_prefix = f"evolve-gen{generation}-eval-"
+    parent_modes = [
+        m for m in modes if m.startswith(gen_prefix) and not m.startswith(eval_prefix)
+    ]
+    if not parent_modes:
+        _log.warning("no_modes_for_generation_using_all", generation=generation)
+        parent_modes = modes
+    if not mode_scores:
+        _log.warning("no_evaluation_results_selection_is_uniform", generation=generation)
+
     strategy = WeightedRandomStrategy(mutation_rate=config.mutation_rate)
     offspring_count = 0
 
-    for mode_name in modes[:config.population_size]:
-        wf = registry.load(mode_name)
+    for _ in range(config.population_size):
+        parent_mode = _select_parent(parent_modes, mode_scores)
+        if parent_mode is None:
+            break
+        wf = registry.load(parent_mode)
         if wf is None:
             continue
         result = apply_random_mutation(
@@ -574,7 +702,10 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
             child_id = f"gen{generation + 1}_{offspring_count}"
             registry.register(child_id, generation + 1, child_wf)
             offspring_count += 1
-            print(f"  Created offspring {child_id} via {mutation_rec.operator.value}")
+            print(
+                f"  Created offspring {child_id} via {mutation_rec.operator.value} "
+                f"(parent {parent_mode} score={mode_scores.get(parent_mode, 0.0):.4f})"
+            )
 
     print(f"Evolution complete: {offspring_count} offspring created for generation {generation + 1}")
     return 0
