@@ -463,16 +463,10 @@ class TestNodeRemoveLastAgentGuard:
         nodes: dict[str, AgentNode | FnNode] = {
             "start": FnNode(id="start", command="echo start"),
             "agent": AgentNode(id="agent", role=AgentRole.BUILDER),
-            "end": FnNode(id="end", command="echo end"),
         }
-        edges = [
-            Edge(source="start", target="agent"),
-            Edge(source="agent", target="end"),
-        ]
+        edges = [Edge(source="start", target="agent")]
         wf2 = Workflow(name="one_agent", nodes=nodes, edges=edges, start_node="start")
         result = _try_mutation(wf2, MutationType.NODE_REMOVE, set())
-        # "agent" is the only structurally mutable node that's an AgentNode
-        # and it's the last AgentNode, so remove must return None
         assert result is None
 
     def test_remove_non_last_agent_succeeds(self, simple_workflow: Workflow) -> None:
