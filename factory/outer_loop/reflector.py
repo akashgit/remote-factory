@@ -478,6 +478,7 @@ class OuterLoopReflector:
     @staticmethod
     def _collect_individual_details(
         id_: str, score: float, rec: CycleRecord | None,
+        *, char_budget: int | None = None,
     ) -> str:
         """Collect eval/verify details from one individual for LLM context."""
         parts = [f"ID: {id_[:8]}, score: {score:.3f}"]
@@ -512,6 +513,35 @@ class OuterLoopReflector:
         if rec.steps:
             roles = [f"{s.role}({'ok' if s.succeeded else 'FAIL'})" for s in rec.steps[:5]]
             parts.append("agents: " + ", ".join(roles))
+
+        if rec.experiments:
+            _EXP_OVERHEAD = 25
+            remaining: float = (
+                (char_budget - len("; ".join(parts)))
+                if char_budget is not None
+                else 2000.0
+            )
+            exp_lines: list[str] = []
+            for exp in rec.experiments[:5]:
+                line = f"exp{exp.exp_id}({exp.verdict}"
+                if exp.score_delta is not None:
+                    line += f" Δ={exp.score_delta:+.3f}"
+                line += ")"
+                if exp.hypothesis:
+                    hyp_budget = max(0, int(remaining) - _EXP_OVERHEAD - len(line))
+                    if hyp_budget > 0:
+                        line += f" {exp.hypothesis[:hyp_budget]}"
+                candidate_len = len("; ".join(parts + exp_lines + [line]))
+                if char_budget is not None and candidate_len > char_budget:
+                    break
+                exp_lines.append(line)
+                remaining = (
+                    (char_budget - len("; ".join(parts + exp_lines)))
+                    if char_budget is not None
+                    else remaining - len(line) - 2
+                )
+            parts.extend(exp_lines)
+
         return "; ".join(parts)
 
     @staticmethod
@@ -539,12 +569,19 @@ class OuterLoopReflector:
         report: ReflectionReport,
     ) -> None:
         """LLM-based contrastive reflection: one call per generation."""
+        n_individuals = len(top_k) + len(bottom_k)
+        per_individual = int(_LLM_PAYLOAD_BUDGET * 0.85) // max(n_individuals, 1)
+
         top_details = []
         for id_, score, rec in top_k:
-            top_details.append(self._collect_individual_details(id_, score, rec))
+            top_details.append(
+                self._collect_individual_details(id_, score, rec, char_budget=per_individual)
+            )
         bottom_details = []
         for id_, score, rec in bottom_k:
-            bottom_details.append(self._collect_individual_details(id_, score, rec))
+            bottom_details.append(
+                self._collect_individual_details(id_, score, rec, char_budget=per_individual)
+            )
 
         node_info = self._collect_node_ids(list(top_k) + list(bottom_k))
         node_section = ""

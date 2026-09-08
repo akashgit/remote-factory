@@ -1110,3 +1110,162 @@ class TestCollectNodeIds:
         )
         result = OuterLoopReflector._collect_node_ids([("w1", 0.9, rec1), ("l1", 0.5, rec2)])
         assert len(result) == 1
+
+
+class TestExperimentContextInDetails:
+    """Tests for rec.experiments appearing in _collect_individual_details."""
+
+    def _make_record_with_experiments(
+        self,
+        experiments: list | None = None,
+        steps: list[AgentStep] | None = None,
+    ) -> CycleRecord:
+        from factory.cycle_analyzer import ExperimentRecord
+
+        if experiments is None:
+            experiments = [
+                ExperimentRecord(
+                    exp_id=1, hypothesis="Add retry logic for flaky tests",
+                    verdict="keep", score_before=0.5, score_after=0.55,
+                    score_delta=0.05, cost_usd=0.1, duration_s=30.0,
+                ),
+                ExperimentRecord(
+                    exp_id=2, hypothesis="Refactor error handling",
+                    verdict="revert", score_before=0.55, score_after=0.50,
+                    score_delta=-0.05, cost_usd=0.2, duration_s=45.0,
+                ),
+            ]
+        return CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=60.0, score_start=0.5, score_end=0.55, score_delta=0.05,
+            steps=steps or [], experiments=experiments,
+            kept=1, reverted=1,
+        )
+
+    def test_experiments_appear_in_output(self) -> None:
+        rec = self._make_record_with_experiments()
+        result = OuterLoopReflector._collect_individual_details("abc12345", 0.55, rec)
+        assert "exp1(keep" in result
+        assert "exp2(revert" in result
+        assert "+0.050" in result
+        assert "-0.050" in result
+
+    def test_hypothesis_text_included(self) -> None:
+        rec = self._make_record_with_experiments()
+        result = OuterLoopReflector._collect_individual_details("abc12345", 0.55, rec)
+        assert "retry logic" in result
+
+    def test_hypothesis_truncated_under_tight_budget(self) -> None:
+        from factory.cycle_analyzer import ExperimentRecord
+
+        long_hyp = "A" * 500
+        experiments = [
+            ExperimentRecord(
+                exp_id=1, hypothesis=long_hyp, verdict="keep",
+                score_before=0.5, score_after=0.6, score_delta=0.1,
+                cost_usd=0.1, duration_s=30.0,
+            ),
+        ]
+        rec = self._make_record_with_experiments(experiments=experiments)
+        result = OuterLoopReflector._collect_individual_details(
+            "abc12345", 0.6, rec, char_budget=200,
+        )
+        assert "exp1(keep" in result
+        assert long_hyp not in result
+        assert len(result) <= 200
+
+    def test_experiments_omitted_when_budget_exhausted(self) -> None:
+        from factory.cycle_analyzer import ExperimentRecord
+
+        experiments = [
+            ExperimentRecord(
+                exp_id=1, hypothesis="Should not appear", verdict="keep",
+                score_before=0.5, score_after=0.6, score_delta=0.1,
+                cost_usd=0.1, duration_s=30.0,
+            ),
+        ]
+        rec = CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=60.0, score_start=0.5, score_end=0.6, score_delta=0.1,
+            steps=[], experiments=experiments,
+            eval_details={f"k{i}": "x" * 100 for i in range(5)},
+        )
+        result = OuterLoopReflector._collect_individual_details(
+            "abc12345", 0.6, rec, char_budget=80,
+        )
+        assert "exp1" not in result
+
+    def test_char_budget_none_still_includes_experiments(self) -> None:
+        rec = self._make_record_with_experiments()
+        result = OuterLoopReflector._collect_individual_details("abc12345", 0.55, rec)
+        assert "exp1" in result
+        assert "exp2" in result
+
+    def test_no_experiments_field_unchanged_output(self) -> None:
+        rec = _make_record(0.7, steps=[_make_step("builder")])
+        result_without_budget = OuterLoopReflector._collect_individual_details(
+            "abc12345", 0.7, rec,
+        )
+        result_with_budget = OuterLoopReflector._collect_individual_details(
+            "abc12345", 0.7, rec, char_budget=5000,
+        )
+        assert result_without_budget == result_with_budget
+
+    def test_experiment_without_hypothesis(self) -> None:
+        from factory.cycle_analyzer import ExperimentRecord
+
+        experiments = [
+            ExperimentRecord(
+                exp_id=3, hypothesis=None, verdict="keep",
+                score_before=0.5, score_after=0.6, score_delta=0.1,
+                cost_usd=0.1, duration_s=30.0,
+            ),
+        ]
+        rec = self._make_record_with_experiments(experiments=experiments)
+        result = OuterLoopReflector._collect_individual_details("abc12345", 0.6, rec)
+        assert "exp3(keep Δ=+0.100)" in result
+
+    def test_experiment_without_score_delta(self) -> None:
+        from factory.cycle_analyzer import ExperimentRecord
+
+        experiments = [
+            ExperimentRecord(
+                exp_id=4, hypothesis="Test hypothesis", verdict="error",
+                score_before=None, score_after=None, score_delta=None,
+                cost_usd=0.0, duration_s=10.0,
+            ),
+        ]
+        rec = self._make_record_with_experiments(experiments=experiments)
+        result = OuterLoopReflector._collect_individual_details("abc12345", 0.5, rec)
+        assert "exp4(error)" in result
+        assert "Δ=" not in result.split("exp4")[1].split(";")[0]
+
+    def test_llm_reflect_passes_per_individual_budget(self) -> None:
+        from unittest.mock import patch, MagicMock
+
+        reflector = OuterLoopReflector(k=1)
+        rec = self._make_record_with_experiments()
+        top_k = [("w1", 0.9, rec)]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        captured_budgets: list[int | None] = []
+        original_fn = OuterLoopReflector._collect_individual_details
+
+        def spy(id_: str, score: float, rec: CycleRecord | None, *, char_budget: int | None = None) -> str:
+            captured_budgets.append(char_budget)
+            return original_fn(id_, score, rec, char_budget=char_budget)
+
+        fake_response = '{"prompt_improvements": [], "failure_patterns": [], "mutation_suggestions": []}'
+
+        with (
+            patch.object(OuterLoopReflector, "_collect_individual_details", staticmethod(spy)),
+            patch("factory.outer_loop.reflector.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(stdout=fake_response, returncode=0)
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(captured_budgets) == 2
+        assert all(b is not None for b in captured_budgets)
+        expected = int(8000 * 0.85) // 2
+        assert all(b == expected for b in captured_budgets)
