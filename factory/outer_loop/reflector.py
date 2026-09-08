@@ -16,12 +16,14 @@ from pathlib import Path
 import structlog
 
 from factory.cycle_analyzer import CycleRecord
+from factory.outer_loop.models import MutationType
 
 log = structlog.get_logger()
 
 _INSTANCE_CHAR_BUDGET = 800
 _MAX_INSTANCES_PER_INDIVIDUAL = 5
 _LLM_PAYLOAD_BUDGET = 8000
+_VALID_LLM_OPERATORS = {t.value for t in MutationType}
 
 
 @dataclass
@@ -511,6 +513,23 @@ class OuterLoopReflector:
             parts.append("agents: " + ", ".join(roles))
         return "; ".join(parts)
 
+    @staticmethod
+    def _collect_node_ids(
+        records: Sequence[tuple[str, float, CycleRecord | None]],
+    ) -> list[dict[str, str | None]]:
+        """Collect unique node IDs and roles from all CycleRecords."""
+        seen: dict[str, str | None] = {}
+        for _, _, rec in records:
+            if rec is None:
+                continue
+            for nid, nt in rec.node_trace.items():
+                if nid not in seen:
+                    seen[nid] = nt.role
+            for step in rec.steps:
+                if step.role and step.role not in seen:
+                    seen[step.role] = step.role
+        return [{"node_id": nid, "role": role} for nid, role in seen.items()]
+
     def _llm_reflect(
         self,
         top_k: Sequence[tuple[str, float, CycleRecord | None]],
@@ -526,15 +545,26 @@ class OuterLoopReflector:
         for id_, score, rec in bottom_k:
             bottom_details.append(self._collect_individual_details(id_, score, rec))
 
+        node_info = self._collect_node_ids(list(top_k) + list(bottom_k))
+        node_section = ""
+        if node_info:
+            node_lines = [f"  {n['node_id']} (role={n['role']})" for n in node_info]
+            node_section = (
+                "\n\nAVAILABLE WORKFLOW NODES:\n"
+                + "\n".join(node_lines)
+            )
+
         payload = (
             "TOP-PERFORMING CANDIDATES:\n"
             + "\n".join(f"  {d}" for d in top_details)
             + "\n\nBOTTOM-PERFORMING CANDIDATES:\n"
             + "\n".join(f"  {d}" for d in bottom_details)
+            + node_section
         )
         if len(payload) > _LLM_PAYLOAD_BUDGET:
             payload = payload[:_LLM_PAYLOAD_BUDGET] + "\n... (truncated)"
 
+        operators_list = ", ".join(sorted(_VALID_LLM_OPERATORS))
         prompt = (
             "Analyze these verification results from an evolutionary search. "
             "Here are the details from the top-performing candidates and the "
@@ -544,9 +574,23 @@ class OuterLoopReflector:
             "Produce concrete improvement advice — specific changes to agent "
             "prompts, parameter choices, or strategies that would move bottom "
             "candidates toward top candidate behavior.\n\n"
-            "Output a JSON object with two fields:\n"
+            "Output a JSON object with three fields:\n"
             '  "prompt_improvements": list of concrete advice strings\n'
             '  "failure_patterns": list of identified failure mode strings\n'
+            '  "mutation_suggestions": list of objects, each with:\n'
+            '    "operator": one of [' + operators_list + ']\n'
+            '    "target": the node_id or knob name to mutate\n'
+            '    "rationale": why this mutation would help\n'
+            '    "value": (optional) suggested new value for knob_mutate\n'
+            "  Operator guide:\n"
+            "    prompt_mutate — change an agent's prompt (target = node_id)\n"
+            "    knob_mutate — change a tunable parameter (target = knob name, include value)\n"
+            "    param_mutate — change agent params like timeout/model (target = node_id)\n"
+            "    node_insert — add a new agent node (target = role name)\n"
+            "    node_remove — remove an agent node (target = node_id or role)\n"
+            "  For each improvement you identify, also specify which mutation "
+            "operator and target would implement it. Be specific — name the "
+            "actual node or knob to change.\n\n"
             "Output ONLY the JSON object."
         )
 
@@ -581,10 +625,34 @@ class OuterLoopReflector:
                 for item in failures:
                     if isinstance(item, str) and item.strip():
                         report.failure_patterns.append(item.strip())
+            mut_suggestions = data.get("mutation_suggestions", [])
+            if isinstance(mut_suggestions, list):
+                for item in mut_suggestions:
+                    if not isinstance(item, dict):
+                        continue
+                    op = item.get("operator")
+                    target = item.get("target")
+                    rationale = item.get("rationale")
+                    if not isinstance(op, str) or not isinstance(target, str):
+                        continue
+                    if op not in _VALID_LLM_OPERATORS:
+                        log.debug("llm_reflect_invalid_operator", operator=op)
+                        continue
+                    if not isinstance(rationale, str):
+                        rationale = ""
+                    raw_value = item.get("value")
+                    value = str(raw_value) if raw_value is not None else None
+                    report.typed_suggestions.append(MutationSuggestion(
+                        operator=op,
+                        target=target,
+                        rationale=rationale,
+                        value=value,
+                    ))
             log.info(
                 "llm_reflect_complete",
                 prompt_improvements=len(report.prompt_improvements),
                 failure_patterns_added=len(failures) if isinstance(failures, list) else 0,
+                llm_typed_suggestions=len(report.typed_suggestions),
             )
         except subprocess.TimeoutExpired:
             log.warning("llm_reflect_timeout")

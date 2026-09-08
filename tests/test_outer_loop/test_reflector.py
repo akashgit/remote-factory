@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from factory.cycle_analyzer import AgentStep, CycleRecord
@@ -793,3 +794,319 @@ class TestExtractEvalPatternsVerify:
         assert len(rejected_patterns) > 0
         error_patterns = [p for p in report.failure_patterns if "error" in p.lower()]
         assert len(error_patterns) > 0
+
+
+class TestLLMReflectMutationSuggestions:
+    """Tests for LLM-generated typed mutation suggestions."""
+
+    def test_llm_mutation_suggestions_parsed(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9, [_make_step("builder")]))]
+        bottom_k = [("l1", 0.1, _make_record(0.1, [_make_step("builder", succeeded=False)]))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": ["Use step-by-step reasoning"],
+            "failure_patterns": ["Missing error handling"],
+            "mutation_suggestions": [
+                {
+                    "operator": "prompt_mutate",
+                    "target": "builder",
+                    "rationale": "Builder needs step-by-step instructions",
+                },
+                {
+                    "operator": "knob_mutate",
+                    "target": "temperature",
+                    "rationale": "Lower temperature for more deterministic output",
+                    "value": "0.3",
+                },
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 2
+        assert report.typed_suggestions[0].operator == "prompt_mutate"
+        assert report.typed_suggestions[0].target == "builder"
+        assert report.typed_suggestions[1].operator == "knob_mutate"
+        assert report.typed_suggestions[1].value == "0.3"
+
+    def test_invalid_operators_filtered_out(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": [],
+            "failure_patterns": [],
+            "mutation_suggestions": [
+                {"operator": "prompt_mutate", "target": "builder", "rationale": "Valid"},
+                {"operator": "invalid_op", "target": "x", "rationale": "Should be filtered"},
+                {"operator": "magic_improve", "target": "y", "rationale": "Also invalid"},
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 1
+        assert report.typed_suggestions[0].operator == "prompt_mutate"
+
+    def test_empty_mutation_suggestions_handled(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": ["Improve prompts"],
+            "failure_patterns": [],
+            "mutation_suggestions": [],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 0
+        assert len(report.prompt_improvements) == 1
+
+    def test_missing_mutation_suggestions_field_handled(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": ["Advice"],
+            "failure_patterns": ["Problem"],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 0
+        assert len(report.prompt_improvements) == 1
+
+    def test_non_dict_items_in_mutation_suggestions_skipped(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": [],
+            "failure_patterns": [],
+            "mutation_suggestions": [
+                "not a dict",
+                42,
+                None,
+                {"operator": "node_insert", "target": "researcher", "rationale": "Valid"},
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 1
+        assert report.typed_suggestions[0].operator == "node_insert"
+
+    def test_missing_target_or_operator_skipped(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": [],
+            "failure_patterns": [],
+            "mutation_suggestions": [
+                {"operator": "prompt_mutate", "rationale": "No target"},
+                {"target": "builder", "rationale": "No operator"},
+                {"operator": 123, "target": "builder", "rationale": "Non-string op"},
+                {"operator": "prompt_mutate", "target": 456, "rationale": "Non-string target"},
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 0
+
+    def test_node_ids_in_prompt_context(self) -> None:
+        from unittest.mock import patch
+        from factory.cycle_analyzer import NodeTrace
+
+        reflector = OuterLoopReflector(k=1)
+        rec_with_trace = CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=10.0, score_start=0.0, score_end=0.9, score_delta=0.9,
+            steps=[_make_step("builder")], kept=2,
+            node_trace={
+                "builder": NodeTrace(
+                    node_id="builder", node_type="AgentNode", role="builder",
+                    declared_writes=set(), declared_reads=set(),
+                ),
+                "researcher": NodeTrace(
+                    node_id="researcher", node_type="AgentNode", role="researcher",
+                    declared_writes=set(), declared_reads=set(),
+                ),
+            },
+        )
+        top_k = [("w1", 0.9, rec_with_trace)]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        captured_prompts: list[str] = []
+
+        def fake_run(*args, **kwargs):
+            from unittest.mock import MagicMock
+            prompt_arg = args[0][2] if len(args[0]) > 2 else ""
+            captured_prompts.append(prompt_arg)
+            mock = MagicMock()
+            mock.stdout = '{"prompt_improvements": [], "failure_patterns": [], "mutation_suggestions": []}'
+            mock.returncode = 0
+            return mock
+
+        with patch("factory.outer_loop.reflector.subprocess.run", side_effect=fake_run):
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(captured_prompts) == 1
+        assert "builder" in captured_prompts[0]
+        assert "researcher" in captured_prompts[0]
+        assert "AVAILABLE WORKFLOW NODES" in captured_prompts[0]
+
+    def test_mutation_suggestion_value_coerced_to_string(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": [],
+            "failure_patterns": [],
+            "mutation_suggestions": [
+                {"operator": "knob_mutate", "target": "temp", "rationale": "Lower", "value": 0.5},
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 1
+        assert report.typed_suggestions[0].value == "0.5"
+
+    def test_mutation_suggestion_null_value_stays_none(self) -> None:
+        from unittest.mock import patch
+
+        reflector = OuterLoopReflector(k=1)
+        top_k = [("w1", 0.9, _make_record(0.9))]
+        bottom_k = [("l1", 0.1, _make_record(0.1))]
+        report = ReflectionReport()
+
+        fake_response = json.dumps({
+            "prompt_improvements": [],
+            "failure_patterns": [],
+            "mutation_suggestions": [
+                {"operator": "prompt_mutate", "target": "builder", "rationale": "Improve", "value": None},
+            ],
+        })
+
+        with patch("factory.outer_loop.reflector.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = fake_response
+            mock_run.return_value.returncode = 0
+            reflector._llm_reflect(top_k, bottom_k, [], report)
+
+        assert len(report.typed_suggestions) == 1
+        assert report.typed_suggestions[0].value is None
+
+
+class TestCollectNodeIds:
+    """Tests for _collect_node_ids static method."""
+
+    def test_collects_from_node_trace(self) -> None:
+        from factory.cycle_analyzer import NodeTrace
+
+        rec = CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=10.0, score_start=0.0, score_end=0.9, score_delta=0.9,
+            steps=[], kept=1,
+            node_trace={
+                "builder": NodeTrace(
+                    node_id="builder", node_type="AgentNode", role="builder",
+                    declared_writes=set(), declared_reads=set(),
+                ),
+            },
+        )
+        result = OuterLoopReflector._collect_node_ids([("w1", 0.9, rec)])
+        assert len(result) == 1
+        assert result[0]["node_id"] == "builder"
+        assert result[0]["role"] == "builder"
+
+    def test_collects_from_steps_fallback(self) -> None:
+        rec = _make_record(0.9, [_make_step("researcher"), _make_step("builder")])
+        result = OuterLoopReflector._collect_node_ids([("w1", 0.9, rec)])
+        roles = {n["node_id"] for n in result}
+        assert "researcher" in roles
+        assert "builder" in roles
+
+    def test_none_records_skipped(self) -> None:
+        result = OuterLoopReflector._collect_node_ids([("w1", 0.9, None)])
+        assert len(result) == 0
+
+    def test_deduplicates(self) -> None:
+        from factory.cycle_analyzer import NodeTrace
+
+        rec1 = CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=10.0, score_start=0.0, score_end=0.9, score_delta=0.9,
+            steps=[_make_step("builder")], kept=1,
+            node_trace={
+                "builder": NodeTrace(
+                    node_id="builder", node_type="AgentNode", role="builder",
+                    declared_writes=set(), declared_reads=set(),
+                ),
+            },
+        )
+        rec2 = CycleRecord(
+            cycle_number=1, mode="test", started_at=None, ended_at=None,
+            duration_s=10.0, score_start=0.0, score_end=0.5, score_delta=0.5,
+            steps=[_make_step("builder")], kept=0,
+            node_trace={
+                "builder": NodeTrace(
+                    node_id="builder", node_type="AgentNode", role="builder",
+                    declared_writes=set(), declared_reads=set(),
+                ),
+            },
+        )
+        result = OuterLoopReflector._collect_node_ids([("w1", 0.9, rec1), ("l1", 0.5, rec2)])
+        assert len(result) == 1
