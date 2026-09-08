@@ -80,6 +80,13 @@ class TestOuterLoopCLIParsing:
         assert ns.budget == 50
         assert ns.population_size == 4
 
+    def test_calibrate_with_seed_workflow(self) -> None:
+        ns = self._parse_outer_loop(
+            "calibrate", "/tmp/project",
+            "--seed-workflow", "my.pipeline:build_pipeline",
+        )
+        assert ns.seed_workflow == "my.pipeline:build_pipeline"
+
     def test_calibrate_with_target_project(self) -> None:
         ns = self._parse_outer_loop(
             "calibrate", "/tmp/project",
@@ -984,6 +991,374 @@ class TestCalibrateTaskWorkflowKnobs:
 
         assert len(captured_base_wf) == 1
         assert captured_base_wf[0].name == "featurebench-seed"
+
+
+class TestResolveSeedWorkflow:
+    """Cover _resolve_seed_workflow dynamic import + Package/Workflow handling."""
+
+    def test_resolve_returns_workflow_directly(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="direct-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"style": "fast"},
+        )
+
+        fake_mod = MagicMock()
+        fake_mod.build_pipeline = MagicMock(return_value=wf)
+
+        with patch("importlib.import_module", return_value=fake_mod):
+            from factory.cli.outer_loop import _resolve_seed_workflow
+            result = _resolve_seed_workflow("my.mod:build_pipeline")
+
+        assert result.name == "direct-wf"
+        assert result.knob_values == {"style": "fast"}
+
+    def test_resolve_compiles_package(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from factory.workflow.package import OptKnob, Package
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        inner_wf = Workflow(
+            name="pkg-inner",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        pkg = Package(
+            name="test-pkg",
+            graph=inner_wf,
+            entry_node="b",
+            exit_node="b",
+            knobs=[OptKnob(name="retries", kind="threshold", node_id="b", default=3, bounds=[1, 3, 5])],
+        )
+
+        fake_mod = MagicMock()
+        fake_mod.build = MagicMock(return_value=pkg)
+
+        with patch("importlib.import_module", return_value=fake_mod):
+            from factory.cli.outer_loop import _resolve_seed_workflow
+            result = _resolve_seed_workflow("my.mod:build")
+
+        assert result.knob_values["retries"] == 3
+        assert result.knob_bounds["retries"] == [1, 3, 5]
+
+    def test_resolve_invalid_format_raises(self) -> None:
+        import pytest
+
+        from factory.cli.outer_loop import _resolve_seed_workflow
+
+        with pytest.raises(ValueError, match="Expected 'module.path:callable'"):
+            _resolve_seed_workflow("no_colon_here")
+
+    def test_resolve_missing_module_raises(self) -> None:
+        import pytest
+
+        from factory.cli.outer_loop import _resolve_seed_workflow
+
+        with pytest.raises(ImportError, match="Could not import module"):
+            _resolve_seed_workflow("nonexistent.module.xyz:build")
+
+    def test_resolve_missing_attr_raises(self) -> None:
+        import pytest
+        from unittest.mock import MagicMock, patch
+
+        fake_mod = MagicMock(spec=[])
+
+        with patch("importlib.import_module", return_value=fake_mod):
+            from factory.cli.outer_loop import _resolve_seed_workflow
+
+            with pytest.raises(ImportError, match="has no attribute"):
+                _resolve_seed_workflow("my.mod:nonexistent_fn")
+
+    def test_resolve_not_callable_raises(self) -> None:
+        import pytest
+        from unittest.mock import MagicMock, patch
+
+        fake_mod = MagicMock()
+        fake_mod.not_a_fn = "just a string"
+
+        with patch("importlib.import_module", return_value=fake_mod):
+            from factory.cli.outer_loop import _resolve_seed_workflow
+
+            with pytest.raises(TypeError, match="not callable"):
+                _resolve_seed_workflow("my.mod:not_a_fn")
+
+    def test_resolve_wrong_return_type_raises(self) -> None:
+        import pytest
+        from unittest.mock import MagicMock, patch
+
+        fake_mod = MagicMock()
+        fake_mod.build = MagicMock(return_value={"not": "a workflow"})
+
+        with patch("importlib.import_module", return_value=fake_mod):
+            from factory.cli.outer_loop import _resolve_seed_workflow
+
+            with pytest.raises(TypeError, match="expected Package or Workflow"):
+                _resolve_seed_workflow("my.mod:build")
+
+
+class TestCalibrateSeedWorkflowModule:
+    """Cover --seed-workflow flag in _cmd_calibrate."""
+
+    def test_seed_workflow_module_package_knobs_propagate(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "cal-swm"
+        project.mkdir()
+
+        compiled_wf = Workflow(
+            name="compiled-seed",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"depth": 3, "style": "focused"},
+            knob_bounds={"depth": [1, 3, 5], "style": ["focused", "broad"]},
+        )
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow_module="my.pipeline:build",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=compiled_wf):
+            from factory.cli.outer_loop import _cmd_calibrate
+            result = _cmd_calibrate(ns)
+
+        assert result == 0
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].knob_values == {"depth": 3, "style": "focused"}
+        assert captured_base_wf[0].knob_bounds == {"depth": [1, 3, 5], "style": ["focused", "broad"]}
+
+    def test_seed_workflow_module_returns_workflow_directly(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "cal-swm-wf"
+        project.mkdir()
+
+        direct_wf = Workflow(
+            name="direct-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"retries": 2},
+        )
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow_module="my.pipeline:build_wf",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=direct_wf):
+            from factory.cli.outer_loop import _cmd_calibrate
+            result = _cmd_calibrate(ns)
+
+        assert result == 0
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].knob_values == {"retries": 2}
+
+    def test_seed_workflow_module_error_returns_exit_1(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path)) / "cal-swm-err"
+        project.mkdir()
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow_module="bad.module:fn",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.cli.outer_loop._resolve_seed_workflow", side_effect=ImportError("no such module")):
+            from factory.cli.outer_loop import _cmd_calibrate
+            result = _cmd_calibrate(ns)
+
+        assert result == 1
+
+    def test_seed_workflow_module_takes_precedence_over_registry(self, tmp_path: object) -> None:
+        """--seed-workflow should win over config.seed_workflow (registry name)."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "cal-swm-prec"
+        project.mkdir()
+
+        module_wf = Workflow(
+            name="from-module",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"from": "module"},
+        )
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow="my-registry-wf",
+            seed_workflow_module="my.pipeline:build",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=module_wf) as mock_resolve:
+            from factory.cli.outer_loop import _cmd_calibrate
+            result = _cmd_calibrate(ns)
+
+        assert result == 0
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].name == "from-module"
+        mock_resolve.assert_called_once_with("my.pipeline:build")
+
+    def test_seed_workflow_module_with_task_module_independent(self, tmp_path: object) -> None:
+        """--seed-workflow and --task-module can be specified independently."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "cal-swm-both"
+        project.mkdir()
+
+        module_wf = Workflow(
+            name="seed-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"topology": "parallel"},
+        )
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            task_module="my.task:MyTask",
+            seed_workflow_module="my.pipeline:build",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch("factory.cli.outer_loop._resolve_seed_workflow", return_value=module_wf):
+            from factory.cli.outer_loop import _cmd_calibrate
+            result = _cmd_calibrate(ns)
+
+        assert result == 0
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].knob_values == {"topology": "parallel"}
 
 
 class TestEvolveTypedSuggestionsDeserialization:

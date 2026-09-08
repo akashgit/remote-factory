@@ -20,6 +20,51 @@ if TYPE_CHECKING:
 _log = structlog.get_logger()
 
 
+def _resolve_seed_workflow(ref: str) -> Workflow:
+    """Dynamically import a callable that returns a Package or Workflow.
+
+    The ref format is 'module.path:callable_name'. The callable must return
+    either a Package (which is compiled to a Workflow) or a Workflow directly.
+    """
+    import importlib
+
+    if ":" not in ref:
+        raise ValueError(
+            f"Invalid seed-workflow ref {ref!r}. "
+            f"Expected 'module.path:callable' format (e.g. 'my_pkg.pipeline:build_pipeline')."
+        )
+    module_path, callable_name = ref.rsplit(":", 1)
+    try:
+        mod = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise ImportError(
+            f"Could not import module {module_path!r} from seed-workflow ref {ref!r}. "
+            f"Ensure the package is installed."
+        ) from exc
+    fn = getattr(mod, callable_name, None)
+    if fn is None:
+        raise ImportError(
+            f"Module {module_path!r} has no attribute {callable_name!r} "
+            f"(from seed-workflow ref {ref!r})."
+        )
+    if not callable(fn):
+        raise TypeError(
+            f"{ref!r} resolved to {fn!r}, which is not callable."
+        )
+    result = fn()
+
+    from factory.workflow.package import Package
+    from factory.workflow.primitives import Workflow as WF
+
+    if isinstance(result, Package):
+        return result.compile()
+    if isinstance(result, WF):
+        return result
+    raise TypeError(
+        f"{ref!r} returned {type(result).__name__}, expected Package or Workflow."
+    )
+
+
 def _check_disk_space(project_path: Path, population_size: int) -> bool:
     """Check that enough disk space is available for the outer loop.
 
@@ -148,6 +193,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         resolved_prep_command = bench_config.prep_command if bench_config else ""
 
         task_module = getattr(args, "task_module", "")
+        seed_workflow_module = getattr(args, "seed_workflow", "")
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -162,6 +208,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             instance_format=resolved_instance_format,
             prep_command=resolved_prep_command,
             task_module=task_module,
+            seed_workflow_module=seed_workflow_module,
         )
         if task_module:
             _log.info("task_module_resolved", ref=task_module)
@@ -198,20 +245,28 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
             return 1
 
-    # If a seed_workflow is configured, try to load it and merge knob fields
-    # onto the base_workflow — Package.compile() produces knob_values/bounds/expandable
-    # that must survive into the seed population.
-    if config.seed_workflow:
+    # --seed-workflow (explicit callable) takes highest precedence for the
+    # seed topology, followed by config.seed_workflow (registry name), then
+    # task_module's workflow() method as final fallback.
+    if config.seed_workflow_module:
+        try:
+            base_workflow = _resolve_seed_workflow(config.seed_workflow_module)
+            _log.info(
+                "seed_workflow_from_module",
+                ref=config.seed_workflow_module,
+                knobs=list(base_workflow.knob_values.keys()) if base_workflow.knob_values else [],
+            )
+        except (ValueError, ImportError, TypeError) as exc:
+            print(f"Error: --seed-workflow: {exc}", file=sys.stderr)
+            return 1
+    elif config.seed_workflow:
         from factory.workflow.registry import WorkflowRegistry
 
         registry_wf = WorkflowRegistry.get_workflow(config.seed_workflow)
         if registry_wf is not None:
             _log.info("seed_workflow_knobs_from_registry", name=config.seed_workflow)
             base_workflow = registry_wf
-
-    # If a task_module is configured and its Task provides a workflow via
-    # get_task(), try to extract knob fields from it.
-    if config.task_module:
+    elif config.task_module:
         try:
             task = config.get_task()
             task_wf = getattr(task, "workflow", None)
@@ -708,6 +763,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--task-module",
         default="",
         help="Task class ref as 'module.path:ClassName' (e.g. chess_evolve.task:ChessEvolveTask)",
+    )
+    cal.add_argument(
+        "--seed-workflow",
+        default="",
+        help="Seed workflow callable as 'module.path:callable' — returns a Package or Workflow with OptKnobs",
     )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")
