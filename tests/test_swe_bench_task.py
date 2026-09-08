@@ -42,9 +42,9 @@ class TestRegistration:
         assert isinstance(t, SWEBenchTask)
         assert t.name == "swe-bench"
 
-    def test_run_is_not_overridden(self):
-        """SWEBenchTask must use the default Task.run() — that's the whole point."""
-        assert SWEBenchTask.run is Task.run
+    def test_has_no_run_method(self):
+        """Task no longer has run() — execution is driven by InnerLoop."""
+        assert not hasattr(Task, "run")
 
 
 # ── Instances ────────────────────────────────────────────────────
@@ -293,6 +293,8 @@ class TestComposeIntegration:
         assert loop.task is t
 
     def test_inner_loop_step_iterates_instances(self, tmp_path: Path):
+        from unittest.mock import patch
+
         from factory.workflow.primitives import AgentNode, AgentRole, Workflow
 
         wf = Workflow(
@@ -310,7 +312,20 @@ class TestComposeIntegration:
 
         t = _SingleInstanceSWEBenchTask()
         loop = compose(wf, t, tmp_path)
-        record = loop.step()
+
+        from factory.workflow.executor import ExecutionResult
+
+        async def fake_execute(self_exec):
+            r = ExecutionResult()
+            r.success = True
+            return r
+
+        with patch.object(
+            __import__("factory.workflow.executor", fromlist=["WorkflowExecutor"]).WorkflowExecutor,
+            "execute",
+            fake_execute,
+        ):
+            record = loop.step()
 
         assert record.instance_results is not None
         assert len(record.instance_results) >= 1
