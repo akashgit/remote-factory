@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 
+import random
+from unittest.mock import patch
+
 from factory.outer_loop.models import MutationType
 from factory.outer_loop.mutations import (
     MutationStrategy,
     WeightedRandomStrategy,
+    _generate_unique_agent_id,
+    _try_mutation,
     apply_random_mutation,
     insert_node,
     mutate_knob,
     mutate_params,
+    mutate_prompt,
     parallelize,
     redirect_edge,
     remove_node,
@@ -22,6 +28,8 @@ from factory.workflow.primitives import (
     AgentRole,
     Edge,
     FnNode,
+    GateNode,
+    VerdictType,
     Workflow,
 )
 
@@ -323,3 +331,205 @@ class TestKnobPreservation:
         assert result is not None
         child_wf, _ = result
         assert child_wf.knob_values == {"mode": "parallel"}
+
+
+def _chess_evolve_workflow() -> Workflow:
+    """Chess-evolve-like fixture: 1 AgentNode (start) + GateNode + FnNode, gated reloop."""
+    nodes: dict[str, AgentNode | GateNode | FnNode] = {
+        "solver": AgentNode(
+            id="solver",
+            role=AgentRole.BUILDER,
+            reads={"problem.md"},
+            writes={"solution.py"},
+            prompt_template="Solve the problem.",
+        ),
+        "gate": GateNode(
+            id="gate",
+            evaluator_type="fn",
+            reads={"solution.py"},
+        ),
+        "record": FnNode(
+            id="record",
+            command="echo done",
+            reads={"solution.py"},
+        ),
+    }
+    edges = [
+        Edge(source="solver", target="gate"),
+        Edge(source="gate", target="record"),
+        Edge(source="gate", target="solver", condition=VerdictType.RELOOP),
+    ]
+    return Workflow(
+        name="chess_evolve_like",
+        nodes=nodes,
+        edges=edges,
+        start_node="solver",
+    )
+
+
+class TestPromptMutateStartNode:
+    def test_prompt_mutate_succeeds_on_start_only_agent(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.PROMPT_MUTATE, set(), prompt_hint="be concise")
+        assert result is not None
+        child_wf, rec = result
+        assert rec.operator == MutationType.PROMPT_MUTATE
+        assert rec.target_node == "solver"
+
+    def test_prompt_mutate_with_rewriter_none(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = mutate_prompt(wf, "solver", frozen_nodes=set(), rewriter=None, prompt_hint="be fast")
+        assert result is not None
+        child_wf, rec = result
+        node = child_wf.nodes["solver"]
+        assert isinstance(node, AgentNode)
+        assert "be fast" in node.prompt_template
+
+
+class TestParamMutateStartNode:
+    def test_param_mutate_succeeds_on_start_only_agent(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.PARAM_MUTATE, set())
+        assert result is not None
+        _, rec = result
+        assert rec.operator == MutationType.PARAM_MUTATE
+        assert rec.target_node == "solver"
+
+
+class TestNodeInsertContextual:
+    def test_insert_creates_complementary_role(self) -> None:
+        wf = _chess_evolve_workflow()
+        random.seed(42)
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        assert rec.operator == MutationType.NODE_INSERT
+        new_id = rec.target_node
+        new_node = child_wf.nodes[new_id]
+        assert isinstance(new_node, AgentNode)
+        assert new_node.role != AgentRole.CEO
+
+    def test_insert_inherits_file_wiring(self) -> None:
+        wf = _chess_evolve_workflow()
+        # Run many times and check that inserted nodes have non-empty file wiring
+        # when inserted after an AgentNode with writes
+        random.seed(0)
+        found_reads = False
+        for _ in range(30):
+            result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+            if result is None:
+                continue
+            child_wf, rec = result
+            new_node = child_wf.nodes.get(rec.target_node)
+            if isinstance(new_node, AgentNode) and new_node.reads:
+                found_reads = True
+                # solver.writes = {"solution.py"}, so new reads should come from there
+                assert "solution.py" in new_node.reads
+                break
+        assert found_reads, "Expected at least one insertion to inherit file wiring"
+
+    def test_insert_uses_role_prompt_template(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        new_node = child_wf.nodes[rec.target_node]
+        assert isinstance(new_node, AgentNode)
+        assert new_node.prompt_template != ""
+
+    def test_insert_fallback_when_no_agent_nodes(self) -> None:
+        nodes: dict[str, FnNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "end": FnNode(id="end", command="echo end"),
+        }
+        edges = [Edge(source="start", target="end")]
+        wf = Workflow(name="no_agents", nodes=nodes, edges=edges, start_node="start")
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        new_node = child_wf.nodes[rec.target_node]
+        assert isinstance(new_node, AgentNode)
+
+
+class TestNodeRemoveLastAgentGuard:
+    def test_remove_last_agent_returns_none(self) -> None:
+        wf = _chess_evolve_workflow()
+        # "solver" is the only AgentNode but it's also the start_node
+        # so it can't be in structurally_mutable. Add it manually to test the guard.
+        result = _try_mutation(wf, MutationType.NODE_REMOVE, set())
+        # With chess-evolve, structurally_mutable = ["gate", "record"] (not AgentNodes),
+        # so NODE_REMOVE can target them but not solver. Let's test with a workflow
+        # where the last agent IS in the structurally_mutable list.
+        nodes: dict[str, AgentNode | FnNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "agent": AgentNode(id="agent", role=AgentRole.BUILDER),
+            "end": FnNode(id="end", command="echo end"),
+        }
+        edges = [
+            Edge(source="start", target="agent"),
+            Edge(source="agent", target="end"),
+        ]
+        wf2 = Workflow(name="one_agent", nodes=nodes, edges=edges, start_node="start")
+        result = _try_mutation(wf2, MutationType.NODE_REMOVE, set())
+        # "agent" is the only structurally mutable node that's an AgentNode
+        # and it's the last AgentNode, so remove must return None
+        assert result is None
+
+    def test_remove_non_last_agent_succeeds(self, simple_workflow: Workflow) -> None:
+        # simple_workflow has 3 AgentNodes (researcher, strategist, builder)
+        # removing one should succeed
+        result = remove_node(simple_workflow, "strategist")
+        assert result is not None
+
+
+class TestEdgeRedirectCycleFilter:
+    def test_filters_ungated_cycle_targets(self) -> None:
+        wf = _chess_evolve_workflow()
+        # The only unconditional edges: solver→gate, gate→record
+        # If we pick edge solver→gate, ancestors of solver in unconditional graph = {}
+        # possible_targets = [record] (gate excluded as current target, solver excluded as source)
+        # So redirect should succeed with target=record
+        result = _try_mutation(wf, MutationType.EDGE_REDIRECT, set())
+        if result is not None:
+            child_wf, rec = result
+            assert rec.operator == MutationType.EDGE_REDIRECT
+            validated = validate_and_repair(child_wf)
+            assert validated is not None
+
+    def test_returns_none_when_all_targets_create_cycles(self) -> None:
+        # Two nodes, one unconditional edge A→B. Redirecting A→B to A→A is self-loop,
+        # and there are no other targets.
+        nodes: dict[str, FnNode] = {
+            "a": FnNode(id="a", command="echo a"),
+            "b": FnNode(id="b", command="echo b"),
+        }
+        edges = [Edge(source="a", target="b")]
+        wf = Workflow(name="tiny", nodes=nodes, edges=edges, start_node="a")
+        # edge a→b: possible_targets excludes b (current target) and a (source) → empty
+        result = _try_mutation(wf, MutationType.EDGE_REDIRECT, set())
+        assert result is None
+
+
+class TestUniqueIdGeneration:
+    def test_generates_unique_id(self) -> None:
+        existing = {f"builder_{i}" for i in range(100, 200)}
+        new_id = _generate_unique_agent_id(existing, AgentRole.BUILDER)
+        assert new_id not in existing
+        assert new_id.startswith("builder_")
+
+    def test_avoids_collision(self) -> None:
+        existing = {"builder_100"}
+        # Patch randint to return 100 first (collision), then 200 (unique)
+        with patch("factory.outer_loop.mutations.random.randint", side_effect=[100, 200]):
+            new_id = _generate_unique_agent_id(existing, AgentRole.BUILDER)
+        assert new_id == "builder_200"
+
+
+class TestMutateParamsValidation:
+    def test_invalid_field_value_returns_none(self, simple_workflow: Workflow) -> None:
+        # AgentNode has strict=True, extra="forbid". Passing a bad type for timeout
+        # should fail validation with constructor-based creation.
+        result = mutate_params(
+            simple_workflow, "researcher", {"timeout": "not_a_number"}
+        )
+        assert result is None
