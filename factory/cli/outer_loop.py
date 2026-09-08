@@ -245,38 +245,17 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
             return 1
 
-    # --seed-workflow (explicit callable) takes highest precedence for the
-    # seed topology, followed by config.seed_workflow (registry name), then
-    # task_module's workflow() method as final fallback.
-    if config.seed_workflow_module:
-        try:
-            base_workflow = _resolve_seed_workflow(config.seed_workflow_module)
-            _log.info(
-                "seed_workflow_from_module",
-                ref=config.seed_workflow_module,
-                knobs=list(base_workflow.knob_values.keys()) if base_workflow.knob_values else [],
-            )
-        except (ValueError, ImportError, TypeError) as exc:
-            print(f"Error: --seed-workflow: {exc}", file=sys.stderr)
-            return 1
-    elif config.seed_workflow:
-        from factory.workflow.registry import WorkflowRegistry
-
-        registry_wf = WorkflowRegistry.get_workflow(config.seed_workflow)
-        if registry_wf is not None:
-            _log.info("seed_workflow_knobs_from_registry", name=config.seed_workflow)
-            base_workflow = registry_wf
-    elif config.task_module:
-        try:
-            task = config.get_task()
-            task_wf = getattr(task, "workflow", None)
-            if callable(task_wf):
-                tw = task_wf()
-                if hasattr(tw, "knob_values") and tw.knob_values:
-                    base_workflow = tw
-                    _log.info("seed_workflow_from_task", knobs=list(tw.knob_values.keys()))
-        except Exception:
-            _log.info("task_workflow_not_available")
+    # --seed-workflow is required — resolve the callable to get the base workflow.
+    try:
+        base_workflow = _resolve_seed_workflow(config.seed_workflow_module)
+        _log.info(
+            "seed_workflow_from_module",
+            ref=config.seed_workflow_module,
+            knobs=list(base_workflow.knob_values.keys()) if base_workflow.knob_values else [],
+        )
+    except (ValueError, ImportError, TypeError) as exc:
+        print(f"Error: --seed-workflow: {exc}", file=sys.stderr)
+        return 1
 
     target_dir = Path(config.target_project) if config.target_project else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
@@ -766,8 +745,8 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
     )
     cal.add_argument(
         "--seed-workflow",
-        default="",
-        help="Seed workflow callable as 'module.path:callable' — returns a Package or Workflow with OptKnobs",
+        required=True,
+        help="Seed workflow callable as 'module.path:callable' — returns a Package or Workflow with OptKnobs (required)",
     )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")
