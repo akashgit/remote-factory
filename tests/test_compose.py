@@ -288,7 +288,6 @@ class TestTomlTaskCapabilities:
 
     def test_toml_without_required_capabilities_uses_inference(self, tmp_path):
         """A TOML task without required_capabilities key should get None → inference."""
-        import tomllib
         toml_content = """
 [task]
 name = "sw-task"
