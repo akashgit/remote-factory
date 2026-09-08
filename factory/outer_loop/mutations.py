@@ -495,7 +495,7 @@ def mutate_params(
     if node is None:
         return None
 
-    allowed_params = {"timeout", "model", "max_iterations", "blocking"}
+    allowed_params = {"timeout", "max_iterations", "blocking"}
     filtered_changes = {k: v for k, v in changes.items() if k in allowed_params}
     if not filtered_changes:
         return None
@@ -1123,11 +1123,7 @@ def _try_mutation(
         if not agent_nodes:
             return None
         target = random.choice(agent_nodes)
-        param = random.choice(["timeout", "model"])
-        if param == "timeout":
-            changes: dict[str, object] = {"timeout": random.choice([300, 600, 900, 1200, 1800])}
-        else:
-            changes = {"model": random.choice(["sonnet", "opus", "haiku"])}
+        changes: dict[str, object] = {"timeout": random.choice([300, 600, 900, 1200, 1800])}
         return mutate_params(workflow, target, changes, frozen_nodes=frozen)
 
     elif op == MutationType.PROMPT_MUTATE:

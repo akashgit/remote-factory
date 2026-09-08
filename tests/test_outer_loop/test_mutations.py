@@ -157,11 +157,9 @@ class TestMutateParams:
         assert hasattr(node, "timeout")
         assert node.timeout == 1200  # type: ignore[union-attr]
 
-    def test_change_model(self, simple_workflow: Workflow) -> None:
+    def test_model_is_not_mutable(self, simple_workflow: Workflow) -> None:
         result = mutate_params(simple_workflow, "researcher", {"model": "opus"})
-        assert result is not None
-        wf, _ = result
-        assert wf.nodes["researcher"].model == "opus"  # type: ignore[union-attr]
+        assert result is None
 
     def test_disallowed_param_ignored(self, simple_workflow: Workflow) -> None:
         result = mutate_params(simple_workflow, "researcher", {"role": "builder"})
