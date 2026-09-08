@@ -43,7 +43,6 @@ def _make_exec_result(success: bool = True) -> MagicMock:
     return r
 
 
-import asyncio
 
 
 def _async_return(val: object) -> MagicMock:

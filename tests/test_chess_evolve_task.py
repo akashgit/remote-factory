@@ -246,7 +246,7 @@ class TestComposeIntegration:
         assert loop.task is t
 
     def test_inner_loop_step_iterates_instances(self, tmp_path: Path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from factory.workflow.primitives import AgentNode, AgentRole, Workflow
 
