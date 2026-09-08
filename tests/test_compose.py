@@ -134,7 +134,9 @@ class TestModeCapabilities:
 
 class TestTaskCapabilities:
     def test_exit_code_requires_builder(self):
+        """Task with required_capabilities=None (default) and exit_code scoring infers builder caps."""
         task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="exit_code")))
+        assert task.constraints.required_capabilities is None
         caps = TaskCapabilities.from_task(task)
         assert Capability.CAN_MODIFY_CODE in caps.requires
         assert Capability.CAN_RUN_TESTS in caps.requires
@@ -144,6 +146,44 @@ class TestTaskCapabilities:
         task = Task(definition=TaskDefinition(name="t", scoring=ScoringContract(method="json")))
         caps = TaskCapabilities.from_task(task)
         assert Capability.CAN_MODIFY_CODE not in caps.requires
+
+    def test_explicit_empty_capabilities_skips_inference(self):
+        """Task with required_capabilities=[] should require nothing, even with exit_code scoring."""
+        task = Task(
+            definition=TaskDefinition(
+                name="domain-task",
+                scoring=ScoringContract(method="exit_code"),
+                constraints=TaskConstraints(required_capabilities=[]),
+            )
+        )
+        caps = TaskCapabilities.from_task(task)
+        assert len(caps.requires) == 0
+
+    def test_none_capabilities_uses_inference(self):
+        """Task with required_capabilities=None and exit_code scoring should infer software-dev caps."""
+        task = Task(
+            definition=TaskDefinition(
+                name="sw-task",
+                scoring=ScoringContract(method="exit_code"),
+                constraints=TaskConstraints(required_capabilities=None),
+            )
+        )
+        caps = TaskCapabilities.from_task(task)
+        assert Capability.CAN_MODIFY_CODE in caps.requires
+        assert Capability.CAN_RUN_TESTS in caps.requires
+        assert Capability.HAS_BUILDER in caps.requires
+
+    def test_explicit_empty_caps_passes_any_workflow(self):
+        """A task with required_capabilities=[] should pass validation with ANY workflow."""
+        wf = _make_workflow(researcher=True, name="research-only")
+        task = Task(
+            definition=TaskDefinition(
+                name="domain-task",
+                scoring=ScoringContract(method="exit_code"),
+                constraints=TaskConstraints(required_capabilities=[]),
+            )
+        )
+        validate_composition(wf, task)
 
 
 # ── validate_composition tests ───────────────────────────────────
@@ -221,6 +261,72 @@ class TestTaskProtocol:
 
     def test_plain_object_not_protocol(self):
         assert not isinstance("hello", TaskProtocol)
+
+
+# ── TOML task capability tests ──────────────────────────────────
+
+
+class TestTomlTaskCapabilities:
+    def test_chess_evolve_toml_no_builder_required(self):
+        """chess-evolve.toml with required_capabilities=[] should need no capabilities."""
+        from factory.task import TaskDefinition
+
+        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        assert defn.constraints.required_capabilities == []
+        task = Task(definition=defn)
+        caps = TaskCapabilities.from_task(task)
+        assert len(caps.requires) == 0
+
+    def test_chess_evolve_toml_passes_any_workflow(self):
+        """chess-evolve.toml should pass composition with a research-only workflow."""
+        from factory.task import TaskDefinition
+
+        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        task = Task(definition=defn)
+        wf = _make_workflow(researcher=True, name="research-only")
+        validate_composition(wf, task)
+
+    def test_toml_without_required_capabilities_uses_inference(self, tmp_path):
+        """A TOML task without required_capabilities key should get None → inference."""
+        import tomllib
+        toml_content = """
+[task]
+name = "sw-task"
+
+[scoring]
+method = "exit_code"
+
+[constraints]
+timeout = 600
+"""
+        toml_file = tmp_path / "sw-task.toml"
+        toml_file.write_text(toml_content)
+        defn = TaskDefinition.from_toml(toml_file)
+        assert defn.constraints.required_capabilities is None
+        task = Task(definition=defn)
+        caps = TaskCapabilities.from_task(task)
+        assert Capability.CAN_MODIFY_CODE in caps.requires
+        assert Capability.HAS_BUILDER in caps.requires
+
+
+# ── TaskConstraints default tests ─────────────────────────────
+
+
+class TestTaskConstraintsDefault:
+    def test_default_required_capabilities_is_none(self):
+        """Default TaskConstraints should have required_capabilities=None, not []."""
+        tc = TaskConstraints()
+        assert tc.required_capabilities is None
+
+    def test_explicit_empty_list_preserved(self):
+        """Setting required_capabilities=[] should be preserved, not coerced to None."""
+        tc = TaskConstraints(required_capabilities=[])
+        assert tc.required_capabilities == []
+        assert tc.required_capabilities is not None
+
+    def test_explicit_capabilities_preserved(self):
+        tc = TaskConstraints(required_capabilities=[Capability.CAN_MODIFY_CODE])
+        assert tc.required_capabilities == [Capability.CAN_MODIFY_CODE]
 
 
 # ── Composition Matrix ──────────────────────────────────────────

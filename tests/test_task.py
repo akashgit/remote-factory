@@ -95,7 +95,7 @@ class TestTaskConstraints:
         tc = TaskConstraints()
         assert tc.timeout == 600
         assert tc.max_retries == 1
-        assert tc.required_capabilities == []
+        assert tc.required_capabilities is None
 
     def test_custom(self):
         tc = TaskConstraints(

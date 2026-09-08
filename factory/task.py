@@ -116,11 +116,13 @@ class TaskConstraints(BaseModel):
 
     timeout: int = 600
     max_retries: int = 1
-    required_capabilities: list[Capability] = Field(default_factory=list)
+    required_capabilities: list[Capability] | None = None
 
     @field_validator("required_capabilities", mode="before")
     @classmethod
-    def _coerce_capabilities(cls, v: object) -> list[Capability]:
+    def _coerce_capabilities(cls, v: object) -> list[Capability] | None:
+        if v is None:
+            return None
         if isinstance(v, list):
             return [Capability(x) if isinstance(x, str) else x for x in v]
         return v  # type: ignore[return-value]
@@ -302,7 +304,7 @@ class TaskDefinition(BaseModel):
                 ),
                 max_retries=constraints_section.get("max_retries", 1),
                 required_capabilities=constraints_section.get(
-                    "required_capabilities", []
+                    "required_capabilities"
                 ),
             ),
             evaluator_ref=EvaluatorRef(ref=scoring_section.get("evaluator_ref", "")),
