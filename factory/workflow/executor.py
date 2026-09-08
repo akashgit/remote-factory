@@ -103,14 +103,15 @@ class WorkflowExecutor:
 
         if initial_context is not None:
             start_node = workflow.nodes.get(workflow.start_node)
-            if not isinstance(start_node, AgentNode):
+            if isinstance(start_node, AgentNode):
+                self.node_context[workflow.start_node] = initial_context
+            else:
                 log.warning(
                     "initial_context_ignored",
                     start_node=workflow.start_node,
                     node_type=type(start_node).__name__ if start_node else "missing",
                     reason="initial_context only applies to AgentNode start nodes",
                 )
-            self.node_context[workflow.start_node] = initial_context
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""
