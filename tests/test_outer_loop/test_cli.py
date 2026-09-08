@@ -661,6 +661,647 @@ class TestEvolveLoadsReflectionReport:
             assert rc == 0
 
 
+class TestCalibrateSeedWorkflowFromRegistry:
+    """Cover seed_workflow loading from WorkflowRegistry in _cmd_calibrate."""
+
+    def test_seed_workflow_loads_from_registry(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "calibrate-proj"
+        project.mkdir()
+
+        registry_wf = Workflow(
+            name="registry-seed",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"style": "focused"},
+            knob_bounds={"style": ["focused", "broad"]},
+            knob_expandable={"style": "prompt hint"},
+        )
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow="my-seed",
+        )
+
+        ns = argparse.Namespace(
+            project_path=str(project),
+        )
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch("factory.workflow.registry.WorkflowRegistry.get_workflow", return_value=registry_wf), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].knob_values == {"style": "focused"}
+
+    def test_seed_workflow_none_from_registry_uses_default(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path)) / "calibrate-proj2"
+        project.mkdir()
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            seed_workflow="nonexistent",
+        )
+
+        ns = argparse.Namespace(
+            project_path=str(project),
+        )
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch("factory.workflow.registry.WorkflowRegistry.get_workflow", return_value=None), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].name == "featurebench-seed"
+
+
+class TestCalibrateTaskWorkflowKnobs:
+    """Cover task_module workflow knob extraction in _cmd_calibrate."""
+
+    def test_task_workflow_knobs_propagated(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "calibrate-task"
+        project.mkdir()
+
+        task_wf = Workflow(
+            name="task-seed",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+            knob_values={"depth": 5, "approach": "iterative"},
+            knob_bounds={"depth": [1, 3, 5], "approach": ["iterative", "recursive"]},
+        )
+
+        class FakeTask:
+            def workflow(self):
+                return task_wf
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            task_module="my.task.module",
+        )
+
+        ns = argparse.Namespace(
+            project_path=str(project),
+        )
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch.object(SwarmConfig, "get_task", return_value=FakeTask()):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].knob_values == {"depth": 5, "approach": "iterative"}
+
+    def test_task_workflow_exception_handled_gracefully(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path)) / "calibrate-task-err"
+        project.mkdir()
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            task_module="my.broken.module",
+        )
+
+        ns = argparse.Namespace(
+            project_path=str(project),
+        )
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch.object(SwarmConfig, "get_task", side_effect=ImportError("no module")):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].name == "featurebench-seed"
+
+    def test_task_workflow_without_knob_values_uses_default(self, tmp_path: object) -> None:
+        """When task workflow has no knob_values, base_workflow stays as featurebench-seed."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path)) / "calibrate-task-noknobs"
+        project.mkdir()
+
+        task_wf = Workflow(
+            name="task-no-knobs",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+
+        class FakeTask:
+            def workflow(self):
+                return task_wf
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            task_module="my.task.module",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch.object(SwarmConfig, "get_task", return_value=FakeTask()):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].name == "featurebench-seed"
+
+    def test_task_without_workflow_method_uses_default(self, tmp_path: object) -> None:
+        """When task has no workflow attribute, base_workflow stays as default."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path)) / "calibrate-task-nomethod"
+        project.mkdir()
+
+        class FakeTaskNoWorkflow:
+            pass
+
+        cfg = SwarmConfig(
+            benchmark="featurebench",
+            budget=10,
+            population_size=2,
+            task_module="my.task.module",
+        )
+
+        ns = argparse.Namespace(project_path=str(project))
+
+        mock_engine = MagicMock()
+        mock_pop = MagicMock()
+        mock_engine.seed.return_value = mock_pop
+
+        captured_base_wf = []
+
+        def spy_seed(wf, cfg_arg):
+            captured_base_wf.append(wf)
+            return mock_pop
+
+        mock_engine.seed = spy_seed
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.filesystem.init_filesystem", return_value=project / ".factory" / "outer_loop"), \
+             patch("factory.outer_loop.engine.SwarmEngine", return_value=mock_engine), \
+             patch("factory.outer_loop.evaluator.SwarmEvaluator"), \
+             patch("factory.outer_loop.similarity.NoveltyFilter"), \
+             patch.object(mock_pop, "save"), \
+             patch("factory.outer_loop.filesystem.save_checkpoint"), \
+             patch.object(SwarmConfig, "get_task", return_value=FakeTaskNoWorkflow()):
+            from factory.cli.outer_loop import _cmd_calibrate
+            _cmd_calibrate(ns)
+
+        assert len(captured_base_wf) == 1
+        assert captured_base_wf[0].name == "featurebench-seed"
+
+
+class TestEvolveTypedSuggestionsDeserialization:
+    """Cover typed_suggestions deserialization in _cmd_evolve."""
+
+    def test_evolve_deserializes_typed_suggestions(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        reflections_dir = project / ".factory" / "outer_loop" / "reflections"
+        reflections_dir.mkdir(parents=True)
+
+        report_data = {
+            "generation": 0,
+            "failure_patterns": ["Agent builder failed"],
+            "success_patterns": ["Winner used researcher"],
+            "mutation_suggestions": ["NODE_INSERT: Add researcher"],
+            "prompt_improvements": [],
+            "structural_recommendations": [],
+            "top_k_ids": ["w1"],
+            "bottom_k_ids": ["l1"],
+            "typed_suggestions": [
+                {
+                    "operator": "knob_mutate",
+                    "target": "style",
+                    "rationale": "focused works best",
+                    "value": "focused",
+                },
+                {
+                    "operator": "node_insert",
+                    "target": "researcher",
+                    "rationale": "present in winners",
+                    "value": None,
+                },
+            ],
+        }
+        (reflections_dir / "gen0.json").write_text(json.dumps(report_data))
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop import mutations as _mutations_mod
+
+        original_apply = _mutations_mod.apply_random_mutation
+
+        def spy_apply(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_apply(*args, **kwargs)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=spy_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            _cmd_evolve(ns)
+
+        assert len(captured_kwargs) > 0
+        report = captured_kwargs[0].get("reflection_report")
+        assert report is not None
+        assert len(report.typed_suggestions) == 2
+        assert report.typed_suggestions[0].operator == "knob_mutate"
+        assert report.typed_suggestions[0].value == "focused"
+        assert report.typed_suggestions[1].operator == "node_insert"
+
+
+class TestReflectNotEnoughCandidates:
+    """Cover lines 455-456: reflect returns 1 when < 2 candidates."""
+
+    def test_reflect_returns_error_with_one_candidate(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        results_dir = project / ".factory" / "outer_loop" / "results"
+        results_dir.mkdir(parents=True)
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="only-one",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        name = registry.register("solo", 0, wf)
+
+        gen_results = {name: {"score": 0.9, "cost_usd": 1.0}}
+        (results_dir / "gen0.json").write_text(json.dumps(gen_results))
+        runs_dir = project / ".factory" / "outer_loop" / "runs" / name
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "cycle_summary.json").write_text(
+            json.dumps({"mode": name, "score": 0.9, "cost_usd": 1.0, "kept": 1, "reverted": 0})
+        )
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg):
+            from factory.cli.outer_loop import _cmd_reflect
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_reflect(ns)
+            assert rc == 1
+
+
+class TestEvolveNoModes:
+    """Cover lines 495-496: evolve returns 1 when no ephemeral modes exist."""
+
+    def test_evolve_returns_error_with_no_modes(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_evolve(ns)
+            assert rc == 1
+
+
+class TestEvolveNonDictTypedSuggestion:
+    """Cover partial branch 512->511: non-dict items in typed_suggestions are skipped."""
+
+    def test_evolve_skips_non_dict_typed_suggestion(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        reflections_dir = project / ".factory" / "outer_loop" / "reflections"
+        reflections_dir.mkdir(parents=True)
+
+        report_data = {
+            "failure_patterns": ["f1"],
+            "success_patterns": ["s1"],
+            "mutation_suggestions": [],
+            "prompt_improvements": [],
+            "structural_recommendations": [],
+            "top_k_ids": ["w1"],
+            "bottom_k_ids": ["l1"],
+            "typed_suggestions": [
+                "not-a-dict",
+                {"operator": "knob_mutate", "target": "t", "rationale": "r", "value": "v"},
+            ],
+        }
+        (reflections_dir / "gen0.json").write_text(json.dumps(report_data))
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop import mutations as _mutations_mod
+
+        original_apply = _mutations_mod.apply_random_mutation
+
+        def spy_apply(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_apply(*args, **kwargs)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=spy_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            _cmd_evolve(ns)
+
+        assert len(captured_kwargs) > 0
+        report = captured_kwargs[0].get("reflection_report")
+        assert report is not None
+        assert len(report.typed_suggestions) == 1
+        assert report.typed_suggestions[0].operator == "knob_mutate"
+
+
+class TestEvolveNonListTypedSuggestions:
+    """Cover partial branch 510->521: non-list typed_suggestions is skipped."""
+
+    def test_evolve_skips_non_list_typed_suggestions(self, tmp_path: object) -> None:
+        import argparse
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+        reflections_dir = project / ".factory" / "outer_loop" / "reflections"
+        reflections_dir.mkdir(parents=True)
+
+        report_data = {
+            "failure_patterns": ["f1"],
+            "success_patterns": ["s1"],
+            "mutation_suggestions": [],
+            "prompt_improvements": [],
+            "structural_recommendations": [],
+            "top_k_ids": ["w1"],
+            "bottom_k_ids": ["l1"],
+            "typed_suggestions": "not-a-list",
+        }
+        (reflections_dir / "gen0.json").write_text(json.dumps(report_data))
+
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        wf = Workflow(
+            name="test-wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        )
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("test01", 0, wf)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        captured_kwargs: list[dict] = []
+        from factory.outer_loop import mutations as _mutations_mod
+
+        original_apply = _mutations_mod.apply_random_mutation
+
+        def spy_apply(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_apply(*args, **kwargs)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=spy_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            _cmd_evolve(ns)
+
+        assert len(captured_kwargs) > 0
+        report = captured_kwargs[0].get("reflection_report")
+        assert report is not None
+        assert len(report.typed_suggestions) == 0
+
+
+class TestEvolveRegistryLoadNone:
+    """Cover line 532: continue when registry.load returns None in evolve loop."""
+
+    def test_evolve_skips_none_workflow(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from factory.outer_loop.models import SwarmConfig
+
+        project = Path(str(tmp_path))
+        modes_dir = project / ".factory" / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True)
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50)
+
+        mock_registry = MagicMock()
+        mock_registry.list_modes.return_value = ["mode-a", "mode-b"]
+        mock_registry.load.return_value = None
+        mock_registry.prune_stale_modes.return_value = None
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch("factory.outer_loop.mode_registry.EphemeralModeRegistry",
+                   return_value=mock_registry):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            rc = _cmd_evolve(ns)
+            assert rc == 0
+
+
 class TestOuterLoopWorkflowGraph:
     def test_workflow_validates(self) -> None:
         from factory.workflow.contributed.outer_loop.workflow import workflow
