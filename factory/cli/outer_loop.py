@@ -15,6 +15,7 @@ import structlog
 if TYPE_CHECKING:
     from factory.outer_loop.evaluator import CycleRecord
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.models import Individual
     from factory.workflow.primitives import Workflow
 
 _log = structlog.get_logger()
@@ -303,6 +304,41 @@ def _mode_suffix(mode_name: str, generation: int) -> str:
     """
     prefix = f"evolve-gen{generation}-"
     return mode_name[len(prefix):] if mode_name.startswith(prefix) else mode_name
+
+
+def _make_offspring_individual(
+    mode_name: str,
+    generation: int,
+    workflow: Workflow,
+    *,
+    parent_id: str | None,
+    mutation_record: object = None,
+) -> Individual:
+    """Build the ``Individual`` that mirrors a freshly registered offspring mode.
+
+    The id is derived from the mode name rather than the requested child id so
+    it always matches what :func:`_mode_suffix` extracts during score
+    propagation — ``register`` truncates ids to 8 characters.
+    """
+    from factory.outer_loop.models import Individual as Ind
+    from factory.outer_loop.models import MutationRecord
+    from factory.outer_loop.similarity import compute_features
+
+    try:
+        features = compute_features(workflow)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("offspring_feature_computation_failed", mode=mode_name, error=str(exc))
+        features = ()
+
+    return Ind(
+        id=_mode_suffix(mode_name, generation),
+        workflow_data=workflow.to_dict(),
+        score=0.0,
+        features=features,
+        generation=generation,
+        parent_id=parent_id,
+        mutation_record=mutation_record if isinstance(mutation_record, MutationRecord) else None,
+    )
 
 
 def _propagate_scores_to_population(
@@ -624,6 +660,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     from factory.outer_loop.filesystem import load_config
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.mutations import WeightedRandomStrategy, apply_random_mutation
+    from factory.outer_loop.population import Population
     from factory.outer_loop.reflector import ReflectionReport
 
     config = load_config(project_path)
@@ -633,6 +670,9 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
 
     if not _check_disk_space(project_path, config.population_size):
         return 1
+
+    pop_dir = project_path / ".factory" / "outer_loop" / "population"
+    population = Population.load(pop_dir) if (pop_dir / "population.json").exists() else None
 
     target_dir = Path(config.target_project) if config.target_project else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
@@ -700,12 +740,24 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         if result is not None:
             child_wf, mutation_rec = result
             child_id = f"gen{generation + 1}_{offspring_count}"
-            registry.register(child_id, generation + 1, child_wf)
+            child_mode = registry.register(child_id, generation + 1, child_wf)
+            if population is not None:
+                population.add(
+                    _make_offspring_individual(
+                        child_mode, generation + 1, child_wf,
+                        parent_id=_mode_suffix(parent_mode, generation),
+                        mutation_record=mutation_rec,
+                    )
+                )
             offspring_count += 1
             print(
                 f"  Created offspring {child_id} via {mutation_rec.operator.value} "
                 f"(parent {parent_mode} score={mode_scores.get(parent_mode, 0.0):.4f})"
             )
+
+    if population is not None and offspring_count:
+        population.save(pop_dir)
+        _log.info("population_offspring_added", generation=generation + 1, count=offspring_count)
 
     print(f"Evolution complete: {offspring_count} offspring created for generation {generation + 1}")
     return 0

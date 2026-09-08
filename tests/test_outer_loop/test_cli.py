@@ -1693,3 +1693,174 @@ class TestEvolveSelectionPressure:
 
         assert parents
         assert all(p.startswith("evolve-gen0-") for p in parents)
+
+
+class TestEvolveAddsOffspringToPopulation:
+    """_cmd_evolve must mirror each new offspring mode into population.json.
+
+    Without this the population never grows past generation 0, so
+    _propagate_scores_to_population finds no individual to attach gen 1+
+    scores to and the population silently goes stale.
+    """
+
+    @staticmethod
+    def _seed(project, *, parent_ids, population_size):
+        """Register gen 0 modes and a matching population; return the registry."""
+        from factory.outer_loop.models import SwarmConfig
+        from factory.outer_loop.population import Population
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        (project / ".factory" / "outer_loop" / "modes").mkdir(parents=True)
+
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        population = Population()
+        for ind_id in parent_ids:
+            wf = Workflow(
+                name=f"wf-{ind_id}",
+                nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+                edges=[], start_node="b", terminal=True,
+            )
+            registry.register(ind_id, 0, wf)
+            population.add(
+                Population.make_individual(wf, generation=0).model_copy(update={"id": ind_id})
+            )
+        population.save(project / ".factory" / "outer_loop" / "population")
+
+        cfg = SwarmConfig(
+            benchmark="featurebench", budget=50, population_size=population_size
+        )
+        return registry, cfg
+
+    @staticmethod
+    def _load_population(project):
+        from factory.outer_loop.population import Population
+
+        return Population.load(project / ".factory" / "outer_loop" / "population")
+
+    def test_offspring_individuals_are_persisted(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop import mutations as _mutations_mod
+        from factory.outer_loop.models import MutationRecord, MutationType
+
+        project = Path(str(tmp_path))
+        _, cfg = self._seed(project, parent_ids=["p0"], population_size=2)
+
+        def fake_apply(wf, *args, **kwargs):
+            return wf, MutationRecord(operator=MutationType.PARAM_MUTATE)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=fake_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            assert _cmd_evolve(argparse.Namespace(project_path=str(project), generation=0)) == 0
+
+        population = self._load_population(project)
+        offspring = [i for i in population.individuals if i.generation == 1]
+        assert len(offspring) == 2
+        assert {i.id for i in offspring} == {"gen1_0", "gen1_1"}
+        for ind in offspring:
+            assert ind.score == 0.0
+            assert ind.parent_id == "p0"
+            assert ind.mutation_record is not None
+            assert ind.mutation_record.operator == MutationType.PARAM_MUTATE
+            assert ind.workflow_data["nodes"]
+
+    def test_offspring_ids_match_mode_names_so_scores_propagate(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop import mutations as _mutations_mod
+        from factory.outer_loop.models import MutationRecord, MutationType
+
+        project = Path(str(tmp_path))
+        _, cfg = self._seed(project, parent_ids=["p0"], population_size=2)
+
+        def fake_apply(wf, *args, **kwargs):
+            return wf, MutationRecord(operator=MutationType.NODE_INSERT)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=fake_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            assert _cmd_evolve(argparse.Namespace(project_path=str(project), generation=0)) == 0
+
+        from factory.cli.outer_loop import _propagate_scores_to_population
+
+        results = {
+            "evolve-gen1-gen1_0": {"score": 0.75, "cost_usd": 1.5},
+            "evolve-gen1-gen1_1": {"score": 0.25, "cost_usd": 0.5},
+        }
+        assert _propagate_scores_to_population(project, 1, results) == 2
+
+        population = self._load_population(project)
+        assert population.get("gen1_0").score == 0.75
+        assert population.get("gen1_0").cost_usd == 1.5
+        assert population.get("gen1_1").score == 0.25
+        assert population.get("p0").score == 0.0
+
+    def test_population_grows_each_generation(self, tmp_path: object) -> None:
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop import mutations as _mutations_mod
+        from factory.outer_loop.models import MutationRecord, MutationType
+
+        project = Path(str(tmp_path))
+        _, cfg = self._seed(project, parent_ids=["p0", "p1"], population_size=3)
+        assert self._load_population(project).size == 2
+
+        def fake_apply(wf, *args, **kwargs):
+            return wf, MutationRecord(operator=MutationType.PARAM_MUTATE)
+
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg), \
+             patch.object(_mutations_mod, "apply_random_mutation", side_effect=fake_apply):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            ns = argparse.Namespace(project_path=str(project), generation=0)
+            assert _cmd_evolve(ns) == 0
+            after_gen1 = self._load_population(project)
+            assert after_gen1.size == 2 + 3
+            assert {i.id for i in after_gen1.individuals} >= {"p0", "p1"}
+
+            ns2 = argparse.Namespace(project_path=str(project), generation=1)
+            assert _cmd_evolve(ns2) == 0
+
+        after_gen2 = self._load_population(project)
+        assert after_gen2.size == 2 + 3 + 3
+        assert len([i for i in after_gen2.individuals if i.generation == 2]) == 3
+
+    def test_evolve_without_population_file_is_a_noop(self, tmp_path: object) -> None:
+        """A project that never seeded a population still evolves modes fine."""
+        import argparse
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from factory.outer_loop.models import SwarmConfig
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        project = Path(str(tmp_path))
+        (project / ".factory" / "outer_loop" / "modes").mkdir(parents=True)
+
+        from factory.outer_loop.mode_registry import EphemeralModeRegistry
+
+        registry = EphemeralModeRegistry(project)
+        registry.register("p0", 0, Workflow(
+            name="wf",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER, writes=set())},
+            edges=[], start_node="b", terminal=True,
+        ))
+
+        cfg = SwarmConfig(benchmark="featurebench", budget=50, population_size=2)
+        with patch("factory.outer_loop.filesystem.load_config", return_value=cfg):
+            from factory.cli.outer_loop import _cmd_evolve
+
+            assert _cmd_evolve(argparse.Namespace(project_path=str(project), generation=0)) == 0
+
+        assert not (project / ".factory" / "outer_loop" / "population" / "population.json").exists()
