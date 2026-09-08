@@ -506,7 +506,7 @@ def mutate_params(
             before[k] = getattr(node, k)
 
     try:
-        updated_node = node.model_copy(update=filtered_changes)
+        updated_node = type(node)(**{**node.model_dump(), **filtered_changes})
         wf.nodes[node_id] = updated_node  # type: ignore[assignment]
     except Exception:
         return None
@@ -537,6 +537,32 @@ _PROMPT_VARIANTS = [
 ]
 
 MAX_NODES = 30
+
+_COMPLEMENTARY_ROLES: dict[AgentRole, AgentRole] = {
+    AgentRole.BUILDER: AgentRole.CODE_REVIEWER,
+    AgentRole.RESEARCHER: AgentRole.STRATEGIST,
+    AgentRole.STRATEGIST: AgentRole.BUILDER,
+    AgentRole.HEALTH_CHECKER: AgentRole.BUILDER,
+    AgentRole.CODE_REVIEWER: AgentRole.BUILDER,
+    AgentRole.ADVERSARIAL_TESTER: AgentRole.BUILDER,
+    AgentRole.FAILURE_ANALYST: AgentRole.STRATEGIST,
+    AgentRole.ARCHIVIST: AgentRole.RESEARCHER,
+    AgentRole.REFINER: AgentRole.BUILDER,
+    AgentRole.CEO: AgentRole.STRATEGIST,
+}
+
+_ROLE_PROMPT_TEMPLATES: dict[AgentRole, str] = {
+    AgentRole.BUILDER: "Implement the changes described in the input files.",
+    AgentRole.CODE_REVIEWER: "Review the work done so far for correctness and quality issues.",
+    AgentRole.RESEARCHER: "Investigate the problem space and gather relevant context.",
+    AgentRole.STRATEGIST: "Analyze the available information and propose a clear plan of action.",
+    AgentRole.HEALTH_CHECKER: "Run health checks and verify the system is functioning correctly.",
+    AgentRole.ADVERSARIAL_TESTER: "Test the implementation against edge cases and failure modes.",
+    AgentRole.FAILURE_ANALYST: "Analyze failures and identify root causes.",
+    AgentRole.ARCHIVIST: "Record findings and decisions for future reference.",
+    AgentRole.REFINER: "Refine the implementation based on feedback.",
+    AgentRole.CEO: "Orchestrate the workflow and review agent outputs.",
+}
 
 
 PromptRewriter = Callable[[str, str, str | None], str | None]
@@ -667,7 +693,7 @@ def mutate_prompt(
             new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
 
     try:
-        updated = node.model_copy(update={"prompt_template": new_prompt})
+        updated = type(node)(**{**node.model_dump(), "prompt_template": new_prompt})
         wf.nodes[node_id] = updated  # type: ignore[assignment]
     except Exception as exc:
         log.warning("prompt_mutate_validation_failed", node=node_id, error=str(exc))
@@ -915,6 +941,35 @@ def _extract_prompt_hint(report: ReflectionReport) -> str | None:
     return None
 
 
+def _find_nearest_upstream_agent(
+    workflow: Workflow, node_id: str,
+) -> AgentNode | None:
+    """Walk upstream edges to find the nearest AgentNode."""
+    visited: set[str] = set()
+    queue = [node_id]
+    while queue:
+        current = queue.pop(0)
+        if current in visited:
+            continue
+        visited.add(current)
+        node = workflow.nodes.get(current)
+        if node is not None and isinstance(node, AgentNode) and current != node_id:
+            return node
+        for edge in workflow.edges:
+            if edge.target == current and edge.source not in visited:
+                queue.append(edge.source)
+    return None
+
+
+def _generate_unique_agent_id(existing_keys: set[str], role: AgentRole) -> str:
+    """Generate an agent ID that doesn't collide with existing node keys."""
+    for _ in range(100):
+        new_id = f"{role.value}_{random.randint(100, 999)}"
+        if new_id not in existing_keys:
+            return new_id
+    return f"{role.value}_{random.randint(10000, 99999)}"
+
+
 def _try_mutation(
     workflow: Workflow,
     op: MutationType,
@@ -924,24 +979,93 @@ def _try_mutation(
     **kwargs: object,
 ) -> tuple[Workflow, MutationRecord] | None:
     """Attempt a single mutation of the given type."""
-    mutable_nodes = [
+    # Fix 1: two separate node lists for structural vs content mutations
+    structurally_mutable = [
         nid for nid in workflow.nodes if nid not in frozen and nid != workflow.start_node
     ]
-    if not mutable_nodes and op not in (MutationType.NODE_INSERT, MutationType.KNOB_MUTATE):
+    content_mutable = [
+        nid for nid in workflow.nodes if nid not in frozen
+    ]
+
+    structural_ops = {
+        MutationType.NODE_REMOVE, MutationType.EDGE_REDIRECT,
+        MutationType.PARALLELIZE, MutationType.SERIALIZE,
+    }
+    content_ops = {MutationType.PARAM_MUTATE, MutationType.PROMPT_MUTATE}
+    exempt_ops = {MutationType.NODE_INSERT, MutationType.KNOB_MUTATE}
+
+    if op in structural_ops and not structurally_mutable:
+        return None
+    if op in content_ops and not content_mutable:
+        return None
+    if op not in structural_ops and op not in content_ops and op not in exempt_ops:
         return None
 
     if op == MutationType.NODE_INSERT:
+        # Fix 2: contextual complementary node with inherited file wiring
         target = random.choice(list(workflow.nodes.keys()))
-        new_id = f"agent_{random.randint(100, 999)}"
-        roles = list(AgentRole)
-        new_node = AgentNode(
-            id=new_id,
-            role=random.choice(roles),
-        )
+        target_node = workflow.nodes[target]
+
+        all_agent_nodes = [
+            n for n in workflow.nodes.values() if isinstance(n, AgentNode)
+        ]
+
+        if all_agent_nodes:
+            # Find the nearest upstream AgentNode from the insertion point
+            upstream_agent: AgentNode | None = None
+            if isinstance(target_node, AgentNode):
+                upstream_agent = target_node
+            else:
+                upstream_agent = _find_nearest_upstream_agent(workflow, target)
+
+            if upstream_agent is not None:
+                base_role = upstream_agent.role
+            else:
+                base_role = random.choice(all_agent_nodes).role
+
+            complementary_role = _COMPLEMENTARY_ROLES.get(base_role, random.choice(list(AgentRole)))
+
+            # Inherit file wiring from context
+            new_reads = upstream_agent.writes.copy() if (
+                upstream_agent and upstream_agent.writes
+            ) else (upstream_agent.reads.copy() if upstream_agent else set())
+            # Find the downstream node to set writes
+            new_writes: set[str] = set()
+            for edge in workflow.edges:
+                if edge.source == target and edge.condition is None:
+                    downstream = workflow.nodes.get(edge.target)
+                    if downstream and downstream.reads:
+                        new_writes = downstream.reads.copy()
+                        break
+
+            # Fix 5: unique ID generation
+            new_id = _generate_unique_agent_id(set(workflow.nodes.keys()), complementary_role)
+            prompt_tmpl = _ROLE_PROMPT_TEMPLATES.get(complementary_role, "")
+
+            new_node = AgentNode(
+                id=new_id,
+                role=complementary_role,
+                reads=new_reads,
+                writes=new_writes,
+                prompt_template=prompt_tmpl,
+            )
+        else:
+            # Fallback: no AgentNodes exist at all
+            role = random.choice(list(AgentRole))
+            new_id = _generate_unique_agent_id(set(workflow.nodes.keys()), role)
+            new_node = AgentNode(id=new_id, role=role)
+
         return insert_node(workflow, new_node, target, frozen_nodes=frozen)
 
     elif op == MutationType.NODE_REMOVE:
-        target = random.choice(mutable_nodes)
+        target = random.choice(structurally_mutable)
+        # Fix 3: protect the last AgentNode
+        if isinstance(workflow.nodes[target], AgentNode):
+            agent_count = sum(
+                1 for n in workflow.nodes.values() if isinstance(n, AgentNode)
+            )
+            if agent_count <= 1:
+                return None
         return remove_node(workflow, target, frozen_nodes=frozen)
 
     elif op == MutationType.EDGE_REDIRECT:
@@ -951,16 +1075,35 @@ def _try_mutation(
         if not edges_from_mutable:
             return None
         edge = random.choice(edges_from_mutable)
-        possible_targets = [nid for nid in workflow.nodes if nid != edge.target]
+
+        # Fix 4: pre-filter targets to exclude ungated cycle sources
+        unconditional_graph: nx.DiGraph[str] = nx.DiGraph()
+        for nid in workflow.nodes:
+            unconditional_graph.add_node(nid)
+        for e in workflow.edges:
+            if e.condition is None:
+                unconditional_graph.add_edge(e.source, e.target)
+
+        ancestors_of_source = (
+            nx.ancestors(unconditional_graph, edge.source)
+            if edge.source in unconditional_graph
+            else set()
+        )
+        possible_targets = [
+            nid for nid in workflow.nodes
+            if nid != edge.target
+            and nid != edge.source
+            and nid not in ancestors_of_source
+        ]
         if not possible_targets:
             return None
         new_target = random.choice(possible_targets)
         return redirect_edge(workflow, edge.source, edge.target, new_target, frozen_nodes=frozen)
 
     elif op == MutationType.PARALLELIZE:
-        if len(mutable_nodes) < 2:
+        if len(structurally_mutable) < 2:
             return None
-        pair = random.sample(mutable_nodes, 2)
+        pair = random.sample(structurally_mutable, 2)
         return parallelize(workflow, pair, frozen_nodes=frozen)
 
     elif op == MutationType.SERIALIZE:
@@ -974,8 +1117,8 @@ def _try_mutation(
 
     elif op == MutationType.PARAM_MUTATE:
         agent_nodes = [
-            nid for nid in mutable_nodes
-            if type(workflow.nodes[nid]).__name__ == "AgentNode"
+            nid for nid in content_mutable
+            if isinstance(workflow.nodes[nid], AgentNode)
         ]
         if not agent_nodes:
             return None
@@ -989,7 +1132,7 @@ def _try_mutation(
 
     elif op == MutationType.PROMPT_MUTATE:
         agent_nodes = [
-            nid for nid in mutable_nodes
+            nid for nid in content_mutable
             if isinstance(workflow.nodes[nid], AgentNode)
         ]
         if not agent_nodes:
