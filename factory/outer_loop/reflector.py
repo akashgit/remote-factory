@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -597,21 +598,35 @@ class OuterLoopReflector:
         from factory.runners.claude import _claude_bin
 
         try:
-            proc = subprocess.run(
-                [_claude_bin(), "-p", prompt, "--model", "opus",
-                 "--append-system-prompt", "Output only valid JSON.",
-                 "--max-turns", "1", "--output-format", "text"],
-                capture_output=True, text=True, timeout=120,
-            )
-            raw = proc.stdout.strip()
-            if not raw:
-                log.info("llm_reflect_empty_response")
-                return
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            if start >= 0 and end > start:
-                raw = raw[start:end]
-            data = json.loads(raw)
+            cmd = [_claude_bin(), "-p", prompt, "--model", "opus",
+                   "--append-system-prompt", "Output only valid JSON.",
+                   "--output-format", "text"]
+            data: dict[str, object] | None = None
+            for attempt in range(3):
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120,
+                )
+                raw = proc.stdout.strip()
+                if not raw or "{" not in raw:
+                    if attempt < 2:
+                        log.info("llm_reflect_retry", attempt=attempt + 1, raw_head=raw[:80] if raw else "EMPTY")
+                        time.sleep(2 ** attempt)
+                        continue
+                    log.info("llm_reflect_empty_response", attempts=3)
+                    return
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                if start >= 0 and end > start:
+                    raw = raw[start:end]
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    if attempt < 2:
+                        log.info("llm_reflect_retry", attempt=attempt + 1, error="json_decode")
+                        time.sleep(2 ** attempt)
+                        continue
+                    raise
+                break
             if not isinstance(data, dict):
                 log.warning("llm_reflect_non_dict_json", type=type(data).__name__)
                 return
