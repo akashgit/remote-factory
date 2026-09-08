@@ -213,7 +213,6 @@ class ChessEvolveTask(Task):
     setup() writes a base minimax engine into the workspace.
     prompt() generates improvement hypotheses.
     verify() evaluates via self-play against the base engine.
-    run() executes the full in-process evolution pipeline.
     """
 
     def __init__(self) -> None:
@@ -359,80 +358,6 @@ class ChessEvolveTask(Task):
                 "total_moves": total_moves,
             },
         )
-
-    def run(
-        self,
-        instance: TaskInstance,
-        workspace: Path,
-        workflow: Any = None,
-    ) -> VerifyResult:
-        """In-process evolution pipeline — does NOT shell out to factory ceo.
-
-        Plays the engine against itself at different configurations.
-        If a workflow is provided, its name influences the mutation strategy.
-        """
-        self.setup(instance, workspace)
-
-        strategy = "default"
-        if workflow is not None:
-            wf_name = getattr(workflow, "name", "")
-            if wf_name:
-                strategy = wf_name
-
-        log.info(
-            "chess_evolve.run",
-            instance=instance.id,
-            strategy=strategy,
-        )
-
-        if strategy != "default" and strategy != "improve":
-            self._apply_mutation(workspace, strategy)
-
-        return self.verify(instance, workspace)
-
-    def _apply_mutation(self, workspace: Path, strategy: str) -> None:
-        """Apply a strategy-driven mutation to the evolved engine.
-
-        Different workflow names map to different improvement strategies.
-        This is a lightweight in-process mutation — no agent invocation.
-        """
-        engine_path = workspace / "src" / "engine.py"
-        if not engine_path.exists():
-            return
-
-        source = engine_path.read_text()
-
-        if "piece_square" not in source and strategy in ("research", "design"):
-            pst_addition = textwrap.dedent("""\
-
-    # Piece-square table for pawns (white perspective)
-    PAWN_TABLE = [
-         0,  0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
-        10, 10, 20, 30, 30, 20, 10, 10,
-         5,  5, 10, 25, 25, 10,  5,  5,
-         0,  0,  0, 20, 20,  0,  0,  0,
-         5, -5,-10,  0,  0,-10, -5,  5,
-         5, 10, 10,-20,-20, 10, 10,  5,
-         0,  0,  0,  0,  0,  0,  0,  0,
-    ]
-
-    def piece_square_bonus(board):
-        bonus = 0.0
-        for sq in chess.SQUARES:
-            piece = board.piece_at(sq)
-            if piece and piece.piece_type == chess.PAWN:
-                idx = sq if piece.color == chess.WHITE else chess.square_mirror(sq)
-                val = PAWN_TABLE[idx]
-                bonus += val if piece.color == chess.WHITE else -val
-        return bonus
-""")
-            source = source.replace(
-                "def evaluate_board(board: chess.Board) -> float:",
-                pst_addition + "\ndef evaluate_board(board: chess.Board) -> float:",
-            )
-            engine_path.write_text(source)
-
 
 meta = {
     "name": "chess-evolve",

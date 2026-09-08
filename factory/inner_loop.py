@@ -200,8 +200,9 @@ class InnerLoop:
         When self.task is None (default): runs the factory mode via subprocess
         (existing behavior, byte-for-byte backward compat).
 
-        When self.task is set: iterates task.instances(), calls task.run() per
-        instance, aggregates scores via AggregateMethod from InnerLoopConfig.
+        When self.task is set: iterates task.instances(), runs
+        setup → WorkflowExecutor → verify per instance, aggregates scores
+        via AggregateMethod from InnerLoopConfig.
         """
         if self.task is not None:
             return self._step_with_task(directives)
@@ -256,16 +257,20 @@ class InnerLoop:
         return record
 
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
-        """Task-driven step: iterate instances, call task.run(), aggregate."""
-        assert self.task is not None  # caller guarantees
+        """Task-driven step: setup → WorkflowExecutor → verify per instance."""
+        assert self.task is not None
+        assert self.workflow is not None
+        import asyncio
         import statistics
 
         from factory.models import AggregateMethod, InnerLoopConfig
+        from factory.workflow.executor import WorkflowExecutor
 
         if directives:
             self._write_directives(directives)
 
         t0 = time.monotonic()
+        workflow = self.workflow
 
         all_instances = list(self.task.instances())
 
@@ -281,12 +286,31 @@ class InnerLoop:
 
         for inst in all_instances:
             try:
-                vr = self.task.run(inst, self.project_dir, self.workflow)
+                self.task.setup(inst, self.project_dir)
+
+                prompt_text = self.task.prompt(inst)
+
+                executor = WorkflowExecutor(
+                    workflow,
+                    self.project_dir,
+                    initial_context=prompt_text,
+                )
+                exec_result = asyncio.run(executor.execute())
+
+                vr = self.task.verify(inst, self.project_dir)
+
+                vr_details = dict(vr.details)
+                vr_details["executor_success"] = exec_result.success
+                vr_details["executor_nodes_executed"] = exec_result.nodes_executed
+                vr_details["executor_duration_ms"] = exec_result.duration_ms
+                if exec_result.halted:
+                    vr_details["executor_halt_reason"] = exec_result.halt_reason
+
                 instance_results.append({
                     "instance_id": inst.id,
                     "passed": vr.passed,
                     "score": vr.score,
-                    "details": vr.details,
+                    "details": vr_details,
                 })
                 scores.append(vr.score)
             except Exception as exc:
