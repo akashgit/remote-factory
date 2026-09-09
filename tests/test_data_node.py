@@ -601,7 +601,7 @@ class TestSourcePathNonExistent:
 
 class TestStepWithDataNode:
     def test_delegates_to_executor(self, tmp_path: Path) -> None:
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
 
         from factory.inner_loop import InnerLoop
         from factory.workflow.executor import ExecutionResult
