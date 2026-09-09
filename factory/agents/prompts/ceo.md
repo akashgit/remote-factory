@@ -323,6 +323,7 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 **Mode overrides (from task directives):**
 - `--mode design` or `## Plan Loop (Interactive)` → read `skills/workflow-design/SKILL.md`
 - `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
+- `--mode task-setup` → read `skills/workflow-task-setup/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 

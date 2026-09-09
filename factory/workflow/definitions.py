@@ -41,6 +41,7 @@ __all__ = [
     "design_workflow",
     "register_all",
     "spec_generate_workflow",
+    "task_setup_workflow",
 ]
 
 DOC_FRESHNESS_GATE_PROMPT = (
@@ -1210,6 +1211,155 @@ def create_workflow() -> Workflow:
 
 
 
+# ── W₁₄: Task Setup Mode ──────────────────────────────────────
+
+
+def task_setup_workflow() -> Workflow:
+    """W₁₄: Task Setup — scaffold Task files from a target repository.
+
+    A conversational wizard that studies a target repo, classifies whether
+    the task needs TOML or Python, and produces a validated TaskDefinition.
+
+    Fork(researcher_domain, researcher_verification) → Join → CEO gate →
+    Strategist → User gate → Builder → FnNode(validate) → Archivist
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    _TASK_SETUP_RESEARCHERS = [
+        ResearcherConfig(
+            id="domain",
+            prompt_template=(
+                "Domain analysis for task setup. "
+                "Study the target repository: language, framework, test infrastructure, "
+                "CI/CD setup, and existing evaluation patterns. "
+                "Identify what the project does, what its key outputs are, and how "
+                "quality is currently measured (test suites, linting, benchmarks). "
+                "Document: project purpose, tech stack, existing test commands, "
+                "directory structure, and key source files. "
+                "Write findings to .factory/strategy/research-domain.md."
+            ),
+        ),
+        ResearcherConfig(
+            id="verification",
+            prompt_template=(
+                "Verification method analysis for task setup. "
+                "Study how the target project verifies correctness: "
+                "- Does it use pytest, unittest, or another test framework? "
+                "- Are there integration tests, benchmarks, or eval scripts? "
+                "- Does any test output structured JSON with scores? "
+                "- Is verification binary (pass/fail) or graded (partial credit)? "
+                "Classify the verification type: "
+                "- EXECUTABLE: shell command + exit code or JSON parse → TOML task "
+                "- JUDGMENTAL: custom control flow, multi-stage, or LLM-based → Python task "
+                "This classification follows the eval_spec.py classify_eval_spec_item pattern. "
+                "Write findings to .factory/strategy/research-verification.md."
+            ),
+        ),
+    ]
+    r_nodes, r_edges = _research_subgraph(
+        researchers=_TASK_SETUP_RESEARCHERS,
+        gate_prompt=(
+            "Is the domain well-documented? Is the verification classification "
+            "(EXECUTABLE vs JUDGMENTAL) supported by evidence from the codebase? "
+            "PROCEED if both researchers produced substantive findings. "
+            "RELOOP if either is shallow or missing."
+        ),
+    )
+    nodes.update(r_nodes)
+
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Draft a TaskDefinition for this project. "
+            "Read ALL research files at .factory/strategy/research-*.md. "
+            "Based on the verification classification: "
+            "- If EXECUTABLE: draft a TOML task definition with [task], [instances], "
+            "  [setup], [prompt], [verify], [scoring], and [constraints] sections. "
+            "  The verify command should be a shell command that exits 0 on success. "
+            "  Choose scoring method: 'exit_code' for binary, 'json' for graded. "
+            "- If JUDGMENTAL: draft a Python Task subclass skeleton with custom "
+            "  instances(), setup(), prompt(), and verify() hooks. Include docstrings "
+            "  explaining what each hook should do for this specific domain. "
+            "Include a proposed task name (kebab-case), description, timeout, "
+            "and required capabilities. "
+            "Write the complete draft to .factory/strategy/current.md."
+        ),
+        reads={
+            ".factory/strategy/research-domain.md",
+            ".factory/strategy/research-verification.md",
+        },
+        writes={".factory/strategy/current.md"},
+    )
+
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="user",
+        reads={".factory/strategy/current.md"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        timeout=600,
+        prompt_template=(
+            "Write the task file from the approved specification. "
+            "Read the approved spec at .factory/strategy/current.md. "
+            "If the spec describes a TOML task: write .factory/tasks/<name>.toml "
+            "with all required sections. "
+            "If the spec describes a Python task: write .factory/tasks/<name>.py "
+            "with a Task subclass implementing the four hooks. "
+            "Ensure the task directory exists (mkdir -p .factory/tasks/). "
+            "After writing, run: factory task validate <name> "
+            "to verify the task definition is valid."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["validate_task"] = FnNode(
+        id="validate_task",
+        command="factory task validate {task_name}",
+        notes=(
+            "Hard validation gate — the task must pass all checks. "
+            "The {task_name} placeholder is replaced by the CEO with the "
+            "actual task name from the builder output."
+        ),
+    )
+
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the task setup results and task definition.",
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/archive/task-setup.md"},
+        blocking=False,
+    )
+
+    edges = [
+        *r_edges,
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+        Edge(source="strategist", target="gate_strategy"),
+        Edge(source="gate_strategy", target="builder", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        Edge(source="builder", target="validate_task"),
+        Edge(source="validate_task", target="archivist"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "task-setup"
+
+    return Workflow(
+        name="task-setup",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_research",
+        trigger=trigger,
+    )
+
+
 # ── W₁₃: Spec Generate Mode ────────────────────────────────────
 
 
@@ -1350,6 +1500,7 @@ def _get_builtin_registry() -> dict[str, Any]:
     _BUILTIN_REGISTRY = {
         "design": design_workflow,
         "create": create_workflow,
+        "task-setup": task_setup_workflow,
         "spec-generate": spec_generate_workflow,
         "swebench": lambda: __import__(
             "factory.workflow.contributed.swebench", fromlist=["workflow"]

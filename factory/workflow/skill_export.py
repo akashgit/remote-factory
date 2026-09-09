@@ -64,6 +64,17 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
+    "task-setup": {
+        "description": (
+            "Task setup mode — scaffolds Task files (.factory/tasks/<name>.toml or .py) "
+            "from a target repository. A conversational wizard that studies the repo, "
+            "classifies whether the task needs TOML (shell command + exit code/JSON) "
+            "or Python (custom control flow), and produces a validated TaskDefinition. "
+            "Use when the user says 'set up a task', 'create an evaluation harness', "
+            "or wants to define what to evaluate for the outer loop."
+        ),
+        "argument_hint": "<project_path> --focus 'task description'",
+    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "

@@ -69,6 +69,14 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "with structural graph context included. "
             "Terminal mode — does not chain to other modes."
         ),
+        "task-setup": (
+            "\n\nRun Task Setup mode: scaffold a Task file for the target project. "
+            "Study the repository to understand its domain and verification methods. "
+            "Classify whether the task needs TOML (executable verification) or Python "
+            "(judgmental verification). Produce a validated .factory/tasks/<name>.toml "
+            "or .py file. Terminal mode — does not chain to other modes. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
     }
     if mode == "discover":
         if discover_only:

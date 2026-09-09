@@ -43,6 +43,7 @@ CEO_MODES = [
     "review",
     "deep-qa",
     "create",
+    "task-setup",
     "study",
     "swebench",
     "frontend-design",
