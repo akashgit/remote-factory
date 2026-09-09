@@ -935,3 +935,80 @@ class TestMutateParamsValidation:
             simple_workflow, "researcher", {"timeout": "not_a_number"}
         )
         assert result is None
+
+
+class TestAutoFrozenNodes:
+    """Tests for _auto_frozen_nodes and DataNode auto-freeze in engine."""
+
+    def test_auto_frozen_nodes_returns_data_node_ids(self) -> None:
+        from factory.outer_loop.engine import _auto_frozen_nodes
+        from factory.workflow.primitives import DataNode, DataItem
+
+        nodes: dict[str, AgentNode | FnNode | DataNode] = {
+            "data_loader": DataNode(
+                id="data_loader",
+                inline_items=[DataItem(id="item1", prompt="test")],
+                subgraph_entry="builder",
+                subgraph_exit="builder",
+            ),
+            "builder": AgentNode(id="builder", role=AgentRole.BUILDER),
+            "study": FnNode(id="study", command="echo hi"),
+        }
+        edges = [
+            Edge(source="study", target="data_loader"),
+            Edge(source="data_loader", target="builder"),
+        ]
+        wf = Workflow(name="with_data", nodes=nodes, edges=edges, start_node="study")
+        frozen = _auto_frozen_nodes(wf)
+        assert frozen == {"data_loader"}
+
+    def test_auto_frozen_nodes_empty_when_no_data_nodes(self) -> None:
+        from factory.outer_loop.engine import _auto_frozen_nodes
+
+        nodes: dict[str, AgentNode | FnNode] = {
+            "builder": AgentNode(id="builder", role=AgentRole.BUILDER),
+            "study": FnNode(id="study", command="echo hi"),
+        }
+        edges = [Edge(source="study", target="builder")]
+        wf = Workflow(name="no_data", nodes=nodes, edges=edges, start_node="study")
+        frozen = _auto_frozen_nodes(wf)
+        assert frozen == set()
+
+    def test_data_node_protected_from_direct_removal(self) -> None:
+        """Frozen DataNode cannot be directly removed or param-mutated."""
+        from factory.outer_loop.engine import _auto_frozen_nodes
+        from factory.workflow.primitives import DataNode, DataItem
+
+        nodes: dict[str, AgentNode | FnNode | DataNode] = {
+            "study": FnNode(
+                id="study",
+                command="factory study",
+                writes={".factory/strategy/observations.md"},
+            ),
+            "data_loader": DataNode(
+                id="data_loader",
+                inline_items=[DataItem(id="item1", prompt="test")],
+                subgraph_entry="builder",
+                subgraph_exit="builder",
+                reads={".factory/strategy/observations.md"},
+            ),
+            "builder": AgentNode(
+                id="builder",
+                role=AgentRole.BUILDER,
+                reads={".factory/strategy/observations.md"},
+                writes={".factory/reviews/builder-latest.md"},
+            ),
+        }
+        edges = [
+            Edge(source="study", target="data_loader"),
+            Edge(source="data_loader", target="builder"),
+        ]
+        wf = Workflow(name="data_test", nodes=nodes, edges=edges, start_node="study")
+
+        frozen = _auto_frozen_nodes(wf)
+        assert "data_loader" in frozen
+
+        assert remove_node(wf, "data_loader", frozen_nodes=frozen) is None
+        assert mutate_params(
+            wf, "data_loader", {"timeout": 999}, frozen_nodes=frozen,
+        ) is None
