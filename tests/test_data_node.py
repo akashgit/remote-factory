@@ -469,6 +469,161 @@ class TestDiversityMetricNewAxis:
 # ── Phase 5: compose CAN_ITERATE ──────────────────────────────────
 
 
+# ── Phase 7: source_path code paths ─────────────────────────────
+
+
+class TestSourcePathDirectory:
+    def test_directory_source(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        src_dir = tmp_path / "data"
+        src_dir.mkdir()
+        (src_dir / "alpha").mkdir()
+        (src_dir / "beta").mkdir()
+        (src_dir / "plain_file.txt").write_text("not a dir")
+
+        wf = Workflow(
+            name="dir_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(src_dir),
+                    source_format="directory",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        ids = [r["item_id"] for r in parsed]
+        assert "alpha" in ids
+        assert "beta" in ids
+        assert "plain_file.txt" not in ids
+
+
+class TestSourcePathJsonl:
+    def test_jsonl_source(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        jsonl_file = tmp_path / "items.jsonl"
+        jsonl_file.write_text('{"name": "first"}\n{"name": "second"}\n\n')
+
+        wf = Workflow(
+            name="jsonl_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(jsonl_file),
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 2
+        assert parsed[0]["item_id"] == "0"
+        assert parsed[1]["item_id"] == "1"
+
+
+class TestSourcePathCsv:
+    def test_csv_source(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        csv_file = tmp_path / "items.csv"
+        csv_file.write_text("id,value\na,1\nb,2\nc,3\n")
+
+        wf = Workflow(
+            name="csv_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(csv_file),
+                    source_format="csv",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 3
+        assert parsed[0]["item_id"] == "0"
+        assert parsed[1]["item_id"] == "1"
+        assert parsed[2]["item_id"] == "2"
+
+
+class TestSourcePathNonExistent:
+    def test_nonexistent_path_yields_empty(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        wf = Workflow(
+            name="missing_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(tmp_path / "does_not_exist"),
+                    source_format="directory",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 0
+
+
+# ── Phase 8: inner_loop _step_with_data_node ────────────────────
+
+
+class TestStepWithDataNode:
+    def test_delegates_to_executor(self, tmp_path: Path) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="i", prompt="go")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == 1.0
+        assert record.cycle_number == 1
+
+
 class TestComposeCapsDataNode:
     def test_data_node_adds_can_iterate(self) -> None:
         from factory.compose import ModeCapabilities
