@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -405,3 +406,166 @@ class TestCycleRecordInstanceResults:
         )
         assert record.instance_results is not None
         assert len(record.instance_results) == 1
+
+
+def _write_agent_events(factory_dir: Path, costs: list[tuple[str, float]]) -> None:
+    """Write agent.started + agent.completed events with cost data to events.jsonl."""
+    events_path = factory_dir / "events.jsonl"
+    lines: list[str] = []
+    for role, cost in costs:
+        lines.append(json.dumps({
+            "type": "agent.started",
+            "agent": role,
+            "timestamp": "2026-01-01T00:00:00",
+            "data": {},
+        }))
+        lines.append(json.dumps({
+            "type": "agent.completed",
+            "agent": role,
+            "timestamp": "2026-01-01T00:01:00",
+            "data": {"total_cost_usd": cost, "output_tokens": 500},
+        }))
+    with open(events_path, "a") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+class TestStepWithTaskCostAggregation:
+    """Verify that _step_with_task aggregates cost_usd from events.jsonl."""
+
+    def test_cost_usd_aggregated_from_events(self, tmp_path: Path):
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.setup.return_value = None
+        task.prompt.return_value = "build it"
+        task.verify.return_value = VerifyResult(passed=True, score=0.9)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        wf = _make_workflow()
+
+        def fake_execute(*a, **kw):
+            _write_agent_events(factory_dir, [("builder", 1.25)])
+            return _make_exec_result()
+
+        with patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor:
+            mock_exec = MagicMock()
+            mock_exec.execute = _async_return(None)
+            mock_exec.execute.side_effect = lambda *a, **kw: fake_execute(*a, **kw)
+
+            async def _fake_exec():
+                return fake_execute()
+
+            mock_exec.execute = _async_return(None)
+            mock_exec.execute.side_effect = _fake_exec
+            MockExecutor.return_value = mock_exec
+
+            loop = InnerLoop(project_dir=tmp_path, mode="test", task=task, workflow=wf)
+            record = loop.step()
+
+        assert record.total_cost_usd == pytest.approx(1.25)
+        assert record.cost_by_agent.get("builder") == pytest.approx(1.25)
+
+    def test_cost_usd_aggregated_multiple_agents(self, tmp_path: Path):
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.setup.return_value = None
+        task.prompt.return_value = "build it"
+        task.verify.return_value = VerifyResult(passed=True, score=0.9)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        wf = _make_workflow()
+
+        def fake_execute(*a, **kw):
+            _write_agent_events(factory_dir, [("builder", 2.50), ("researcher", 1.00)])
+            return _make_exec_result()
+
+        with patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor:
+            mock_exec = MagicMock()
+
+            async def _fake_exec():
+                return fake_execute()
+
+            mock_exec.execute = _async_return(None)
+            mock_exec.execute.side_effect = _fake_exec
+            MockExecutor.return_value = mock_exec
+
+            loop = InnerLoop(project_dir=tmp_path, mode="test", task=task, workflow=wf)
+            record = loop.step()
+
+        assert record.total_cost_usd == pytest.approx(3.50)
+        assert record.cost_by_agent.get("builder") == pytest.approx(2.50)
+        assert record.cost_by_agent.get("researcher") == pytest.approx(1.00)
+
+    def test_cost_excludes_pre_existing_events(self, tmp_path: Path):
+        """Events written before _step_with_task should NOT be counted."""
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+
+        _write_agent_events(factory_dir, [("old_agent", 5.00)])
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.setup.return_value = None
+        task.prompt.return_value = "build it"
+        task.verify.return_value = VerifyResult(passed=True, score=0.9)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        wf = _make_workflow()
+
+        def fake_execute(*a, **kw):
+            _write_agent_events(factory_dir, [("builder", 0.75)])
+            return _make_exec_result()
+
+        with patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor:
+            mock_exec = MagicMock()
+
+            async def _fake_exec():
+                return fake_execute()
+
+            mock_exec.execute = _async_return(None)
+            mock_exec.execute.side_effect = _fake_exec
+            MockExecutor.return_value = mock_exec
+
+            loop = InnerLoop(project_dir=tmp_path, mode="test", task=task, workflow=wf)
+            record = loop.step()
+
+        assert record.total_cost_usd == pytest.approx(0.75)
+        assert "old_agent" not in record.cost_by_agent
+
+    def test_cost_zero_when_no_events(self, tmp_path: Path):
+        """When no events are emitted, cost should be zero (not error)."""
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.setup.return_value = None
+        task.prompt.return_value = "build it"
+        task.verify.return_value = VerifyResult(passed=True, score=1.0)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        wf = _make_workflow()
+
+        with patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor:
+            mock_exec = MagicMock()
+            mock_exec.execute = _async_return(_make_exec_result())
+            MockExecutor.return_value = mock_exec
+
+            loop = InnerLoop(project_dir=tmp_path, mode="test", task=task, workflow=wf)
+            record = loop.step()
+
+        assert record.total_cost_usd == pytest.approx(0.0)
+        assert record.cost_by_agent == {}
