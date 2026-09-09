@@ -997,6 +997,11 @@ def create_workflow() -> Workflow:
             "7) Interactive vs headless behavior "
             "Follow conventions from existing workflows — use the same patterns for "
             "builder→gate→QA→gate loops, archivist placement, and research forks. "
+            "If the CEO task includes '## Create Mode (Task-Aware)', include workflow-level "
+            "OptKnobs using the mechanical derivation table from the directive: "
+            "AgentNode.role → OptKnob(kind='model'), timeout → OptKnob(kind='threshold'), "
+            "prompt_template → OptKnob(kind='prompt', expandable=True). "
+            "Never auto-generate kind='topology' knobs. "
             "Write the specification to .factory/strategy/current.md."
         ),
         reads={
@@ -1073,6 +1078,11 @@ def create_workflow() -> Workflow:
             "7) Run factory workflow export-skills --project-path $PROJECT_PATH to generate the SKILL.md "
             "8) Write tests in tests/ "
             "9) Run pytest and ruff check to verify "
+            "If the CEO task includes '## Create Mode (Task-Aware)', also: "
+            "10) Add knob_values and knob_bounds dicts to the Workflow object using the "
+            "mechanical derivation table from the directive (model/threshold/prompt knobs). "
+            "11) Run compose.py validate_composition() as a post-build gate to verify the "
+            "generated workflow is compatible with the resolved task. "
             "Commit changes and open a draft PR."
         ),
         reads={".factory/strategy/current.md"},

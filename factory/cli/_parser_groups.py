@@ -454,6 +454,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--folder", default=None, metavar="PATH",
                     help="Output directory for plugin package (default: ./<mode-name>-plugin). "
                          "Only used with --plugin.")
+    p.add_argument("--task", default=None, metavar="PATH",
+                    help="Task reference for task-aware create mode: .toml file, .py file, "
+                         "or module:ClassName. Injects the resolved TaskDefinition's scoring "
+                         "contract into create mode's workflow generation.")
     p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
                     help="Execution engine: skill (CEO follows SKILL.md, default), "
                          "tool (CEO drives via factory workflow tool commands), "

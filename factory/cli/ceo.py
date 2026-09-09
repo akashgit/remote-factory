@@ -75,6 +75,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     plugin_mode = getattr(args, "plugin", False)
     plugin_folder = getattr(args, "folder", None)
+    task_ref = getattr(args, "task", None)
 
     if plugin_mode and mode != "create":
         print(
@@ -161,6 +162,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         update_existing_mode=update_existing_mode,
         plugin_mode=plugin_mode,
         plugin_folder=plugin_folder,
+        task_ref=task_ref,
         deferred_spec=deferred_spec,
         needs_materialize=needs_materialize,
         refine_request=refine_request,
