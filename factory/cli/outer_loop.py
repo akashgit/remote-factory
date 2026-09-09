@@ -196,6 +196,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         resolved_prep_command = bench_config.prep_command if bench_config else ""
 
         task_module = getattr(args, "task_module", "")
+        cli_task_ref = getattr(args, "task", "")
         seed_workflow_module = getattr(args, "seed_workflow", "")
         config = SwarmConfig(
             benchmark=benchmark,
@@ -215,6 +216,12 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         )
         if task_module:
             _log.info("task_module_resolved", ref=task_module)
+
+        if cli_task_ref:
+            from factory.task import resolve_task
+            resolved = resolve_task(cli_task_ref, project_path)
+            config.set_task(resolved)
+            _log.info("task_resolved_from_cli", ref=cli_task_ref, name=resolved.name)
 
     root = init_filesystem(project_path, config)
 
@@ -460,6 +467,13 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     if cli_task_module:
         config = config.model_copy(update={"task_module": cli_task_module})
         _log.info("task_module_override", ref=cli_task_module)
+
+    cli_task_ref = getattr(args, "task", "")
+    if cli_task_ref:
+        from factory.task import resolve_task
+        resolved = resolve_task(cli_task_ref, project_path)
+        config.set_task(resolved)
+        _log.info("task_resolved_from_cli", ref=cli_task_ref, name=resolved.name)
 
     eval_project_dir = getattr(args, "project_dir", None)
     if eval_project_dir is not None:
@@ -929,6 +943,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         help="Task class ref as 'module.path:ClassName' (e.g. chess_evolve.task:ChessEvolveTask)",
     )
     cal.add_argument(
+        "--task",
+        default="",
+        help="Task reference: .toml file, .py file, or module:ClassName (e.g. .factory/tasks/chess.toml)",
+    )
+    cal.add_argument(
         "--seed-workflow",
         required=True,
         help="Seed workflow callable as 'module.path:callable' — returns a Package or Workflow with OptKnobs (required)",
@@ -946,6 +965,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--task-module",
         default="",
         help="Task class ref as 'module.path:ClassName' (overrides config value)",
+    )
+    ev.add_argument(
+        "--task",
+        default="",
+        help="Task reference: .toml file, .py file, or module:ClassName (overrides config value)",
     )
 
     ref = outer_sub.add_parser("reflect", help="Run reflection on generation")

@@ -337,17 +337,43 @@ factory outer-loop calibrate <project> \
 
 ## Task Discovery
 
-Projects with custom `Task` subclasses (e.g. `chess-evolve`, `harbor`) can pass their task class to the outer loop via the `--task-module` flag. This uses the same `module:ClassName` import-string pattern as `EvaluatorRef`.
+Tasks can be passed to the outer loop via `--task` (recommended) or `--task-module` (escape hatch).
 
-### Format
+### `--task` (recommended)
 
+The `--task` flag accepts three formats, resolved in order by `resolve_task()`:
+
+1. **TOML file** — path ending in `.toml` or resolving to an existing `.toml` file. Parsed via `TaskDefinition.from_toml()`.
+2. **Python file** — path ending in `.py` or resolving to an existing `.py` file. The module is loaded and introspected for a single `Task` subclass.
+3. **Module:Class string** — `module.path:ClassName` format, resolved via `TaskRef.resolve()`. Same as `--task-module`.
+
+```bash
+# TOML task
+factory outer-loop calibrate /path/to/factory \
+  --task .factory/tasks/chess-evolve.toml \
+  --seed-workflow chess_pkg:build_pipeline
+
+# Python task file
+factory outer-loop calibrate /path/to/factory \
+  --task examples/chess_evolve_task.py \
+  --seed-workflow chess_pkg:build_pipeline
+
+# Module:Class (same as --task-module)
+factory outer-loop calibrate /path/to/factory \
+  --task chess_evolve.task:ChessEvolveTask \
+  --seed-workflow chess_pkg:build_pipeline
+
+# Override on evaluate
+factory outer-loop evaluate /path/to/factory \
+  --generation 0 \
+  --task .factory/tasks/chess-evolve.toml
 ```
-module.path:ClassName
-```
 
-The module is imported via `importlib.import_module()` and the class is resolved via `getattr()`. The class must be a subclass of `factory.task.Task`.
+Relative paths are resolved against the project directory.
 
-### Precondition
+### `--task-module` (escape hatch)
+
+The `--task-module` flag accepts only `module.path:ClassName` import strings. It is retained for backward compatibility. The module is imported via `importlib.import_module()` and the class is resolved via `getattr()`. The class must be a subclass of `factory.task.Task`.
 
 The task's package must be importable — install it first:
 
@@ -355,16 +381,14 @@ The task's package must be importable — install it first:
 pip install -e /path/to/my-project
 ```
 
-### Usage
-
 ```bash
-# Calibrate with a custom task
+# Calibrate with --task-module
 factory outer-loop calibrate /path/to/factory \
   --benchmark chess-evolve \
   --task-module chess_evolve.task:ChessEvolveTask \
   --project-dir /path/to/chess-evolve
 
-# Evaluate with a custom task (overrides persisted config)
+# Evaluate with --task-module (overrides persisted config)
 factory outer-loop evaluate /path/to/factory \
   --generation 0 \
   --task-module chess_evolve.task:ChessEvolveTask
@@ -374,8 +398,8 @@ factory outer-loop evaluate /path/to/factory \
 
 `SwarmConfig.get_task()` resolves tasks with 3-tier precedence:
 
-1. **`set_task()`** — explicit runtime attachment (highest, used by tests and in-process callers)
-2. **`task_module`** — `module:ClassName` string from CLI flag or persisted config
+1. **`set_task()`** — explicit runtime attachment (highest, used by `--task` CLI flag, tests, and in-process callers)
+2. **`task_module`** — `module:ClassName` string from `--task-module` CLI flag or persisted config
 3. **`Task.from_legacy()`** — constructed from flat fields (`test_command`, `test_format`, etc.)
 
-The `task_module` field is serialized with `SwarmConfig`, so it persists across `save_config`/`load_config` — no need to re-specify it on every `evaluate` invocation after `calibrate`.
+The `task_module` field is serialized with `SwarmConfig`, so it persists across `save_config`/`load_config` — no need to re-specify it on every `evaluate` invocation after `calibrate`. Tasks resolved via `--task` are attached at runtime via `set_task()` and take highest precedence.

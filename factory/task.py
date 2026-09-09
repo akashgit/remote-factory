@@ -622,3 +622,74 @@ class Task:
         except Exception:
             pass
         return None
+
+
+# ── Shared task resolver ────────────────────────────────────────
+
+
+def resolve_task(task_ref: str, project_path: Path | None = None) -> Task:
+    """Resolve a task reference to a live Task object.
+
+    Three-step resolution:
+    1. If string ends in .toml or resolves to an existing file with a [task]
+       section → TaskDefinition.from_toml(path) → Task
+    2. If string ends in .py or resolves to an existing .py file → import the
+       module and introspect for a single Task subclass
+    3. Else treat as module.path:ClassName via TaskRef.resolve()
+    """
+    ref_path = Path(task_ref)
+    if not ref_path.is_absolute() and project_path is not None:
+        candidate = project_path / ref_path
+        if candidate.exists():
+            ref_path = candidate
+
+    # Step 1: TOML file
+    if task_ref.endswith(".toml") or (ref_path.exists() and ref_path.suffix == ".toml"):
+        resolved = ref_path if ref_path.exists() else Path(task_ref)
+        if not resolved.exists():
+            raise FileNotFoundError(f"TOML task file not found: {task_ref}")
+        log.info("resolve_task_toml", path=str(resolved))
+        return Task.from_toml(resolved)
+
+    # Step 2: Python file
+    if task_ref.endswith(".py") or (ref_path.exists() and ref_path.suffix == ".py"):
+        resolved = ref_path if ref_path.exists() else Path(task_ref)
+        if not resolved.exists():
+            raise FileNotFoundError(f"Python task file not found: {task_ref}")
+        log.info("resolve_task_python", path=str(resolved))
+        return _load_task_from_python_file(resolved)
+
+    # Step 3: module:ClassName import string
+    log.info("resolve_task_module", ref=task_ref)
+    return TaskRef(ref=task_ref).resolve()
+
+
+def _load_task_from_python_file(path: Path) -> Task:
+    """Import a Python file and find the single Task subclass in it."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_task_module", str(path.resolve()))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load Python module from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+    task_classes: list[type[Task]] = []
+    for attr_name in dir(mod):
+        obj = getattr(mod, attr_name)
+        if (
+            isinstance(obj, type)
+            and issubclass(obj, Task)
+            and obj is not Task
+        ):
+            task_classes.append(obj)
+
+    if len(task_classes) == 0:
+        raise ImportError(f"No Task subclass found in {path}")
+    if len(task_classes) > 1:
+        names = [c.__name__ for c in task_classes]
+        raise ImportError(
+            f"Multiple Task subclasses in {path}: {names}. "
+            f"Expected exactly one."
+        )
+    return task_classes[0]()
