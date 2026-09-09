@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -30,6 +31,7 @@ from factory.models import (
 )
 from factory.research.runner import aggregate_metric
 from factory.store import ExperimentStore, _parse_inner_loop, _parse_outer_loop
+from factory.workflow.primitives import Workflow
 
 
 # ── Model validation ────────────────────────────────────────────
@@ -630,3 +632,201 @@ class TestDetectResearchPlateau:
 
         summaries = [{"metric_value": 0.5}]
         assert detect_research_plateau(summaries, threshold=0) is False
+
+
+# ── DataNode integration: Task → InnerLoop → WorkflowExecutor → outer loop ──
+
+
+class TestDataNodeIntegration:
+    """Integration tests proving the full DataNode pipeline works end-to-end:
+    Task → InnerLoop → WorkflowExecutor → DataNode → outer loop feature extraction.
+    """
+
+    @staticmethod
+    def _async_return(val: object) -> MagicMock:
+        async def _coro(*a: object, **kw: object) -> object:
+            return val
+        m = MagicMock(side_effect=_coro)
+        return m
+
+    @staticmethod
+    def _make_data_workflow() -> Workflow:
+        from factory.workflow.primitives import DataItem, DataNode, Edge, FnNode, Workflow
+
+        return Workflow(
+            name="data_integration",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[
+                        DataItem(id="item-1", prompt="solve 1"),
+                        DataItem(id="item-2", prompt="solve 2"),
+                    ],
+                    subgraph_entry="sub_start",
+                    subgraph_exit="sub_end",
+                    parallelism=1,
+                ),
+                "sub_start": FnNode(id="sub_start", command="echo start"),
+                "sub_end": FnNode(id="sub_end", command="echo end"),
+            },
+            edges=[
+                Edge(source="sub_start", target="sub_end"),
+            ],
+            start_node="data",
+        )
+
+    @staticmethod
+    def _make_plain_workflow() -> Workflow:
+        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
+
+        return Workflow(
+            name="plain",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build {project_path}",
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+    @staticmethod
+    def _make_exec_result(success: bool = True) -> MagicMock:
+        r = MagicMock()
+        r.success = success
+        r.halted = not success
+        r.halt_reason = "" if success else "halted"
+        r.nodes_executed = 1
+        r.duration_ms = 100.0
+        return r
+
+    def test_data_node_routes_through_step_with_data_node(self, tmp_path: Path) -> None:
+        """DataNode workflow routes through InnerLoop._step_with_data_node()."""
+        from unittest.mock import AsyncMock, patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = self._make_data_workflow()
+        task = MagicMock()
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf, task=task)
+
+        assert loop._workflow_has_data_node() is True
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop.step()
+
+        assert record.score_end == 1.0
+        assert record.cycle_number == 1
+
+    def test_data_node_delegates_to_executor_not_per_instance(self, tmp_path: Path) -> None:
+        """DataNode workflow calls WorkflowExecutor.execute() once, not per instance."""
+        from unittest.mock import AsyncMock, patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = self._make_data_workflow()
+        task = MagicMock()
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf, task=task)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_execute:
+            loop.step()
+
+        mock_execute.assert_called_once()
+        task.instances.assert_not_called()
+        task.setup.assert_not_called()
+        task.verify.assert_not_called()
+
+    def test_no_data_node_uses_manual_per_instance_loop(self, tmp_path: Path) -> None:
+        """Without DataNode, InnerLoop uses the manual per-instance loop."""
+        from unittest.mock import patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.task import ScoringContract, TaskDefinition, TaskInstance, VerifyResult
+
+        wf = self._make_plain_workflow()
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
+        task.setup.return_value = None
+        task.prompt.return_value = "test prompt"
+        task.verify.return_value = VerifyResult(passed=True, score=0.75)
+
+        with patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor:
+            mock_exec = MagicMock()
+            mock_exec.execute = self._async_return(self._make_exec_result())
+            MockExecutor.return_value = mock_exec
+
+            loop = InnerLoop(project_dir=tmp_path, mode="test", task=task, workflow=wf)
+            record = loop.step()
+
+        task.instances.assert_called_once()
+        task.setup.assert_called_once()
+        task.prompt.assert_called_once()
+        task.verify.assert_called_once()
+        assert record.score_end == pytest.approx(0.75)
+        assert record.instance_results is not None
+        assert len(record.instance_results) == 1
+
+    def test_compute_features_detects_data_node(self) -> None:
+        """compute_features returns has_data_node=1 at index 8 for DataNode workflows."""
+        from factory.outer_loop.similarity import compute_features
+
+        wf_with = self._make_data_workflow()
+        features_with = compute_features(wf_with)
+        assert len(features_with) == 9
+        assert features_with[8] == 1
+
+        wf_without = self._make_plain_workflow()
+        features_without = compute_features(wf_without)
+        assert len(features_without) == 9
+        assert features_without[8] == 0
+
+    def test_full_pipeline_data_node_through_inner_loop_with_features(self, tmp_path: Path) -> None:
+        """Full pipeline: DataNode workflow → InnerLoop.step() → CycleRecord + compute_features."""
+        from unittest.mock import AsyncMock, patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.outer_loop.similarity import compute_features
+        from factory.workflow.executor import ExecutionResult
+
+        wf = self._make_data_workflow()
+        task = MagicMock()
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf, task=task)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop.step()
+
+        assert record.score_end is not None
+        assert record.score_end == 1.0
+
+        features = compute_features(wf)
+        assert features[8] == 1
+        assert loop._workflow_has_data_node() is True
