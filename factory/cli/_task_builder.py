@@ -218,7 +218,23 @@ def _build_task_aware_directive(task_ref: str, project_path: Path) -> str:
         f"| AgentNode.timeout | threshold | [default/2, default, default*2] | False |\n"
         f"| AgentNode.prompt_template (when non-empty) | prompt | [current_value] | True |\n\n"
         f"Never auto-generate kind='topology' knobs.\n"
-        f"Use `compose.py validate_composition()` as a post-build gate.\n"
+        f"Use `compose.py validate_composition()` as a post-build gate.\n\n"
+        f"### Domain-Level OptKnob Suggestions\n\n"
+        f"When a TaskDefinition is provided, the Strategist should also propose "
+        f"domain-level knobs as LLM-authored suggestions (not deterministic derivations). "
+        f"These are CEO-gated — the Strategist proposes them, the CEO reviews.\n\n"
+        f"**Rules:**\n"
+        f"- Restrict to prompt/model/threshold kinds only (never topology)\n"
+        f"- Default expandable=False for auto-generated domain knobs\n"
+        f"- When scoring.method is 'json' with a numeric metric_path, propose a "
+        f"threshold-kind knob using ScoringContract.threshold\n"
+        + (
+            f"- Current threshold: {defn.scoring.threshold}\n"
+            if defn.scoring.threshold is not None
+            else f"- No threshold configured — Strategist may propose one\n"
+        )
+        + f"- Domain knobs should be grounded in the task's actual constraints, "
+        f"not hallucinated from descriptions\n"
     )
 
 

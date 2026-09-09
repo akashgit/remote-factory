@@ -84,6 +84,68 @@ class TestTaskAwareDirective:
         assert "## Create Mode (Task-Aware)" not in task
 
 
+class TestScoringContractThreshold:
+    def test_threshold_default_none(self):
+        from factory.task import ScoringContract
+
+        s = ScoringContract()
+        assert s.threshold is None
+
+    def test_threshold_explicit(self):
+        from factory.task import ScoringContract
+
+        s = ScoringContract(method="json", threshold=0.85)
+        assert s.threshold == 0.85
+
+    def test_threshold_from_toml(self, tmp_path: Path):
+        toml = tmp_path / "thresh.toml"
+        toml.write_text(
+            '[task]\nname = "thresh"\n'
+            '[scoring]\nmethod = "json"\nthreshold = 0.7\n'
+            '[verify]\ncommand = "python eval.py"\n'
+        )
+        from factory.task import TaskDefinition
+
+        defn = TaskDefinition.from_toml(toml)
+        assert defn.scoring.threshold == 0.7
+
+    def test_threshold_absent_in_toml(self, tmp_path: Path):
+        toml = tmp_path / "no_thresh.toml"
+        toml.write_text(
+            '[task]\nname = "no-thresh"\n'
+            '[scoring]\nmethod = "exit_code"\n'
+            '[verify]\ncommand = "true"\n'
+        )
+        from factory.task import TaskDefinition
+
+        defn = TaskDefinition.from_toml(toml)
+        assert defn.scoring.threshold is None
+
+
+class TestDomainLevelKnobs:
+    def test_directive_with_threshold(self, tmp_path: Path):
+        toml = tmp_path / "with_thresh.toml"
+        toml.write_text(
+            '[task]\nname = "thresh-task"\n'
+            '[scoring]\nmethod = "json"\nthreshold = 0.8\n'
+            '[verify]\ncommand = "python eval.py"\n'
+        )
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "Domain-Level OptKnob" in directive
+        assert "0.8" in directive
+
+    def test_directive_without_threshold(self, tmp_path: Path):
+        toml = tmp_path / "no_thresh.toml"
+        toml.write_text(
+            '[task]\nname = "no-thresh"\n'
+            '[scoring]\nmethod = "exit_code"\n'
+            '[verify]\ncommand = "true"\n'
+        )
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "Domain-Level OptKnob" in directive
+        assert "No threshold configured" in directive
+
+
 class TestTaskSetupWorkflow:
     def test_task_setup_workflow_validates(self):
         from factory.workflow.definitions import task_setup_workflow

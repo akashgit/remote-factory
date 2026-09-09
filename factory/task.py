@@ -71,6 +71,7 @@ class ScoringContract(BaseModel):
 
     method: Literal["json", "exit_code"] = "exit_code"
     metric_path: str = "score"
+    threshold: float | None = None
 
 
 # ── Capability StrEnum ───────────────────────────────────────────
@@ -287,9 +288,11 @@ class TaskDefinition(BaseModel):
             method = "exit_code"
         if method not in ("json", "exit_code"):
             raise ValueError(f"Unknown scoring method: {method}")
+        raw_threshold = scoring_section.get("threshold")
         scoring = ScoringContract(
             method=method,
             metric_path=scoring_section.get("metric_path", "score"),
+            threshold=float(raw_threshold) if raw_threshold is not None else None,
         )
 
         return cls(
