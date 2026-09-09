@@ -86,6 +86,7 @@ class ModeCapabilities:
         from factory.workflow.primitives import (
             AgentNode,
             AgentRole,
+            DataNode,
             FnNode,
             ForkNode,
             GateNode,
@@ -123,6 +124,9 @@ class ModeCapabilities:
 
             elif isinstance(node, ForkNode):
                 caps.add(Capability.HAS_PARALLELISM)
+
+            elif isinstance(node, DataNode):
+                caps.add(Capability.CAN_ITERATE)
 
             elif isinstance(node, FnNode):
                 caps.add(Capability.CAN_RUN_SUBPROCESS)

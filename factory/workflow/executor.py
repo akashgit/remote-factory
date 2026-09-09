@@ -25,6 +25,8 @@ from factory.workflow.events import (
 from factory.workflow.primitives import (
     AgentConfig,
     AgentNode,
+    DataItem,
+    DataNode,
     Edge,
     FnNode,
     ForkNode,
@@ -228,6 +230,10 @@ class WorkflowExecutor:
 
         if isinstance(node, GateNode):
             await self._execute_gate(node)
+            return
+
+        if isinstance(node, DataNode):
+            await self._execute_data(node_id, node)
             return
 
         await self._execute_action_node(node)
@@ -625,6 +631,142 @@ class WorkflowExecutor:
         )
 
         next_id = self._next_unconditional(node.id)
+        if next_id:
+            await self._execute_from(next_id)
+
+    async def _execute_data(self, node_id: str, node: DataNode) -> None:
+        """Execute a DataNode: resolve items, run subgraph per item with fault isolation."""
+        import random as _random
+
+        self.result.nodes_executed += 1
+
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="DataNode",
+            ),
+        )
+
+        start = time.monotonic()
+
+        # Resolve data items from exactly one source
+        items: list[DataItem] = []
+        if node.inline_items:
+            items = list(node.inline_items)
+        elif node.task_ref:
+            from factory.task import TaskRef
+            task_ref = TaskRef(ref=node.task_ref)
+            task = task_ref.resolve()
+            for inst in task.instances():
+                task.setup(inst, self.project_path)
+                prompt_text = task.prompt(inst)
+                items.append(DataItem(
+                    id=inst.id,
+                    path=str(inst.path) if inst.path else None,
+                    metadata=inst.metadata,
+                    prompt=prompt_text,
+                ))
+        elif node.source_path:
+            from pathlib import Path as _Path
+            src = _Path(node.source_path)
+            if not src.is_absolute():
+                src = self.project_path / src
+            if node.source_format == "directory" and src.is_dir():
+                for child in sorted(src.iterdir()):
+                    if child.is_dir():
+                        items.append(DataItem(id=child.name, path=str(child)))
+            elif node.source_format == "jsonl" and src.is_file():
+                for idx, line in enumerate(src.read_text().splitlines()):
+                    if line.strip():
+                        items.append(DataItem(
+                            id=str(idx),
+                            metadata=json.loads(line),
+                        ))
+            elif node.source_format == "csv" and src.is_file():
+                import csv
+                with src.open(newline="") as f:
+                    reader = csv.DictReader(f)
+                    for idx, row in enumerate(reader):
+                        items.append(DataItem(id=str(idx), metadata=dict(row)))
+
+        # Apply split/shuffle/limit filters
+        if node.split != "all":
+            items = [it for it in items if it.metadata.get("split") == node.split]
+        if node.shuffle:
+            _random.shuffle(items)
+        if node.limit is not None and node.limit > 0:
+            items = items[:node.limit]
+
+        if len(items) > node.max_items:
+            raise ValueError(
+                f"DataNode '{node_id}' resolved {len(items)} items, "
+                f"exceeding max_items={node.max_items}"
+            )
+
+        # Collect subgraph and run per item with Semaphore-throttled concurrency
+        subgraph_ids = _collect_subgraph_nodes(
+            self.workflow, node.subgraph_entry, node.subgraph_exit,
+        )
+        sub_workflow = self.workflow.subgraph(
+            subgraph_ids,
+            name=f"{self.workflow.name}__data_item",
+            start_node=node.subgraph_entry,
+        )
+
+        item_results: list[dict[str, Any]] = []
+        sem = asyncio.Semaphore(node.parallelism)
+
+        async def run_item(item: DataItem) -> dict[str, Any]:
+            async with sem:
+                try:
+                    item_executor = WorkflowExecutor(
+                        sub_workflow.model_copy(deep=True),
+                        self.project_path,
+                        agent_pool=self.agent_pool,
+                        dry_run=self.dry_run,
+                        initial_context=item.prompt,
+                    )
+                    item_result = await item_executor.execute()
+                    return {
+                        "item_id": item.id,
+                        "success": item_result.success,
+                        "score": 1.0 if item_result.success else 0.0,
+                        "nodes_executed": item_result.nodes_executed,
+                        "node_outputs": item_result.node_outputs,
+                    }
+                except Exception as exc:
+                    log.warning("data_item_failed", item_id=item.id, error=str(exc))
+                    return {
+                        "item_id": item.id,
+                        "success": False,
+                        "score": 0.0,
+                        "error": str(exc),
+                    }
+
+        tasks = [run_item(item) for item in items]
+        results = await asyncio.gather(*tasks)
+        item_results = list(results)
+
+        elapsed = (time.monotonic() - start) * 1000
+        self.result.node_outputs[node_id] = json.dumps(item_results)
+        self.completed_files |= node.writes
+
+        self._emit(
+            "node.completed",
+            NodeCompleted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type="DataNode",
+                files_written=sorted(node.writes),
+                duration_ms=elapsed,
+            ),
+        )
+
+        next_id = self._next_unconditional(node_id)
         if next_id:
             await self._execute_from(next_id)
 
