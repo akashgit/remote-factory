@@ -719,6 +719,13 @@ class WorkflowExecutor:
         item_results: list[dict[str, Any]] = []
         sem = asyncio.Semaphore(node.parallelism)
 
+        # Pre-compute reads that exist on disk (e.g. created by task.setup())
+        disk_reads: set[str] = set()
+        for sg_node in sub_workflow.nodes.values():
+            for r in sg_node.reads:
+                if (self.project_path / r).exists():
+                    disk_reads.add(r)
+
         async def run_item(item: DataItem) -> dict[str, Any]:
             async with sem:
                 try:
@@ -729,7 +736,7 @@ class WorkflowExecutor:
                         dry_run=self.dry_run,
                         initial_context=item.prompt,
                     )
-                    item_executor.completed_files = self.completed_files.copy()
+                    item_executor.completed_files = self.completed_files | disk_reads
                     item_result = await item_executor.execute()
                     return {
                         "item_id": item.id,
