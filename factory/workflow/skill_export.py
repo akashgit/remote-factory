@@ -20,6 +20,7 @@ import structlog
 from factory.workflow.primitives import (
     AgentNode,
     DEFAULT_AGENT_POOL,
+    DataNode,
     Edge,
     FnNode,
     ForkNode,
@@ -629,6 +630,43 @@ def _selection_to_instruction(node: SelectionNode, workflow: Workflow) -> str:
     return "\n".join(lines)
 
 
+def _data_to_instruction(node: DataNode, workflow: Workflow) -> str:
+    """Convert a DataNode to data iteration instructions."""
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+
+    source_desc = "inline items"
+    if node.task_ref:
+        source_desc = f"task_ref `{node.task_ref}`"
+    elif node.source_path:
+        source_desc = f"source_path `{node.source_path}` (format: {node.source_format})"
+
+    annotations = [
+        f"<!-- node: DataNode id={node.id} entry={node.subgraph_entry} exit={node.subgraph_exit} -->",
+        f"<!-- source: {source_desc} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [
+        *annotations,
+        "",
+        f"Load data items from {source_desc} and iterate the subgraph "
+        f"(`{node.subgraph_entry}` → `{node.subgraph_exit}`) once per item.",
+        "",
+        f"- **Parallelism:** {node.parallelism} concurrent items",
+        f"- **Split:** {node.split}",
+    ]
+    if node.shuffle:
+        lines.append("- **Shuffle:** yes")
+    if node.limit is not None:
+        lines.append(f"- **Limit:** {node.limit} items")
+    lines.append(f"- **Max items (safety ceiling):** {node.max_items}")
+    lines.append("")
+    lines.append("Per-item fault isolation: a failing item scores 0.0 but does not halt the iteration.")
+
+    return "\n".join(lines)
+
+
 # ── frontmatter builder ────────────────────────────────────────
 
 
@@ -695,6 +733,12 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             subgraph_nodes |= _collect_subgraph_nodes(
                 workflow, node.subgraph_entry, node.subgraph_exit
             )
+        elif isinstance(node, DataNode):
+            from factory.workflow.executor import _collect_subgraph_nodes
+
+            subgraph_nodes |= _collect_subgraph_nodes(
+                workflow, node.subgraph_entry, node.subgraph_exit
+            )
 
     sections: list[str] = []
     phase_num = 1
@@ -753,10 +797,23 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_llm_to_instruction(node, workflow))
             phase_num += 1
 
+        elif isinstance(node, DataNode):
+            node_title = nid.replace("_", " ").title()
+            sections.append(f"## Phase {phase_num}: {node_title} (Data Iteration)\n")
+            sections.append(_data_to_instruction(node, workflow))
+            phase_num += 1
+
         elif isinstance(node, FnNode):
             node_title = nid.replace("_", " ").title()
             sections.append(f"## Step: {node_title}\n")
             sections.append(_fn_to_instruction(node, workflow))
+
+        else:
+            log.warning(
+                "skill_export.unmatched_node_type",
+                node_id=nid,
+                node_type=type(node).__name__,
+            )
 
     body = "\n\n".join(sections)
 

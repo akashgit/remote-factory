@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from factory.cycle_analyzer import CycleAnalyzer, CycleRecord
-from factory.workflow.primitives import Workflow
+from factory.workflow.primitives import DataNode, Workflow
 
 
 @dataclass
@@ -135,6 +135,7 @@ class InnerLoop:
         self.instance = instance
         self._step_count = 0
         self._history: list[CycleRecord] = []
+        self._has_data_node: bool | None = None
         self._validate_frozen_nodes()
 
         # When task is set, derive flat fields from it for backward compat
@@ -256,6 +257,14 @@ class InnerLoop:
         self._history.append(record)
         return record
 
+    def _workflow_has_data_node(self) -> bool:
+        if self._has_data_node is None:
+            self._has_data_node = (
+                self.workflow is not None
+                and any(isinstance(n, DataNode) for n in self.workflow.nodes.values())
+            )
+        return self._has_data_node
+
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Task-driven step: setup → WorkflowExecutor → verify per instance."""
         assert self.task is not None
@@ -268,6 +277,9 @@ class InnerLoop:
 
         if directives:
             self._write_directives(directives)
+
+        if self._workflow_has_data_node():
+            return self._step_with_data_node(directives)
 
         t0 = time.monotonic()
         workflow = self.workflow
@@ -362,6 +374,49 @@ class InnerLoop:
             experiments=0,
             test_score=aggregate_score,
             instance_results=instance_results,
+        )
+
+        self._step_count += 1
+        self._history.append(record)
+        return record
+
+    def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
+        """Delegate to the executor when the workflow contains a DataNode."""
+        import asyncio
+
+        from factory.workflow.executor import WorkflowExecutor
+
+        t0 = time.monotonic()
+
+        executor = WorkflowExecutor(
+            self.workflow,
+            self.project_dir,
+        )
+        exec_result = asyncio.run(executor.execute())
+
+        duration_s = time.monotonic() - t0
+        score = 1.0 if exec_result.success else 0.0
+
+        record = CycleRecord(
+            cycle_number=self._step_count + 1,
+            mode=self.mode,
+            started_at=None,
+            ended_at=None,
+            duration_s=duration_s,
+            score_start=None,
+            score_end=score,
+            score_delta=None,
+        )
+        record.frozen_nodes = sorted(self.frozen_nodes)
+        record.mutable_node_ids = sorted(self.mutable_nodes())
+
+        self._write_cycle_summary(
+            returncode=0 if exec_result.success else 1,
+            event_offset=0,
+            duration_ms=int(duration_s * 1000),
+            builder_committed=False,
+            experiments=0,
+            test_score=score,
         )
 
         self._step_count += 1

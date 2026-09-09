@@ -196,14 +196,17 @@ class MAPElitesArchive:
         """Fraction of occupied cells relative to a reasonable grid size estimate.
 
         Returns 0.0 for empty archive, approaches 1.0 as more cells are filled.
+        Uses the first 5 structural axes (depth, fork_degree, agent_count,
+        gate_count, has_data_node) for diversity estimation.
         """
         if not self._grid:
             return 0.0
-        unique_per_axis: list[set[int]] = [set() for _ in range(4)]
+        sample_key = next(iter(self._grid))
+        n_axes = min(len(sample_key), 5)
+        unique_per_axis: list[set[int]] = [set() for _ in range(n_axes)]
         for key in self._grid:
-            for i, v in enumerate(key):
-                if i < 4:
-                    unique_per_axis[i].add(v)
+            for i in range(n_axes):
+                unique_per_axis[i].add(key[i])
         total_possible = 1
         for s in unique_per_axis:
             total_possible *= max(len(s), 1)

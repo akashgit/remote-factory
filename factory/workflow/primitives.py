@@ -191,6 +191,50 @@ class SubgraphForkNode(Node):
     worktree_isolated: bool = True
 
 
+class DataItem(BaseModel):
+    """Standardized data payload for per-item workflow iteration."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: str
+    path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    prompt: str = ""
+
+
+class DataNode(Node):
+    """Node that loads data items and drives per-item execution of a subgraph."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    task_ref: str | None = None
+    source_path: str | None = None
+    source_format: Literal["directory", "jsonl", "csv"] | None = None
+    inline_items: list[DataItem] = Field(default_factory=list)
+    subgraph_entry: str
+    subgraph_exit: str
+    parallelism: int = 3
+    split: Literal["train", "val", "test", "all"] = "all"
+    shuffle: bool = False
+    limit: int | None = None
+    max_items: int = 500
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> DataNode:
+        sources = [
+            self.task_ref is not None,
+            self.source_path is not None,
+            bool(self.inline_items),
+        ]
+        if sum(sources) != 1:
+            raise ValueError(
+                "Exactly one of task_ref, source_path, or inline_items must be set"
+            )
+        if self.source_path is not None and self.source_format is None:
+            raise ValueError("source_path requires source_format to be set")
+        return self
+
+
 class SelectionNode(Node):
     """Compare N completed experiment branches and select the best."""
 
@@ -257,7 +301,8 @@ class Edge(BaseModel):
 
 
 NodeType = (
-    AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study | LLMNode
+    AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode
+    | SelectionNode | Study | LLMNode | DataNode
 )
 
 
@@ -353,6 +398,7 @@ class Workflow(BaseModel):
             "SelectionNode": SelectionNode,
             "Study": Study,
             "LLMNode": LLMNode,
+            "DataNode": DataNode,
         }
         _SET_FIELDS = {"reads", "writes"}
 
