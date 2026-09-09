@@ -281,6 +281,8 @@ class InnerLoop:
         if self._workflow_has_data_node():
             return self._step_with_data_node(directives)
 
+        event_offset = self._count_lines(self.factory_dir / "events.jsonl")
+
         t0 = time.monotonic()
         workflow = self.workflow
 
@@ -352,6 +354,15 @@ class InnerLoop:
 
         duration_s = time.monotonic() - t0
 
+        analyzer = CycleAnalyzer(
+            self.factory_dir,
+            workflow=self.workflow,
+            event_offset=event_offset,
+        )
+        cost_record = analyzer.latest()
+        total_cost_usd = cost_record.total_cost_usd if cost_record else 0.0
+        cost_by_agent = cost_record.cost_by_agent if cost_record else {}
+
         record = CycleRecord(
             cycle_number=self._step_count + 1,
             mode=self.mode,
@@ -362,13 +373,15 @@ class InnerLoop:
             score_end=aggregate_score,
             score_delta=None,
             instance_results=instance_results,
+            total_cost_usd=total_cost_usd,
+            cost_by_agent=cost_by_agent,
         )
         record.frozen_nodes = sorted(self.frozen_nodes)
         record.mutable_node_ids = sorted(self.mutable_nodes())
 
         self._write_cycle_summary(
             returncode=0,
-            event_offset=0,
+            event_offset=event_offset,
             duration_ms=int(duration_s * 1000),
             builder_committed=False,
             experiments=0,
