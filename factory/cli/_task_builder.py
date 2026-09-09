@@ -231,10 +231,10 @@ def _build_task_aware_directive(task_ref: str, project_path: Path) -> str:
         + (
             f"- Current threshold: {defn.scoring.threshold}\n"
             if defn.scoring.threshold is not None
-            else f"- No threshold configured — Strategist may propose one\n"
+            else "- No threshold configured — Strategist may propose one\n"
         )
-        + f"- Domain knobs should be grounded in the task's actual constraints, "
-        f"not hallucinated from descriptions\n"
+        + "- Domain knobs should be grounded in the task's actual constraints, "
+        "not hallucinated from descriptions\n"
     )
 
 
