@@ -267,11 +267,13 @@ class TestTaskProtocol:
 
 
 class TestTomlTaskCapabilities:
+    _CHESS_TOML = Path(__file__).resolve().parent.parent / "benchmarks" / "configs" / "chess-evolve.toml"
+
     def test_chess_evolve_toml_no_builder_required(self):
         """chess-evolve.toml with required_capabilities=[] should need no capabilities."""
         from factory.task import TaskDefinition
 
-        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        defn = TaskDefinition.from_toml(self._CHESS_TOML)
         assert defn.constraints.required_capabilities == []
         task = Task(definition=defn)
         caps = TaskCapabilities.from_task(task)
@@ -281,7 +283,7 @@ class TestTomlTaskCapabilities:
         """chess-evolve.toml should pass composition with a research-only workflow."""
         from factory.task import TaskDefinition
 
-        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        defn = TaskDefinition.from_toml(self._CHESS_TOML)
         task = Task(definition=defn)
         wf = _make_workflow(researcher=True, name="research-only")
         validate_composition(wf, task)
