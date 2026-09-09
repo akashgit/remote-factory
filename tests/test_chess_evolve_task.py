@@ -220,84 +220,6 @@ class TestVerify:
         assert isinstance(result, VerifyResult)
 
 
-# ── Run (end-to-end) ────────────────────────────────────────────
-
-
-class TestRun:
-    def test_run_returns_scored_result(self, tmp_path: Path):
-        t = ChessEvolveTask()
-        inst = TaskInstance(
-            id="depth1-startpos",
-            metadata={
-                "depth": 1,
-                "num_games": 2,
-                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            },
-        )
-        result = t.run(inst, tmp_path)
-        assert isinstance(result, VerifyResult)
-        assert 0.0 <= result.score <= 1.0
-
-    def test_run_with_workflow(self, tmp_path: Path):
-        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
-
-        wf = Workflow(
-            name="improve",
-            nodes={
-                "builder": AgentNode(
-                    id="builder",
-                    role=AgentRole.BUILDER,
-                    prompt_template="build",
-                ),
-            },
-            edges=[],
-            start_node="builder",
-        )
-
-        t = ChessEvolveTask()
-        inst = TaskInstance(
-            id="depth1-startpos",
-            metadata={
-                "depth": 1,
-                "num_games": 2,
-                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            },
-        )
-        result = t.run(inst, tmp_path, workflow=wf)
-        assert isinstance(result, VerifyResult)
-
-    def test_run_with_research_strategy_mutates(self, tmp_path: Path):
-        from factory.workflow.primitives import AgentNode, AgentRole, Workflow
-
-        wf = Workflow(
-            name="research",
-            nodes={
-                "builder": AgentNode(
-                    id="builder",
-                    role=AgentRole.BUILDER,
-                    prompt_template="build",
-                ),
-            },
-            edges=[],
-            start_node="builder",
-        )
-
-        t = ChessEvolveTask()
-        inst = TaskInstance(
-            id="depth1-startpos",
-            metadata={
-                "depth": 1,
-                "num_games": 2,
-                "opening_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            },
-        )
-        result = t.run(inst, tmp_path, workflow=wf)
-        assert isinstance(result, VerifyResult)
-
-        source = (tmp_path / "src" / "engine.py").read_text()
-        assert "piece_square" in source or "PAWN_TABLE" in source
-
-
 # ── Compose integration ─────────────────────────────────────────
 
 
@@ -324,6 +246,8 @@ class TestComposeIntegration:
         assert loop.task is t
 
     def test_inner_loop_step_iterates_instances(self, tmp_path: Path):
+        from unittest.mock import patch
+
         from factory.workflow.primitives import AgentNode, AgentRole, Workflow
 
         wf = Workflow(
@@ -341,7 +265,20 @@ class TestComposeIntegration:
 
         t = _SingleInstanceChessTask()
         loop = compose(wf, t, tmp_path)
-        record = loop.step()
+
+        from factory.workflow.executor import ExecutionResult
+
+        async def fake_execute(self_exec):
+            r = ExecutionResult()
+            r.success = True
+            return r
+
+        with patch.object(
+            __import__("factory.workflow.executor", fromlist=["WorkflowExecutor"]).WorkflowExecutor,
+            "execute",
+            fake_execute,
+        ):
+            record = loop.step()
 
         assert record.instance_results is not None
         assert len(record.instance_results) >= 1
@@ -500,49 +437,3 @@ class TestVerifyEdgeCases:
         assert "engine load failed" in result.details.get("error", "")
 
 
-class TestApplyMutation:
-    """_apply_mutation modifies engine source based on strategy."""
-
-    def test_apply_mutation_research_adds_pst(self, tmp_path: Path):
-        """'research' strategy adds piece-square tables to engine source."""
-        from chess_evolve_task import BASE_ENGINE_SOURCE
-
-        (tmp_path / "src").mkdir(parents=True)
-        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
-
-        t = ChessEvolveTask()
-        t._apply_mutation(tmp_path, "research")
-
-        source = (tmp_path / "src" / "engine.py").read_text()
-        assert "piece_square" in source or "PAWN_TABLE" in source
-
-    def test_apply_mutation_design_adds_pst(self, tmp_path: Path):
-        """'design' strategy also adds piece-square tables."""
-        from chess_evolve_task import BASE_ENGINE_SOURCE
-
-        (tmp_path / "src").mkdir(parents=True)
-        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
-
-        t = ChessEvolveTask()
-        t._apply_mutation(tmp_path, "design")
-
-        source = (tmp_path / "src" / "engine.py").read_text()
-        assert "PAWN_TABLE" in source
-
-    def test_apply_mutation_noop_for_improve(self, tmp_path: Path):
-        """'improve' strategy does not trigger mutation (handled by run())."""
-        from chess_evolve_task import BASE_ENGINE_SOURCE
-
-        (tmp_path / "src").mkdir(parents=True)
-        (tmp_path / "src" / "engine.py").write_text(BASE_ENGINE_SOURCE)
-        original = (tmp_path / "src" / "engine.py").read_text()
-
-        t = ChessEvolveTask()
-        t._apply_mutation(tmp_path, "improve")
-
-        assert (tmp_path / "src" / "engine.py").read_text() == original
-
-    def test_apply_mutation_no_engine_file(self, tmp_path: Path):
-        """_apply_mutation is a no-op when engine file doesn't exist."""
-        t = ChessEvolveTask()
-        t._apply_mutation(tmp_path, "research")

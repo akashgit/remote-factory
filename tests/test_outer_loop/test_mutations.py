@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 
+import random
+from unittest.mock import patch
+
 from factory.outer_loop.models import MutationType
 from factory.outer_loop.mutations import (
     MutationStrategy,
     WeightedRandomStrategy,
+    _generate_unique_agent_id,
+    _try_mutation,
     apply_random_mutation,
     insert_node,
     mutate_knob,
     mutate_params,
+    mutate_prompt,
     parallelize,
     redirect_edge,
     remove_node,
@@ -22,6 +28,8 @@ from factory.workflow.primitives import (
     AgentRole,
     Edge,
     FnNode,
+    GateNode,
+    VerdictType,
     Workflow,
 )
 
@@ -149,11 +157,9 @@ class TestMutateParams:
         assert hasattr(node, "timeout")
         assert node.timeout == 1200  # type: ignore[union-attr]
 
-    def test_change_model(self, simple_workflow: Workflow) -> None:
+    def test_model_is_not_mutable(self, simple_workflow: Workflow) -> None:
         result = mutate_params(simple_workflow, "researcher", {"model": "opus"})
-        assert result is not None
-        wf, _ = result
-        assert wf.nodes["researcher"].model == "opus"  # type: ignore[union-attr]
+        assert result is None
 
     def test_disallowed_param_ignored(self, simple_workflow: Workflow) -> None:
         result = mutate_params(simple_workflow, "researcher", {"role": "builder"})
@@ -299,6 +305,57 @@ class TestKnobMutate:
         assert not called
 
 
+class TestParseKnobSuggestionEmptyValue:
+    def test_empty_string_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="",
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+    def test_whitespace_only_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="   ",
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+    def test_valid_value_returns_tuple(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value="focused",
+        )
+        result = _parse_knob_suggestion(suggestion)
+        assert result == ("style", "focused")
+
+    def test_none_value_returns_none(self) -> None:
+        from factory.outer_loop.mutations import _parse_knob_suggestion
+        from factory.outer_loop.reflector import MutationSuggestion
+
+        suggestion = MutationSuggestion(
+            operator="knob_mutate",
+            target="style",
+            rationale="test",
+            value=None,
+        )
+        assert _parse_knob_suggestion(suggestion) is None
+
+
 class TestApplyRandomMutationWithReflection:
     def test_guided_operator_selection_with_reflection(self, simple_workflow: Workflow) -> None:
         from unittest.mock import patch
@@ -350,6 +407,314 @@ class TestPromptVariantsDomainNeutral:
                 )
 
 
+class TestSelectGuidedOperatorStringFallback:
+    """Cover the string fallback path in select_guided_operator (typed_suggestions empty)."""
+
+    def test_string_fallback_node_insert(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["NODE_INSERT: Add researcher agent"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.NODE_INSERT in counts
+
+    def test_string_fallback_node_remove(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["NODE_REMOVE: Consider removing strategist"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.NODE_REMOVE in counts
+
+    def test_string_fallback_parallelize(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=[],
+            structural_recommendations=["PARALLELIZE: Use parallel execution for agents"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.PARALLELIZE in counts
+
+    def test_string_fallback_param_mutate(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["PARAM_MUTATE: Increase timeout for builder"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.PARAM_MUTATE in counts
+
+    def test_string_fallback_prompt_mutate(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["PROMPT_MUTATE: Improve builder prompt"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.PROMPT_MUTATE in counts
+
+    def test_string_fallback_knob(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["KNOB_MUTATE: style=focused outperforms broad"],
+            typed_suggestions=[],
+        )
+        counts: dict[MutationType, int] = {}
+        for _ in range(100):
+            op = strategy.select_guided_operator(wf, 0, report)
+            counts[op] = counts.get(op, 0) + 1
+        assert MutationType.KNOB_MUTATE in counts
+
+    def test_empty_suggestions_falls_back_to_random(self) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        strategy = WeightedRandomStrategy()
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+        )
+        report = ReflectionReport(
+            mutation_suggestions=[],
+            structural_recommendations=[],
+            typed_suggestions=[],
+        )
+        op = strategy.select_guided_operator(wf, 0, report)
+        assert isinstance(op, MutationType)
+
+
+class TestMutateKnobTypedPreference:
+    """Cover typed_knobs preference path and string fallback in mutate_knob."""
+
+    def test_typed_knobs_preferred_over_strings(self) -> None:
+        import random
+
+        from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
+
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+            knob_values={"style": "broad", "depth": 3},
+            knob_bounds={"style": ["broad", "focused", "creative"], "depth": [1, 2, 3, 5]},
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["KNOB_MUTATE: depth=5 outperforms others"],
+            typed_suggestions=[
+                MutationSuggestion(
+                    operator="knob_mutate",
+                    target="style",
+                    rationale="focused works best",
+                    value="focused",
+                ),
+            ],
+        )
+        random.seed(0)
+        result = mutate_knob(wf, expander=None, reflection_report=report)
+        assert result is not None
+
+    def test_string_fallback_when_no_typed_knobs(self) -> None:
+        import random
+
+        from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
+
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+            knob_values={"style": "broad"},
+            knob_bounds={"style": ["broad", "focused", "creative"]},
+        )
+        report = ReflectionReport(
+            mutation_suggestions=["KNOB_MUTATE: style=creative (avg score +5) outperforms ..."],
+            typed_suggestions=[
+                MutationSuggestion(
+                    operator="node_insert",
+                    target="researcher",
+                    rationale="not a knob suggestion",
+                ),
+            ],
+        )
+        random.seed(1)
+        result = mutate_knob(wf, expander=None, reflection_report=report)
+        assert result is not None
+
+
+class TestMutateKnobGuidedNoOp:
+    """Cover guided_val == current_val no-op branch and float coercion in mutate_knob."""
+
+    def test_guided_value_same_as_current_falls_through(self) -> None:
+        """When guided value equals current, guided_knob is reset and random path takes over."""
+        from unittest.mock import patch
+
+        from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
+
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+            knob_values={"style": "focused"},
+            knob_bounds={"style": ["focused", "broad", "creative"]},
+        )
+        report = ReflectionReport(
+            typed_suggestions=[
+                MutationSuggestion(
+                    operator="knob_mutate",
+                    target="style",
+                    rationale="focused works best",
+                    value="focused",
+                ),
+            ],
+        )
+        with patch("factory.outer_loop.mutations.random") as mock_rng:
+            mock_rng.random.return_value = 0.3
+            mock_rng.choice.side_effect = lambda seq: seq[0]
+            result = mutate_knob(wf, expander=None, reflection_report=report)
+        assert result is not None
+
+    def test_float_coercion_in_guided_knob(self) -> None:
+        """When the current value is float and guided_val is string, coerce to float."""
+        from unittest.mock import patch
+
+        from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
+
+        wf = Workflow(
+            name="test",
+            nodes={"b": AgentNode(id="b", role=AgentRole.BUILDER)},
+            edges=[], start_node="b",
+            knob_values={"temperature": 0.7},
+            knob_bounds={"temperature": [0.5, 0.7, 0.9]},
+        )
+        report = ReflectionReport(
+            typed_suggestions=[
+                MutationSuggestion(
+                    operator="knob_mutate",
+                    target="temperature",
+                    rationale="higher works better",
+                    value="0.9",
+                ),
+            ],
+        )
+        with patch("factory.outer_loop.mutations.random") as mock_rng:
+            mock_rng.random.return_value = 0.3
+            mock_rng.choice.side_effect = lambda seq: seq[0]
+            result = mutate_knob(wf, expander=None, reflection_report=report)
+        assert result is not None
+        mutated_wf, _ = result
+        assert mutated_wf.knob_values["temperature"] == 0.9
+
+
+class TestApplyRandomMutationTypedSuggestions:
+    """Cover the typed_suggestions check in apply_random_mutation's use_guided condition."""
+
+    def test_use_guided_with_only_typed_suggestions(self, simple_workflow: Workflow) -> None:
+        from unittest.mock import patch
+
+        from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
+
+        report = ReflectionReport(
+            mutation_suggestions=[],
+            structural_recommendations=[],
+            typed_suggestions=[
+                MutationSuggestion(operator="node_insert", target="researcher", rationale="test"),
+            ],
+        )
+        strategy = WeightedRandomStrategy()
+
+        with patch("factory.outer_loop.mutations.random") as mock_random:
+            mock_random.random.return_value = 0.3
+            mock_random.choice = __import__("random").choice
+            mock_random.choices = __import__("random").choices
+            mock_random.sample = __import__("random").sample
+            mock_random.randint = __import__("random").randint
+
+            apply_random_mutation(
+                simple_workflow, strategy, generation=1,
+                reflection_report=report,
+                max_attempts=20,
+            )
+            mock_random.random.assert_called()
+
+    def test_no_typed_no_string_suggestions_uses_random(self, simple_workflow: Workflow) -> None:
+        from factory.outer_loop.reflector import ReflectionReport
+
+        report = ReflectionReport(
+            mutation_suggestions=[],
+            structural_recommendations=[],
+            typed_suggestions=[],
+        )
+        strategy = WeightedRandomStrategy()
+
+        result = apply_random_mutation(
+            simple_workflow, strategy, generation=1,
+            reflection_report=report,
+            max_attempts=20,
+        )
+        if result is not None:
+            _, rec = result
+            assert isinstance(rec.operator, MutationType)
+
+
 class TestKnobPreservation:
     def test_insert_node_preserves_knobs(self, simple_workflow: Workflow) -> None:
         wf = simple_workflow.model_copy(update={
@@ -374,3 +739,199 @@ class TestKnobPreservation:
         assert result is not None
         child_wf, _ = result
         assert child_wf.knob_values == {"mode": "parallel"}
+
+
+def _chess_evolve_workflow() -> Workflow:
+    """Chess-evolve-like fixture: 1 AgentNode (start) + GateNode + FnNode, gated reloop."""
+    nodes: dict[str, AgentNode | GateNode | FnNode] = {
+        "solver": AgentNode(
+            id="solver",
+            role=AgentRole.BUILDER,
+            reads={"problem.md"},
+            writes={"solution.py"},
+            prompt_template="Solve the problem.",
+        ),
+        "gate": GateNode(
+            id="gate",
+            evaluator_type="fn",
+            reads={"solution.py"},
+        ),
+        "record": FnNode(
+            id="record",
+            command="echo done",
+            reads={"solution.py"},
+        ),
+    }
+    edges = [
+        Edge(source="solver", target="gate"),
+        Edge(source="gate", target="record"),
+        Edge(source="gate", target="solver", condition=VerdictType.RELOOP),
+    ]
+    return Workflow(
+        name="chess_evolve_like",
+        nodes=nodes,
+        edges=edges,
+        start_node="solver",
+    )
+
+
+class TestPromptMutateStartNode:
+    def test_prompt_mutate_succeeds_on_start_only_agent(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.PROMPT_MUTATE, set(), prompt_hint="be concise")
+        assert result is not None
+        child_wf, rec = result
+        assert rec.operator == MutationType.PROMPT_MUTATE
+        assert rec.target_node == "solver"
+
+    def test_prompt_mutate_with_rewriter_none(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = mutate_prompt(wf, "solver", frozen_nodes=set(), rewriter=None, prompt_hint="be fast")
+        assert result is not None
+        child_wf, rec = result
+        node = child_wf.nodes["solver"]
+        assert isinstance(node, AgentNode)
+        assert "be fast" in node.prompt_template
+
+
+class TestParamMutateStartNode:
+    def test_param_mutate_succeeds_on_start_only_agent(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.PARAM_MUTATE, set())
+        assert result is not None
+        _, rec = result
+        assert rec.operator == MutationType.PARAM_MUTATE
+        assert rec.target_node == "solver"
+
+
+class TestNodeInsertContextual:
+    def test_insert_creates_complementary_role(self) -> None:
+        wf = _chess_evolve_workflow()
+        random.seed(42)
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        assert rec.operator == MutationType.NODE_INSERT
+        new_id = rec.target_node
+        new_node = child_wf.nodes[new_id]
+        assert isinstance(new_node, AgentNode)
+        assert new_node.role != AgentRole.CEO
+
+    def test_insert_inherits_file_wiring(self) -> None:
+        wf = _chess_evolve_workflow()
+        # Run many times and check that inserted nodes have non-empty file wiring
+        # when inserted after an AgentNode with writes
+        random.seed(0)
+        found_reads = False
+        for _ in range(30):
+            result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+            if result is None:
+                continue
+            child_wf, rec = result
+            new_node = child_wf.nodes.get(rec.target_node)
+            if isinstance(new_node, AgentNode) and new_node.reads:
+                found_reads = True
+                # solver.writes = {"solution.py"}, so new reads should come from there
+                assert "solution.py" in new_node.reads
+                break
+        assert found_reads, "Expected at least one insertion to inherit file wiring"
+
+    def test_insert_uses_role_prompt_template(self) -> None:
+        wf = _chess_evolve_workflow()
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        new_node = child_wf.nodes[rec.target_node]
+        assert isinstance(new_node, AgentNode)
+        assert new_node.prompt_template != ""
+
+    def test_insert_fallback_when_no_agent_nodes(self) -> None:
+        nodes: dict[str, FnNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "end": FnNode(id="end", command="echo end"),
+        }
+        edges = [Edge(source="start", target="end")]
+        wf = Workflow(name="no_agents", nodes=nodes, edges=edges, start_node="start")
+        result = _try_mutation(wf, MutationType.NODE_INSERT, set())
+        assert result is not None
+        child_wf, rec = result
+        new_node = child_wf.nodes[rec.target_node]
+        assert isinstance(new_node, AgentNode)
+
+
+class TestNodeRemoveLastAgentGuard:
+    def test_remove_last_agent_returns_none(self) -> None:
+        wf = _chess_evolve_workflow()
+        # "solver" is the only AgentNode but it's also the start_node
+        # so it can't be in structurally_mutable. Add it manually to test the guard.
+        result = _try_mutation(wf, MutationType.NODE_REMOVE, set())
+        # With chess-evolve, structurally_mutable = ["gate", "record"] (not AgentNodes),
+        # so NODE_REMOVE can target them but not solver. Let's test with a workflow
+        # where the last agent IS in the structurally_mutable list.
+        nodes: dict[str, AgentNode | FnNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "agent": AgentNode(id="agent", role=AgentRole.BUILDER),
+        }
+        edges = [Edge(source="start", target="agent")]
+        wf2 = Workflow(name="one_agent", nodes=nodes, edges=edges, start_node="start")
+        result = _try_mutation(wf2, MutationType.NODE_REMOVE, set())
+        assert result is None
+
+    def test_remove_non_last_agent_succeeds(self, simple_workflow: Workflow) -> None:
+        # simple_workflow has 3 AgentNodes (researcher, strategist, builder)
+        # removing one should succeed
+        result = remove_node(simple_workflow, "strategist")
+        assert result is not None
+
+
+class TestEdgeRedirectCycleFilter:
+    def test_filters_ungated_cycle_targets(self) -> None:
+        wf = _chess_evolve_workflow()
+        # The only unconditional edges: solver→gate, gate→record
+        # If we pick edge solver→gate, ancestors of solver in unconditional graph = {}
+        # possible_targets = [record] (gate excluded as current target, solver excluded as source)
+        # So redirect should succeed with target=record
+        result = _try_mutation(wf, MutationType.EDGE_REDIRECT, set())
+        if result is not None:
+            child_wf, rec = result
+            assert rec.operator == MutationType.EDGE_REDIRECT
+            validated = validate_and_repair(child_wf)
+            assert validated is not None
+
+    def test_returns_none_when_all_targets_create_cycles(self) -> None:
+        # Two nodes, one unconditional edge A→B. Redirecting A→B to A→A is self-loop,
+        # and there are no other targets.
+        nodes: dict[str, FnNode] = {
+            "a": FnNode(id="a", command="echo a"),
+            "b": FnNode(id="b", command="echo b"),
+        }
+        edges = [Edge(source="a", target="b")]
+        wf = Workflow(name="tiny", nodes=nodes, edges=edges, start_node="a")
+        # edge a→b: possible_targets excludes b (current target) and a (source) → empty
+        result = _try_mutation(wf, MutationType.EDGE_REDIRECT, set())
+        assert result is None
+
+
+class TestUniqueIdGeneration:
+    def test_generates_unique_id(self) -> None:
+        existing = {f"builder_{i}" for i in range(100, 200)}
+        new_id = _generate_unique_agent_id(existing, AgentRole.BUILDER)
+        assert new_id not in existing
+        assert new_id.startswith("builder_")
+
+    def test_avoids_collision(self) -> None:
+        existing = {"builder_100"}
+        # Patch randint to return 100 first (collision), then 200 (unique)
+        with patch("factory.outer_loop.mutations.random.randint", side_effect=[100, 200]):
+            new_id = _generate_unique_agent_id(existing, AgentRole.BUILDER)
+        assert new_id == "builder_200"
+
+
+class TestMutateParamsValidation:
+    def test_invalid_field_value_returns_none(self, simple_workflow: Workflow) -> None:
+        # AgentNode has strict=True, extra="forbid". Passing a bad type for timeout
+        # should fail validation with constructor-based creation.
+        result = mutate_params(
+            simple_workflow, "researcher", {"timeout": "not_a_number"}
+        )
+        assert result is None

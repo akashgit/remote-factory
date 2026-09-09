@@ -161,12 +161,10 @@ class TaskCapabilities:
             if defn is not None:
                 constraints = defn.constraints
 
-        explicit_caps: list[Capability] = []
-        if constraints is not None:
-            explicit_caps = list(getattr(constraints, "required_capabilities", []))
+        raw_caps = getattr(constraints, "required_capabilities", None) if constraints is not None else None
 
-        if explicit_caps:
-            return cls(frozenset(explicit_caps))
+        if raw_caps is not None:
+            return cls(frozenset(raw_caps))
 
         caps: set[Capability] = set()
 
@@ -229,8 +227,8 @@ def compose(workflow: Any, task: Any, project_dir: str | Path) -> Any:
     """Compose a workflow + task into a task-attached InnerLoop.
 
     InnerLoop.step() executes the task end-to-end when task is set:
-    iterates task.instances(), calls task.run() per instance, and
-    aggregates scores via AggregateMethod.
+    iterates task.instances(), runs setup → WorkflowExecutor → verify
+    per instance, and aggregates scores via AggregateMethod.
 
     Known gap: capability compatibility is not re-validated after
     outer-loop mutations (e.g. NODE_REMOVE stripping the Builder).

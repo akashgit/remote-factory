@@ -84,6 +84,7 @@ class WorkflowExecutor:
         *,
         dry_run: bool = False,
         auto_approve: bool = False,
+        initial_context: str | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
@@ -99,6 +100,18 @@ class WorkflowExecutor:
         self._edge_index: dict[str, list[Edge]] = {}
         for edge in workflow.edges:
             self._edge_index.setdefault(edge.source, []).append(edge)
+
+        if initial_context is not None:
+            start_node = workflow.nodes.get(workflow.start_node)
+            if isinstance(start_node, AgentNode):
+                self.node_context[workflow.start_node] = initial_context
+            else:
+                log.warning(
+                    "initial_context_ignored",
+                    start_node=workflow.start_node,
+                    node_type=type(start_node).__name__ if start_node else "missing",
+                    reason="initial_context only applies to AgentNode start nodes",
+                )
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""

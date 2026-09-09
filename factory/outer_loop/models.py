@@ -112,6 +112,7 @@ class SwarmConfig(BaseModel):
     prep_command: str = ""
     early_stop_unchanged: int = 3
     task_module: str = ""
+    seed_workflow_module: str = ""
 
     @field_validator("holdout_instances")
     @classmethod

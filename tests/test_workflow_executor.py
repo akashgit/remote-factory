@@ -8,6 +8,8 @@ import pytest
 
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
     Edge,
     FnNode,
     ForkNode,
@@ -650,3 +652,80 @@ class TestGateVerdictFailClosed:
         assert not result.success
         assert "no evaluator_command" in result.halt_reason
         assert result.nodes_executed == 2
+
+
+# ── initial_context guarded by AgentNode type ──────────────────
+
+
+class TestInitialContextGuard:
+    """initial_context should only be written to node_context for AgentNode start nodes."""
+
+    def test_fnnode_start_ignores_initial_context(self, tmp_project: Path) -> None:
+        """When start_node is a FnNode, initial_context is NOT written to node_context."""
+        wf = Workflow(
+            name="fn_start",
+            nodes={
+                "fn": FnNode(id="fn", command="echo hi", writes={"out.txt"}),
+            },
+            edges=[],
+            start_node="fn",
+        )
+
+        executor = WorkflowExecutor(
+            wf, tmp_project, dry_run=True, initial_context="should be ignored",
+        )
+        assert "fn" not in executor.node_context
+
+    def test_gatenode_start_ignores_initial_context(self, tmp_project: Path) -> None:
+        """When start_node is a GateNode, initial_context is NOT written to node_context."""
+        wf = Workflow(
+            name="gate_start",
+            nodes={
+                "gate": GateNode(id="gate", evaluator_type="fn", evaluator_command="echo pass"),
+            },
+            edges=[],
+            start_node="gate",
+        )
+
+        executor = WorkflowExecutor(
+            wf, tmp_project, dry_run=True, initial_context="should be ignored",
+        )
+        assert "gate" not in executor.node_context
+
+    def test_agentnode_start_receives_initial_context(self, tmp_project: Path) -> None:
+        """When start_node is an AgentNode, initial_context IS written to node_context."""
+        wf = Workflow(
+            name="agent_start",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build it",
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        executor = WorkflowExecutor(
+            wf, tmp_project, dry_run=True, initial_context="domain prompt here",
+        )
+        assert executor.node_context["agent"] == "domain prompt here"
+
+    def test_no_initial_context_leaves_node_context_empty(self, tmp_project: Path) -> None:
+        """When initial_context is None, node_context stays empty regardless of node type."""
+        wf = Workflow(
+            name="no_ctx",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build it",
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        assert executor.node_context == {}

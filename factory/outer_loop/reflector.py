@@ -8,6 +8,8 @@ failure patterns, success patterns, and informed mutation suggestions.
 from __future__ import annotations
 
 import json
+import subprocess
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,8 +17,24 @@ from pathlib import Path
 import structlog
 
 from factory.cycle_analyzer import CycleRecord
+from factory.outer_loop.models import MutationType
 
 log = structlog.get_logger()
+
+_INSTANCE_CHAR_BUDGET = 800
+_MAX_INSTANCES_PER_INDIVIDUAL = 5
+_LLM_PAYLOAD_BUDGET = 8000
+_VALID_LLM_OPERATORS = {t.value for t in MutationType}
+
+
+@dataclass
+class MutationSuggestion:
+    """Typed mutation suggestion from reflection analysis."""
+
+    operator: str
+    target: str
+    rationale: str
+    value: str | None = None
 
 
 @dataclass
@@ -30,6 +48,7 @@ class ReflectionReport:
     structural_recommendations: list[str] = field(default_factory=list)
     top_k_ids: list[str] = field(default_factory=list)
     bottom_k_ids: list[str] = field(default_factory=list)
+    typed_suggestions: list[MutationSuggestion] = field(default_factory=list)
 
 
 class OuterLoopReflector:
@@ -39,9 +58,16 @@ class OuterLoopReflector:
     Stage 2: Compare their CycleRecords to identify causal structural differences.
     """
 
-    def __init__(self, k: int = 2, project_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        k: int = 2,
+        project_dir: Path | None = None,
+        *,
+        llm_reflect: bool = False,
+    ) -> None:
         self._k = k
         self._project_dir = project_dir
+        self._llm_reflect_enabled = llm_reflect
 
     def reflect(
         self,
@@ -87,6 +113,9 @@ class OuterLoopReflector:
         self._generate_structural_recommendations(top_k, bottom_k, report)
         if knob_values_by_id:
             self._extract_knob_patterns(valid, top_k, bottom_k, knob_values_by_id, report)
+
+        if self._llm_reflect_enabled:
+            self._llm_reflect(top_k, bottom_k, records, report)
 
         if self._project_dir:
             self._save_report(report, generation)
@@ -225,11 +254,16 @@ class OuterLoopReflector:
             top_avg = sum(top_verify_scores) / len(top_verify_scores)
             bottom_avg = sum(bottom_verify_scores) / len(bottom_verify_scores)
             if abs(top_avg - bottom_avg) > 0.05:
-                report.mutation_suggestions.append(
+                msg = (
                     f"Bottom-K scored {bottom_avg:.2f} avg on verify while "
                     f"top-K scored {top_avg:.2f} — focus mutations on "
                     f"improving test/verify pass rate"
                 )
+                report.mutation_suggestions.append(msg)
+                report.typed_suggestions.append(MutationSuggestion(
+                    operator="prompt_mutate", target="any",
+                    rationale=msg,
+                ))
 
         # --- Test details patterns ---
         for id_, score, details in bottom_details:
@@ -281,15 +315,19 @@ class OuterLoopReflector:
 
         roles_in_top_not_bottom = top_roles - bottom_roles
         for role in roles_in_top_not_bottom:
-            report.mutation_suggestions.append(
-                f"NODE_INSERT: Add {role} agent — present in winners but not losers"
-            )
+            msg = f"NODE_INSERT: Add {role} agent — present in winners but not losers"
+            report.mutation_suggestions.append(msg)
+            report.typed_suggestions.append(MutationSuggestion(
+                operator="node_insert", target=role, rationale=msg,
+            ))
 
         roles_in_bottom_not_top = bottom_roles - top_roles
         for role in roles_in_bottom_not_top:
-            report.mutation_suggestions.append(
-                f"NODE_REMOVE: Consider removing {role} — present in losers but not winners"
-            )
+            msg = f"NODE_REMOVE: Consider removing {role} — present in losers but not winners"
+            report.mutation_suggestions.append(msg)
+            report.typed_suggestions.append(MutationSuggestion(
+                operator="node_remove", target=role, rationale=msg,
+            ))
 
         top_avg_steps = 0.0
         bottom_avg_steps = 0.0
@@ -302,15 +340,23 @@ class OuterLoopReflector:
             bottom_avg_steps = sum(len(r.steps) for _, _, r in bottom_k if r) / bottom_count
 
         if top_avg_steps > bottom_avg_steps + 1:
-            report.mutation_suggestions.append(
+            msg = (
                 f"NODE_INSERT: Winners use more agents ({top_avg_steps:.1f} avg) "
                 f"vs losers ({bottom_avg_steps:.1f} avg) — consider adding nodes"
             )
+            report.mutation_suggestions.append(msg)
+            report.typed_suggestions.append(MutationSuggestion(
+                operator="node_insert", target="any", rationale=msg,
+            ))
         elif bottom_avg_steps > top_avg_steps + 1:
-            report.mutation_suggestions.append(
+            msg = (
                 f"NODE_REMOVE: Losers use more agents ({bottom_avg_steps:.1f} avg) "
                 f"vs winners ({top_avg_steps:.1f} avg) — consider removing nodes"
             )
+            report.mutation_suggestions.append(msg)
+            report.typed_suggestions.append(MutationSuggestion(
+                operator="node_remove", target="any", rationale=msg,
+            ))
 
     def _generate_structural_recommendations(
         self,
@@ -323,10 +369,13 @@ class OuterLoopReflector:
                 continue
             timeout_failures = [s for s in rec.steps if not s.succeeded and s.duration_s > 500]
             if timeout_failures:
-                report.structural_recommendations.append(
-                    f"PARAM_MUTATE: Increase timeout for agents that timed out "
-                    f"({', '.join(s.role for s in timeout_failures)})"
-                )
+                roles = ', '.join(s.role for s in timeout_failures)
+                msg = f"PARAM_MUTATE: Increase timeout for agents that timed out ({roles})"
+                report.structural_recommendations.append(msg)
+                for s in timeout_failures:
+                    report.typed_suggestions.append(MutationSuggestion(
+                        operator="param_mutate", target=s.role, rationale=msg,
+                    ))
 
         for _, score, rec in top_k:
             if rec is None:
@@ -337,10 +386,14 @@ class OuterLoopReflector:
                     if nt.node_type == "ForkNode"
                 ]
                 if parallel_nodes:
-                    report.structural_recommendations.append(
+                    msg = (
                         "PARALLELIZE: Winners use parallel execution — "
                         "consider parallelizing independent agents"
                     )
+                    report.structural_recommendations.append(msg)
+                    report.typed_suggestions.append(MutationSuggestion(
+                        operator="parallelize", target="any", rationale=msg,
+                    ))
                     break
 
     def _extract_knob_patterns(
@@ -386,14 +439,22 @@ class OuterLoopReflector:
 
             if gap > 0:
                 op = "PROMPT_MUTATE" if is_prompt else "KNOB_MUTATE"
+                typed_op = "prompt_mutate" if is_prompt else "knob_mutate"
                 display_best = best_val[:60] + "..." if len(best_val) > 60 else best_val
                 display_worst = worst_val[:60] + "..." if len(worst_val) > 60 else worst_val
-                report.mutation_suggestions.append(
+                msg = (
                     f"{op}: {knob}={display_best} "
                     f"(avg score {avg_by_val[best_val]:+.0f}) "
                     f"outperforms {knob}={display_worst} "
                     f"({avg_by_val[worst_val]:+.0f}) by {gap:.0f}"
                 )
+                report.mutation_suggestions.append(msg)
+                report.typed_suggestions.append(MutationSuggestion(
+                    operator=typed_op,
+                    target=knob,
+                    rationale=msg,
+                    value=best_val,
+                ))
                 if is_prompt:
                     report.prompt_improvements.append(
                         f"Reinforce approach from prompt knob {knob} "
@@ -414,6 +475,244 @@ class OuterLoopReflector:
                     f"bottom use {knob}={','.join(bottom_vals)}"
                 )
 
+    @staticmethod
+    def _collect_individual_details(
+        id_: str, score: float, rec: CycleRecord | None,
+        *, char_budget: int | None = None,
+    ) -> str:
+        """Collect eval/verify details from one individual for LLM context."""
+        parts = [f"ID: {id_[:8]}, score: {score:.3f}"]
+        if rec is None:
+            return "; ".join(parts)
+        if rec.eval_details and isinstance(rec.eval_details, dict):
+            verify = rec.eval_details.get("verify")
+            if isinstance(verify, dict):
+                instances = verify.get("instance_results")
+                if isinstance(instances, list):
+                    for inst in instances[:_MAX_INSTANCES_PER_INDIVIDUAL]:
+                        if not isinstance(inst, dict):
+                            continue
+                        inst_parts: list[str] = []
+                        for k, v in inst.items():
+                            s = str(v)[:_INSTANCE_CHAR_BUDGET // max(len(inst), 1)]
+                            inst_parts.append(f"{k}={s}")
+                        parts.append("instance: " + ", ".join(inst_parts))
+                for k, v in verify.items():
+                    if k == "instance_results":
+                        continue
+                    parts.append(f"{k}={str(v)[:120]}")
+            for k, v in rec.eval_details.items():
+                if k == "verify":
+                    continue
+                parts.append(f"{k}={str(v)[:200]}")
+        if rec.instance_results and isinstance(rec.instance_results, list):
+            for inst in rec.instance_results[:_MAX_INSTANCES_PER_INDIVIDUAL]:
+                if isinstance(inst, dict):
+                    for k, v in inst.items():
+                        parts.append(f"{k}={str(v)[:120]}")
+        if rec.steps:
+            roles = [f"{s.role}({'ok' if s.succeeded else 'FAIL'})" for s in rec.steps[:5]]
+            parts.append("agents: " + ", ".join(roles))
+
+        if rec.experiments:
+            _EXP_OVERHEAD = 25
+            remaining: float = (
+                (char_budget - len("; ".join(parts)))
+                if char_budget is not None
+                else 2000.0
+            )
+            exp_lines: list[str] = []
+            for exp in rec.experiments[:5]:
+                line = f"exp{exp.exp_id}({exp.verdict}"
+                if exp.score_delta is not None:
+                    line += f" Δ={exp.score_delta:+.3f}"
+                line += ")"
+                if exp.hypothesis:
+                    hyp_budget = max(0, int(remaining) - _EXP_OVERHEAD - len(line))
+                    if hyp_budget > 0:
+                        line += f" {exp.hypothesis[:hyp_budget]}"
+                candidate_len = len("; ".join(parts + exp_lines + [line]))
+                if char_budget is not None and candidate_len > char_budget:
+                    break
+                exp_lines.append(line)
+                remaining = (
+                    (char_budget - len("; ".join(parts + exp_lines)))
+                    if char_budget is not None
+                    else remaining - len(line) - 2
+                )
+            parts.extend(exp_lines)
+
+        return "; ".join(parts)
+
+    @staticmethod
+    def _collect_node_ids(
+        records: Sequence[tuple[str, float, CycleRecord | None]],
+    ) -> list[dict[str, str | None]]:
+        """Collect unique node IDs and roles from all CycleRecords."""
+        seen: dict[str, str | None] = {}
+        for _, _, rec in records:
+            if rec is None:
+                continue
+            for nid, nt in rec.node_trace.items():
+                if nid not in seen:
+                    seen[nid] = nt.role
+            for step in rec.steps:
+                if step.role and step.role not in seen:
+                    seen[step.role] = step.role
+        return [{"node_id": nid, "role": role} for nid, role in seen.items()]
+
+    def _llm_reflect(
+        self,
+        top_k: Sequence[tuple[str, float, CycleRecord | None]],
+        bottom_k: Sequence[tuple[str, float, CycleRecord | None]],
+        records: list[tuple[str, float, CycleRecord | None]],
+        report: ReflectionReport,
+    ) -> None:
+        """LLM-based contrastive reflection: one call per generation."""
+        n_individuals = len(top_k) + len(bottom_k)
+        per_individual = int(_LLM_PAYLOAD_BUDGET * 0.85) // max(n_individuals, 1)
+
+        top_details = []
+        for id_, score, rec in top_k:
+            top_details.append(
+                self._collect_individual_details(id_, score, rec, char_budget=per_individual)
+            )
+        bottom_details = []
+        for id_, score, rec in bottom_k:
+            bottom_details.append(
+                self._collect_individual_details(id_, score, rec, char_budget=per_individual)
+            )
+
+        node_info = self._collect_node_ids(list(top_k) + list(bottom_k))
+        node_section = ""
+        if node_info:
+            node_lines = [f"  {n['node_id']} (role={n['role']})" for n in node_info]
+            node_section = (
+                "\n\nAVAILABLE WORKFLOW NODES:\n"
+                + "\n".join(node_lines)
+            )
+
+        payload = (
+            "TOP-PERFORMING CANDIDATES:\n"
+            + "\n".join(f"  {d}" for d in top_details)
+            + "\n\nBOTTOM-PERFORMING CANDIDATES:\n"
+            + "\n".join(f"  {d}" for d in bottom_details)
+            + node_section
+        )
+        if len(payload) > _LLM_PAYLOAD_BUDGET:
+            payload = payload[:_LLM_PAYLOAD_BUDGET] + "\n... (truncated)"
+
+        operators_list = ", ".join(sorted(_VALID_LLM_OPERATORS))
+        prompt = (
+            "Analyze these verification results from an evolutionary search. "
+            "Here are the details from the top-performing candidates and the "
+            "bottom-performing candidates.\n\n"
+            f"{payload}\n\n"
+            "Identify what distinguishes successful from unsuccessful candidates. "
+            "Produce concrete improvement advice — specific changes to agent "
+            "prompts, parameter choices, or strategies that would move bottom "
+            "candidates toward top candidate behavior.\n\n"
+            "Output a JSON object with three fields:\n"
+            '  "prompt_improvements": list of concrete advice strings\n'
+            '  "failure_patterns": list of identified failure mode strings\n'
+            '  "mutation_suggestions": list of objects, each with:\n'
+            '    "operator": one of [' + operators_list + ']\n'
+            '    "target": the node_id or knob name to mutate\n'
+            '    "rationale": why this mutation would help\n'
+            '    "value": (optional) suggested new value for knob_mutate\n'
+            "  Operator guide:\n"
+            "    prompt_mutate — change an agent's prompt (target = node_id)\n"
+            "    knob_mutate — change a tunable parameter (target = knob name, include value)\n"
+            "    param_mutate — change agent params like timeout/model (target = node_id)\n"
+            "    node_insert — add a new agent node (target = role name)\n"
+            "    node_remove — remove an agent node (target = node_id or role)\n"
+            "  For each improvement you identify, also specify which mutation "
+            "operator and target would implement it. Be specific — name the "
+            "actual node or knob to change.\n\n"
+            "Output ONLY the JSON object."
+        )
+
+        from factory.runners.claude import _claude_bin
+
+        try:
+            cmd = [_claude_bin(), "-p", prompt, "--model", "opus",
+                   "--append-system-prompt", "Output only valid JSON.",
+                   "--output-format", "text"]
+            data: dict[str, object] | None = None
+            for attempt in range(3):
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120,
+                )
+                raw = proc.stdout.strip()
+                if not raw or "{" not in raw:
+                    if attempt < 2:
+                        log.info("llm_reflect_retry", attempt=attempt + 1, raw_head=raw[:80] if raw else "EMPTY")
+                        time.sleep(2 ** attempt)
+                        continue
+                    log.info("llm_reflect_empty_response", attempts=3)
+                    return
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                if start >= 0 and end > start:
+                    raw = raw[start:end]
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    if attempt < 2:
+                        log.info("llm_reflect_retry", attempt=attempt + 1, error="json_decode")
+                        time.sleep(2 ** attempt)
+                        continue
+                    raise
+                break
+            if not isinstance(data, dict):
+                log.warning("llm_reflect_non_dict_json", type=type(data).__name__)
+                return
+            improvements = data.get("prompt_improvements", [])
+            if isinstance(improvements, list):
+                for item in improvements:
+                    if isinstance(item, str) and item.strip():
+                        report.prompt_improvements.append(item.strip())
+            failures = data.get("failure_patterns", [])
+            if isinstance(failures, list):
+                for item in failures:
+                    if isinstance(item, str) and item.strip():
+                        report.failure_patterns.append(item.strip())
+            mut_suggestions = data.get("mutation_suggestions", [])
+            if isinstance(mut_suggestions, list):
+                for item in mut_suggestions:
+                    if not isinstance(item, dict):
+                        continue
+                    op = item.get("operator")
+                    target = item.get("target")
+                    rationale = item.get("rationale")
+                    if not isinstance(op, str) or not isinstance(target, str):
+                        continue
+                    if op not in _VALID_LLM_OPERATORS:
+                        log.debug("llm_reflect_invalid_operator", operator=op)
+                        continue
+                    if not isinstance(rationale, str):
+                        rationale = ""
+                    raw_value = item.get("value")
+                    value = str(raw_value) if raw_value is not None else None
+                    report.typed_suggestions.append(MutationSuggestion(
+                        operator=op,
+                        target=target,
+                        rationale=rationale,
+                        value=value,
+                    ))
+            log.info(
+                "llm_reflect_complete",
+                prompt_improvements=len(report.prompt_improvements),
+                failure_patterns_added=len(failures) if isinstance(failures, list) else 0,
+                llm_typed_suggestions=len(report.typed_suggestions),
+            )
+        except subprocess.TimeoutExpired:
+            log.warning("llm_reflect_timeout")
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            log.warning("llm_reflect_error", error=str(exc))
+        except FileNotFoundError:
+            log.warning("llm_reflect_claude_not_found")
+
     def _save_report(self, report: ReflectionReport, generation: int) -> None:
         if not self._project_dir:
             return
@@ -429,6 +728,15 @@ class OuterLoopReflector:
             "structural_recommendations": report.structural_recommendations,
             "top_k_ids": report.top_k_ids,
             "bottom_k_ids": report.bottom_k_ids,
+            "typed_suggestions": [
+                {
+                    "operator": ts.operator,
+                    "target": ts.target,
+                    "rationale": ts.rationale,
+                    "value": ts.value,
+                }
+                for ts in report.typed_suggestions
+            ],
         }
         path = reflect_dir / f"gen{generation}.json"
         path.write_text(json.dumps(report_data, indent=2))
@@ -454,4 +762,15 @@ class OuterLoopReflector:
             lines.append("## Structural Recommendations")
             for r in report.structural_recommendations:
                 lines.append(f"- {r}")
+            lines.append("")
+        if report.prompt_improvements:
+            lines.append("## Prompt Improvements")
+            for p in report.prompt_improvements:
+                lines.append(f"- {p}")
+            lines.append("")
+        if report.typed_suggestions:
+            lines.append("## Typed Suggestions")
+            for ts in report.typed_suggestions:
+                val_part = f" value={ts.value}" if ts.value else ""
+                lines.append(f"- [{ts.operator}] {ts.target}{val_part}: {ts.rationale}")
         md_path.write_text("\n".join(lines) + "\n")

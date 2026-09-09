@@ -1,8 +1,7 @@
-"""SWEBenchTask — demonstrates the Task contract with the DEFAULT run() path.
+"""SWEBenchTask — demonstrates the Task contract with the four-hook interface.
 
-Uses the standard setup → prompt → subprocess → verify pipeline via compose().
-No run() override — the base Task.run() shells out to factory ceo.
-This is the opposite of ChessEvolveTask which overrides run() for bundled execution.
+Uses setup → prompt → verify via compose() and WorkflowExecutor.
+The InnerLoop drives the execution: setup, executor with prompt as context, verify.
 """
 
 from __future__ import annotations
@@ -136,15 +135,14 @@ _BUILTIN_INSTANCES: list[dict[str, Any]] = [
 
 
 class SWEBenchTask(Task):
-    """SWE-bench style bug-fix task using the DEFAULT run() path.
+    """SWE-bench style bug-fix task using the four-hook interface.
 
     instances() yields synthetic SWE-bench problem instances.
     setup() prepares the workspace with instance metadata and stub repo structure.
     prompt() returns the issue description for an agent to fix.
     verify() checks whether expected artifacts were produced in the workspace.
 
-    Does NOT override run() — the base Task.run() handles the full pipeline:
-    setup → write prompt to temp file → shell out to factory ceo → verify.
+    Execution is driven by InnerLoop: setup → WorkflowExecutor(prompt) → verify.
     """
 
     def __init__(self) -> None:

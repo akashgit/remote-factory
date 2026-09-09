@@ -17,9 +17,55 @@ from factory.cli._helpers import _resolve_inactivity_timeout
 if TYPE_CHECKING:
     from factory.outer_loop.evaluator import CycleRecord
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
+    from factory.outer_loop.models import Individual
     from factory.workflow.primitives import Workflow
 
 _log = structlog.get_logger()
+
+
+def _resolve_seed_workflow(ref: str) -> Workflow:
+    """Dynamically import a callable that returns a Package or Workflow.
+
+    The ref format is 'module.path:callable_name'. The callable must return
+    either a Package (which is compiled to a Workflow) or a Workflow directly.
+    """
+    import importlib
+
+    if ":" not in ref:
+        raise ValueError(
+            f"Invalid seed-workflow ref {ref!r}. "
+            f"Expected 'module.path:callable' format (e.g. 'my_pkg.pipeline:build_pipeline')."
+        )
+    module_path, callable_name = ref.rsplit(":", 1)
+    try:
+        mod = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise ImportError(
+            f"Could not import module {module_path!r} from seed-workflow ref {ref!r}. "
+            f"Ensure the package is installed."
+        ) from exc
+    fn = getattr(mod, callable_name, None)
+    if fn is None:
+        raise ImportError(
+            f"Module {module_path!r} has no attribute {callable_name!r} "
+            f"(from seed-workflow ref {ref!r})."
+        )
+    if not callable(fn):
+        raise TypeError(
+            f"{ref!r} resolved to {fn!r}, which is not callable."
+        )
+    result = fn()
+
+    from factory.workflow.package import Package
+    from factory.workflow.primitives import Workflow as WF
+
+    if isinstance(result, Package):
+        return result.compile()
+    if isinstance(result, WF):
+        return result
+    raise TypeError(
+        f"{ref!r} returned {type(result).__name__}, expected Package or Workflow."
+    )
 
 
 def _check_disk_space(project_path: Path, population_size: int) -> bool:
@@ -150,6 +196,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         resolved_prep_command = bench_config.prep_command if bench_config else ""
 
         task_module = getattr(args, "task_module", "")
+        seed_workflow_module = getattr(args, "seed_workflow", "")
         config = SwarmConfig(
             benchmark=benchmark,
             budget=budget,
@@ -164,6 +211,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
             instance_format=resolved_instance_format,
             prep_command=resolved_prep_command,
             task_module=task_module,
+            seed_workflow_module=seed_workflow_module,
         )
         if task_module:
             _log.info("task_module_resolved", ref=task_module)
@@ -199,6 +247,18 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         except ImportError:
             print(f"Error: could not load contributed workflow for benchmark '{benchmark}'.", file=sys.stderr)
             return 1
+
+    # --seed-workflow is required — resolve the callable to get the base workflow.
+    try:
+        base_workflow = _resolve_seed_workflow(config.seed_workflow_module)
+        _log.info(
+            "seed_workflow_from_module",
+            ref=config.seed_workflow_module,
+            knobs=list(base_workflow.knob_values.keys()) if base_workflow.knob_values else [],
+        )
+    except (ValueError, ImportError, TypeError) as exc:
+        print(f"Error: --seed-workflow: {exc}", file=sys.stderr)
+        return 1
 
     target_dir = Path(config.target_project) if config.target_project else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
@@ -236,6 +296,150 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         print(f"  - {mode_name}")
     print(json.dumps(config.model_dump(mode="json"), indent=2))
     return 0
+
+
+def _mode_suffix(mode_name: str, generation: int) -> str:
+    """Strip the ``evolve-gen{N}-`` prefix from a mode name.
+
+    The registry names modes ``evolve-gen{N}-{individual_id[:8]}``, so the
+    remainder identifies the individual it was registered from.
+    """
+    prefix = f"evolve-gen{generation}-"
+    return mode_name[len(prefix):] if mode_name.startswith(prefix) else mode_name
+
+
+def _make_offspring_individual(
+    mode_name: str,
+    generation: int,
+    workflow: Workflow,
+    *,
+    parent_id: str | None,
+    mutation_record: object = None,
+) -> Individual:
+    """Build the ``Individual`` that mirrors a freshly registered offspring mode.
+
+    The id is derived from the mode name rather than the requested child id so
+    it always matches what :func:`_mode_suffix` extracts during score
+    propagation — ``register`` truncates ids to 8 characters.
+    """
+    from factory.outer_loop.models import Individual as Ind
+    from factory.outer_loop.models import MutationRecord
+    from factory.outer_loop.similarity import compute_features
+
+    try:
+        features = compute_features(workflow)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("offspring_feature_computation_failed", mode=mode_name, error=str(exc))
+        features = ()
+
+    return Ind(
+        id=_mode_suffix(mode_name, generation),
+        workflow_data=workflow.to_dict(),
+        score=0.0,
+        features=features,
+        generation=generation,
+        parent_id=parent_id,
+        mutation_record=mutation_record if isinstance(mutation_record, MutationRecord) else None,
+    )
+
+
+def _propagate_scores_to_population(
+    project_path: Path,
+    generation: int,
+    results: dict[str, dict[str, float]],
+) -> int:
+    """Write evaluation scores back into ``population/population.json``.
+
+    Without this the population keeps ``score=0.0`` for every individual and
+    the next generation's parent selection has no fitness signal to act on.
+    Returns the number of individuals updated.
+    """
+    from factory.outer_loop.population import Population
+
+    pop_dir = project_path / ".factory" / "outer_loop" / "population"
+    if not (pop_dir / "population.json").exists():
+        _log.debug("population_not_found_skipping_score_propagation", path=str(pop_dir))
+        return 0
+
+    population = Population.load(pop_dir)
+    if population.size == 0:
+        return 0
+
+    updated = 0
+    for mode_name, res in results.items():
+        suffix = _mode_suffix(mode_name, generation)
+        ind = population.get(suffix)
+        if ind is None:
+            ind = next(
+                (i for i in population.individuals if i.id.startswith(suffix)),
+                None,
+            )
+        if ind is None:
+            _log.debug("population_individual_not_found", mode=mode_name, suffix=suffix)
+            continue
+        updated_ind = ind.model_copy(update={
+            "score": res.get("score", 0.0),
+            "cost_usd": res.get("cost_usd", 0.0),
+        })
+        population.remove(ind.id)
+        population.add(updated_ind)
+        updated += 1
+
+    if updated:
+        population.save(pop_dir)
+        _log.info("population_scores_updated", generation=generation, count=updated)
+    return updated
+
+
+def _load_mode_scores(project_path: Path, generation: int) -> dict[str, float]:
+    """Load ``results/gen{N}.json`` as a ``{mode_name: score}`` mapping.
+
+    Returns an empty mapping when the generation has not been evaluated yet.
+    """
+    results_path = (
+        project_path / ".factory" / "outer_loop" / "results" / f"gen{generation}.json"
+    )
+    if not results_path.exists():
+        return {}
+    try:
+        data = json.loads(results_path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        _log.warning("mode_scores_load_failed", generation=generation, error=str(exc))
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
+    scores: dict[str, float] = {}
+    for mode_name, entry in data.items():
+        if isinstance(entry, dict):
+            value = entry.get("score", 0.0)
+        else:
+            value = entry
+        try:
+            scores[mode_name] = float(value)
+        except (TypeError, ValueError):
+            scores[mode_name] = 0.0
+    return scores
+
+
+def _select_parent(
+    modes: list[str],
+    mode_scores: dict[str, float],
+    tournament_size: int = 2,
+) -> str | None:
+    """Tournament selection over mode names, ranked by evaluation score.
+
+    Picks ``tournament_size`` candidates uniformly at random and returns the
+    highest-scoring one. Unevaluated modes score 0.0, so an all-unevaluated
+    generation degrades to uniform random selection.
+    """
+    import random
+
+    if not modes:
+        return None
+    k = min(tournament_size, len(modes))
+    contenders = random.sample(modes, k)
+    return max(contenders, key=lambda m: mode_scores.get(m, 0.0))
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
@@ -302,6 +506,10 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     results_dir.mkdir(parents=True, exist_ok=True)
     results_path = results_dir / f"gen{generation}.json"
     results_path.write_text(json.dumps(results, indent=2))
+
+    updated = _propagate_scores_to_population(project_path, generation, results)
+    if updated:
+        print(f"Updated {updated} population individuals with evaluation scores")
 
     state = load_checkpoint(project_path) or OuterLoopState(budget_remaining=config.budget)
     gen_best = max((r["score"] for r in results.values()), default=0.0)
@@ -389,7 +597,7 @@ def _cmd_reflect(args: argparse.Namespace) -> int:
 
     target_dir = Path(eval_project_dir) if eval_project_dir != str(project_path) else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
-    reflector = OuterLoopReflector(project_dir=project_path)
+    reflector = OuterLoopReflector(project_dir=project_path, llm_reflect=True)
 
     results_path = project_path / ".factory" / "outer_loop" / "results" / f"gen{generation}.json"
     saved_results: dict[str, dict[str, float]] = {}
@@ -454,6 +662,7 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     from factory.outer_loop.filesystem import load_config
     from factory.outer_loop.mode_registry import EphemeralModeRegistry
     from factory.outer_loop.mutations import WeightedRandomStrategy, apply_random_mutation
+    from factory.outer_loop.population import Population
     from factory.outer_loop.reflector import ReflectionReport
 
     config = load_config(project_path)
@@ -463,6 +672,9 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
 
     if not _check_disk_space(project_path, config.population_size):
         return 1
+
+    pop_dir = project_path / ".factory" / "outer_loop" / "population"
+    population = Population.load(pop_dir) if (pop_dir / "population.json").exists() else None
 
     target_dir = Path(config.target_project) if config.target_project else None
     registry = EphemeralModeRegistry(project_path, target_dir=target_dir)
@@ -479,18 +691,47 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
     if reflection_path.exists():
         try:
             data = json.loads(reflection_path.read_text())
-            reflection_report = ReflectionReport(
-                **{k: v for k, v in data.items() if k != "generation"}
-            )
-            _log.info("reflection_report_loaded", generation=generation)
+            from factory.outer_loop.reflector import MutationSuggestion
+
+            raw_typed = data.pop("typed_suggestions", [])
+            filtered = {k: v for k, v in data.items() if k != "generation"}
+            reflection_report = ReflectionReport(**filtered)
+            if isinstance(raw_typed, list):
+                for item in raw_typed:
+                    if isinstance(item, dict):
+                        reflection_report.typed_suggestions.append(
+                            MutationSuggestion(
+                                operator=item.get("operator", ""),
+                                target=item.get("target", ""),
+                                rationale=item.get("rationale", ""),
+                                value=item.get("value"),
+                            )
+                        )
+            _log.info("reflection_report_loaded", generation=generation,
+                      typed_suggestions=len(reflection_report.typed_suggestions))
         except (json.JSONDecodeError, OSError, TypeError) as exc:
             _log.warning("reflection_report_load_failed", error=str(exc))
+
+    mode_scores = _load_mode_scores(project_path, generation)
+    gen_prefix = f"evolve-gen{generation}-"
+    eval_prefix = f"evolve-gen{generation}-eval-"
+    parent_modes = [
+        m for m in modes if m.startswith(gen_prefix) and not m.startswith(eval_prefix)
+    ]
+    if not parent_modes:
+        _log.warning("no_modes_for_generation_using_all", generation=generation)
+        parent_modes = modes
+    if not mode_scores:
+        _log.warning("no_evaluation_results_selection_is_uniform", generation=generation)
 
     strategy = WeightedRandomStrategy(mutation_rate=config.mutation_rate)
     offspring_count = 0
 
-    for mode_name in modes[:config.population_size]:
-        wf = registry.load(mode_name)
+    for _ in range(config.population_size):
+        parent_mode = _select_parent(parent_modes, mode_scores)
+        if parent_mode is None:
+            break
+        wf = registry.load(parent_mode)
         if wf is None:
             continue
         result = apply_random_mutation(
@@ -501,9 +742,24 @@ def _cmd_evolve(args: argparse.Namespace) -> int:
         if result is not None:
             child_wf, mutation_rec = result
             child_id = f"gen{generation + 1}_{offspring_count}"
-            registry.register(child_id, generation + 1, child_wf)
+            child_mode = registry.register(child_id, generation + 1, child_wf)
+            if population is not None:
+                population.add(
+                    _make_offspring_individual(
+                        child_mode, generation + 1, child_wf,
+                        parent_id=_mode_suffix(parent_mode, generation),
+                        mutation_record=mutation_rec,
+                    )
+                )
             offspring_count += 1
-            print(f"  Created offspring {child_id} via {mutation_rec.operator.value}")
+            print(
+                f"  Created offspring {child_id} via {mutation_rec.operator.value} "
+                f"(parent {parent_mode} score={mode_scores.get(parent_mode, 0.0):.4f})"
+            )
+
+    if population is not None and offspring_count:
+        population.save(pop_dir)
+        _log.info("population_offspring_added", generation=generation + 1, count=offspring_count)
 
     print(f"Evolution complete: {offspring_count} offspring created for generation {generation + 1}")
     return 0
@@ -671,6 +927,11 @@ def add_outer_loop_parser(subparsers: argparse._SubParsersAction) -> None:  # ty
         "--task-module",
         default="",
         help="Task class ref as 'module.path:ClassName' (e.g. chess_evolve.task:ChessEvolveTask)",
+    )
+    cal.add_argument(
+        "--seed-workflow",
+        required=True,
+        help="Seed workflow callable as 'module.path:callable' — returns a Package or Workflow with OptKnobs (required)",
     )
 
     ev = outer_sub.add_parser("evaluate", help="Evaluate current generation")

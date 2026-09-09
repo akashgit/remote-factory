@@ -113,7 +113,7 @@ class SwarmEngine:
         self._score_trajectory: list[float] = []
         self._mode_registry = mode_registry
         self._project_dir = project_dir
-        self._reflector = OuterLoopReflector(project_dir=project_dir)
+        self._reflector = OuterLoopReflector(project_dir=project_dir, llm_reflect=True)
         self._last_reflection: ReflectionReport | None = None
         self._initial_diversity: float = 0.0
         self._top_ids_history: list[frozenset[str]] = []
