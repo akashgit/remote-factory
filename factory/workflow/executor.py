@@ -638,6 +638,9 @@ class WorkflowExecutor:
         """Execute a DataNode: resolve items, run subgraph per item with fault isolation."""
         import random as _random
 
+        from factory.task import Task as _Task
+        from factory.task import TaskInstance as _TaskInstance
+
         self.result.nodes_executed += 1
 
         self._emit(
@@ -652,22 +655,24 @@ class WorkflowExecutor:
 
         start = time.monotonic()
 
-        # Resolve data items from exactly one source
-        items: list[DataItem] = []
+        # Resolve data items from exactly one source, keeping TaskInstances for task_ref
+        task_instances: list[tuple[DataItem, _TaskInstance | None]] = []
+        resolved_task: _Task | None = None
+
         if node.inline_items:
-            items = list(node.inline_items)
+            task_instances = [(item, None) for item in node.inline_items]
         elif node.task_ref:
             from factory.task import TaskRef
             task_ref = TaskRef(ref=node.task_ref)
-            task = task_ref.resolve()
-            for inst in task.instances():
-                task.setup(inst, self.project_path)
-                prompt_text = task.prompt(inst)
-                items.append(DataItem(
-                    id=inst.id,
-                    path=str(inst.path) if inst.path else None,
-                    metadata=inst.metadata,
-                    prompt=prompt_text,
+            resolved_task = task_ref.resolve()
+            for inst in resolved_task.instances():
+                task_instances.append((
+                    DataItem(
+                        id=inst.id,
+                        path=str(inst.path) if inst.path else None,
+                        metadata=inst.metadata,
+                    ),
+                    inst,
                 ))
         elif node.source_path:
             from pathlib import Path as _Path
@@ -677,32 +682,35 @@ class WorkflowExecutor:
             if node.source_format == "directory" and src.is_dir():
                 for child in sorted(src.iterdir()):
                     if child.is_dir():
-                        items.append(DataItem(id=child.name, path=str(child)))
+                        task_instances.append((DataItem(id=child.name, path=str(child)), None))
             elif node.source_format == "jsonl" and src.is_file():
                 for idx, line in enumerate(src.read_text().splitlines()):
                     if line.strip():
-                        items.append(DataItem(
+                        task_instances.append((DataItem(
                             id=str(idx),
                             metadata=json.loads(line),
-                        ))
+                        ), None))
             elif node.source_format == "csv" and src.is_file():
                 import csv
                 with src.open(newline="") as f:
                     reader = csv.DictReader(f)
                     for idx, row in enumerate(reader):
-                        items.append(DataItem(id=str(idx), metadata=dict(row)))
+                        task_instances.append((DataItem(id=str(idx), metadata=dict(row)), None))
 
-        # Apply split/shuffle/limit filters
+        # Apply split/shuffle/limit filters to the paired list
         if node.split != "all":
-            items = [it for it in items if it.metadata.get("split") == node.split]
+            task_instances = [
+                (item, inst) for item, inst in task_instances
+                if item.metadata.get("split") == node.split
+            ]
         if node.shuffle:
-            _random.shuffle(items)
+            _random.shuffle(task_instances)
         if node.limit is not None and node.limit > 0:
-            items = items[:node.limit]
+            task_instances = task_instances[:node.limit]
 
-        if len(items) > node.max_items:
+        if len(task_instances) > node.max_items:
             raise ValueError(
-                f"DataNode '{node_id}' resolved {len(items)} items, "
+                f"DataNode '{node_id}' resolved {len(task_instances)} items, "
                 f"exceeding max_items={node.max_items}"
             )
 
@@ -719,16 +727,26 @@ class WorkflowExecutor:
         item_results: list[dict[str, Any]] = []
         sem = asyncio.Semaphore(node.parallelism)
 
-        # Pre-compute reads that exist on disk (e.g. created by task.setup())
+        # Pre-compute reads that exist on disk
         disk_reads: set[str] = set()
         for sg_node in sub_workflow.nodes.values():
             for r in sg_node.reads:
                 if (self.project_path / r).exists():
                     disk_reads.add(r)
 
-        async def run_item(item: DataItem) -> dict[str, Any]:
+        async def run_item(pair: tuple[DataItem, _TaskInstance | None]) -> dict[str, Any]:
+            item, inst = pair
             async with sem:
                 try:
+                    if resolved_task is not None and inst is not None:
+                        resolved_task.setup(inst, self.project_path)
+                        item = DataItem(
+                            id=inst.id,
+                            path=str(inst.path) if inst.path else None,
+                            metadata=inst.metadata,
+                            prompt=resolved_task.prompt(inst),
+                        )
+
                     item_executor = WorkflowExecutor(
                         sub_workflow.model_copy(deep=True),
                         self.project_path,
@@ -738,12 +756,25 @@ class WorkflowExecutor:
                     )
                     item_executor.completed_files = self.completed_files | disk_reads
                     item_result = await item_executor.execute()
+
+                    score = 1.0 if item_result.success else 0.0
+                    passed = item_result.success
+                    verify_details: dict[str, Any] = {}
+
+                    if resolved_task is not None and inst is not None:
+                        vr = resolved_task.verify(inst, self.project_path)
+                        score = vr.score
+                        passed = vr.passed
+                        verify_details = vr.details or {}
+
                     return {
                         "item_id": item.id,
                         "success": item_result.success,
-                        "score": 1.0 if item_result.success else 0.0,
+                        "score": score,
+                        "passed": passed,
                         "nodes_executed": item_result.nodes_executed,
                         "node_outputs": item_result.node_outputs,
+                        "verify_details": verify_details,
                     }
                 except Exception as exc:
                     log.warning("data_item_failed", item_id=item.id, error=str(exc))
@@ -751,10 +782,11 @@ class WorkflowExecutor:
                         "item_id": item.id,
                         "success": False,
                         "score": 0.0,
+                        "passed": False,
                         "error": str(exc),
                     }
 
-        tasks = [run_item(item) for item in items]
+        tasks = [run_item(pair) for pair in task_instances]
         results = await asyncio.gather(*tasks)
         item_results = list(results)
 
