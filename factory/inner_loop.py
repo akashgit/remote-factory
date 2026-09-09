@@ -388,6 +388,7 @@ class InnerLoop:
 
         t0 = time.monotonic()
 
+        assert self.workflow is not None
         executor = WorkflowExecutor(
             self.workflow,
             self.project_dir,
