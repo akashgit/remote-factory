@@ -624,6 +624,83 @@ class TestStepWithDataNode:
         assert record.cycle_number == 1
 
 
+class TestSubgraphInheritsCompletedFiles:
+    """Verify that subgraph executors inherit parent completed_files."""
+
+    def test_subgraph_reads_upstream_artifact(self, tmp_path: Path) -> None:
+        """Subgraph start node with reads={'data_ready'} should inherit the
+        artifact from an upstream FnNode that writes={'data_ready'}, so it
+        executes instead of timing out."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        wf = Workflow(
+            name="inherit_test",
+            nodes={
+                "upstream_fn": FnNode(
+                    id="upstream_fn", command="echo ready", writes={"data_ready"},
+                ),
+                "data_loader": DataNode(
+                    id="data_loader",
+                    inline_items=[DataItem(id="item1", prompt="go")],
+                    subgraph_entry="process_node",
+                    subgraph_exit="exit_node",
+                ),
+                "process_node": FnNode(
+                    id="process_node",
+                    command="echo processing",
+                    reads={"data_ready"},
+                ),
+                "exit_node": FnNode(id="exit_node", command="echo done"),
+            },
+            edges=[
+                Edge(source="upstream_fn", target="data_loader"),
+                Edge(source="process_node", target="exit_node"),
+            ],
+            start_node="upstream_fn",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+
+        assert result.success, f"Expected success but got halt: {result.halt_reason}"
+        assert not result.halted
+        parsed = json.loads(result.node_outputs["data_loader"])
+        assert len(parsed) == 1
+        assert parsed[0]["nodes_executed"] > 0
+
+    def test_subgraph_no_reads_still_works(self, tmp_path: Path) -> None:
+        """Subgraph start node with no reads should execute normally (baseline)."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        wf = Workflow(
+            name="no_reads_test",
+            nodes={
+                "upstream_fn": FnNode(
+                    id="upstream_fn", command="echo ready", writes={"data_ready"},
+                ),
+                "data_loader": DataNode(
+                    id="data_loader",
+                    inline_items=[DataItem(id="item1")],
+                    subgraph_entry="process_node",
+                    subgraph_exit="exit_node",
+                ),
+                "process_node": FnNode(id="process_node", command="echo processing"),
+                "exit_node": FnNode(id="exit_node", command="echo done"),
+            },
+            edges=[
+                Edge(source="upstream_fn", target="data_loader"),
+                Edge(source="process_node", target="exit_node"),
+            ],
+            start_node="upstream_fn",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+
+        assert result.success
+        parsed = json.loads(result.node_outputs["data_loader"])
+        assert len(parsed) == 1
+        assert parsed[0]["nodes_executed"] > 0
+
+
 class TestComposeCapsDataNode:
     def test_data_node_adds_can_iterate(self) -> None:
         from factory.compose import ModeCapabilities

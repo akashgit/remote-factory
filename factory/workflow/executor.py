@@ -729,6 +729,7 @@ class WorkflowExecutor:
                         dry_run=self.dry_run,
                         initial_context=item.prompt,
                     )
+                    item_executor.completed_files = self.completed_files.copy()
                     item_result = await item_executor.execute()
                     return {
                         "item_id": item.id,
