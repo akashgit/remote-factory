@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -709,3 +710,211 @@ class TestComposeCapsDataNode:
         wf = _make_data_workflow([DataItem(id="i")])
         caps = ModeCapabilities.from_workflow(wf)
         assert Capability.CAN_ITERATE in caps.provides
+
+
+# ── Phase 9: task_ref verify integration ──────────────────────────
+
+
+class _FakeTask:
+    """Minimal Task-like object for testing verify() integration."""
+
+    def __init__(self, instances_data: list[dict[str, Any]], verify_scores: dict[str, float]) -> None:
+        self._instances_data = instances_data
+        self._verify_scores = verify_scores
+        self.setup_calls: list[str] = []
+        self.prompt_calls: list[str] = []
+        self.verify_calls: list[str] = []
+
+    def instances(self):
+        from factory.task import TaskInstance
+        for d in self._instances_data:
+            yield TaskInstance(id=d["id"], path=d.get("path"), metadata=d.get("metadata", {}))
+
+    def setup(self, instance, workspace):
+        self.setup_calls.append(instance.id)
+
+    def prompt(self, instance):
+        self.prompt_calls.append(instance.id)
+        return f"prompt for {instance.id}"
+
+    def verify(self, instance, workspace):
+        from factory.task import VerifyResult
+        self.verify_calls.append(instance.id)
+        score = self._verify_scores.get(instance.id, 0.0)
+        return VerifyResult(passed=score > 0.5, score=score, details={"source": "fake"})
+
+
+def _make_task_ref_workflow(task_ref: str = "fake.module:FakeTask") -> Workflow:
+    """Build a minimal workflow with a task_ref DataNode."""
+    return Workflow(
+        name="task_ref_test",
+        nodes={
+            "data": DataNode(
+                id="data",
+                task_ref=task_ref,
+                subgraph_entry="sub_start",
+                subgraph_exit="sub_end",
+                parallelism=2,
+            ),
+            "sub_start": FnNode(id="sub_start", command="echo start"),
+            "sub_end": FnNode(id="sub_end", command="echo end"),
+        },
+        edges=[
+            Edge(source="sub_start", target="sub_end"),
+        ],
+        start_node="data",
+    )
+
+
+class TestTaskRefVerify:
+    def test_verify_called_per_item_and_scores_used(self, tmp_path: Path) -> None:
+        """task_ref DataNode must call verify() per item and use verify scores."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        fake_task = _FakeTask(
+            instances_data=[{"id": "inst_a"}, {"id": "inst_b"}],
+            verify_scores={"inst_a": 0.8, "inst_b": 0.3},
+        )
+
+        wf = _make_task_ref_workflow()
+
+        with patch("factory.task.TaskRef.resolve", return_value=fake_task):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 2
+
+        item_a = next(r for r in parsed if r["item_id"] == "inst_a")
+        item_b = next(r for r in parsed if r["item_id"] == "inst_b")
+        assert item_a["score"] == 0.8
+        assert item_a["passed"] is True
+        assert item_b["score"] == 0.3
+        assert item_b["passed"] is False
+
+        assert "inst_a" in fake_task.verify_calls
+        assert "inst_b" in fake_task.verify_calls
+
+    def test_inline_items_no_verify(self, tmp_path: Path) -> None:
+        """inline_items DataNode must NOT call verify — uses subgraph-success scoring."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        items = [DataItem(id="x", prompt="go"), DataItem(id="y", prompt="go")]
+        wf = _make_data_workflow(items)
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert all(r["score"] == 1.0 for r in parsed)
+        assert all("verify_details" not in r or r["verify_details"] == {} for r in parsed)
+
+    def test_setup_prompt_called_per_item_in_run_item(self, tmp_path: Path) -> None:
+        """setup() and prompt() must be called per-item inside run_item, not eagerly."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        fake_task = _FakeTask(
+            instances_data=[{"id": "i1"}, {"id": "i2"}, {"id": "i3"}],
+            verify_scores={"i1": 1.0, "i2": 1.0, "i3": 1.0},
+        )
+
+        wf = _make_task_ref_workflow()
+
+        with patch("factory.task.TaskRef.resolve", return_value=fake_task):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success
+        assert sorted(fake_task.setup_calls) == ["i1", "i2", "i3"]
+        assert sorted(fake_task.prompt_calls) == ["i1", "i2", "i3"]
+        assert sorted(fake_task.verify_calls) == ["i1", "i2", "i3"]
+
+    def test_failing_setup_does_not_block_other_items(self, tmp_path: Path) -> None:
+        """A failing setup() for one item must not prevent other items from running."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        fake_task = _FakeTask(
+            instances_data=[{"id": "ok1"}, {"id": "fail_setup"}, {"id": "ok2"}],
+            verify_scores={"ok1": 1.0, "ok2": 0.9},
+        )
+        original_setup = fake_task.setup
+
+        def failing_setup(instance, workspace):
+            if instance.id == "fail_setup":
+                raise RuntimeError("setup exploded")
+            original_setup(instance, workspace)
+
+        fake_task.setup = failing_setup
+
+        wf = _make_task_ref_workflow()
+
+        with patch("factory.task.TaskRef.resolve", return_value=fake_task):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 3
+
+        failed = next(r for r in parsed if r["item_id"] == "fail_setup")
+        assert failed["score"] == 0.0
+        assert "error" in failed
+
+        ok_items = [r for r in parsed if r["item_id"] != "fail_setup"]
+        assert all(r["score"] > 0 for r in ok_items)
+
+
+class TestStepWithDataNodeVerifyScores:
+    def test_aggregates_verify_scores(self, tmp_path: Path) -> None:
+        """_step_with_data_node should aggregate per-item verify scores, not binary."""
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_task_ref_workflow()
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+        mock_result.node_outputs = {
+            "data": json.dumps([
+                {"item_id": "a", "score": 0.8, "success": True},
+                {"item_id": "b", "score": 0.4, "success": True},
+            ])
+        }
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == pytest.approx(0.6)
+
+    def test_falls_back_to_binary_without_scores(self, tmp_path: Path) -> None:
+        """Without per-item scores in output, falls back to exec_result.success."""
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="i")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+        mock_result.node_outputs = {}
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == 1.0

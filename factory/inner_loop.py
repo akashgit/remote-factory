@@ -383,6 +383,7 @@ class InnerLoop:
     def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Delegate to the executor when the workflow contains a DataNode."""
         import asyncio
+        import json
 
         from factory.workflow.executor import WorkflowExecutor
 
@@ -397,6 +398,17 @@ class InnerLoop:
 
         duration_s = time.monotonic() - t0
         score = 1.0 if exec_result.success else 0.0
+
+        # Aggregate per-item verify scores from DataNode output if available
+        for _nid, output in exec_result.node_outputs.items():
+            try:
+                parsed = json.loads(output)
+                if isinstance(parsed, list) and parsed and "score" in parsed[0]:
+                    scores = [r["score"] for r in parsed]
+                    score = sum(scores) / len(scores) if scores else 0.0
+                    break
+            except (json.JSONDecodeError, TypeError, KeyError):
+                continue
 
         record = CycleRecord(
             cycle_number=self._step_count + 1,
