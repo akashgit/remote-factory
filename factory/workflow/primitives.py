@@ -158,6 +158,8 @@ class GateNode(Node):
     evaluator_role: AgentRole | None = None
     evaluator_command: str | None = None
     gate_prompt: str = ""
+    max_iterations: int | None = None
+    """Cap for this gate's reloop edge. ``None`` leaves the cap to the runtime."""
 
 
 class ForkNode(Node):
@@ -289,13 +291,19 @@ class LLMNode(Node):
 
 
 class Edge(BaseModel):
-    """Directed edge in the workflow graph with optional verdict condition."""
+    """Directed edge in the workflow graph with an optional labelled condition.
+
+    ``condition`` is normally one of the three ``VerdictType`` labels, but a gate
+    may name its own forward outcomes (a switch rather than a binary decision).
+    Arbitrary labels are stored verbatim and lowercased by consumers before
+    matching, so ``"DRAFT"`` from an evaluator matches ``condition="draft"``.
+    """
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
     source: str
     target: str
-    condition: VerdictType | None = None
+    condition: VerdictType | str | None = None
 
 
 # ── workflow ─────────────────────────────────────────────────────
@@ -358,10 +366,19 @@ class Workflow(BaseModel):
         return Workflow(name=name, nodes=nodes, edges=edges, start_node=start_node)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the workflow to a JSON-safe dict."""
+        """Serialize the workflow to a JSON-safe dict.
+
+        ``reads`` and ``writes`` are sets, whose iteration order is not stable
+        across processes; they are sorted here so that a given graph always
+        serializes to identical bytes.
+        """
         nodes_out: dict[str, Any] = {}
         for nid, node in self.nodes.items():
             d = node.model_dump(mode="json")
+            for field_name in ("reads", "writes"):
+                value = d.get(field_name)
+                if isinstance(value, list):
+                    d[field_name] = sorted(value)
             d["_type"] = type(node).__name__
             nodes_out[nid] = d
 

@@ -58,6 +58,7 @@ class OptKnob(BaseModel):
     the initial ``bounds``.  For prompt knobs this means authoring new
     prompt text; for threshold knobs it means extrapolating the range.
     ``expansion_hint`` tells the optimizer how to generate new values.
+    ``description`` is prose for humans and carries no optimizer meaning.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -69,6 +70,7 @@ class OptKnob(BaseModel):
     bounds: list[str | float] = Field(default_factory=list)
     expandable: bool = False
     expansion_hint: str = ""
+    description: str = ""
 
 
 class MemoryDeclaration(BaseModel):
@@ -373,7 +375,13 @@ def Conditional(
     *,
     name: str = "",
 ) -> Package:
-    """Route to one of several packages based on a gate verdict."""
+    """Route to one of several packages based on a gate verdict.
+
+    A branch label is normally a ``VerdictType`` name (``PROCEED`` / ``HALT`` /
+    ``RELOOP``), but any label is accepted: the gate's evaluator may name its own
+    outcomes (``"DRAFT"``, ``"IMPROVE"``, ``"DEBUG"``), which become the edge's
+    ``condition`` in lowercase. Consumers match conditions case-insensitively.
+    """
     composed_name = name or "cond_" + "_".join(branches.keys())
     pkg_list = list(branches.values())
 
@@ -383,7 +391,7 @@ def Conditional(
     all_nodes: dict[str, NodeType] = {gate.id: gate, exit_id: exit_node}
     all_edges: list[Edge] = []
 
-    condition_map = {
+    condition_map: dict[str, str] = {
         "PROCEED": VerdictType.PROCEED,
         "HALT": VerdictType.HALT,
         "RELOOP": VerdictType.RELOOP,
@@ -394,12 +402,7 @@ def Conditional(
             all_nodes[nid] = node
         all_edges.extend(pkg.graph.edges)
 
-        condition = condition_map.get(label)
-        if condition is None:
-            raise ValueError(
-                f"Unknown branch label '{label}' in Conditional. "
-                f"Valid labels: {list(condition_map.keys())}"
-            )
+        condition = condition_map.get(label, label.lower())
         all_edges.append(Edge(source=gate.id, target=pkg.entry_node, condition=condition))
         all_edges.append(Edge(source=pkg.exit_node, target=exit_id))
 
