@@ -619,22 +619,23 @@ class TestB6DeterministicHash:
         assert f1 == f2
 
 
-class TestB8ConditionalUnknownLabel:
-    """B8: Conditional must reject unknown branch labels."""
+class TestB8ConditionalBranchLabels:
+    """B8: Conditional accepts verdict labels and gate-named outcome labels."""
 
-    def test_unknown_label_raises(self):
-        gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo PROCEED")
+    def test_named_label_becomes_lowercase_condition(self):
+        gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo DRAFT")
         a = _make_simple_package("a")
-        import pytest
-        with pytest.raises(ValueError, match="Unknown branch label"):
-            Conditional(gate, {"TYPO": a})
+        result = Conditional(gate, {"DRAFT": a})
+        conditions = {e.condition for e in result.graph.edges if e.source == "g"}
+        assert conditions == {"draft"}
 
     def test_valid_labels_accepted(self):
         gate = GateNode(id="g", evaluator_type="fn", evaluator_command="echo PROCEED")
         a = _make_simple_package("a")
         b = _make_simple_package("b")
         result = Conditional(gate, {"PROCEED": a, "HALT": b})
-        assert result is not None
+        conditions = {e.condition for e in result.graph.edges if e.source == "g"}
+        assert conditions == {"proceed", "halt"}
 
 
 class TestConditionalKnobPropagation:
