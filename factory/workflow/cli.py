@@ -179,7 +179,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
     print("  " + "-" * (len(header) - 2))
 
     for edge in wf.edges:
-        cond = edge.condition.value if edge.condition else "-"
+        cond = str(edge.condition) if edge.condition else "-"
         print(f"  {edge.source:<25} {edge.target:<25} {cond:<15}")
 
     return 0
