@@ -129,6 +129,53 @@ def _validate_fork_join_nodes(workflow: Workflow, issues: list[str]) -> None:
                 issues.append(f"data_node '{nid}' exit '{exit_node}' not in nodes")
 
 
+def _validate_datanode_edges(workflow: Workflow, issues: list[str]) -> None:
+    """Reject explicit edges from a DataNode to its own subgraph nodes.
+
+    The executor handles subgraph execution internally — explicit edges
+    would cause double-execution.
+    """
+    for nid, node in workflow.nodes.items():
+        if type(node).__name__ != "DataNode":
+            continue
+        entry = node.subgraph_entry  # type: ignore[union-attr]
+        exit_node = node.subgraph_exit  # type: ignore[union-attr]
+        subgraph_ids = _collect_subgraph_nodes(workflow, entry, exit_node)
+        for edge in workflow.edges:
+            if edge.source == nid and edge.target in subgraph_ids:
+                issues.append(
+                    f"Edge from DataNode {nid} to its own subgraph node {edge.target} "
+                    f"would cause double-execution. Remove explicit edges into DataNode "
+                    f"subgraphs — the executor handles subgraph execution internally."
+                )
+
+
+def _collect_subgraph_nodes(
+    workflow: Workflow,
+    entry: str,
+    exit_node: str,
+) -> set[str]:
+    """Collect all node IDs on paths from entry to exit_node (inclusive)."""
+    edges_by_source: dict[str, list[str]] = {}
+    for edge in workflow.edges:
+        edges_by_source.setdefault(edge.source, []).append(edge.target)
+
+    visited: set[str] = set()
+    queue = [entry]
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid == exit_node:
+            continue
+        for target in edges_by_source.get(nid, []):
+            if target not in visited:
+                queue.append(target)
+
+    return visited
+
+
 def validate_workflow(workflow: Workflow) -> list[str]:
     """Validate a workflow graph. Returns a list of issues (empty = valid)."""
     issues: list[str] = []
@@ -162,6 +209,7 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     _validate_cycles(g, workflow, issues)
     _validate_data_dependencies(g, workflow, issues)
     _validate_fork_join_nodes(workflow, issues)
+    _validate_datanode_edges(workflow, issues)
 
     for nid, node in nodes.items():
         if type(node).__name__ == "SubgraphForkNode":

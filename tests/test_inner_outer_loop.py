@@ -830,3 +830,76 @@ class TestDataNodeIntegration:
         features = compute_features(wf)
         assert features[8] == 1
         assert loop._workflow_has_data_node() is True
+
+
+# ── DataNode compose() validation (PR #1483 fix 8) ───────────────
+
+
+class _ComposeTestTask:
+    """Task satisfying TaskProtocol for compose() tests."""
+
+    def __init__(self) -> None:
+        from factory.task import ScoringContract, TaskDefinition
+
+        self.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+        self.scoring = self.definition.scoring
+        self.constraints = None
+
+    def instances(self):
+        from factory.task import TaskInstance
+        return [TaskInstance(id="inst-1")]
+
+    def setup(self, instance, workspace):
+        pass
+
+    def prompt(self, instance):
+        return "test"
+
+    def verify(self, instance, workspace):
+        from factory.task import VerifyResult
+        return VerifyResult(passed=True, score=1.0)
+
+    def get_evaluator(self):
+        return None
+
+
+class TestComposeDataNodeWorkflowIntegration:
+    def test_compose_datanode_workflow_succeeds(self, tmp_path: Path) -> None:
+        """compose() does not raise IncompatibleCompositionError for DataNode workflows."""
+        from factory.compose import compose
+        from factory.workflow.primitives import (
+            AgentNode,
+            AgentRole,
+            DataItem,
+            DataNode,
+            Edge,
+            FnNode,
+        )
+
+        wf = Workflow(
+            name="eval_only",
+            nodes={
+                "gen": AgentNode(
+                    id="gen",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="research",
+                ),
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="i1", prompt="test")],
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[Edge(source="gen", target="data")],
+            start_node="gen",
+        )
+
+        task = _ComposeTestTask()
+
+        loop = compose(wf, task, tmp_path)
+        assert loop is not None
+        assert loop.workflow is wf

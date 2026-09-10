@@ -637,6 +637,7 @@ class WorkflowExecutor:
     async def _execute_data(self, node_id: str, node: DataNode) -> None:
         """Execute a DataNode: resolve items, run subgraph per item with fault isolation."""
         import random as _random
+        import subprocess as _sp
 
         from factory.task import Task as _Task
         from factory.task import TaskInstance as _TaskInstance
@@ -679,17 +680,40 @@ class WorkflowExecutor:
             src = _Path(node.source_path)
             if not src.is_absolute():
                 src = self.project_path / src
+            # Raise if source_path doesn't exist
+            if not src.exists():
+                raise FileNotFoundError(
+                    f"DataNode '{node_id}': source_path not found: {node.source_path}"
+                )
             if node.source_format == "directory" and src.is_dir():
                 for child in sorted(src.iterdir()):
                     if child.is_dir():
                         task_instances.append((DataItem(id=child.name, path=str(child)), None))
             elif node.source_format == "jsonl" and src.is_file():
-                for idx, line in enumerate(src.read_text().splitlines()):
+                error_count = 0
+                lines = src.read_text().splitlines()
+                total_non_empty = 0
+                for idx, line in enumerate(lines):
                     if line.strip():
-                        task_instances.append((DataItem(
-                            id=str(idx),
-                            metadata=json.loads(line),
-                        ), None))
+                        total_non_empty += 1
+                        try:
+                            task_instances.append((DataItem(
+                                id=str(idx),
+                                metadata=json.loads(line),
+                            ), None))
+                        except json.JSONDecodeError:
+                            error_count += 1
+                            log.warning(
+                                "jsonl_parse_error",
+                                node_id=node_id,
+                                line_number=idx + 1,
+                                line_preview=line.strip()[:100],
+                            )
+                if error_count > 0 and error_count == total_non_empty:
+                    raise ValueError(
+                        f"DataNode '{node_id}': all {error_count} JSONL lines "
+                        f"failed to parse"
+                    )
             elif node.source_format == "csv" and src.is_file():
                 import csv
                 with src.open(newline="") as f:
@@ -704,9 +728,21 @@ class WorkflowExecutor:
                 if item.metadata.get("split") == node.split
             ]
         if node.shuffle:
-            _random.shuffle(task_instances)
+            seed = (
+                node.shuffle_seed
+                if node.shuffle_seed is not None
+                else hash(f"{node_id}:{self.run_id}") % (2**32)
+            )
+            _random.Random(seed).shuffle(task_instances)
         if node.limit is not None and node.limit > 0:
             task_instances = task_instances[:node.limit]
+
+        if len(task_instances) == 0:
+            log.warning(
+                "data_source_empty",
+                node_id=node_id,
+                source=str(node.source_path or node.task_ref or "inline"),
+            )
 
         if len(task_instances) > node.max_items:
             raise ValueError(
@@ -734,12 +770,55 @@ class WorkflowExecutor:
                 if (self.project_path / r).exists():
                     disk_reads.add(r)
 
-        async def run_item(pair: tuple[DataItem, _TaskInstance | None]) -> dict[str, Any]:
+        # Resolve base commit once for worktree creation when parallelism > 1
+        use_worktrees = node.parallelism > 1 and not self.dry_run
+        base_commit: str | None = None
+        worktrees_to_clean: list[tuple[Path, str]] = []
+        if use_worktrees:
+            try:
+                rev_result = _sp.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=self.project_path,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                base_commit = rev_result.stdout.strip()
+            except _sp.CalledProcessError:
+                use_worktrees = False
+
+        async def run_item(
+            pair: tuple[DataItem, _TaskInstance | None],
+            item_idx: int,
+        ) -> dict[str, Any]:
             item, inst = pair
+            item_project_path = self.project_path
+            wt_branch: str | None = None
             async with sem:
                 try:
+                    # Create per-item worktree when parallelism > 1
+                    if use_worktrees and base_commit is not None:
+                        wt_dir = (
+                            self.project_path
+                            / ".factory-worktrees"
+                            / f"data-{self.run_id}-{item_idx}"
+                        )
+                        wt_branch = f"factory/data-{self.run_id}-{item_idx}"
+                        wt_dir.parent.mkdir(parents=True, exist_ok=True)
+                        _sp.run(
+                            [
+                                "git", "worktree", "add",
+                                str(wt_dir), "-b", wt_branch, base_commit,
+                            ],
+                            cwd=self.project_path,
+                            check=True,
+                            capture_output=True,
+                        )
+                        worktrees_to_clean.append((wt_dir, wt_branch))
+                        item_project_path = wt_dir
+
                     if resolved_task is not None and inst is not None:
-                        resolved_task.setup(inst, self.project_path)
+                        resolved_task.setup(inst, item_project_path)
                         item = DataItem(
                             id=inst.id,
                             path=str(inst.path) if inst.path else None,
@@ -747,22 +826,30 @@ class WorkflowExecutor:
                             prompt=resolved_task.prompt(inst),
                         )
 
-                    item_executor = WorkflowExecutor(
-                        sub_workflow.model_copy(deep=True),
-                        self.project_path,
-                        agent_pool=self.agent_pool,
-                        dry_run=self.dry_run,
-                        initial_context=item.prompt,
-                    )
-                    item_executor.completed_files = self.completed_files | disk_reads
-                    item_result = await item_executor.execute()
+                    # Write current_item.json for subgraph visibility
+                    item_json_path = item_project_path / ".factory" / "current_item.json"
+                    item_json_path.parent.mkdir(parents=True, exist_ok=True)
+                    item_json_path.write_text(json.dumps(item.model_dump()))
+
+                    try:
+                        item_executor = WorkflowExecutor(
+                            sub_workflow.model_copy(deep=True),
+                            item_project_path,
+                            agent_pool=self.agent_pool,
+                            dry_run=self.dry_run,
+                            initial_context=item.prompt,
+                        )
+                        item_executor.completed_files = self.completed_files | disk_reads
+                        item_result = await item_executor.execute()
+                    finally:
+                        item_json_path.unlink(missing_ok=True)
 
                     score = 1.0 if item_result.success else 0.0
                     passed = item_result.success
                     verify_details: dict[str, Any] = {}
 
                     if resolved_task is not None and inst is not None:
-                        vr = resolved_task.verify(inst, self.project_path)
+                        vr = resolved_task.verify(inst, item_project_path)
                         score = vr.score
                         passed = vr.passed
                         verify_details = vr.details or {}
@@ -786,9 +873,25 @@ class WorkflowExecutor:
                         "error": str(exc),
                     }
 
-        tasks = [run_item(pair) for pair in task_instances]
+        tasks = [run_item(pair, idx) for idx, pair in enumerate(task_instances)]
         results = await asyncio.gather(*tasks)
         item_results = list(results)
+
+        # Clean up worktrees
+        for wt_path, wt_branch_name in worktrees_to_clean:
+            try:
+                _sp.run(
+                    ["git", "worktree", "remove", str(wt_path), "--force"],
+                    cwd=self.project_path,
+                    capture_output=True,
+                )
+                _sp.run(
+                    ["git", "branch", "-D", wt_branch_name],
+                    cwd=self.project_path,
+                    capture_output=True,
+                )
+            except Exception as wt_exc:
+                log.warning("data_worktree_cleanup_failed", path=str(wt_path), error=str(wt_exc))
 
         elapsed = (time.monotonic() - start) * 1000
         self.result.node_outputs[node_id] = json.dumps(item_results)

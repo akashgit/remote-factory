@@ -213,9 +213,10 @@ class DataNode(Node):
     inline_items: list[DataItem] = Field(default_factory=list)
     subgraph_entry: str
     subgraph_exit: str
-    parallelism: int = 3
+    parallelism: int = Field(default=1, ge=1)
     split: Literal["train", "val", "test", "all"] = "all"
     shuffle: bool = False
+    shuffle_seed: int | None = None
     limit: int | None = None
     max_items: int = 500
 
