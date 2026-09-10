@@ -26,8 +26,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+import structlog
+
+from factory.compose import IncompatibleCompositionError
 from factory.cycle_analyzer import CycleAnalyzer, CycleRecord
 from factory.workflow.primitives import DataNode, Workflow
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -272,6 +277,7 @@ class InnerLoop:
         import asyncio
         import statistics
 
+        from factory.compose import validate_composition
         from factory.models import AggregateMethod, InnerLoopConfig
         from factory.workflow.executor import WorkflowExecutor
 
@@ -280,6 +286,31 @@ class InnerLoop:
 
         if self._workflow_has_data_node():
             return self._step_with_data_node(directives)
+
+        # Belt-and-suspenders: catch post-mutation composition failures
+        # (e.g. NODE_REMOVE stripping the Builder after initial composition)
+        try:
+            validate_composition(self.workflow, self.task)
+        except IncompatibleCompositionError as exc:
+            log.warning(
+                "composition_incompatible",
+                workflow=getattr(self.workflow, "name", "unknown"),
+                task=getattr(self.task, "name", "unknown"),
+                error=str(exc),
+            )
+            self._step_count += 1
+            record = CycleRecord(
+                cycle_number=self._step_count,
+                mode=self.mode,
+                started_at=None,
+                ended_at=None,
+                duration_s=0.0,
+                score_start=None,
+                score_end=0.0,
+                score_delta=None,
+            )
+            self._history.append(record)
+            return record
 
         event_offset = self._count_lines(self.factory_dir / "events.jsonl")
 
