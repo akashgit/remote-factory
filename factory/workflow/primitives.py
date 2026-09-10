@@ -312,10 +312,19 @@ class Workflow(BaseModel):
         return Workflow(name=name, nodes=nodes, edges=edges, start_node=start_node)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the workflow to a JSON-safe dict."""
+        """Serialize the workflow to a JSON-safe dict.
+
+        ``reads`` and ``writes`` are sets, whose iteration order is not stable
+        across processes; they are sorted here so that a given graph always
+        serializes to identical bytes.
+        """
         nodes_out: dict[str, Any] = {}
         for nid, node in self.nodes.items():
             d = node.model_dump(mode="json")
+            for field_name in ("reads", "writes"):
+                value = d.get(field_name)
+                if isinstance(value, list):
+                    d[field_name] = sorted(value)
             d["_type"] = type(node).__name__
             nodes_out[nid] = d
 
