@@ -636,6 +636,7 @@ class WorkflowExecutor:
 
     async def _execute_data(self, node_id: str, node: DataNode) -> None:
         """Execute a DataNode: resolve items, run subgraph per item with fault isolation."""
+        import hashlib as _hashlib
         import random as _random
         import subprocess as _sp
 
@@ -685,6 +686,17 @@ class WorkflowExecutor:
                 raise FileNotFoundError(
                     f"DataNode '{node_id}': source_path not found: {node.source_path}"
                 )
+            # Validate path kind matches source_format
+            if node.source_format == "directory" and not src.is_dir():
+                raise ValueError(
+                    f"DataNode '{node_id}': source_format='directory' requires a directory, "
+                    f"got a file at {node.source_path}"
+                )
+            if node.source_format in ("jsonl", "csv") and not src.is_file():
+                raise ValueError(
+                    f"DataNode '{node_id}': source_format='{node.source_format}' requires a file, "
+                    f"got a directory at {node.source_path}"
+                )
             if node.source_format == "directory" and src.is_dir():
                 for child in sorted(src.iterdir()):
                     if child.is_dir():
@@ -731,7 +743,10 @@ class WorkflowExecutor:
             seed = (
                 node.shuffle_seed
                 if node.shuffle_seed is not None
-                else hash(f"{node_id}:{self.run_id}") % (2**32)
+                else int.from_bytes(
+                    _hashlib.sha256(f"{node_id}:{self.run_id}".encode()).digest()[:8],
+                    "big",
+                )
             )
             _random.Random(seed).shuffle(task_instances)
         if node.limit is not None and node.limit > 0:
@@ -837,7 +852,7 @@ class WorkflowExecutor:
                             item_project_path,
                             agent_pool=self.agent_pool,
                             dry_run=self.dry_run,
-                            initial_context=item.prompt,
+                            initial_context=item.prompt or None,
                         )
                         item_executor.completed_files = self.completed_files | disk_reads
                         item_result = await item_executor.execute()

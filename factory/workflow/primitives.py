@@ -305,6 +305,17 @@ class Edge(BaseModel):
     target: str
     condition: VerdictType | str | None = None
 
+    @property
+    def condition_label(self) -> str | None:
+        """Return the condition as a plain string, or ``None``.
+
+        ``VerdictType.PROCEED`` → ``"proceed"`` (not ``"VerdictType.PROCEED"``).
+        Plain ``str`` conditions are returned as-is.
+        """
+        if self.condition is None:
+            return None
+        return self.condition.value if isinstance(self.condition, VerdictType) else self.condition
+
 
 # ── workflow ─────────────────────────────────────────────────────
 
