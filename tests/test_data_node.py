@@ -116,9 +116,10 @@ class TestDataNode:
             subgraph_entry="a",
             subgraph_exit="b",
         )
-        assert node.parallelism == 3
+        assert node.parallelism == 1
         assert node.split == "all"
         assert node.shuffle is False
+        assert node.shuffle_seed is None
         assert node.limit is None
         assert node.max_items == 500
 
@@ -572,7 +573,7 @@ class TestSourcePathCsv:
 
 
 class TestSourcePathNonExistent:
-    def test_nonexistent_path_yields_empty(self, tmp_path: Path) -> None:
+    def test_nonexistent_path_raises(self, tmp_path: Path) -> None:
         from factory.workflow.executor import WorkflowExecutor
 
         wf = Workflow(
@@ -592,9 +593,8 @@ class TestSourcePathNonExistent:
         )
         executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
         result = asyncio.run(executor.execute())
-        assert result.success
-        parsed = json.loads(result.node_outputs["data"])
-        assert len(parsed) == 0
+        assert result.halted
+        assert "source_path not found" in result.halt_reason
 
 
 # ── Phase 8: inner_loop _step_with_data_node ────────────────────
@@ -918,3 +918,402 @@ class TestStepWithDataNodeVerifyScores:
             record = loop._step_with_data_node()
 
         assert record.score_end == 1.0
+
+
+# ── PR #1483 Review Fixes — additional tests ─────────────────────
+
+
+class TestParallelismDefault:
+    def test_parallelism_default_is_1(self) -> None:
+        node = DataNode(
+            id="dn",
+            inline_items=[DataItem(id="i")],
+            subgraph_entry="a",
+            subgraph_exit="b",
+        )
+        assert node.parallelism == 1
+
+    def test_parallelism_zero_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            DataNode(
+                id="dn",
+                inline_items=[DataItem(id="i")],
+                subgraph_entry="a",
+                subgraph_exit="b",
+                parallelism=0,
+            )
+
+
+class TestNonexistentSourcePathRaises:
+    def test_raises_file_not_found(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        wf = Workflow(
+            name="missing",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(tmp_path / "nope"),
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.halted
+        assert "source_path not found" in result.halt_reason
+
+
+class TestEmptySourceWarns:
+    def test_empty_inline_warns(self, tmp_path: Path) -> None:
+        """Zero items after filtering should log a warning."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        # Use split filter to exclude all items
+        wf = Workflow(
+            name="empty_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="a", metadata={"split": "train"})],
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                    split="val",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        # This should succeed but with 0 items (and log a warning)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        assert len(parsed) == 0
+
+
+class TestMalformedJsonlLineIsolated:
+    def test_bad_line_skipped_good_lines_kept(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        jsonl_file = tmp_path / "items.jsonl"
+        jsonl_file.write_text(
+            '{"name": "first"}\n'
+            'NOT VALID JSON\n'
+            '{"name": "third"}\n'
+        )
+
+        wf = Workflow(
+            name="jsonl_malformed",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(jsonl_file),
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+        parsed = json.loads(result.node_outputs["data"])
+        # Two good lines kept, one bad line skipped
+        assert len(parsed) == 2
+
+    def test_all_lines_bad_raises(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        jsonl_file = tmp_path / "items.jsonl"
+        jsonl_file.write_text("bad line 1\nbad line 2\n")
+
+        wf = Workflow(
+            name="jsonl_all_bad",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(jsonl_file),
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.halted
+        assert "JSONL lines" in result.halt_reason
+
+
+class TestShuffleDeterministic:
+    def test_shuffle_with_seed(self, tmp_path: Path) -> None:
+        """Same seed -> same order across runs."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        items = [DataItem(id=str(i)) for i in range(20)]
+        wf = Workflow(
+            name="shuffle_seed",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=items,
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                    shuffle=True,
+                    shuffle_seed=42,
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        # Run twice with the same seed -- order must match
+        executor1 = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result1 = asyncio.run(executor1.execute())
+        ids1 = [r["item_id"] for r in json.loads(result1.node_outputs["data"])]
+
+        executor2 = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result2 = asyncio.run(executor2.execute())
+        ids2 = [r["item_id"] for r in json.loads(result2.node_outputs["data"])]
+
+        assert ids1 == ids2
+        # Must actually be shuffled (not original order)
+        original_ids = [str(i) for i in range(20)]
+        assert ids1 != original_ids
+
+    def test_shuffle_from_run_id(self, tmp_path: Path) -> None:
+        """Unseeded shuffle derives seed from node_id + run_id."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        items = [DataItem(id=str(i)) for i in range(20)]
+        wf = Workflow(
+            name="shuffle_runid",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=items,
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                    shuffle=True,
+                    # No shuffle_seed -- uses run_id hash
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        executor1 = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result1 = asyncio.run(executor1.execute())
+        ids1 = [r["item_id"] for r in json.loads(result1.node_outputs["data"])]
+
+        # Different run_id -> potentially different order (different executor)
+        executor2 = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result2 = asyncio.run(executor2.execute())
+        ids2 = [r["item_id"] for r in json.loads(result2.node_outputs["data"])]
+
+        # Both should be 20 items
+        assert len(ids1) == 20
+        assert len(ids2) == 20
+
+
+class TestExplicitEdgeToSubgraphRejected:
+    def test_validation_error_on_datanode_subgraph_edge(self) -> None:
+        wf = Workflow(
+            name="bad_edge",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="i")],
+                    subgraph_entry="sub_start",
+                    subgraph_exit="sub_end",
+                ),
+                "sub_start": FnNode(id="sub_start", command="echo start"),
+                "sub_end": FnNode(id="sub_end", command="echo end"),
+            },
+            edges=[
+                Edge(source="data", target="sub_start"),
+                Edge(source="sub_start", target="sub_end"),
+            ],
+            start_node="data",
+        )
+        issues = wf.validate_graph()
+        assert any("double-execution" in i for i in issues)
+
+
+class TestCurrentItemJsonWritten:
+    def test_current_item_json_created_and_cleaned(self, tmp_path: Path) -> None:
+        """current_item.json should exist during subgraph execution."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        items = [DataItem(id="test_item", prompt="do it")]
+        wf = _make_data_workflow(items)
+
+        # Track whether current_item.json exists during execution
+        observed: list[bool] = []
+        original_execute = WorkflowExecutor.execute
+
+        async def tracking_execute(self_inner):
+            item_json = self_inner.project_path / ".factory" / "current_item.json"
+            # For sub-executors (data_item workflows), check if file exists
+            if self_inner.workflow.name.endswith("__data_item"):
+                observed.append(item_json.exists())
+            return await original_execute(self_inner)
+
+        with patch.object(WorkflowExecutor, "execute", tracking_execute):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success
+        # current_item.json should have existed during subgraph execution
+        assert any(observed)
+        # And it should be cleaned up after
+        assert not (tmp_path / ".factory" / "current_item.json").exists()
+
+
+class TestDirectScoreLookup:
+    def test_finds_score_by_data_node_id(self, tmp_path: Path) -> None:
+        """Score lookup uses DataNode ID directly, not sniffing."""
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="i", prompt="go")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+        mock_result.node_outputs = {
+            "data": json.dumps([
+                {"item_id": "i", "score": 0.75, "passed": True},
+            ]),
+            "some_other_node": json.dumps({"unrelated": "data"}),
+        }
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == pytest.approx(0.75)
+
+
+class TestInstanceResultsPopulated:
+    def test_instance_results_on_cycle_record(self, tmp_path: Path) -> None:
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="a"), DataItem(id="b")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+        mock_result.node_outputs = {
+            "data": json.dumps([
+                {"item_id": "a", "score": 0.9, "passed": True},
+                {"item_id": "b", "score": 0.3, "passed": False},
+            ])
+        }
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.instance_results is not None
+        assert len(record.instance_results) == 2
+        assert record.instance_results[0]["instance_id"] == "a"
+        assert record.instance_results[0]["score"] == 0.9
+        assert record.instance_results[1]["instance_id"] == "b"
+        assert record.instance_results[1]["passed"] is False
+
+
+class _ComposeTestTask:
+    """Task that satisfies TaskProtocol for compose() tests."""
+
+    def __init__(self) -> None:
+        from factory.task import ScoringContract, TaskDefinition
+
+        self.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+        self.scoring = self.definition.scoring
+        self.constraints = None
+
+    def instances(self):
+        from factory.task import TaskInstance
+        return [TaskInstance(id="inst-1")]
+
+    def setup(self, instance: Any, workspace: Path) -> None:
+        pass
+
+    def prompt(self, instance: Any) -> str:
+        return "test prompt"
+
+    def verify(self, instance: Any, workspace: Path):
+        from factory.task import VerifyResult
+        return VerifyResult(passed=True, score=1.0)
+
+    def get_evaluator(self) -> Any:
+        return None
+
+
+class TestComposeDataNodeWorkflow:
+    def test_compose_succeeds_without_builder(self, tmp_path: Path) -> None:
+        """compose() should NOT raise IncompatibleCompositionError for DataNode workflows
+        even when the task requires HAS_BUILDER/CAN_RUN_TESTS."""
+        from factory.compose import compose
+        from factory.workflow.primitives import AgentNode, AgentRole
+
+        # Create a DataNode workflow WITHOUT a builder agent
+        wf = Workflow(
+            name="eval_only",
+            nodes={
+                "generator": AgentNode(
+                    id="generator",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="generate",
+                ),
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="i1", prompt="test")],
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[
+                Edge(source="generator", target="data"),
+            ],
+            start_node="generator",
+        )
+
+        task = _ComposeTestTask()
+
+        # This should NOT raise IncompatibleCompositionError
+        loop = compose(wf, task, tmp_path)
+        assert loop is not None
+        assert loop.workflow is wf

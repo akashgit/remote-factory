@@ -411,17 +411,33 @@ class InnerLoop:
 
         duration_s = time.monotonic() - t0
         score = 1.0 if exec_result.success else 0.0
+        instance_results: list[dict[str, Any]] | None = None
 
-        # Aggregate per-item verify scores from DataNode output if available
-        for _nid, output in exec_result.node_outputs.items():
+        # Direct lookup: find DataNode ID and read its output
+        data_node_id: str | None = None
+        for nid, n in self.workflow.nodes.items():
+            if isinstance(n, DataNode):
+                data_node_id = nid
+                break
+
+        if data_node_id is not None and data_node_id in exec_result.node_outputs:
             try:
-                parsed = json.loads(output)
-                if isinstance(parsed, list) and parsed and "score" in parsed[0]:
-                    scores = [r["score"] for r in parsed]
-                    score = sum(scores) / len(scores) if scores else 0.0
-                    break
+                parsed = json.loads(exec_result.node_outputs[data_node_id])
+                if isinstance(parsed, list) and parsed:
+                    scores = [r["score"] for r in parsed if "score" in r]
+                    if scores:
+                        score = sum(scores) / len(scores)
+                    instance_results = [
+                        {
+                            "instance_id": item.get("item_id", ""),
+                            "score": item.get("score", 0.0),
+                            "passed": item.get("passed", False),
+                        }
+                        for item in parsed
+                        if isinstance(item, dict)
+                    ]
             except (json.JSONDecodeError, TypeError, KeyError):
-                continue
+                pass
 
         record = CycleRecord(
             cycle_number=self._step_count + 1,
@@ -432,6 +448,7 @@ class InnerLoop:
             score_start=None,
             score_end=score,
             score_delta=None,
+            instance_results=instance_results,
         )
         record.frozen_nodes = sorted(self.frozen_nodes)
         record.mutable_node_ids = sorted(self.mutable_nodes())
@@ -443,6 +460,7 @@ class InnerLoop:
             builder_committed=False,
             experiments=0,
             test_score=score,
+            instance_results=instance_results,
         )
 
         self._step_count += 1
