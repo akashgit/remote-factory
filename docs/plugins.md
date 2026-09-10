@@ -51,7 +51,20 @@ When you run `factory ceo /path --mode ml`:
                     └─────────────────────┘
 ```
 
-Plugin workflows can mix plugin-defined agents (`paper-reader`) with built-in agents (`strategist`, `builder`). Registering a role via `add_agent_roles()` extends the `AgentRole` enum, so the role works inside workflow graphs (`AgentNode(role=...)`), in the CLI, and in serialization roundtrips — use the enum member (`AgentRole.PAPER_READER`) or the role string where builtins accept strings. The engine resolves each role via the [three-tier prompt lookup](architecture.md#layer-3-specialist-agents) — plugin roles ship their own prompt files, typically installed to `~/.factory/agents/prompts/` on first load.
+Plugin workflows can mix plugin-defined agents (`paper-reader`) with built-in agents (`strategist`, `builder`). Registering a role via `add_agent_roles()` extends the `AgentRole` enum, so the role works inside workflow graphs (`AgentNode(role=...)`), in the CLI, and in serialization roundtrips — use the enum member (`AgentRole.PAPER_READER`) or the role string where builtins accept strings.
+
+### Prompt resolution contract for plugin roles
+
+Registering a role makes it *valid*; its prompt makes it *behaved*. Roles resolve through the [three-tier lookup](architecture.md#layer-3-specialist-agents), in order:
+
+1. Project override: `<project>/.factory/agents/<role>.md`
+2. User-global: `~/.factory/agents/prompts/<role>.md`
+3. Factory default: `factory/agents/prompts/<role>.md` (builtins only — plugin roles have none)
+
+A plugin role must therefore ship a prompt file and install it to tier 2 on first load (or rely on projects providing tier 1). Two safety nets catch a broken install:
+
+- **At plugin load time**, every registered role is checked against tiers 2 and 3; a role with no resolvable prompt logs `plugin_agent_role_prompt_missing` (a project override still satisfies it, so the warning names that escape hatch).
+- **At invocation time**, `resolve_prompt` raises `FileNotFoundError` naming the expected paths, with an extra hint that the role is plugin-registered when its prompt did not ship with the plugin (e.g. missing data files in the built wheel).
 
 If no workflow exists for a plugin mode, the CEO falls back to its default improve loop using whatever agents are available.
 

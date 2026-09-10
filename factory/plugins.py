@@ -173,7 +173,43 @@ def load_plugins(registry: PluginRegistry | None = None) -> list[PluginLoadResul
 
     _registry = registry
     _results = results
+    _warn_missing_role_prompts(registry)
     return results
+
+
+def _warn_missing_role_prompts(registry: PluginRegistry) -> None:
+    """Warn when a plugin-registered agent role has no resolvable prompt.
+
+    Roles resolve through the three-tier lookup in
+    ``factory.agents.runner.resolve_prompt``: project override
+    (``<project>/.factory/agents/<role>.md``), user-global
+    (``~/.factory/agents/prompts/<role>.md``), factory default
+    (``factory/agents/prompts/<role>.md``). A plugin role has no factory
+    default, so a broken install (e.g. prompt data files missing from the
+    built wheel) only surfaces as a FileNotFoundError at invocation time —
+    after the CEO has already started. This check catches it at load time;
+    a project override still satisfies the role, so the warning names that
+    escape hatch.
+    """
+    if not registry.agent_roles:
+        return
+
+    from pathlib import Path
+
+    factory_prompts = Path(__file__).parent / "agents" / "prompts"
+    user_prompts = Path.home() / ".factory" / "agents" / "prompts"
+
+    for role in registry.agent_roles:
+        if (factory_prompts / f"{role}.md").exists():
+            continue
+        if (user_prompts / f"{role}.md").exists():
+            continue
+        log.warning(
+            "plugin_agent_role_prompt_missing",
+            role=role,
+            expected_user=str(user_prompts / f"{role}.md"),
+            hint="a project override at .factory/agents/<role>.md also works",
+        )
 
 
 def get_registry() -> PluginRegistry:

@@ -228,3 +228,86 @@ class TestPluginRegistryIntegration:
             e for e in logs if e["event"] == "plugin_agent_role_registration_failed"
         ]
         assert events and events[0]["role"] == "bad role!"
+
+
+class TestPromptResolutionContract:
+    """Review feedback on #1492: registering a role makes it valid, not
+    behaved. A plugin role with no resolvable prompt should be caught at
+    load time (not deep into a CEO cycle), and the runtime error should
+    point at plugin packaging as the likely cause."""
+
+    def test_load_plugins_warns_for_role_without_prompt(self, tmp_path):
+        import structlog
+        from factory.plugins import _warn_missing_role_prompts
+
+        registry = PluginRegistry()
+        registry.add_agent_roles(["ghost-role"])
+
+        with structlog.testing.capture_logs() as logs:
+            _warn_missing_role_prompts(registry)
+        events = [e for e in logs if e["event"] == "plugin_agent_role_prompt_missing"]
+        assert events and events[0]["role"] == "ghost-role"
+        assert "escape" not in events[0]  # hint present, not an error
+
+    def test_load_plugins_no_warning_when_user_prompt_exists(self, tmp_path, monkeypatch):
+        import structlog
+        from factory.agents import runner as runner_mod
+        from factory.plugins import _warn_missing_role_prompts
+
+        registry = PluginRegistry()
+        registry.add_agent_roles(["settled-role"])
+
+        fake_user_dir = tmp_path / ".factory" / "agents" / "prompts"
+        fake_user_dir.mkdir(parents=True)
+        (fake_user_dir / "settled-role.md").write_text("# settled role prompt\n")
+        monkeypatch.setattr(runner_mod, "_USER_PROMPTS_DIR", fake_user_dir)
+        # the check re-derives the path; patch Path.home for the check
+        monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+
+        with structlog.testing.capture_logs() as logs:
+            _warn_missing_role_prompts(registry)
+        assert not [
+            e for e in logs if e["event"] == "plugin_agent_role_prompt_missing"
+        ]
+
+    def test_no_roles_means_no_check_output(self):
+        import structlog
+        from factory.plugins import _warn_missing_role_prompts
+
+        with structlog.testing.capture_logs() as logs:
+            _warn_missing_role_prompts(PluginRegistry())
+        assert not [e for e in logs if "prompt_missing" in e["event"]]
+
+    def test_resolve_prompt_error_mentions_plugin_registration(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        from factory.agents.runner import resolve_prompt
+
+        registry = PluginRegistry()
+        registry.add_agent_roles(["ghost-role"])
+
+        # No prompt anywhere: not a factory builtin, no user-global, no project
+        with patch("factory.plugins.get_registry", return_value=registry):
+            try:
+                resolve_prompt("ghost-role", tmp_path)
+            except FileNotFoundError as exc:
+                assert "plugin-registered" in str(exc)
+                assert "wheel" in str(exc)
+            else:
+                pytest.fail("expected FileNotFoundError for role with no prompt")
+
+    def test_resolve_prompt_error_plain_for_builtin_role(self, tmp_path):
+        from factory.agents.runner import resolve_prompt
+
+        # A builtin role with no prompt file anywhere should NOT get the
+        # plugin hint (patch the prompts dir to a nonexistent one).
+        import factory.agents.runner as runner_mod
+
+        original = runner_mod._PROMPTS_DIR
+        runner_mod._PROMPTS_DIR = tmp_path / "nonexistent"
+        try:
+            with pytest.raises(FileNotFoundError) as excinfo:
+                resolve_prompt("definitely-not-a-real-role", tmp_path)
+            assert "plugin-registered" not in str(excinfo.value)
+        finally:
+            runner_mod._PROMPTS_DIR = original
