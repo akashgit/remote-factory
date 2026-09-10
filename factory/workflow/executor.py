@@ -846,6 +846,7 @@ class WorkflowExecutor:
                             item_project_path,
                             agent_pool=self.agent_pool,
                             dry_run=self.dry_run,
+                            agent_fn=self._agent_fn,
                             initial_context=item.prompt,
                         )
                         item_executor.completed_files = self.completed_files | disk_reads

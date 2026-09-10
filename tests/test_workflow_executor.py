@@ -816,6 +816,41 @@ class TestAgentFnInjection:
 
         mock_fn.assert_called_once()
 
+    async def test_agent_fn_propagates_to_data_node_sub_executor(
+        self, tmp_project: Path,
+    ) -> None:
+        """agent_fn propagates to DataNode per-item sub-executors."""
+        from unittest.mock import AsyncMock
+
+        from factory.workflow.primitives import DataItem, DataNode
+
+        mock_fn = AsyncMock(return_value=("sub output", 0))
+
+        wf = Workflow(
+            name="data_propagation_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="item1", prompt="do it")],
+                    subgraph_entry="sub_agent",
+                    subgraph_exit="sub_agent",
+                ),
+                "sub_agent": AgentNode(
+                    id="sub_agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, agent_fn=mock_fn)
+        result = await executor.execute()
+
+        assert result.success
+        mock_fn.assert_called_once()
+
     def test_agent_fn_defaults_to_invoke_agent(self, tmp_project: Path) -> None:
         """When agent_fn is not provided, defaults to invoke_agent."""
         from factory.agents.runner import invoke_agent
