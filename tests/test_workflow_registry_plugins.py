@@ -233,6 +233,95 @@ class TestShadowWarnings:
         assert entries["shared-name"].source == "project"
 
 
+class TestModeDriftWarnings:
+    """Plugin modes vs discovered workflows: declared-but-missing warns
+    (usually a typo; would otherwise surface as a silent improve-loop
+    fallback), discovered-but-undeclared is info-only (legal — subgraph
+    libraries, composed packages)."""
+
+    def test_declared_mode_without_workflow_warns(self, tmp_path: Path) -> None:
+        import structlog
+
+        registry = PluginRegistry()
+        registry.add_modes(["typo-mode"])
+
+        with patch("factory.plugins.get_registry", return_value=registry):
+            with structlog.testing.capture_logs() as logs:
+                WorkflowRegistry.discover()
+
+        events = [
+            e for e in logs if e.get("event") == "workflow_registry.mode_without_workflow"
+        ]
+        assert events and events[0]["mode"] == "typo-mode"
+
+    def test_declared_mode_with_backing_workflow_does_not_warn(
+        self, tmp_path: Path
+    ) -> None:
+        import structlog
+
+        plugin_dir = tmp_path / "plugin_wf"
+        _write_workflow(plugin_dir, "backed-mode")
+
+        registry = PluginRegistry()
+        registry.add_workflow_search_path(str(plugin_dir))
+        registry.add_modes(["backed-mode"])
+
+        with patch("factory.plugins.get_registry", return_value=registry):
+            with structlog.testing.capture_logs() as logs:
+                WorkflowRegistry.discover()
+
+        assert not [
+            e for e in logs if e.get("event") == "workflow_registry.mode_without_workflow"
+        ]
+
+    def test_plugin_workflow_not_declared_as_mode_logs_info(
+        self, tmp_path: Path
+    ) -> None:
+        import structlog
+
+        plugin_dir = tmp_path / "plugin_wf"
+        _write_workflow(plugin_dir, "library-only")
+        _write_workflow(plugin_dir, "declared-mode")
+
+        registry = PluginRegistry()
+        registry.add_workflow_search_path(str(plugin_dir))
+        registry.add_modes(["declared-mode"])
+        # "library-only" is NOT declared as a mode
+
+        with patch("factory.plugins.get_registry", return_value=registry):
+            with structlog.testing.capture_logs() as logs:
+                WorkflowRegistry.discover()
+
+        events = [
+            e
+            for e in logs
+            if e.get("event") == "workflow_registry.plugin_workflow_not_a_mode"
+        ]
+        assert events and events[0]["name"] == "library-only"
+        assert not [
+            e for e in events if e.get("name") == "declared-mode"
+        ]
+
+    def test_no_plugin_modes_means_no_drift_logging(self, tmp_path: Path) -> None:
+        import structlog
+
+        registry = PluginRegistry()
+
+        with patch("factory.plugins.get_registry", return_value=registry):
+            with structlog.testing.capture_logs() as logs:
+                WorkflowRegistry.discover()
+
+        assert not [
+            e
+            for e in logs
+            if e.get("event")
+            in (
+                "workflow_registry.mode_without_workflow",
+                "workflow_registry.plugin_workflow_not_a_mode",
+            )
+        ]
+
+
 # ── Skill cache checksum ─────────────────────────────────────────
 
 

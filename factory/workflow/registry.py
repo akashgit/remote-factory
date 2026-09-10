@@ -130,8 +130,44 @@ class WorkflowRegistry:
             if project_wf_dir.is_dir():
                 cls._discover_in_directory(str(project_wf_dir), "project")
 
+        cls._warn_mode_drift()
+
         log.info("workflow_registry.discovered", count=len(cls._entries))
         return cls._entries
+
+    @classmethod
+    def _warn_mode_drift(cls) -> None:
+        """Log consistency warnings between plugin modes and discovered workflows.
+
+        A plugin mode with no discovered workflow of the same name usually means
+        a typo or a renamed file — without a warning it surfaces only as a
+        silent fallback to the default improve loop. A plugin workflow that is
+        not declared as a mode is legal (subgraph libraries, composed
+        packages), so that direction is info-level only.
+        """
+        try:
+            from factory.plugins import get_registry
+
+            plugin_modes = set(get_registry().modes)
+        except Exception as exc:
+            log.debug("workflow_registry.plugin_modes_unavailable", error=str(exc))
+            return
+        if not plugin_modes:
+            return
+
+        for mode in sorted(plugin_modes):
+            if mode not in cls._entries:
+                log.warning(
+                    "workflow_registry.mode_without_workflow",
+                    mode=mode,
+                    action="ceo_falls_back_to_improve_loop",
+                )
+        for name, entry in cls._entries.items():
+            if entry.source == "plugin" and name not in plugin_modes:
+                log.info(
+                    "workflow_registry.plugin_workflow_not_a_mode",
+                    name=name,
+                )
 
     @classmethod
     def _plugin_search_paths(cls) -> list[str]:
