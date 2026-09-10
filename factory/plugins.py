@@ -80,6 +80,7 @@ class PluginRegistry:
 
     def add_agent_roles(self, roles: list[str]) -> None:
         from factory.cli._parser_groups import BUILTIN_AGENT_ROLES
+        from factory.workflow.primitives import register_agent_role
 
         for role in roles:
             if role in BUILTIN_AGENT_ROLES:
@@ -87,6 +88,13 @@ class PluginRegistry:
                 continue
             if role in self.agent_roles:
                 log.warning("plugin_agent_role_collision", role=role, action="keeping_first")
+                continue
+            try:
+                register_agent_role(role)
+            except ValueError as exc:
+                log.warning(
+                    "plugin_agent_role_registration_failed", role=role, error=str(exc)
+                )
                 continue
             self.agent_roles.append(role)
 

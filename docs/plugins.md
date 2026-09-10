@@ -51,13 +51,13 @@ When you run `factory ceo /path --mode ml`:
                     └─────────────────────┘
 ```
 
-Plugin workflows can mix plugin-defined agents (`paper-reader`) with built-in agents (`strategist`, `builder`). The engine resolves each role via the [three-tier prompt lookup](architecture.md#layer-3-specialist-agents) — plugin roles ship their own prompt files, typically installed to `~/.factory/agents/prompts/` on first load.
+Plugin workflows can mix plugin-defined agents (`paper-reader`) with built-in agents (`strategist`, `builder`). Registering a role via `add_agent_roles()` extends the `AgentRole` enum, so the role works inside workflow graphs (`AgentNode(role=...)`), in the CLI, and in serialization roundtrips — use the enum member (`AgentRole.PAPER_READER`) or the role string where builtins accept strings. The engine resolves each role via the [three-tier prompt lookup](architecture.md#layer-3-specialist-agents) — plugin roles ship their own prompt files, typically installed to `~/.factory/agents/prompts/` on first load.
 
 If no workflow exists for a plugin mode, the CEO falls back to its default improve loop using whatever agents are available.
 
 ## Collision Protection
 
-- **Builtins always win.** A plugin cannot override a built-in command, mode, or agent role.
+- **Builtins always win.** A plugin cannot override a built-in command, mode, or agent role. `add_agent_roles()` skips builtin collisions with a warning; the lower-level `factory.workflow.primitives.register_agent_role()` raises `ValueError` instead.
 - **First registration wins.** If two plugins register the same name, the first one (sorted by distribution name) keeps it.
 - **Three-tier error isolation.** Failures at any stage (import, validation, registration) are caught, logged, and skipped — a broken plugin never crashes the factory.
 
