@@ -122,12 +122,12 @@ def _topological_sort(workflow: Workflow) -> list[str]:
     # after the fork node and join sources sort before the join node.
     for nid, node in workflow.nodes.items():
         if type(node).__name__ == "ForkNode":
-            for t in node.targets:  # type: ignore[union-attr]
+            for t in node.targets:  # type: ignore
                 if t in workflow.nodes:
                     adj[nid].append(t)
                     in_degree[t] = in_degree.get(t, 0) + 1
         if type(node).__name__ == "JoinNode":
-            for s in node.sources:  # type: ignore[union-attr]
+            for s in node.sources:  # type: ignore
                 if s in workflow.nodes:
                     adj[s].append(nid)
                     in_degree[nid] = in_degree.get(nid, 0) + 1
@@ -176,7 +176,7 @@ def _format_edges(edges: list[Edge]) -> str:
         return "none"
     parts = []
     for e in edges:
-        cond = str(e.condition) if e.condition else "unconditional"
+        cond = e.condition.value if e.condition else "unconditional"  # type: ignore
         parts.append(f"{cond} → {e.target}")
     return ", ".join(parts)
 
