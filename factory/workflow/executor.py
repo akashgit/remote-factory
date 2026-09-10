@@ -7,6 +7,7 @@ import json
 import shlex
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -87,12 +88,19 @@ class WorkflowExecutor:
         dry_run: bool = False,
         auto_approve: bool = False,
         initial_context: str | None = None,
+        agent_fn: Callable[..., Any] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        if agent_fn is not None:
+            self._agent_fn = agent_fn
+        else:
+            from factory.agents.runner import invoke_agent
+
+            self._agent_fn = invoke_agent
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -581,6 +589,7 @@ class WorkflowExecutor:
                 wt_path if not self.dry_run else self.project_path,
                 agent_pool=self.agent_pool,
                 dry_run=self.dry_run,
+                agent_fn=self._agent_fn,
             )
             branch_result = await branch_executor.execute()
 
@@ -1111,8 +1120,6 @@ class WorkflowExecutor:
 
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
-        from factory.agents.runner import invoke_agent
-
         task = node.prompt_template.replace(
             "{project_path}", str(self.project_path),
         )
@@ -1132,7 +1139,7 @@ class WorkflowExecutor:
             if pool_entry:
                 timeout = pool_entry.timeout
 
-        stdout, code = await invoke_agent(
+        stdout, code = await self._agent_fn(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
@@ -1147,6 +1154,13 @@ class WorkflowExecutor:
                 code=code,
                 output_len=len(stdout),
             )
+
+        # Persist output to node.writes paths (mirrors _run_llm pattern)
+        if node.writes:
+            for wpath in node.writes:
+                fpath = self.project_path / wpath
+                fpath.parent.mkdir(parents=True, exist_ok=True)
+                fpath.write_text(stdout)
 
         return stdout
 
