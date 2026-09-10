@@ -27,16 +27,33 @@ def _sort_recursive(obj: object) -> Any:
     return obj
 
 
-def _compute_checksum(workflows: dict[str, Workflow]) -> str:
-    """Deterministic checksum from workflow Pydantic models.
+def _compute_checksum(
+    workflows: dict[str, Workflow],
+    source_files: dict[str, str] | None = None,
+) -> str:
+    """Deterministic checksum from workflow Pydantic models + source files.
 
     Serialises all workflows via model_dump(mode='json'), sorts by name,
     then SHA-256 hashes the canonical JSON.  Returns the first 16 hex chars.
+
+    When *source_files* maps workflow name → path of the .py file it was
+    discovered from, the SHA-256 of each file's bytes is folded into the
+    checksum.  This makes the cache key cover everything the skill export
+    reads: the exported SKILL.md depends on entry-level data (e.g. the
+    ``meta`` description) that is not a field on the Workflow model, so
+    hashing models alone can serve stale skills after a file edit.
     """
     payload = {name: wf.model_dump(mode="json") for name, wf in sorted(workflows.items())}
     payload = _sort_recursive(payload)
     blob = json.dumps(payload, sort_keys=True).encode()
-    return hashlib.sha256(blob).hexdigest()[:16]
+    h = hashlib.sha256(blob)
+    for name, path_str in sorted((source_files or {}).items()):
+        try:
+            h.update(name.encode())
+            h.update(Path(path_str).read_bytes())
+        except OSError as exc:
+            log.debug("skill_cache.checksum_read_failed", path=path_str, error=str(exc))
+    return h.hexdigest()[:16]
 
 
 def ensure_skills(project_dir: Path, *, mode: str | None = None) -> list[Path]:
@@ -64,6 +81,7 @@ def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[
 
     builtin_workflows: dict[str, Workflow] = {}
     project_workflows: dict[str, Workflow] = {}
+    source_files: dict[str, str] = {}
 
     for name, entry in entries.items():
         wf = WorkflowRegistry.get_workflow(name, project_dir)
@@ -73,10 +91,12 @@ def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[
             project_workflows[name] = wf
         else:
             builtin_workflows[name] = wf
+            if entry.path != "<builtin>":
+                source_files[name] = entry.path
 
     log.info("skill_cache.project_workflows_discovered", count=len(project_workflows))
 
-    checksum = _compute_checksum(builtin_workflows)
+    checksum = _compute_checksum(builtin_workflows, source_files)
 
     cache_dir = Path.home() / ".factory" / "cache" / "skills" / checksum
     skills_target = project_dir / "skills"
