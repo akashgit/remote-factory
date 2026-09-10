@@ -218,6 +218,20 @@ class TestWorkflow:
         issues = wf.validate_graph()
         assert issues == []
 
+    def test_to_dict_is_byte_stable(self) -> None:
+        """reads/writes are sets; their serialization order must not drift."""
+        wf = self._simple_workflow()
+        assert wf.to_dict() == Workflow.from_dict(wf.to_dict()).to_dict()
+        assert wf.to_dict()["nodes"]["b"]["writes"] == ["b.txt"]
+        assert wf.to_dict()["nodes"]["a"]["reads"] == []
+
+    def test_to_dict_round_trips_via_json(self) -> None:
+        import json
+
+        wf = self._simple_workflow()
+        reloaded = Workflow.from_dict(json.loads(json.dumps(wf.to_dict())))
+        assert reloaded.to_dict() == wf.to_dict()
+
     def test_unreachable_node(self) -> None:
         wf = Workflow(
             name="test",

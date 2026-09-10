@@ -58,6 +58,7 @@ class OptKnob(BaseModel):
     the initial ``bounds``.  For prompt knobs this means authoring new
     prompt text; for threshold knobs it means extrapolating the range.
     ``expansion_hint`` tells the optimizer how to generate new values.
+    ``description`` is prose for humans and carries no optimizer meaning.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -69,6 +70,7 @@ class OptKnob(BaseModel):
     bounds: list[str | float] = Field(default_factory=list)
     expandable: bool = False
     expansion_hint: str = ""
+    description: str = ""
 
 
 class MemoryDeclaration(BaseModel):
