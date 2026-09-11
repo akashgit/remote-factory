@@ -35,6 +35,52 @@ class TestStructuralHash:
         )
         assert structural_hash(simple_workflow) != structural_hash(other)
 
+    def test_prompt_change_affects_structural_hash(self) -> None:
+        """Two workflows identical except prompt_template must hash differently."""
+        wf1 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(
+                    id="a", role=AgentRole.RESEARCHER, prompt_template="analyze code"
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        wf2 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(
+                    id="a", role=AgentRole.RESEARCHER, prompt_template="review code"
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        assert structural_hash(wf1) != structural_hash(wf2)
+
+    def test_empty_prompt_stable_hash(self) -> None:
+        """Workflow with prompt_template='' and default (also '') hash the same."""
+        wf1 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(
+                    id="a", role=AgentRole.RESEARCHER, prompt_template=""
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        wf2 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(id="a", role=AgentRole.RESEARCHER),
+            },
+            edges=[],
+            start_node="a",
+        )
+        assert structural_hash(wf1) == structural_hash(wf2)
+
     def test_same_structure_same_hash(self) -> None:
         nodes1 = {
             "a": FnNode(id="a", command="echo a"),
