@@ -195,7 +195,7 @@ class SwarmEngine:
                 self._mode_registry.register(ind.id, 0, mutated_wf)
 
         if designer_count > 0:
-            self._add_designer_variants(pop, cfg, designer_count)
+            self._add_designer_variants(pop, cfg, designer_count, base_workflow)
 
         log.info(
             "population_seeded",
@@ -210,21 +210,31 @@ class SwarmEngine:
         pop: Population,
         cfg: SwarmConfig,
         designer_count: int,
+        seed_workflow: Workflow | None = None,
     ) -> None:
         """Add from-scratch designed workflows to the population."""
         benchmark_spec = cfg.benchmark
         designs: list[Workflow] = []
+        frozen = set(cfg.frozen_node_ids) if cfg.frozen_node_ids else None
 
         if designer_count >= 1:
             try:
-                minimal = self._designer.design_minimal(benchmark_spec)
+                minimal = self._designer.design_minimal(
+                    benchmark_spec,
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
+                )
                 designs.append(minimal)
             except Exception:
                 log.warning("designer_minimal_failed", exc_info=True)
 
         if designer_count >= 2:
             try:
-                thorough = self._designer.design_thorough(benchmark_spec)
+                thorough = self._designer.design_thorough(
+                    benchmark_spec,
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
+                )
                 designs.append(thorough)
             except Exception:
                 log.warning("designer_thorough_failed", exc_info=True)
@@ -234,6 +244,8 @@ class SwarmEngine:
                 custom = self._designer.design_custom(
                     benchmark_spec,
                     {"max_nodes": 4 + i, "parallel": i % 2 == 0},
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
                 )
                 designs.append(custom)
             except Exception:
