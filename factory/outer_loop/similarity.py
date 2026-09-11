@@ -128,12 +128,17 @@ def compute_features(workflow: Workflow) -> tuple[int, ...]:
         f"{k}={v}" for k, v in sorted(workflow.knob_values.items())
     ) if workflow.knob_values else ""
 
+    has_data_node = int(any(
+        type(n).__name__ == "DataNode" for n in workflow.nodes.values()
+    ))
+
     return (
         depth, fork_degree, agent_count, gate_count,
         _hash_bucket(edge_sig),
         _hash_bucket(param_sig, 16),
         _hash_bucket(prompt_sig, 32),
         _hash_bucket(knob_sig, 16),
+        has_data_node,
     )
 
 

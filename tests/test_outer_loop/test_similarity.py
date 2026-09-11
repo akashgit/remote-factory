@@ -98,7 +98,7 @@ class TestGraphEditDistance:
 class TestComputeFeatures:
     def test_simple_workflow(self, simple_workflow: Workflow) -> None:
         features = compute_features(simple_workflow)
-        assert len(features) == 8  # fixed-length: 4 base + edge + param + prompt + knob
+        assert len(features) == 9  # fixed-length: 4 base + edge + param + prompt + knob + has_data_node
         depth, fork_degree, agent_count, gate_count = features[:4]
         assert depth >= 4
         assert fork_degree == 0
@@ -127,7 +127,7 @@ class TestComputeFeatures:
         ]
         wf = Workflow(name="forked", nodes=nodes, edges=edges, start_node="start")
         features = compute_features(wf)
-        assert len(features) == 8  # same fixed length regardless of agent count
+        assert len(features) == 9  # same fixed length regardless of agent count
         depth, fork_degree, agent_count, gate_count = features[:4]
         assert fork_degree == 3
         assert agent_count == 3
@@ -143,7 +143,7 @@ class TestComputeFeatures:
             )
         f1 = compute_features(_make_wf("analyze the code"))
         f2 = compute_features(_make_wf("review the code for bugs"))
-        assert len(f1) == len(f2) == 8
+        assert len(f1) == len(f2) == 9
         assert f1 != f2  # different prompts → different features
 
     def test_no_agents_still_fixed_length(self) -> None:
@@ -154,7 +154,7 @@ class TestComputeFeatures:
             start_node="a",
         )
         features = compute_features(wf)
-        assert len(features) == 8
+        assert len(features) == 9
 
 
 class TestNoveltyFilter:

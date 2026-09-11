@@ -153,7 +153,7 @@ def canonicalize(wf: Workflow) -> dict[str, Any]:
             {
                 "source": e.source,
                 "target": e.target,
-                "condition": e.condition.value if e.condition is not None else None,
+                "condition": e.condition_label,
             }
             for e in wf.edges
             if (e.source, e.target) not in redundant

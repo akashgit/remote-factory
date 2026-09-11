@@ -94,6 +94,12 @@ class Population:
         return pop
 
 
+# Structural axes from compute_features() 9-tuple:
+# 0=depth, 1=fork_degree, 2=agent_count, 3=gate_count, 8=has_data_node
+# Indices 4-7 are hash buckets (edge_sig, param, prompt, knob) — excluded.
+STRUCTURAL_AXES: tuple[int, ...] = (0, 1, 2, 3, 8)
+
+
 class MAPElitesArchive:
     """4D fixed-resolution grid archive for quality-diversity search.
 
@@ -193,21 +199,27 @@ class MAPElitesArchive:
         return front
 
     def diversity_metric(self) -> float:
-        """Fraction of occupied cells relative to a reasonable grid size estimate.
+        """Fraction of occupied cells in the structural-axis subspace.
 
         Returns 0.0 for empty archive, approaches 1.0 as more cells are filled.
+        Uses 5 structural axes from the 9-tuple returned by compute_features():
+          depth (0), fork_degree (1), agent_count (2), gate_count (3), has_data_node (8).
+        Hash-bucket axes (4-7: edge_sig, param, prompt, knob) are excluded because
+        their high cardinality inflates the denominator without reflecting structural diversity.
         """
         if not self._grid:
             return 0.0
-        unique_per_axis: list[set[int]] = [set() for _ in range(4)]
+        sample_key = next(iter(self._grid))
+        axes = [a for a in STRUCTURAL_AXES if a < len(sample_key)]
+        unique_per_axis: list[set[int]] = [set() for _ in axes]
         for key in self._grid:
-            for i, v in enumerate(key):
-                if i < 4:
-                    unique_per_axis[i].add(v)
+            for idx, a in enumerate(axes):
+                unique_per_axis[idx].add(key[a])
         total_possible = 1
         for s in unique_per_axis:
             total_possible *= max(len(s), 1)
-        return len(self._grid) / max(total_possible, 1)
+        structural_cells = {tuple(key[a] for a in axes) for key in self._grid}
+        return len(structural_cells) / max(total_possible, 1)
 
     def save(self, directory: Path) -> None:
         """Serialize the archive to a directory."""

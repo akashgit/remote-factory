@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from factory.cycle_analyzer import CycleAnalyzer, CycleRecord
-from factory.workflow.primitives import Workflow
+from factory.workflow.primitives import DataNode, Workflow
 
 
 @dataclass
@@ -135,6 +135,7 @@ class InnerLoop:
         self.instance = instance
         self._step_count = 0
         self._history: list[CycleRecord] = []
+        self._has_data_node: bool | None = None
         self._validate_frozen_nodes()
 
         # When task is set, derive flat fields from it for backward compat
@@ -256,6 +257,14 @@ class InnerLoop:
         self._history.append(record)
         return record
 
+    def _workflow_has_data_node(self) -> bool:
+        if self._has_data_node is None:
+            self._has_data_node = (
+                self.workflow is not None
+                and any(isinstance(n, DataNode) for n in self.workflow.nodes.values())
+            )
+        return self._has_data_node
+
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Task-driven step: setup → WorkflowExecutor → verify per instance."""
         assert self.task is not None
@@ -268,6 +277,9 @@ class InnerLoop:
 
         if directives:
             self._write_directives(directives)
+
+        if self._workflow_has_data_node():
+            return self._step_with_data_node(directives)
 
         event_offset = self._count_lines(self.factory_dir / "events.jsonl")
 
@@ -374,6 +386,80 @@ class InnerLoop:
             builder_committed=False,
             experiments=0,
             test_score=aggregate_score,
+            instance_results=instance_results,
+        )
+
+        self._step_count += 1
+        self._history.append(record)
+        return record
+
+    def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
+        """Delegate to the executor when the workflow contains a DataNode."""
+        import asyncio
+        import json
+
+        from factory.workflow.executor import WorkflowExecutor
+
+        t0 = time.monotonic()
+
+        assert self.workflow is not None
+        executor = WorkflowExecutor(
+            self.workflow,
+            self.project_dir,
+        )
+        exec_result = asyncio.run(executor.execute())
+
+        duration_s = time.monotonic() - t0
+        score = 1.0 if exec_result.success else 0.0
+        instance_results: list[dict[str, Any]] | None = None
+
+        # Direct lookup: find DataNode ID and read its output
+        data_node_id: str | None = None
+        for nid, n in self.workflow.nodes.items():
+            if isinstance(n, DataNode):
+                data_node_id = nid
+                break
+
+        if data_node_id is not None and data_node_id in exec_result.node_outputs:
+            try:
+                parsed = json.loads(exec_result.node_outputs[data_node_id])
+                if isinstance(parsed, list) and parsed:
+                    scores = [r["score"] for r in parsed if "score" in r]
+                    if scores:
+                        score = sum(scores) / len(scores)
+                    instance_results = [
+                        {
+                            "instance_id": item.get("item_id", ""),
+                            "score": item.get("score", 0.0),
+                            "passed": item.get("passed", False),
+                        }
+                        for item in parsed
+                        if isinstance(item, dict)
+                    ]
+            except (json.JSONDecodeError, TypeError, KeyError):
+                pass
+
+        record = CycleRecord(
+            cycle_number=self._step_count + 1,
+            mode=self.mode,
+            started_at=None,
+            ended_at=None,
+            duration_s=duration_s,
+            score_start=None,
+            score_end=score,
+            score_delta=None,
+            instance_results=instance_results,
+        )
+        record.frozen_nodes = sorted(self.frozen_nodes)
+        record.mutable_node_ids = sorted(self.mutable_nodes())
+
+        self._write_cycle_summary(
+            returncode=0 if exec_result.success else 1,
+            event_offset=0,
+            duration_ms=int(duration_s * 1000),
+            builder_committed=False,
+            experiments=0,
+            test_score=score,
             instance_results=instance_results,
         )
 

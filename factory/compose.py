@@ -86,6 +86,7 @@ class ModeCapabilities:
         from factory.workflow.primitives import (
             AgentNode,
             AgentRole,
+            DataNode,
             FnNode,
             ForkNode,
             GateNode,
@@ -123,6 +124,9 @@ class ModeCapabilities:
 
             elif isinstance(node, ForkNode):
                 caps.add(Capability.HAS_PARALLELISM)
+
+            elif isinstance(node, DataNode):
+                caps.add(Capability.CAN_ITERATE)
 
             elif isinstance(node, FnNode):
                 caps.add(Capability.CAN_RUN_SUBPROCESS)
@@ -185,15 +189,37 @@ class TaskCapabilities:
 # ── validate_composition ─────────────────────────────────────────
 
 
+def _workflow_has_data_node(workflow: Any) -> bool:
+    """Check if a workflow contains at least one DataNode."""
+    from factory.workflow.primitives import DataNode
+
+    nodes = getattr(workflow, "nodes", {})
+    return any(isinstance(n, DataNode) for n in nodes.values())
+
+
 def validate_composition(workflow: Any, task: Any) -> None:
     """Validate that a workflow can run a task.
 
     Raises IncompatibleCompositionError if capabilities don't match.
+
+    DataNode workflows are evaluation-only — they handle iteration
+    internally and don't need build-pipeline capabilities like
+    HAS_BUILDER, CAN_RUN_TESTS, or CAN_MODIFY_CODE.
     """
     mode_caps = ModeCapabilities.from_workflow(workflow)
     task_caps = TaskCapabilities.from_task(task)
 
     mode_missing = set(task_caps.requires) - set(mode_caps.provides)
+
+    # DataNode workflows handle iteration internally and don't need
+    # build-pipeline capabilities
+    if mode_missing and _workflow_has_data_node(workflow):
+        build_caps = {
+            Capability.HAS_BUILDER,
+            Capability.CAN_RUN_TESTS,
+            Capability.CAN_MODIFY_CODE,
+        }
+        mode_missing -= build_caps
 
     mode_name = getattr(workflow, "name", "unknown")
     task_name = getattr(task, "name", "unknown")

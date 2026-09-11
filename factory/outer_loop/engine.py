@@ -39,6 +39,13 @@ log = structlog.get_logger()
 PLATEAU_WINDOW = 3
 
 
+def _auto_frozen_nodes(workflow: Workflow) -> set[str]:
+    """Return node IDs that should always be frozen during mutation."""
+    from factory.workflow.primitives import DataNode
+
+    return {nid for nid, node in workflow.nodes.items() if isinstance(node, DataNode)}
+
+
 class BudgetTracker:
     """Tracks evaluation budget consumption, cost, and wall-clock time."""
 
@@ -169,7 +176,7 @@ class SwarmEngine:
                 base_workflow,
                 self._strategy,
                 generation=0,
-                frozen_nodes=set(cfg.frozen_node_ids),
+                frozen_nodes=set(cfg.frozen_node_ids) | _auto_frozen_nodes(base_workflow),
             )
             if result is None:
                 continue
@@ -298,7 +305,7 @@ class SwarmEngine:
                 parent_wf,
                 self._strategy,
                 generation,
-                frozen_nodes=set(self._config.frozen_node_ids),
+                frozen_nodes=set(self._config.frozen_node_ids) | _auto_frozen_nodes(parent_wf),
                 reflection_report=self._last_reflection,
             )
             if mutation_result is None:
