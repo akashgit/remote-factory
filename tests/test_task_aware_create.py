@@ -146,6 +146,87 @@ class TestDomainLevelKnobs:
         assert "No threshold configured" in directive
 
 
+class TestDataNodeOptKnobs:
+    """Tests for DataNode OptKnob derivation rules in the task-aware directive."""
+
+    def _make_toml(self, tmp_path: Path) -> Path:
+        toml = tmp_path / "dn-task.toml"
+        toml.write_text(
+            '[task]\nname = "dn-task"\n'
+            '[scoring]\nmethod = "json"\nmetric_path = "score"\n'
+            '[verify]\ncommand = "python eval.py"\n'
+        )
+        return toml
+
+    def test_directive_contains_datanode_section(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "### DataNode OptKnob Auto-Generation" in directive
+
+    def test_parallelism_knob_in_directive(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "DataNode.parallelism" in directive
+        assert "Number of concurrent data items processed in parallel" in directive
+
+    def test_limit_knob_in_directive(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "DataNode.limit" in directive
+        assert "Maximum number of data items to process per run" in directive
+        # limit is conditional — "when set, not None"
+        assert "when set" in directive
+
+    def test_max_items_knob_in_directive(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        assert "DataNode.max_items" in directive
+        assert "Safety ceiling for total data items loaded" in directive
+
+    def test_no_topology_knobs_for_datanode(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        # split/shuffle should only appear in the prohibition instruction, not as table rows
+        assert "Do NOT add topology knobs for DataNode.split or DataNode.shuffle" in directive
+        dn_start = directive.index("### DataNode OptKnob Auto-Generation")
+        dn_section = directive[dn_start:directive.index("Do NOT add topology", dn_start)]
+        table_rows = [ln for ln in dn_section.splitlines() if ln.startswith("| DataNode.")]
+        for row in table_rows:
+            assert "split" not in row
+            assert "shuffle" not in row
+
+    def test_datanode_knobs_are_threshold_kind(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        # Extract the DataNode table section
+        dn_start = directive.index("### DataNode OptKnob Auto-Generation")
+        dn_section = directive[dn_start:directive.index("Never auto-generate", dn_start)]
+        # All three DataNode table rows should specify 'threshold' kind
+        lines = [ln for ln in dn_section.splitlines() if ln.startswith("| DataNode.")]
+        assert len(lines) == 3
+        for line in lines:
+            assert "threshold" in line
+
+    def test_parallelism_not_expandable(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        dn_start = directive.index("### DataNode OptKnob Auto-Generation")
+        dn_section = directive[dn_start:directive.index("Never auto-generate", dn_start)]
+        parallelism_line = [
+            ln for ln in dn_section.splitlines() if "DataNode.parallelism" in ln
+        ][0]
+        assert "| False |" in parallelism_line
+
+    def test_limit_and_max_items_expandable(self, tmp_path: Path):
+        toml = self._make_toml(tmp_path)
+        directive = _build_task_aware_directive(str(toml), tmp_path)
+        dn_start = directive.index("### DataNode OptKnob Auto-Generation")
+        dn_section = directive[dn_start:directive.index("Never auto-generate", dn_start)]
+        for field in ("DataNode.limit", "DataNode.max_items"):
+            field_line = [ln for ln in dn_section.splitlines() if field in ln][0]
+            assert "| True |" in field_line
+
+
 class TestTaskSetupWorkflow:
     def test_task_setup_workflow_validates(self):
         from factory.workflow.definitions import task_setup_workflow
