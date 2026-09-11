@@ -23,6 +23,10 @@ def structural_hash(workflow: Workflow) -> str:
         node = workflow.nodes[nid]
         d = node.model_dump(mode="json")
         d["_type"] = type(node).__name__
+        if hasattr(node, "prompt_template"):
+            d["_prompt_hash"] = hashlib.sha256(
+                (getattr(node, "prompt_template", "") or "").encode()
+            ).hexdigest()
         nodes_canonical.append(d)
 
     edges_canonical = sorted(

@@ -31,7 +31,12 @@ class DesignerAgent:
     Mutation mode proposes targeted mutations from failure telemetry.
     """
 
-    def design_minimal(self, benchmark_spec: str) -> Workflow:
+    def design_minimal(
+        self,
+        benchmark_spec: str,
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create a 3-4 node workflow optimized for speed.
 
         Structure: researcher → builder → gate
@@ -57,6 +62,9 @@ class DesignerAgent:
                 reads={".factory/reviews/builder-latest.md"},
             ),
         }
+
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+
         edges = [
             Edge(source="researcher", target="builder"),
             Edge(source="builder", target="gate_qa"),
@@ -70,7 +78,12 @@ class DesignerAgent:
         log.info("designed_minimal", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
 
-    def design_thorough(self, benchmark_spec: str) -> Workflow:
+    def design_thorough(
+        self,
+        benchmark_spec: str,
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create an 8-10 node workflow optimized for thoroughness.
 
         Structure: study → researcher → strategist → fork(builder_a, builder_b)
@@ -142,6 +155,9 @@ class DesignerAgent:
                 reads={".factory/reviews/adversarial-qa.md"},
             ),
         }
+
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+
         edges = [
             Edge(source="study", target="researcher"),
             Edge(source="researcher", target="strategist"),
@@ -163,7 +179,13 @@ class DesignerAgent:
         log.info("designed_thorough", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
 
-    def design_custom(self, benchmark_spec: str, constraints: dict[str, object]) -> Workflow:
+    def design_custom(
+        self,
+        benchmark_spec: str,
+        constraints: dict[str, object],
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create a custom from-scratch workflow with optional constraints.
 
         Constraints can specify:
@@ -215,6 +237,8 @@ class DesignerAgent:
                 evaluator_role=AgentRole.HEALTH_CHECKER,
             )
             edges.append(Edge(source=prev_id, target=gate_id))
+
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
         wf = Workflow(
@@ -303,6 +327,30 @@ class DesignerAgent:
             ))
 
         return proposals[:3]
+
+
+def _inject_frozen_nodes(
+    nodes: dict[str, object],
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> None:
+    """Inject frozen nodes from a seed workflow into a template nodes dict.
+
+    Frozen nodes take precedence over template nodes on ID collision.
+    """
+    if not seed_workflow or not frozen_node_ids:
+        return
+    for frozen_id in frozen_node_ids:
+        if frozen_id in seed_workflow.nodes:
+            if frozen_id in nodes:
+                log.warning(
+                    "frozen_node_collision",
+                    node_id=frozen_id,
+                    action="preferring_frozen_over_template",
+                )
+            nodes[frozen_id] = seed_workflow.nodes[frozen_id]
+        else:
+            log.warning("frozen_node_missing_in_seed", node_id=frozen_id)
 
 
 def extract_telemetry(eval_result: EvalResult) -> dict[str, object]:

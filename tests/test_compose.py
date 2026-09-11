@@ -543,3 +543,21 @@ class TestDeclaredCapabilitiesRoundTrip:
         d = compiled.to_dict()
         restored = Workflow.from_dict(d)
         assert restored.declared_capabilities == frozenset(["code-generation", "health-check"])
+
+
+class TestExplicitEmptyCapsValidation:
+    """Gap 0: Tasks with required_capabilities=[] pass any workflow."""
+
+    def test_explicit_empty_caps_passes_research_workflow(self):
+        """A task with TaskConstraints(required_capabilities=[]) and exit_code scoring
+        passes validate_composition() with a minimal workflow that has no builder node."""
+        wf = _make_workflow(researcher=True, name="no-builder")
+        task = Task(
+            definition=TaskDefinition(
+                name="eval-only-task",
+                scoring=ScoringContract(method="exit_code"),
+                constraints=TaskConstraints(required_capabilities=[]),
+            )
+        )
+        # Should NOT raise IncompatibleCompositionError
+        validate_composition(wf, task)

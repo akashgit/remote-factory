@@ -1494,3 +1494,81 @@ class TestStepWithDataNodeCoverage:
             record = loop._step_with_data_node()
 
         assert record.score_end == 0.0
+
+
+# ── disk_reads re-scan after setup() ────────────────────────────
+
+
+class _SetupWritingTask:
+    """Task whose setup() creates a file that a subgraph node reads."""
+
+    def __init__(self, setup_file: str) -> None:
+        self._setup_file = setup_file
+
+    def instances(self):
+        from factory.task import TaskInstance
+        return [TaskInstance(id="inst1")]
+
+    def setup(self, instance: Any, workspace: Path) -> None:
+        target = workspace / self._setup_file
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("setup content")
+
+    def prompt(self, instance: Any) -> str:
+        return "go"
+
+    def verify(self, instance: Any, workspace: Path):
+        from factory.task import VerifyResult
+        return VerifyResult(passed=True, score=1.0)
+
+
+class TestDiskReadsRescanAfterSetup:
+    """setup()-created files must appear in sub-executor completed_files."""
+
+    def test_setup_created_file_in_completed_files(self, tmp_path: Path) -> None:
+        """When task.setup() writes a file declared in a subgraph node's reads,
+        the sub-executor's completed_files must include it so _wait_for_reads()
+        doesn't block for 60 s."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        setup_file = "data/input.txt"
+
+        wf = Workflow(
+            name="rescan_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    task_ref="fake.module:SetupWritingTask",
+                    subgraph_entry="reader",
+                    subgraph_exit="reader",
+                ),
+                "reader": FnNode(
+                    id="reader",
+                    command="echo ok",
+                    reads={setup_file},
+                ),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        fake_task = _SetupWritingTask(setup_file)
+
+        # Capture the completed_files set on the sub-executor
+        captured_completed: list[set[str]] = []
+        original_execute = WorkflowExecutor.execute
+
+        async def spy_execute(self_inner):
+            if self_inner.workflow.name.endswith("__data_item"):
+                captured_completed.append(set(self_inner.completed_files))
+            return await original_execute(self_inner)
+
+        with patch("factory.task.TaskRef.resolve", return_value=fake_task), \
+             patch.object(WorkflowExecutor, "execute", spy_execute):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success, f"halted: {result.halt_reason}"
+        # The sub-executor's completed_files must contain the setup-written file
+        assert len(captured_completed) == 1
+        assert setup_file in captured_completed[0]

@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from factory.outer_loop.designer import DesignerAgent
 from factory.outer_loop.models import MutationType
+from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
+    Edge,
+    FnNode,
+    Workflow,
+)
 
 
 class TestDesignMinimal:
@@ -221,3 +228,91 @@ class TestPropose:
             benchmark_spec="test",
         )
         assert len(proposals) <= 3
+
+
+class TestFrozenNodePreservation:
+    """Tests for frozen node injection in designer methods."""
+
+    @staticmethod
+    def _seed_with_positions() -> Workflow:
+        """Create a seed workflow containing a FnNode with id='positions'."""
+        return Workflow(
+            name="seed",
+            nodes={
+                "positions": FnNode(
+                    id="positions",
+                    command="load_positions",
+                    writes={".factory/positions.json"},
+                ),
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                ),
+            },
+            edges=[Edge(source="positions", target="researcher")],
+            start_node="positions",
+        )
+
+    def test_design_minimal_preserves_frozen_nodes(self) -> None:
+        designer = DesignerAgent()
+        seed = self._seed_with_positions()
+        result = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert "positions" in result.nodes
+        assert result.nodes["positions"].command == "load_positions"  # type: ignore[union-attr]
+
+    def test_design_thorough_preserves_frozen_nodes(self) -> None:
+        designer = DesignerAgent()
+        seed = self._seed_with_positions()
+        result = designer.design_thorough(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert "positions" in result.nodes
+        assert result.nodes["positions"].command == "load_positions"  # type: ignore[union-attr]
+
+    def test_design_custom_preserves_frozen_nodes(self) -> None:
+        designer = DesignerAgent()
+        seed = self._seed_with_positions()
+        result = designer.design_custom(
+            "bench",
+            {"max_nodes": 6},
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert "positions" in result.nodes
+        assert result.nodes["positions"].command == "load_positions"  # type: ignore[union-attr]
+
+    def test_frozen_node_overwrites_template_on_collision(self) -> None:
+        """When a frozen node ID collides with a template node, frozen wins."""
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    timeout=999,
+                ),
+            },
+            edges=[],
+            start_node="researcher",
+        )
+        designer = DesignerAgent()
+        result = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"researcher"},
+        )
+        assert result.nodes["researcher"].timeout == 999  # type: ignore[union-attr]
+
+    def test_design_without_frozen_nodes_unchanged(self) -> None:
+        """Calling design_minimal() without seed/frozen params works as before."""
+        designer = DesignerAgent()
+        wf = designer.design_minimal("test benchmark")
+        assert 3 <= len(wf.nodes) <= 4
+        issues = wf.validate_graph()
+        assert issues == [], f"Validation issues: {issues}"
