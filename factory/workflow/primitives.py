@@ -7,7 +7,18 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from factory.models import FactoryConfig, ProjectState
+
+# ── project state (inlined so the graph language has zero runtime deps) ──
+
+
+class ProjectState(str, Enum):
+    """The five possible states of a target project."""
+
+    NO_REPO = "no_repo"
+    REPO_INCOMPLETE = "incomplete"
+    NO_FACTORY = "no_factory"
+    EVALS_PENDING_REVIEW = "evals_pending_review"
+    HAS_FACTORY = "has_factory"
 
 
 # ── agent pool ───────────────────────────────────────────────────
@@ -478,4 +489,4 @@ class Factory(BaseModel):
 
     agent_pool: dict[str, AgentConfig]
     workflows: dict[str, Workflow]
-    config: FactoryConfig | None = None
+    config: dict[str, Any] | None = None
