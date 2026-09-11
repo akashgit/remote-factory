@@ -176,7 +176,7 @@ def _format_edges(edges: list[Edge]) -> str:
         return "none"
     parts = []
     for e in edges:
-        cond = e.condition.value if e.condition else "unconditional"  # type: ignore
+        cond = e.condition_label or "unconditional"
         parts.append(f"{cond} → {e.target}")
     return ", ".join(parts)
 

@@ -1317,3 +1317,180 @@ class TestComposeDataNodeWorkflow:
         loop = compose(wf, task, tmp_path)
         assert loop is not None
         assert loop.workflow is wf
+
+
+# ── PR #1483 Second Review Fixes — additional tests ─────────────
+
+
+class TestFormatPathKindMismatch:
+    """FIX 1: source_format vs path kind mismatch must raise ValueError."""
+
+    def test_directory_format_on_file_raises(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        a_file = tmp_path / "not_a_dir.txt"
+        a_file.write_text("hello")
+
+        wf = Workflow(
+            name="mismatch_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(a_file),
+                    source_format="directory",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.halted
+        assert "requires a directory" in result.halt_reason
+
+    def test_jsonl_format_on_directory_raises(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        a_dir = tmp_path / "not_a_file"
+        a_dir.mkdir()
+
+        wf = Workflow(
+            name="mismatch_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(a_dir),
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.halted
+        assert "requires a file" in result.halt_reason
+
+    def test_csv_format_on_directory_raises(self, tmp_path: Path) -> None:
+        from factory.workflow.executor import WorkflowExecutor
+
+        a_dir = tmp_path / "not_a_file"
+        a_dir.mkdir()
+
+        wf = Workflow(
+            name="mismatch_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path=str(a_dir),
+                    source_format="csv",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.halted
+        assert "requires a file" in result.halt_reason
+
+
+class TestWorkflowHasDataNode:
+    """FIX 5: _workflow_has_data_node coverage."""
+
+    def test_returns_true_with_data_node(self, tmp_path: Path) -> None:
+        from factory.inner_loop import InnerLoop
+
+        wf = _make_data_workflow([DataItem(id="i")])
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+        assert loop._workflow_has_data_node() is True
+
+    def test_returns_false_without_data_node(self, tmp_path: Path) -> None:
+        from factory.inner_loop import InnerLoop
+
+        wf = Workflow(
+            name="no_data",
+            nodes={"a": FnNode(id="a", command="echo x")},
+            edges=[],
+            start_node="a",
+        )
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+        assert loop._workflow_has_data_node() is False
+
+    def test_caches_result(self, tmp_path: Path) -> None:
+        from factory.inner_loop import InnerLoop
+
+        wf = _make_data_workflow([DataItem(id="i")])
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+        result1 = loop._workflow_has_data_node()
+        result2 = loop._workflow_has_data_node()
+        assert result1 is result2 is True
+        # Verify it was cached (attribute should be set)
+        assert loop._has_data_node is True
+
+
+class TestStepWithDataNodeCoverage:
+    """FIX 5: _step_with_data_node happy path and failure coverage."""
+
+    def test_happy_path(self, tmp_path: Path) -> None:
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="i", prompt="go")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = True
+        mock_result.node_outputs = {
+            "data": json.dumps([
+                {"item_id": "i", "score": 0.85, "passed": True},
+            ])
+        }
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == pytest.approx(0.85)
+        assert record.cycle_number == 1
+        assert record.instance_results is not None
+        assert len(record.instance_results) == 1
+        assert record.instance_results[0]["instance_id"] == "i"
+
+    def test_executor_failure_defaults_score(self, tmp_path: Path) -> None:
+        from unittest.mock import AsyncMock
+
+        from factory.inner_loop import InnerLoop
+        from factory.workflow.executor import ExecutionResult
+
+        wf = _make_data_workflow([DataItem(id="i")])
+
+        mock_result = ExecutionResult()
+        mock_result.success = False
+        mock_result.node_outputs = {}
+
+        loop = InnerLoop(project_dir=tmp_path, workflow=wf)
+
+        with patch(
+            "factory.workflow.executor.WorkflowExecutor.execute",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            record = loop._step_with_data_node()
+
+        assert record.score_end == 0.0
