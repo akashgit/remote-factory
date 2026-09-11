@@ -1,6 +1,9 @@
-"""Workflow graph engine — composable primitives for factory orchestration."""
+"""Workflow graph language — composable primitives for workflow orchestration.
 
-from factory.workflow.executor import ExecutionResult, WorkflowExecutor
+The runtime (executor / skill export / LLM loop) is deliberately not re-exported
+here: the graph language is decoupled from the runtime, and DSH is the runtime.
+"""
+
 from factory.workflow.primitives import (
     AgentConfig,
     AgentNode,
@@ -24,7 +27,6 @@ __all__ = [
     "AgentNode",
     "AgentRole",
     "Edge",
-    "ExecutionResult",
     "Factory",
     "FnNode",
     "ForkNode",
@@ -36,5 +38,4 @@ __all__ = [
     "Verdict",
     "VerdictType",
     "Workflow",
-    "WorkflowExecutor",
 ]
