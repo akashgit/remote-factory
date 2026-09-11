@@ -269,15 +269,17 @@ class LLMNode(Node):
     """Node that makes direct LLM API calls with a configurable tool-use loop.
 
     Unlike AgentNode (full CLI subprocess), this runs the API loop in-process
-    with a minimal, configurable tool set.
+    with a minimal, configurable tool set. ``model`` and ``provider`` default to
+    neutral values (``""`` / ``"auto"``): a graph that does not pin them leaves
+    the choice to the runtime, so the same graph runs on any provider.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
     system_prompt: str = ""
     instance_prompt: str = ""
-    model: str = "sonnet"
-    provider: Literal["anthropic", "vertex", "litellm"] = "anthropic"
+    model: str = ""
+    provider: Literal["auto", "anthropic", "vertex", "litellm"] = "auto"
     max_tokens: int = 8192
     max_turns: int = 50
     temperature: float = 0.0
@@ -304,6 +306,17 @@ class Edge(BaseModel):
     source: str
     target: str
     condition: VerdictType | str | None = None
+
+    @property
+    def condition_label(self) -> str | None:
+        """Return the condition as a plain string, or ``None``.
+
+        ``VerdictType.PROCEED`` → ``"proceed"`` (not ``"VerdictType.PROCEED"``).
+        Plain ``str`` conditions are returned as-is.
+        """
+        if self.condition is None:
+            return None
+        return self.condition.value if isinstance(self.condition, VerdictType) else self.condition
 
 
 # ── workflow ─────────────────────────────────────────────────────

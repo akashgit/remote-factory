@@ -53,7 +53,7 @@ def _interpret_overwrite(
         indent=2,
     )
     edge_summary = json.dumps(
-        [{"source": e.source, "target": e.target, "condition": e.condition.value if e.condition else None}  # type: ignore
+        [{"source": e.source, "target": e.target, "condition": e.condition_label}
          for e in workflow.edges],
         indent=2,
     )

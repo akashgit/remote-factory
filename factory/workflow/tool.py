@@ -224,7 +224,7 @@ def tool_init(workflow_name: str, project_path: Path) -> str:
             {
                 "source": e.source,
                 "target": e.target,
-                "condition": e.condition.value if e.condition else None,  # type: ignore
+                "condition": e.condition_label,
             }
             for e in wf.edges
         ],
