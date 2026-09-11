@@ -218,7 +218,8 @@ class MAPElitesArchive:
         total_possible = 1
         for s in unique_per_axis:
             total_possible *= max(len(s), 1)
-        return len(self._grid) / max(total_possible, 1)
+        structural_cells = {tuple(key[a] for a in axes) for key in self._grid}
+        return len(structural_cells) / max(total_possible, 1)
 
     def save(self, directory: Path) -> None:
         """Serialize the archive to a directory."""
