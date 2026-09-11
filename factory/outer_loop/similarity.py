@@ -31,7 +31,7 @@ def structural_hash(workflow: Workflow) -> str:
     )
 
     blob = json.dumps(
-        {"nodes": nodes_canonical, "edges": edges_canonical},
+        {"nodes": nodes_canonical, "edges": edges_canonical, "knobs": workflow.knob_values},
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -156,6 +156,12 @@ class NoveltyFilter:
 
         Returns False if the structural hash was seen before OR if the
         graph edit distance to any archived workflow is below threshold.
+
+        A workflow whose `knob_values` differ from an archived candidate is
+        always considered novel: KNOB_MUTATE intentionally keeps the topology
+        fixed while exploring the knob space, so a knob-only change must not be
+        discarded as a near-duplicate (the structural hash above already
+        deduplicates exact knob+topology repeats).
         """
         h = structural_hash(workflow)
         if h in self.seen_hashes:
@@ -163,7 +169,7 @@ class NoveltyFilter:
 
         t = threshold if threshold is not None else self.min_edit_distance
         for archived in self._archived_workflows:
-            if graph_edit_distance(workflow, archived) < t:
+            if archived.knob_values == workflow.knob_values and graph_edit_distance(workflow, archived) < t:
                 return False
 
         return True
