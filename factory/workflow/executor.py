@@ -850,6 +850,13 @@ class WorkflowExecutor:
                             prompt=resolved_task.prompt(inst),
                         )
 
+                    # Re-scan subgraph reads for files created by setup()
+                    setup_reads: set[str] = set()
+                    for sg_node in sub_workflow.nodes.values():
+                        for r in sg_node.reads:
+                            if (item_project_path / r).exists():
+                                setup_reads.add(r)
+
                     # Write current_item.json for subgraph visibility
                     item_json_path = item_project_path / ".factory" / "current_item.json"
                     item_json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -864,7 +871,7 @@ class WorkflowExecutor:
                             agent_fn=self._agent_fn,
                             initial_context=item.prompt or None,
                         )
-                        item_executor.completed_files = self.completed_files | disk_reads
+                        item_executor.completed_files = self.completed_files | disk_reads | setup_reads
                         item_result = await item_executor.execute()
                     finally:
                         item_json_path.unlink(missing_ok=True)
