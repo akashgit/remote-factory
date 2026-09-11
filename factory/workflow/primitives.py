@@ -289,6 +289,10 @@ class Workflow(BaseModel):
     knob_values: dict[str, str | float] = Field(default_factory=dict)
     knob_bounds: dict[str, list[str | float]] = Field(default_factory=dict)
     knob_expandable: dict[str, str] = Field(default_factory=dict)
+    # Full OptKnob metadata (kind, node_id, description, …) so the IR is the
+    # complete contract for the outer loop: it must know what each knob tunes
+    # and what kind of mutation is legal, not just the value and bounds.
+    knob_specs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     declared_capabilities: frozenset[str] = frozenset()
 
     def validate_graph(self) -> list[str]:
@@ -355,6 +359,8 @@ class Workflow(BaseModel):
             result["knob_bounds"] = {k: list(v) for k, v in self.knob_bounds.items()}
         if self.knob_expandable:
             result["knob_expandable"] = dict(self.knob_expandable)
+        if self.knob_specs:
+            result["knob_specs"] = {k: dict(v) for k, v in self.knob_specs.items()}
         if self.declared_capabilities:
             result["declared_capabilities"] = sorted(self.declared_capabilities)
         return result
@@ -399,6 +405,7 @@ class Workflow(BaseModel):
             knob_values=data.get("knob_values", {}),
             knob_bounds={k: list(v) for k, v in data.get("knob_bounds", {}).items()},
             knob_expandable=data.get("knob_expandable", {}),
+            knob_specs=data.get("knob_specs", {}),
             declared_capabilities=frozenset(data.get("declared_capabilities", [])),
         )
 
