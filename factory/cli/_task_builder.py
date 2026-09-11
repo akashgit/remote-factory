@@ -69,6 +69,14 @@ def _mode_suffix(mode: str, discover_only: bool) -> str:
             "with structural graph context included. "
             "Terminal mode — does not chain to other modes."
         ),
+        "task-setup": (
+            "\n\nRun Task Setup mode: scaffold a Task file for the target project. "
+            "Study the repository to understand its domain and verification methods. "
+            "Classify whether the task needs TOML (executable verification) or Python "
+            "(judgmental verification). Produce a validated .factory/tasks/<name>.toml "
+            "or .py file. Terminal mode — does not chain to other modes. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
     }
     if mode == "discover":
         if discover_only:
@@ -162,6 +170,89 @@ def _append_deep_research_topic(task: str, focus: str) -> str:
     )
 
 
+def _build_task_aware_directive(task_ref: str, project_path: Path) -> str:
+    """Build the task-aware create mode directive section.
+
+    Same directive-injection pattern as Plugin Package and Update Existing Mode
+    extensions — injects into the CEO task text, same file, same audit surface.
+    """
+    from factory.task import resolve_task
+
+    try:
+        resolved = resolve_task(task_ref, project_path)
+        defn = resolved.definition
+        scoring_info = f"method={defn.scoring.method}, metric_path={defn.scoring.metric_path}"
+        constraints_info = (
+            f"timeout={defn.constraints.timeout}s, "
+            f"max_retries={defn.constraints.max_retries}"
+        )
+        if defn.constraints.required_capabilities:
+            caps = ", ".join(str(c) for c in defn.constraints.required_capabilities)
+            constraints_info += f", required_capabilities=[{caps}]"
+        verify_info = defn.verify_config.command or "(no verify command)"
+    except Exception as exc:
+        return (
+            f"\n\n## Create Mode (Task-Aware) — RESOLUTION FAILED\n\n"
+            f"Could not resolve --task {task_ref!r}: {exc}\n"
+            f"Proceed without task awareness.\n"
+        )
+
+    return (
+        f"\n\n## Create Mode (Task-Aware)\n\n"
+        f"A TaskDefinition has been provided via `--task {task_ref}`.\n\n"
+        f"**Resolved Task:** {defn.name}\n"
+        f"**Description:** {defn.description}\n"
+        f"**Scoring Contract:** {scoring_info}\n"
+        f"**Verify Command:** {verify_info}\n"
+        f"**Constraints:** {constraints_info}\n\n"
+        f"The generated workflow MUST be compatible with this task's scoring contract.\n"
+        f"The Strategist and Builder should tailor the workflow to this task's needs:\n"
+        f"- Agent prompts should reference the task's verification method\n"
+        f"- Gate conditions should align with the scoring method ({defn.scoring.method})\n"
+        f"- Timeout values should respect the task's constraint ({defn.constraints.timeout}s)\n\n"
+        f"### Workflow-Level OptKnob Auto-Generation\n\n"
+        f"The generated workflow MUST include OptKnobs using this mechanical derivation:\n\n"
+        f"| Node Field | OptKnob Kind | Bounds | Expandable |\n"
+        f"|---|---|---|---|\n"
+        f"| AgentNode.role (each agent) | model | ['haiku', 'sonnet', 'opus'] | False |\n"
+        f"| AgentNode.timeout | threshold | [default/2, default, default*2] | False |\n"
+        f"| AgentNode.prompt_template (when non-empty) | prompt | [current_value] | True |\n\n"
+        f"### DataNode OptKnob Auto-Generation\n\n"
+        f"When the generated workflow contains DataNode instances, "
+        f"derive additional threshold OptKnobs from their fields:\n\n"
+        f"| Node Field | OptKnob Kind | Bounds | Expandable | Description |\n"
+        f"|---|---|---|---|---|\n"
+        f"| DataNode.parallelism | threshold | "
+        f"[1, current_value, current_value*2, 8] | False | "
+        f"Number of concurrent data items processed in parallel |\n"
+        f"| DataNode.limit (when set, not None) | threshold | "
+        f"[limit//2, limit, limit*2] | True | "
+        f"Maximum number of data items to process per run |\n"
+        f"| DataNode.max_items | threshold | "
+        f"[100, 250, 500, 1000] | True | "
+        f"Safety ceiling for total data items loaded |\n\n"
+        f"Do NOT add topology knobs for DataNode.split or DataNode.shuffle.\n\n"
+        f"Never auto-generate kind='topology' knobs.\n"
+        f"Use `compose.py validate_composition()` as a post-build gate.\n\n"
+        f"### Domain-Level OptKnob Suggestions\n\n"
+        f"When a TaskDefinition is provided, the Strategist should also propose "
+        f"domain-level knobs as LLM-authored suggestions (not deterministic derivations). "
+        f"These are CEO-gated — the Strategist proposes them, the CEO reviews.\n\n"
+        f"**Rules:**\n"
+        f"- Restrict to prompt/model/threshold kinds only (never topology)\n"
+        f"- Default expandable=False for auto-generated domain knobs\n"
+        f"- When scoring.method is 'json' with a numeric metric_path, propose a "
+        f"threshold-kind knob using ScoringContract.threshold\n"
+        + (
+            f"- Current threshold: {defn.scoring.threshold}\n"
+            if defn.scoring.threshold is not None
+            else "- No threshold configured — Strategist may propose one\n"
+        )
+        + "- Domain knobs should be grounded in the task's actual constraints, "
+        "not hallucinated from descriptions\n"
+    )
+
+
 def _build_ceo_task(
     project_path: Path,
     mode: str,
@@ -188,6 +279,7 @@ def _build_ceo_task(
     update_existing_mode: str | None = None,
     plugin_mode: bool = False,
     plugin_folder: str | None = None,
+    task_ref: str | None = None,
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
@@ -447,6 +539,9 @@ def _build_ceo_task(
             f"Key files to modify: factory/workflow/definitions.py, "
             f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
         )
+
+    if task_ref and create_description:
+        task += _build_task_aware_directive(task_ref, project_path)
 
     if prompt_file:
         task += (
