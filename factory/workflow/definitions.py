@@ -1231,7 +1231,8 @@ def task_setup_workflow() -> Workflow:
     the task needs TOML or Python, and produces a validated TaskDefinition.
 
     Fork(researcher_domain, researcher_verification) → Join → CEO gate →
-    Strategist → User gate → Builder → FnNode(validate) → Archivist
+    Strategist → User gate → Builder → deep-QA → gate_qa →
+    FnNode(validate) → Archivist
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -1328,6 +1329,25 @@ def task_setup_workflow() -> Workflow:
         writes={".factory/reviews/builder-latest.md"},
     )
 
+    # Deep-QA subgraph: fork_qa → [health_checker, code_reviewer, adversarial_tester] → join_qa
+    dq_nodes, dq_edges = _deep_qa_subgraph()
+    nodes.update(dq_nodes)
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results for the task definition. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+    )
+
     nodes["validate_task"] = FnNode(
         id="validate_task",
         command="factory task validate {task_name}",
@@ -1354,7 +1374,12 @@ def task_setup_workflow() -> Workflow:
         Edge(source="strategist", target="gate_strategy"),
         Edge(source="gate_strategy", target="builder", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
-        Edge(source="builder", target="validate_task"),
+        # Builder → deep-QA → gate_qa → validate_task → archivist
+        Edge(source="builder", target="fork_qa"),
+        *dq_edges,
+        Edge(source="join_qa", target="gate_qa"),
+        Edge(source="gate_qa", target="validate_task", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         Edge(source="validate_task", target="archivist"),
     ]
 

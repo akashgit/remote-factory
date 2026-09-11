@@ -1,0 +1,266 @@
+fork_research:
+  type: ForkNode
+  id: fork_research
+  targets: researcher_domain,researcher_verification
+  edges_out:
+  - target: researcher_domain
+    condition: null
+  - target: researcher_verification
+    condition: null
+researcher_domain:
+  type: AgentNode
+  id: researcher_domain
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-domain.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_domain: 'Domain analysis for task setup. Study the target
+      repository: language, framework, test infrastructure, CI/CD setup, and existing
+      evaluation patterns. Identify what the project does, what its key outputs are,
+      and how quality is currently measured (test suites, linting, benchmarks). Document:
+      project purpose, tech stack, existing test commands, directory structure, and
+      key source files. Write findings to .factory/strategy/research-domain.md.
+
+      Write output to: .factory/strategy/research-domain.md'
+    timeout_researcher_domain: '600'
+researcher_verification:
+  type: AgentNode
+  id: researcher_verification
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-verification.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_verification: 'Verification method analysis for task setup.
+      Study how the target project verifies correctness: - Does it use pytest, unittest,
+      or another test framework? - Are there integration tests, benchmarks, or eval
+      scripts? - Does any test output structured JSON with scores? - Is verification
+      binary (pass/fail) or graded (partial credit)? Classify the verification type:
+      - EXECUTABLE: shell command + exit code or JSON parse → TOML task - JUDGMENTAL:
+      custom control flow, multi-stage, or LLM-based → Python task This classification
+      follows the eval_spec.py classify_eval_spec_item pattern. Write findings to
+      .factory/strategy/research-verification.md.
+
+      Write output to: .factory/strategy/research-verification.md'
+    timeout_researcher_verification: '600'
+join_research:
+  type: JoinNode
+  id: join_research
+  sources: researcher_domain,researcher_verification
+  reads: []
+  writes: []
+  edges_out:
+  - target: gate_research
+    condition: null
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-domain.md
+  - .factory/strategy/research-verification.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: fork_research
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Is the domain well-documented? Is the verification
+      classification (EXECUTABLE vs JUDGMENTAL) supported by evidence from the codebase?
+      PROCEED if both researchers produced substantive findings. RELOOP if either
+      is shallow or missing.
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-domain.md
+  - .factory/strategy/research-verification.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Draft a TaskDefinition for this project. Read ALL research
+      files at .factory/strategy/research-*.md. Based on the verification classification:
+      - If EXECUTABLE: draft a TOML task definition with [task], [instances],   [setup],
+      [prompt], [verify], [scoring], and [constraints] sections.   The verify command
+      should be a shell command that exits 0 on success.   Choose scoring method:
+      ''exit_code'' for binary, ''json'' for graded. - If JUDGMENTAL: draft a Python
+      Task subclass skeleton with custom   instances(), setup(), prompt(), and verify()
+      hooks. Include docstrings   explaining what each hook should do for this specific
+      domain. Include a proposed task name (kebab-case), description, timeout, and
+      required capabilities. Write the complete draft to .factory/strategy/current.md.
+
+      Read: .factory/strategy/research-domain.md, .factory/strategy/research-verification.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: user
+  reads:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: builder
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    max_iterations_gate_strategy: '3'
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: fork_qa
+    condition: null
+  slots:
+    task_prompt_builder: 'Write the task file from the approved specification. Read
+      the approved spec at .factory/strategy/current.md. If the spec describes a TOML
+      task: write .factory/tasks/<name>.toml with all required sections. If the spec
+      describes a Python task: write .factory/tasks/<name>.py with a Task subclass
+      implementing the four hooks. Ensure the task directory exists (mkdir -p .factory/tasks/).
+      After writing, run: factory task validate <name> to verify the task definition
+      is valid.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '600'
+fork_qa:
+  type: ForkNode
+  id: fork_qa
+  targets: health_checker,code_reviewer,adversarial_tester
+  edges_out:
+  - target: join_qa
+    condition: null
+health_checker:
+  type: AgentNode
+  id: health_checker
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/health-check.md
+  edges_out: []
+  slots:
+    task_prompt_health_checker: 'Execute health_checker task for the project.
+
+      Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/health-check.md'
+    timeout_health_checker: '600'
+code_reviewer:
+  type: AgentNode
+  id: code_reviewer
+  role: code_reviewer
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/code-review.md
+  edges_out: []
+  slots:
+    task_prompt_code_reviewer: 'Execute code_reviewer task for the project.
+
+      Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/code-review.md'
+    timeout_code_reviewer: '900'
+adversarial_tester:
+  type: AgentNode
+  id: adversarial_tester
+  role: adversarial_tester
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/adversarial-qa.md
+  edges_out: []
+  slots:
+    task_prompt_adversarial_tester: 'Execute adversarial_tester task for the project.
+
+      Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md
+
+      Write output to: .factory/reviews/adversarial-qa.md'
+    timeout_adversarial_tester: '1800'
+join_qa:
+  type: JoinNode
+  id: join_qa
+  sources: health_checker,code_reviewer,adversarial_tester
+  reads:
+  - .factory/reviews/adversarial-qa.md
+  - .factory/reviews/code-review.md
+  - .factory/reviews/health-check.md
+  writes: []
+  edges_out:
+  - target: gate_qa
+    condition: null
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/adversarial-qa.md
+  - .factory/reviews/code-review.md
+  - .factory/reviews/health-check.md
+  edges_out:
+  - target: validate_task
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: Review QA results for the task definition. PROCEED if all
+      checks pass. RELOOP to builder (max 3 iterations) if issues found.
+    max_iterations_gate_qa: '3'
+validate_task:
+  type: FnNode
+  id: validate_task
+  command: factory task validate {task_name}
+  reads: []
+  writes: []
+  edges_out:
+  - target: archivist
+    condition: null
+archivist:
+  type: AgentNode
+  id: archivist
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/archive/task-setup.md
+  edges_out: []
+  slots:
+    task_prompt_archivist: 'Archive the task setup results and task definition.
+
+      Read: .factory/reviews/builder-latest.md
+
+      Write output to: .factory/archive/task-setup.md'
+    timeout_archivist: '300'
