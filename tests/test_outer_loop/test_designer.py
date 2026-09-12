@@ -316,3 +316,60 @@ class TestFrozenNodePreservation:
         assert 3 <= len(wf.nodes) <= 4
         issues = wf.validate_graph()
         assert issues == [], f"Validation issues: {issues}"
+
+    def test_design_minimal_preserves_frozen_data_node(self) -> None:
+        """DataNode auto-frozen via _auto_frozen_nodes should be preserved."""
+        from factory.workflow.primitives import DataItem, DataNode
+
+        designer = DesignerAgent()
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                ),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+        result = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert "positions" in result.nodes
+        assert type(result.nodes["positions"]).__name__ == "DataNode"
+
+    def test_engine_designer_includes_auto_frozen_data_nodes(self) -> None:
+        """_add_designer_variants should include auto-frozen DataNodes."""
+        from factory.outer_loop.engine import _auto_frozen_nodes
+        from factory.workflow.primitives import DataItem, DataNode
+
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                ),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+
+        # Verify _auto_frozen_nodes detects the DataNode
+        auto_frozen = _auto_frozen_nodes(seed)
+        assert "positions" in auto_frozen

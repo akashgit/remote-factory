@@ -215,7 +215,10 @@ class SwarmEngine:
         """Add from-scratch designed workflows to the population."""
         benchmark_spec = cfg.benchmark
         designs: list[Workflow] = []
-        frozen = set(cfg.frozen_node_ids) if cfg.frozen_node_ids else None
+        frozen_ids = set(cfg.frozen_node_ids) if cfg.frozen_node_ids else set()
+        if seed_workflow is not None:
+            frozen_ids |= _auto_frozen_nodes(seed_workflow)
+        frozen = frozen_ids if frozen_ids else None
 
         if designer_count >= 1:
             try:
