@@ -88,3 +88,64 @@ def test_prompt_knob_still_reaches_the_node() -> None:
     applied = AutoresearchOptimizer._apply_edit(_mode(), Edit("make.system_prompt", "new text"), surface)
     assert applied is not None
     assert applied[0].nodes["make"].system_prompt == "new text"
+
+
+# ── op-declared knobs ──────────────────────────────────────────────────────
+
+
+def test_op_knobs_resolve_through_the_runner_adapter() -> None:
+    """`python -m srf.ops.run <module>:<fn>` names the real module as its argument."""
+    from factory.workflow.opt_knobs import op_knobs
+    knobs = op_knobs("python -m srf.ops.run srf.ops.gepa.acceptance:accept_or_reject")
+    assert "acceptance_mode" in knobs
+    assert knobs["acceptance_mode"]["bounds"] == ["strict", "lenient", "off"]
+
+
+def test_op_declared_knobs_join_the_derived_surface() -> None:
+    """An op-level knob cannot come from the graph, so it comes from the op."""
+    wf = Workflow.from_dict(
+        {
+            "name": "m",
+            "nodes": {
+                "score": {
+                    "id": "score", "_type": "FnNode", "blocking": True,
+                    "reads": ["candidate.py"], "writes": ["score.json"],
+                    "command": "python -m srf.ops.run srf.ops.gepa.acceptance:accept_or_reject",
+                }
+            },
+            "edges": [], "start_node": "score", "terminal": True,
+        }
+    )
+    knobs = {k.name: k for k in mode_parameters(wf).knobs}
+    assert "acceptance_mode" in knobs
+    assert knobs["acceptance_mode"].node_id == "score"
+
+
+def test_a_probe_that_cannot_import_declares_nothing_and_never_raises() -> None:
+    from factory.workflow.opt_knobs import op_knobs
+    assert op_knobs("python -m definitely.not.a.module") == {}
+    assert op_knobs("true") == {}
+    assert op_knobs("") == {}
+
+
+def test_an_op_knob_wins_over_a_stale_knob_specs_entry() -> None:
+    """One name, one knob: the op that consumes it is the authority."""
+    wf = Workflow.from_dict(
+        {
+            "name": "m",
+            "nodes": {
+                "score": {
+                    "id": "score", "_type": "FnNode", "blocking": True,
+                    "reads": [], "writes": [],
+                    "command": "python -m srf.ops.run srf.ops.gepa.acceptance:accept_or_reject",
+                }
+            },
+            "edges": [], "start_node": "score", "terminal": True,
+            "knob_values": {"acceptance_mode": "strict"},
+            "knob_bounds": {"acceptance_mode": ["strict"]},
+            "knob_specs": {"acceptance_mode": {"kind": "prompt", "node_id": "score",
+                                               "default": "strict", "bounds": ["strict"]}},
+        }
+    )
+    names = [k.name for k in mode_parameters(wf).knobs]
+    assert names.count("acceptance_mode") == 1

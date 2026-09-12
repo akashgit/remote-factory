@@ -29,6 +29,7 @@ is absent.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -129,6 +130,54 @@ NOT_KNOBS = frozenset({"id", "reads", "writes", "blocking", "command", "callable
                        "evaluator_role", "role"})
 
 
+
+def _module_for_command(command: str) -> str | None:
+    """The importable module a node command runs, if any.
+
+    Commands are ``python -m <module> [args]``. The science runner's adapter is
+    ``python -m srf.ops.run <module>:<function>``, so when the target is the
+    adapter the real module is its first argument. Anything else (a shell
+    builtin, a wrapper script) has no module and therefore no declared knobs.
+    """
+    import re
+
+    match = re.search(r"-m\s+([\w.]+)", command)
+    if not match:
+        return None
+    module = match.group(1)
+    if not module.endswith(".run"):
+        return module
+    rest = command[match.end():].strip()
+    target = rest.split()[0] if rest else ""
+    return target.split(":", 1)[0] if ":" in target else (target or None)
+
+
+def op_knobs(command: str) -> dict[str, dict[str, Any]]:
+    """The knobs an op declares it reads, read from the op itself.
+
+    An op-level knob is consumed by the op through ``SRF_KNOBS`` rather than
+    through a node field, so it cannot be derived from the graph alone. Without
+    this it survives only because someone hand-wrote it into ``knob_specs``,
+    which is the hole this closes: the mode's surface then comes from the graph
+    and from the code its nodes run, and from nothing else.
+
+    An op that cannot be imported declares nothing. That is deliberate: probing
+    must never make a run fail, and a node whose module is not importable here
+    (a different interpreter, a missing dependency) simply contributes no knobs.
+    """
+    module_name = _module_for_command(command)
+    if not module_name:
+        return {}
+    try:
+        module = importlib.import_module(module_name)
+    except Exception:  # noqa: BLE001 - a node's op may not be importable here
+        return {}
+    declared = getattr(module, "KNOBS", None)
+    if not isinstance(declared, dict):
+        return {}
+    return {str(k): v for k, v in declared.items() if isinstance(v, dict)}
+
+
 @dataclass
 class ModeParameters:
     """A mode's optimizable surface, and what it declares but cannot honour."""
@@ -195,7 +244,27 @@ def mode_parameters(workflow: Workflow) -> ModeParameters:
                 )
             )
 
-    # Graph-level knobs consumed by an op rather than a node field.
+    # Knobs an op declares it reads, resolved from the module each node runs.
+    for node_id, node in workflow.nodes.items():
+        command = getattr(node, "command", "") or ""
+        if not command:
+            continue
+        for name, spec in op_knobs(command).items():
+            bounds = list(spec.get("bounds", []) or [])
+            params.knobs.append(
+                OptKnob(
+                    name=name,
+                    kind=str(spec.get("kind", "threshold")),  # type: ignore[arg-type]
+                    node_id=node_id,
+                    default=spec.get("default", ""),
+                    bounds=bounds,
+                    expandable=bool(spec.get("expandable", False)),
+                    expansion_hint=str(spec.get("expansion_hint", "")),
+                    description=str(spec.get("description", "")),
+                )
+            )
+
+    # Graph-level knobs, still honoured so an existing mode keeps working.
     for name, spec in (workflow.knob_specs or {}).items():
         params.knobs.append(
             OptKnob(
@@ -210,4 +279,12 @@ def mode_parameters(workflow: Workflow) -> ModeParameters:
                 description=str(spec.get("description", "")),
             )
         )
+    seen: set[str] = set()
+    unique: list[OptKnob] = []
+    for knob in params.knobs:
+        if knob.name in seen:
+            continue
+        seen.add(knob.name)
+        unique.append(knob)
+    params.knobs = unique
     return params
