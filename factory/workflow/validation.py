@@ -150,6 +150,26 @@ def _validate_datanode_edges(workflow: Workflow, issues: list[str]) -> None:
                 )
 
 
+def _validate_datanode_exit(workflow: Workflow, issues: list[str]) -> None:
+    """Warn when a DataNode's subgraph_exit points to a GateNode.
+
+    When subgraph_exit is a GateNode, _collect_subgraph_nodes stops BFS
+    at the gate, excluding the PROCEED edge target (the real exit node).
+    Workflow.subgraph() then drops the PROCEED edge, causing execution
+    to silently halt after one loop iteration.
+    """
+    for nid, node in workflow.nodes.items():
+        if type(node).__name__ != "DataNode":
+            continue
+        exit_id = node.subgraph_exit  # type: ignore[union-attr]
+        exit_node = workflow.nodes.get(exit_id)
+        if exit_node is not None and type(exit_node).__name__ == "GateNode":
+            issues.append(
+                f"DataNode '{nid}' has subgraph_exit pointing to GateNode '{exit_id}'. "
+                f"This drops the PROCEED edge. Use the Loop's exit_node instead."
+            )
+
+
 def _collect_subgraph_nodes(
     workflow: Workflow,
     entry: str,
@@ -210,6 +230,7 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     _validate_data_dependencies(g, workflow, issues)
     _validate_fork_join_nodes(workflow, issues)
     _validate_datanode_edges(workflow, issues)
+    _validate_datanode_exit(workflow, issues)
 
     for nid, node in nodes.items():
         if type(node).__name__ == "SubgraphForkNode":

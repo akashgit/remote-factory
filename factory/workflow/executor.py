@@ -437,6 +437,13 @@ class WorkflowExecutor:
         if target_id is None:
             target_id = self._next_unconditional(node_id)
 
+        if target_id is None:
+            log.warning(
+                "gate_proceed_edge_missing",
+                gate_id=node_id,
+                workflow=self.workflow.name,
+            )
+
         if target_id:
             await self._execute_from(target_id)
 

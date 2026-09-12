@@ -1522,6 +1522,231 @@ class _SetupWritingTask:
         return VerifyResult(passed=True, score=1.0)
 
 
+class TestDataNodeLoopSubgraph:
+    """DataNode + Loop/Gate subgraph integration tests."""
+
+    @pytest.mark.asyncio
+    async def test_data_node_with_loop_subgraph(self, tmp_path: Path) -> None:
+        """DataNode whose subgraph is a Loop should execute body 3 times via fn gate."""
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode, VerdictType
+
+        project_path = tmp_path
+        (project_path / ".factory").mkdir(parents=True, exist_ok=True)
+        counter_file = project_path / "counter.txt"
+
+        pp = str(project_path)
+
+        body_node = FnNode(
+            id="loop_body",
+            command=f"python3 -c \"open('{pp}/counter.txt','a').write('x\\n')\"",
+            reads=set(),
+            writes={"counter.txt"},
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command=(
+                f"python3 -c \""
+                f"import pathlib; "
+                f"p=pathlib.Path('{pp}/counter.txt'); "
+                f"c=len(p.read_text().splitlines()) if p.exists() else 0; "
+                f"print('PROCEED' if c >= 3 else 'RELOOP: try again')"
+                f"\""
+            ),
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=10, name="test_loop")
+
+        # Build DataNode workflow with correct subgraph_exit = loop exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="loop_data_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        # Validate graph — should have no issues
+        issues = wf.validate_graph()
+        assert not issues, f"Unexpected validation issues: {issues}"
+
+        executor = WorkflowExecutor(wf, project_path, dry_run=False)
+        result = await executor.execute()
+
+        assert result.success, f"Execution failed: {result.halt_reason}"
+        assert counter_file.exists(), "counter.txt should exist"
+        lines = counter_file.read_text().splitlines()
+        assert len(lines) == 3, f"Expected 3 lines, got {len(lines)}"
+        # Check inner executor nodes: 3 body + 3 gate + 1 exit = 7
+        parsed = json.loads(result.node_outputs["data_driver"])
+        assert len(parsed) == 1
+        inner_nodes = parsed[0]["nodes_executed"]
+        assert inner_nodes >= 7, f"Expected >= 7 inner nodes, got {inner_nodes}"
+
+    def test_data_node_loop_wrong_exit_warns(self) -> None:
+        """DataNode with subgraph_exit pointing to GateNode should produce a validation warning."""
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode, VerdictType
+
+        body_node = FnNode(
+            id="loop_body",
+            command="echo body",
+            reads=set(),
+            writes={"counter.txt"},
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command="echo PROCEED",
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=5, name="test_loop")
+
+        # INCORRECT: subgraph_exit points to gate instead of exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=gate.id,  # WRONG — should be loop_pkg.exit_node
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="wrong_exit_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        issues = wf.validate_graph()
+        gate_warnings = [
+            i for i in issues
+            if "GateNode" in i and "subgraph_exit" in i
+        ]
+        assert len(gate_warnings) >= 1, f"Expected GateNode warning, got: {issues}"
+
+    def test_loop_package_compiled_preserves_edges(self) -> None:
+        """Loop Package compiled into a Workflow preserves all 3 loop edges in subgraph."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode, VerdictType
+
+        body_node = FnNode(
+            id="loop_body",
+            command="echo body",
+            reads=set(),
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command="echo PROCEED",
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=5, name="test_loop")
+
+        # Build DataNode with CORRECT exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="edge_preservation_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        # Collect subgraph nodes
+        subgraph_ids = _collect_subgraph_nodes(
+            wf, loop_pkg.entry_node, loop_pkg.exit_node,
+        )
+
+        # All 3 loop nodes + exit must be in subgraph
+        assert "loop_body" in subgraph_ids
+        assert "loop_gate" in subgraph_ids
+        assert loop_pkg.exit_node in subgraph_ids
+
+        # Extract subgraph and check edges
+        sub_wf = wf.subgraph(subgraph_ids, name="sub", start_node=loop_pkg.entry_node)
+
+        # Check all 3 loop edges are preserved
+        edge_tuples = [(e.source, e.target, e.condition) for e in sub_wf.edges]
+
+        # body → gate (unconditional)
+        assert ("loop_body", "loop_gate", None) in edge_tuples, (
+            f"Missing body→gate edge. Edges: {edge_tuples}"
+        )
+        # gate → body (RELOOP)
+        assert ("loop_gate", "loop_body", VerdictType.RELOOP) in edge_tuples, (
+            f"Missing gate→body RELOOP edge. Edges: {edge_tuples}"
+        )
+        # gate → exit (PROCEED)
+        assert ("loop_gate", loop_pkg.exit_node, VerdictType.PROCEED) in edge_tuples, (
+            f"Missing gate→exit PROCEED edge. Edges: {edge_tuples}"
+        )
+
+
 class TestDiskReadsRescanAfterSetup:
     """setup()-created files must appear in sub-executor completed_files."""
 
