@@ -151,19 +151,31 @@ def _validate_datanode_edges(workflow: Workflow, issues: list[str]) -> None:
 
 
 def _validate_datanode_exit(workflow: Workflow, issues: list[str]) -> None:
-    """Warn when a DataNode's subgraph_exit points to a GateNode.
+    """Warn when a DataNode's subgraph_exit points to a Loop GateNode.
 
-    When subgraph_exit is a GateNode, _collect_subgraph_nodes stops BFS
-    at the gate, excluding the PROCEED edge target (the real exit node).
+    When subgraph_exit is a GateNode that participates in a Loop (has
+    outgoing RELOOP edges), _collect_subgraph_nodes stops BFS at the gate,
+    excluding the PROCEED edge target (the real exit node).
     Workflow.subgraph() then drops the PROCEED edge, causing execution
     to silently halt after one loop iteration.
+
+    Terminal GateNodes (no RELOOP edges) are fine as subgraph_exit — they
+    don't have a PROCEED edge that would be dropped.
     """
+    from factory.workflow.primitives import VerdictType
+
     for nid, node in workflow.nodes.items():
         if type(node).__name__ != "DataNode":
             continue
         exit_id = node.subgraph_exit  # type: ignore[union-attr]
         exit_node = workflow.nodes.get(exit_id)
         if exit_node is not None and type(exit_node).__name__ == "GateNode":
+            has_reloop = any(
+                e.source == exit_id and e.condition == VerdictType.RELOOP
+                for e in workflow.edges
+            )
+            if not has_reloop:
+                continue
             issues.append(
                 f"DataNode '{nid}' has subgraph_exit pointing to GateNode '{exit_id}'. "
                 f"This drops the PROCEED edge. Use the Loop's exit_node instead."
