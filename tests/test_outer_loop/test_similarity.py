@@ -244,6 +244,36 @@ class TestNoveltyFilter:
         )
         assert nf.is_novel(other) is True
 
+    def test_prompt_only_mutation_passes_is_novel(self) -> None:
+        """Prompt-only mutation should be considered novel."""
+        wf1 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(
+                    id="a",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="analyze code",
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        wf2 = Workflow(
+            name="w",
+            nodes={
+                "a": AgentNode(
+                    id="a",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="review bugs",
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        nf = NoveltyFilter(min_edit_distance=5)
+        nf.add(wf1)
+        assert nf.is_novel(wf2) is True
+
     def test_custom_threshold(self, simple_workflow: Workflow) -> None:
         nf = NoveltyFilter(min_edit_distance=100)
         nf.add(simple_workflow)

@@ -158,18 +158,16 @@ class NoveltyFilter:
     def is_novel(self, workflow: Workflow, threshold: int | None = None) -> bool:
         """Check if a workflow is novel (not seen before).
 
-        Returns False if the structural hash was seen before OR if the
-        graph edit distance to any archived workflow is below threshold.
+        Returns False if the structural hash was seen before.
+        Returns True otherwise, since the content-aware structural hash
+        (which includes prompt content) is sufficient to prove novelty.
         """
         h = structural_hash(workflow)
         if h in self.seen_hashes:
             return False
-
-        t = threshold if threshold is not None else self.min_edit_distance
-        for archived in self._archived_workflows:
-            if graph_edit_distance(workflow, archived) < t:
-                return False
-
+        # Hash not in seen_hashes — content-aware hash proves novelty.
+        # Edit-distance check was rejecting prompt-only mutations
+        # (GED=0 < min_edit_distance) despite genuine content differences.
         return True
 
     def add(self, workflow: Workflow) -> None:
