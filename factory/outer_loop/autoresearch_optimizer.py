@@ -263,6 +263,17 @@ class AutoresearchOptimizer:
             )
             return None
 
+        # A node-field knob names a path (`<node>.<field>`); setting it in
+        # knob_values alone would leave the node unchanged, which is the defect
+        # that made prompt knobs decorative.
+        if "." in edit.knob:
+            node_id, field_name = edit.knob.split(".", 1)
+            candidate = Workflow.from_dict(parent.to_dict())
+            if not AutoresearchOptimizer._set_node_field(candidate, node_id, field_name, value):
+                log.info("autoresearch_node_field_missing", knob=edit.knob, node_id=node_id)
+                return None
+            return candidate, f"{edit.knob}: {knob.get('value')} -> {value}"
+
         candidate = Workflow.from_dict(parent.to_dict())
         candidate.knob_values = dict(parent.knob_values)
         candidate.knob_values[edit.knob] = value
@@ -280,6 +291,26 @@ class AutoresearchOptimizer:
                 log.info("autoresearch_prompt_node_missing", knob=edit.knob, node_id=node_id)
                 return None
         return candidate, f"{edit.knob}: {knob.get('value')} -> {value}"
+
+
+    @staticmethod
+    def _set_node_field(workflow: Workflow, node_id: str, field_name: str, value: Any) -> bool:
+        """Write a value onto one node field, refusing a field the node lacks."""
+        node = workflow.nodes.get(node_id)
+        if node is None or field_name not in type(node).model_fields:
+            return False
+        current = getattr(node, field_name, None)
+        if isinstance(current, bool):
+            setattr(node, field_name, bool(value))
+        elif isinstance(current, (int, float)) and not isinstance(current, bool):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return False
+            setattr(node, field_name, int(number) if isinstance(current, int) else number)
+        else:
+            setattr(node, field_name, str(value))
+        return True
 
     @staticmethod
     def _apply_topology_edit(

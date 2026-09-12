@@ -26,6 +26,7 @@ from factory.outer_loop.mutations import (
     apply_random_mutation,
 )
 from factory.outer_loop.candidate_validation import CandidateValidator, ModeContract
+from factory.workflow.opt_knobs import mode_parameters
 from factory.outer_loop.optimizers import (
     Optimizer,
     Proposal,
@@ -217,26 +218,25 @@ class SwarmEngine:
         if best is None:
             return []
         wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
-        surface: list[dict[str, object]] = []
-        for name, spec in (wf.knob_specs or {}).items():
-            surface.append(
-                {
-                    "name": name,
-                    "kind": spec.get("kind", "threshold"),
-                    "node_id": spec.get("node_id"),
-                    "default": spec.get("default"),
-                    "bounds": list(wf.knob_bounds.get(name, [])),
-                    "value": wf.knob_values.get(name),
-                    # Two places can declare this: the per-knob spec and the
-                    # workflow-level `knob_expandable` map, which older graphs
-                    # only set. A knob is expandable if either says so, so the
-                    # surface never under-reports what the search may do.
-                    "expandable": bool(spec.get("expandable", False))
-                    or name in (wf.knob_expandable or {}),
-                    "expansion_hint": spec.get("expansion_hint", ""),
-                    "description": spec.get("description", ""),
-                }
-            )
+        # The mode derives its own optimizable surface (see
+        # factory.workflow.opt_knobs), so a knob only reaches the optimizer if the
+        # mode declares it AND something reads it. Graph-level knobs consumed by an
+        # op through SRF_KNOBS are carried through the same call.
+        surface: list[dict[str, object]] = [
+            {
+                "name": k.name,
+                "kind": k.kind,
+                "node_id": k.node_id,
+                "default": k.default,
+                "bounds": list(k.bounds),
+                "value": wf.knob_values.get(k.name, k.default),
+                "expandable": k.expandable,
+                "expansion_hint": k.expansion_hint,
+                "description": k.description,
+                "field": k.name.split(".", 1)[1] if "." in k.name else None,
+            }
+            for k in mode_parameters(wf).knobs
+        ]
         return surface
 
     @property
