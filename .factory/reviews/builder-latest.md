@@ -1,20 +1,21 @@
-## Builder Report — disk_reads re-scan after setup()
+## Builder Report
+
+- **Branch:** factory/run-e3ddbac6
+- **Commit:** b364c09f
+- **Status:** ✅ COMPLETE — 38/38 tests pass, lint clean
 
 ### Changes
 
-**factory/workflow/executor.py** (`_execute_data` → `run_item`):
-- Added a per-item re-scan of subgraph reads after `resolved_task.setup()` completes
-- New local variable `setup_reads: set[str]` scans `sub_workflow.nodes` reads against `item_project_path`
-- Changed `item_executor.completed_files = self.completed_files | disk_reads` to `self.completed_files | disk_reads | setup_reads`
-- The pre-scan at line 791 (`disk_reads`) is preserved — it handles pre-existing files
-- `setup_reads` is local to `run_item()` — no mutation of shared `disk_reads` set
+**factory/outer_loop/designer.py** — `_rewire_data_nodes()`:
+- **Bug 1 (Critical):** Removed `edges.insert(0, Edge(source=data_id, target=original_start))`. The workflow validator (`_validate_datanode_edges`) rejects explicit edges from a DataNode to its subgraph nodes — the executor handles subgraph execution internally via `DataNode.subgraph_entry`, so explicit edges cause double-execution.
+- **Bug 2 (Medium):** Added guard for `data_id == original_start` collision. When the DataNode ID matches the template's start node, follows edges from `original_start` to find the actual first template node (avoiding self-referential `subgraph_entry`). Also removes stale template edges from `original_start` that would become invalid DataNode-to-subgraph edges.
 
-**tests/test_data_node.py**:
-- Added `_SetupWritingTask` — a minimal Task whose `setup()` writes a file to the workspace
-- Added `TestDiskReadsRescanAfterSetup::test_setup_created_file_in_completed_files` — verifies that when `setup()` creates a file declared in a subgraph node's `reads`, it appears in the sub-executor's `completed_files`
+**tests/test_outer_loop/test_designer.py**:
+- Updated 3 existing tests to assert edges do NOT exist (previously asserted the buggy behavior)
+- Added `test_rewired_workflow_validates_graph` — calls `wf.validate_graph()` on a rewired workflow, asserts no issues
+- Added `test_data_node_id_collision_with_start` — creates a seed where DataNode ID == 'researcher' (same as minimal template start), verifies no self-referential cycle and no structural validation issues
 
-### Verification
-- All 64 DataNode tests pass (including new test)
-- All 46 executor tests pass
-- `ruff check` clean
-- `mypy` clean
+### Test Results
+- 38/38 tests pass (36 existing + 2 new)
+- Lint: clean
+- Mypy: 6 pre-existing errors (dict invariance), no new errors
