@@ -519,3 +519,179 @@ class CycleAnalyzer:
         if s and e:
             return (e - s).total_seconds()
         return 0.0
+
+
+class ScienceRunAnalyzer:
+    """Reads a science-run work directory and produces a ``CycleRecord``.
+
+    The science runner writes flat artifacts into its work directory
+    (``evaluations.jsonl``, ``candidates.jsonl``, ``budget.jsonl``,
+    ``gepa_state.json``, ``accepted_history.json``, ``rejection_history.json``)
+    rather than the ``.factory/events.jsonl`` layout :class:`CycleAnalyzer`
+    reads. This analyzer maps that dialect onto the same ``CycleRecord`` type so
+    reflection, reporting and proposal never branch on which loop ran.
+
+    One cycle is one inner run: the record's ``experiments`` are the run's
+    accepted and rejected candidates, in acceptance order, with the rejection's
+    recorded error and metrics preserved.
+    """
+
+    def __init__(
+        self,
+        work_dir: Path,
+        mode: str | None = None,
+        workflow: Workflow | None = None,
+    ) -> None:
+        self.work_dir = Path(work_dir)
+        self.mode = mode
+        self.workflow = workflow
+
+    def _jsonl(self, name: str) -> list[dict]:
+        path = self.work_dir / name
+        if not path.exists():
+            return []
+        rows: list[dict] = []
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+        return rows
+
+    def _json(self, name: str):
+        path = self.work_dir / name
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text())
+        except json.JSONDecodeError:
+            return None
+
+    def _artifacts(self) -> list[str]:
+        if not self.work_dir.is_dir():
+            return []
+        return sorted(p.name for p in self.work_dir.iterdir() if p.is_file())
+
+    def _timestamps(self, *rows: list[dict]) -> list[float]:
+        stamps = [
+            row["timestamp"]
+            for group in rows
+            for row in group
+            if isinstance(row.get("timestamp"), (int, float))
+        ]
+        return stamps
+
+    def _experiments(
+        self,
+        accepted: list[dict],
+        rejected: list[dict],
+        artifacts: list[str],
+    ) -> list[ExperimentRecord]:
+        """Build keep/revert/error experiments from the two acceptance histories."""
+        experiments: list[ExperimentRecord] = []
+        entries = [("keep", row) for row in accepted] + [("revert", row) for row in rejected]
+        for exp_id, (default_verdict, row) in enumerate(entries):
+            error = row.get("error")
+            verdict = "error" if error else default_verdict
+            before = row.get("parent_score")
+            after = row.get("score")
+            delta = (
+                after - before
+                if isinstance(after, (int, float)) and isinstance(before, (int, float))
+                else None
+            )
+            experiments.append(
+                ExperimentRecord(
+                    exp_id=exp_id,
+                    hypothesis=None,
+                    verdict=verdict,
+                    score_before=before,
+                    score_after=after,
+                    score_delta=delta,
+                    cost_usd=0.0,
+                    duration_s=0.0,
+                    eval_artifacts=list(artifacts),
+                )
+            )
+        return experiments
+
+    def _trailing_reverts(self, experiments: list[ExperimentRecord]) -> int:
+        count = 0
+        for exp in reversed(experiments):
+            if exp.verdict == "keep":
+                break
+            count += 1
+        return count
+
+    def analyze(self) -> list[CycleRecord]:
+        """Read the work directory and return the run's single cycle record."""
+        evaluations = self._jsonl("evaluations.jsonl")
+        candidates = self._jsonl("candidates.jsonl")
+        budget = self._jsonl("budget.jsonl")
+        accepted = self._json("accepted_history.json") or []
+        rejected = self._json("rejection_history.json") or []
+        state = self._json("gepa_state.json") or {}
+        budget_state = self._json("budget_state.json") or {}
+        artifacts = self._artifacts()
+
+        scores = [
+            row["score"]
+            for row in evaluations
+            if isinstance(row.get("score"), (int, float))
+        ]
+        experiments = self._experiments(accepted, rejected, artifacts)
+
+        stamps = self._timestamps(evaluations, candidates, budget)
+        duration_s = (max(stamps) - min(stamps)) if len(stamps) >= 2 else 0.0
+
+        metrics = [
+            row["metrics"] for row in evaluations if isinstance(row.get("metrics"), dict)
+        ]
+        tokens_in = budget_state.get("llm_input_tokens", 0)
+        tokens_out = budget_state.get("llm_output_tokens", 0)
+
+        record = CycleRecord(
+            cycle_number=1,
+            mode=self.mode,
+            started_at=str(min(stamps)) if stamps else None,
+            ended_at=str(max(stamps)) if stamps else None,
+            duration_s=duration_s,
+            score_start=scores[0] if scores else None,
+            score_end=scores[-1] if scores else None,
+            score_delta=(scores[-1] - scores[0]) if len(scores) >= 2 else None,
+            score_trajectory=scores,
+            experiments=experiments,
+            kept=sum(1 for e in experiments if e.verdict == "keep"),
+            reverted=sum(1 for e in experiments if e.verdict == "revert"),
+            errored=sum(1 for e in experiments if e.verdict == "error"),
+            total_cost_usd=0.0,
+            consecutive_reverts=self._trailing_reverts(experiments),
+            plateau_detected=int(state.get("stagnation_counter") or 0) >= 3,
+            stuck_detected=len(evaluations) > 0 and not scores,
+            steps=[],
+            eval_artifacts=artifacts,
+            node_trace={},
+            instance_results=None,
+            eval_details={
+                "state": state,
+                "budget_state": budget_state,
+                "metrics": metrics[-1] if metrics else {},
+                "candidates": len(candidates),
+                "evaluations": len(evaluations),
+                "llm_input_tokens": tokens_in,
+                "llm_output_tokens": tokens_out,
+            },
+        )
+        total = record.kept + record.reverted + record.errored
+        record.keep_rate = record.kept / total if total > 0 else 0.0
+        return [record]
+
+    def latest(self) -> CycleRecord | None:
+        """Return the run's cycle record, or ``None`` when nothing ran."""
+        records = self.analyze()
+        return records[-1] if records else None

@@ -128,6 +128,17 @@ class WeightedRandomStrategy:
         self._mutation_rate = 0.3
 
 
+def auto_frozen_nodes(workflow: Workflow) -> set[str]:
+    """Node ids that are always frozen: declared data nodes, never structural.
+
+    Applied inside :func:`apply_random_mutation` so every caller gets it even
+    when it only knows about the caller-configured frozen set.
+    """
+    from factory.workflow.primitives import DataNode
+
+    return {nid for nid, node in workflow.nodes.items() if isinstance(node, DataNode)}
+
+
 def validate_and_repair(workflow: Workflow) -> Workflow | None:
     """Validate a mutated workflow and attempt repair. Returns None if irreparable."""
     g: nx.DiGraph[str] = nx.DiGraph()
@@ -151,11 +162,20 @@ def validate_and_repair(workflow: Workflow) -> Workflow | None:
     if workflow.start_node not in workflow.nodes:
         return None
 
-    # Prune unreachable nodes
+    # Unreachable nodes mean the mutation disconnected part of the graph, not
+    # that the graph needed a tidy-up: silently deleting them turns a broken
+    # mutation into a small, valid-looking candidate that still costs a full
+    # evaluation to discover it is empty. Reject it instead so the caller can
+    # try a different operator.
     reachable = nx.descendants(g, workflow.start_node) | {workflow.start_node}
     unreachable = set(workflow.nodes.keys()) - reachable
-    for nid in unreachable:
-        del workflow.nodes[nid]
+    if unreachable:
+        log.warning(
+            "mutation_disconnected_nodes",
+            unreachable=sorted(unreachable),
+            start_node=workflow.start_node,
+        )
+        return None
     workflow.edges = [
         e for e in workflow.edges
         if e.source in workflow.nodes and e.target in workflow.nodes
@@ -369,6 +389,15 @@ def parallelize(
     for nid in node_ids:
         if nid not in wf.nodes:
             return None
+
+    # The rewiring below splices the fork where the *first* node was and the
+    # join where the *last* one was, which is only correct when the nodes form a
+    # contiguous chain. Applying it to nodes from different parts of the graph
+    # drops the incoming edge of the chain's entry point, orphaning the whole
+    # graph; validate_and_repair then prunes it to the start node alone.
+    edges = {(e.source, e.target) for e in wf.edges}
+    if not all((node_ids[i], node_ids[i + 1]) in edges for i in range(len(node_ids) - 1)):
+        return None
 
     fork_id = f"fork_{'_'.join(node_ids[:2])}"
     join_id = f"join_{'_'.join(node_ids[:2])}"
@@ -861,6 +890,20 @@ def mutate_knob(
                     wf.knob_bounds.setdefault(knob_name, []).append(new_val)
                     log.info("knob_expanded", knob=knob_name, new_value=new_val)
 
+    # A topology knob selects a structural operation. Writing the value without
+    # running the operation would record a change that never happened, which is
+    # the same defect as a knob with no consumer.
+    spec = wf.knob_specs.get(knob_name) or {}
+    if spec.get("kind") == "topology" and new_val is not None:
+        from factory.outer_loop.topology import apply_topology
+
+        applied = apply_topology(wf, str(spec.get("node_id") or ""), str(new_val))
+        if applied is None:
+            return None
+        topology_wf, topology_record = applied
+        topology_wf.knob_values[knob_name] = str(new_val)
+        return topology_wf, topology_record
+
     if new_val is None:
         if isinstance(old_val, bool):
             new_val = not old_val
@@ -901,7 +944,7 @@ def apply_random_mutation(
     When knob_expander is provided, KNOB_MUTATE can generate new values
     beyond the declared bounds for expandable knobs.
     """
-    frozen = frozen_nodes or set()
+    frozen = set(frozen_nodes or set()) | auto_frozen_nodes(workflow)
     stats = archive_stats or {}
     use_guided = (
         reflection_report is not None
@@ -1077,7 +1120,17 @@ def _try_mutation(
         ]
         if not edges_from_mutable:
             return None
-        edge = random.choice(edges_from_mutable)
+        # Prefer edges whose old target survives the redirect. Rewiring the only
+        # edge into a node orphans it, which validate_and_repair now rejects: a
+        # redirect that silently deletes a node is not the change it describes.
+        surviving = []
+        for candidate_edge in edges_from_mutable:
+            inbound = sum(
+                1 for e in workflow.edges if e.target == candidate_edge.target
+            )
+            if inbound > 1 or candidate_edge.source == candidate_edge.target:
+                surviving.append(candidate_edge)
+        edge = random.choice(surviving or edges_from_mutable)
 
         # Fix 4: pre-filter targets to exclude ungated cycle sources
         unconditional_graph: nx.DiGraph[str] = nx.DiGraph()
@@ -1104,9 +1157,18 @@ def _try_mutation(
         return redirect_edge(workflow, edge.source, edge.target, new_target, frozen_nodes=frozen)
 
     elif op == MutationType.PARALLELIZE:
-        if len(structurally_mutable) < 2:
+        # Only an adjacent pair can be spliced into a fork/join; sampling two
+        # arbitrary mutable nodes usually names nodes from unrelated parts of the
+        # graph and the operator rejects them, wasting the mutation.
+        mutable = set(structurally_mutable)
+        pairs = [
+            (e.source, e.target)
+            for e in workflow.edges
+            if e.source in mutable and e.target in mutable
+        ]
+        if not pairs:
             return None
-        pair = random.sample(structurally_mutable, 2)
+        pair = list(random.choice(pairs))
         return parallelize(workflow, pair, frozen_nodes=frozen)
 
     elif op == MutationType.SERIALIZE:

@@ -100,6 +100,15 @@ class SwarmConfig(BaseModel):
     designer_count: int = 2
     training_instances: list[str] = Field(default_factory=list)
     holdout_instances: list[str] = Field(default_factory=list)
+    #: Weights for the composite fitness the archive scores on. Deployment-varying
+    #: by nature: a benchmark run may want the task metric alone, while a coding
+    #: run may value hygiene. Defaults reproduce the weights that were previously
+    #: hardcoded, so behaviour is unchanged unless this is set.
+    fitness_weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "benchmark": 0.6, "hygiene": 0.2, "cost": 0.1, "complexity": 0.1
+        }
+    )
     plateau_window: int = 3
     plateau_threshold: float = 0.01
     diversity_floor: float = 0.2
@@ -190,6 +199,11 @@ class GenerationSummary(BaseModel):
     mutations_applied: list[MutationRecord] = Field(default_factory=list)
     novel_count: int = 0
     rejected_duplicates: int = 0
+    #: Candidates refused by pre-evaluation validation, with reasons on the engine.
+    rejected_invalid: int = 0
+    #: Offspring that reached an evaluation. Zero while `novel_count` is not is
+    #: the budget-starvation trap: candidates were produced but none was tried.
+    offspring_evaluated: int = 0
     holdout_score: float = 0.0
     hyperparameters: HyperparameterRecord | None = None
 

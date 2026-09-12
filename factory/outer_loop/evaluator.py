@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -159,13 +160,32 @@ class CycleRecordCache:
         return loaded
 
 
+@dataclass
+class EvaluationOutcome:
+    """What an evaluator_fn returns when it can also report the cycle it ran.
+
+    A score alone cannot drive reflection: the optimizer needs the run's score
+    trajectory, per-candidate verdicts and errors to reason about *why* a
+    candidate scored what it did. An evaluator_fn that has those returns an
+    ``EvaluationOutcome``; one that does not keeps returning a bare
+    ``EvalResult``, which stays valid and leaves the cycle record unset.
+    """
+
+    result: EvalResult
+    cycle_record: CycleRecord | None = None
+
+
 @runtime_checkable
 class EvaluatorFn(Protocol):
-    """Protocol for pluggable evaluation functions."""
+    """Protocol for pluggable evaluation functions.
+
+    Returns an ``EvalResult`` when only a score is available, or an
+    ``EvaluationOutcome`` to attach the ``CycleRecord`` the run produced.
+    """
 
     def __call__(
         self, workflow: Workflow, project_dir: str, instances: list[str]
-    ) -> EvalResult: ...
+    ) -> EvalResult | EvaluationOutcome: ...
 
 
 class SwarmEvaluator:
@@ -238,15 +258,33 @@ class SwarmEvaluator:
             )
 
         if self._evaluator_fn is not None:
-            result = self._evaluator_fn(workflow, project_dir, instances)
+            outcome = self._evaluator_fn(workflow, project_dir, instances)
         else:
-            result = EvalResult(score=0.0, details={"note": "no_evaluator_fn_configured"})
+            outcome = EvaluationOutcome(
+                result=EvalResult(score=0.0, details={"note": "no_evaluator_fn_configured"})
+            )
+
+        result, cycle_record = self._unpack_outcome(outcome)
+        if cycle_record is not None and individual_id:
+            self._cycle_records[individual_id] = cycle_record
 
         composite = self._compute_composite(result)
         result = result.model_copy(update={"score": composite})
 
         self._cache.put(workflow, instances, composite, result.cost_usd)
         return result
+
+    @staticmethod
+    def _unpack_outcome(outcome: EvalResult | EvaluationOutcome) -> tuple[EvalResult, CycleRecord | None]:
+        """Split an evaluator_fn's return into its score and its cycle record.
+
+        An evaluator_fn that reports only a score returns an ``EvalResult``; one
+        that also captured the run returns an ``EvaluationOutcome``. Both forms
+        are valid so existing evaluators keep working unchanged.
+        """
+        if isinstance(outcome, EvaluationOutcome):
+            return outcome.result, outcome.cycle_record
+        return outcome, None
 
     @staticmethod
     def _create_worktree(project_dir: str, label: str) -> Path:
@@ -450,13 +488,22 @@ class SwarmEvaluator:
         return [r or EvalResult(score=0.0) for r in results]
 
     def _compute_composite(self, result: EvalResult) -> float:
+        """Weighted fitness the archive scores on, from ``config.fitness_weights``.
+
+        Note this is an affine transform of the task metric, not the metric
+        itself: at zero cost and complexity it adds a constant
+        ``hygiene + cost + complexity`` share regardless of how the task went. Set
+        ``fitness_weights`` to ``{"benchmark": 1.0}`` to search on the task score
+        directly.
+        """
+        w = self._config.fitness_weights or {}
         norm_cost = min(result.cost_usd / 10.0, 1.0) if result.cost_usd > 0 else 0.0
         norm_complexity = min(result.complexity / 20.0, 1.0) if result.complexity > 0 else 0.0
         return (
-            0.6 * result.benchmark_score
-            + 0.2 * result.hygiene_score
-            + 0.1 * (1.0 - norm_cost)
-            + 0.1 * (1.0 - norm_complexity)
+            w.get("benchmark", 0.6) * result.benchmark_score
+            + w.get("hygiene", 0.2) * result.hygiene_score
+            + w.get("cost", 0.1) * (1.0 - norm_cost)
+            + w.get("complexity", 0.1) * (1.0 - norm_complexity)
         )
 
     @staticmethod

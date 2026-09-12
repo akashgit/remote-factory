@@ -79,14 +79,35 @@ class TestRemoveNode:
 
 class TestRedirectEdge:
     def test_redirect_edge(self, simple_workflow: Workflow) -> None:
+        # `researcher -> strategist` is the only edge into `strategist`, so this
+        # redirect would orphan it. validate_and_repair rejects that rather than
+        # pruning the node away, so the mutation is refused: a redirect must not
+        # silently delete a node it never mentioned.
         result = redirect_edge(simple_workflow, "researcher", "strategist", "builder")
+        assert result is None
+
+    def test_redirect_that_does_not_orphan_succeeds(self) -> None:
+        nodes = {
+            "start": FnNode(id="start", command="echo s"),
+            "a": FnNode(id="a", command="echo a"),
+            "b": FnNode(id="b", command="echo b"),
+            "c": FnNode(id="c", command="echo c"),
+        }
+        # `a` is reachable via two edges, so redirecting one of them keeps it alive.
+        edges = [
+            Edge(source="start", target="a"),
+            Edge(source="start", target="b"),
+            Edge(source="b", target="a"),
+            Edge(source="a", target="c"),
+        ]
+        wf = Workflow(name="t", nodes=nodes, edges=edges, start_node="start")
+        # `a` keeps its inbound edge from `b`, so nothing is orphaned.
+        result = redirect_edge(wf, "start", "a", "c")
         assert result is not None
-        wf, rec = result
+        redirected, rec = result
         assert rec.operator == MutationType.EDGE_REDIRECT
-        has_new = any(
-            e.source == "researcher" and e.target == "builder" for e in wf.edges
-        )
-        assert has_new
+        assert any(e.source == "start" and e.target == "c" for e in redirected.edges)
+        assert "a" in redirected.nodes  # the old target survives the redirect
 
     def test_redirect_nonexistent_target(self, simple_workflow: Workflow) -> None:
         result = redirect_edge(simple_workflow, "researcher", "strategist", "nonexistent")
@@ -178,7 +199,10 @@ class TestValidateAndRepair:
         result = validate_and_repair(simple_workflow)
         assert result is not None
 
-    def test_prunes_unreachable(self) -> None:
+    def test_rejects_unreachable_instead_of_pruning(self) -> None:
+        # An unreachable node means the mutation disconnected the graph. Pruning
+        # it produced a small, valid-looking candidate that still cost a full
+        # evaluation to discover it was empty, so repair now refuses.
         nodes = {
             "start": FnNode(id="start", command="echo start"),
             "reachable": FnNode(id="reachable", command="echo r"),
@@ -186,9 +210,7 @@ class TestValidateAndRepair:
         }
         edges = [Edge(source="start", target="reachable")]
         wf = Workflow(name="test", nodes=nodes, edges=edges, start_node="start")
-        result = validate_and_repair(wf)
-        assert result is not None
-        assert "orphan" not in result.nodes
+        assert validate_and_repair(wf) is None
 
     def test_cycle_without_gate_returns_none(self) -> None:
         nodes = {

@@ -21,8 +21,17 @@ from factory.outer_loop.models import (
 from factory.outer_loop.reflector import OuterLoopReflector, ReflectionReport
 from factory.outer_loop.mutations import (
     MutationStrategy,
+    MutationType,
     WeightedRandomStrategy,
     apply_random_mutation,
+)
+from factory.outer_loop.candidate_validation import CandidateValidator, ModeContract
+from factory.outer_loop.optimizers import (
+    Optimizer,
+    Proposal,
+    ProposalContext,
+    RandomOptimizer,
+    TraceSource,
 )
 from factory.outer_loop.overfit import OverfitDetector
 from factory.outer_loop.population import MAPElitesArchive, Population
@@ -44,6 +53,19 @@ def _auto_frozen_nodes(workflow: Workflow) -> set[str]:
     from factory.workflow.primitives import DataNode
 
     return {nid for nid, node in workflow.nodes.items() if isinstance(node, DataNode)}
+
+
+def _operator_of(name: str) -> MutationType:
+    """Map an optimizer's operator label onto a ``MutationType``.
+
+    A reasoning optimizer reports the label it applied. Unknown labels fall back
+    to ``PARAM_MUTATE`` so genealogy stays well-formed rather than raising deep
+    inside a generation.
+    """
+    try:
+        return MutationType(name)
+    except ValueError:
+        return MutationType.PARAM_MUTATE
 
 
 class BudgetTracker:
@@ -103,12 +125,29 @@ class SwarmEngine:
         designer: DesignerAgent | None = None,
         mode_registry: EphemeralModeRegistry | None = None,
         project_dir: Path | None = None,
+        optimizer: "Optimizer | None" = None,
+        trace_source: "TraceSource | None" = None,
+        frozen_knobs: set[str] | None = None,
     ) -> None:
         self._config = config
         self._evaluator = evaluator
         self._strategy: MutationStrategy = strategy or WeightedRandomStrategy(
             mutation_rate=config.mutation_rate,
         )
+        # The optimizer decides how the gradient becomes candidates. Defaulting
+        # to RandomOptimizer keeps the pre-existing behaviour for every caller
+        # that does not supply one.
+        self._optimizer: Optimizer = optimizer or RandomOptimizer(self._strategy)
+        self._trace_source: TraceSource | None = trace_source
+        # Knobs the user has pinned: the search may not move them, so a proposal
+        # that does is refused like any other contract violation.
+        self._frozen_knobs: set[str] = set(frozen_knobs or set())
+        self._traces: list[dict[str, object]] = []
+        self._proposal_rationales: dict[str, Proposal] = {}
+        # The contract is captured from the seed the run started with, which is
+        # the only definition of what this mode is supposed to keep doing.
+        self._validator: CandidateValidator | None = None
+        self._rejections: list[dict[str, object]] = []
         self._subset: SubsetSelector = subset_selector or FixedSubsetSelector(
             config.training_instances,
         )
@@ -128,6 +167,77 @@ class SwarmEngine:
     @property
     def archive(self) -> MAPElitesArchive:
         return self._archive
+
+    @property
+    def optimizer(self) -> Optimizer:
+        return self._optimizer
+
+    @property
+    def proposal_rationales(self) -> dict[str, Proposal]:
+        """The proposals that produced this run's candidates, keyed by name."""
+        return self._proposal_rationales
+
+    @property
+    def rejections(self) -> list[dict[str, object]]:
+        """Candidates refused before evaluation, with the reasons."""
+        return self._rejections
+
+    def set_seed_contract(self, seed: Workflow) -> None:
+        """Pin the mode contract to a known-good workflow.
+
+        Called with the run's original seed. Rebuilding it from the current best
+        would let the contract drift as the search moves, which is exactly the
+        failure the guard exists to catch.
+        """
+        self._validator = CandidateValidator(ModeContract.from_workflow(seed))
+
+    def _ensure_validator(self, population: Population) -> None:
+        """Build the contract from the population's root once, if not set."""
+        if self._validator is not None:
+            return
+        root = None
+        for individual in population.individuals:
+            if individual.parent_id is None:
+                root = individual
+                break
+        if root is None and population.individuals:
+            root = population.individuals[0]
+        if root is not None:
+            self.set_seed_contract(Workflow.from_dict(root.workflow_data))  # type: ignore[arg-type]
+
+    def _knob_surface(self) -> list[dict[str, object]]:
+        """The declared OptKnob surface from the archive's best candidate.
+
+        Read from the best individual so an optimizer sees what it is allowed to
+        move, including each knob's kind and whether its domain is expandable —
+        which is what makes a generated value legal for some knobs and not
+        others.
+        """
+        best = self._archive.best()
+        if best is None:
+            return []
+        wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
+        surface: list[dict[str, object]] = []
+        for name, spec in (wf.knob_specs or {}).items():
+            surface.append(
+                {
+                    "name": name,
+                    "kind": spec.get("kind", "threshold"),
+                    "node_id": spec.get("node_id"),
+                    "default": spec.get("default"),
+                    "bounds": list(wf.knob_bounds.get(name, [])),
+                    "value": wf.knob_values.get(name),
+                    # Two places can declare this: the per-knob spec and the
+                    # workflow-level `knob_expandable` map, which older graphs
+                    # only set. A knob is expandable if either says so, so the
+                    # surface never under-reports what the search may do.
+                    "expandable": bool(spec.get("expandable", False))
+                    or name in (wf.knob_expandable or {}),
+                    "expansion_hint": spec.get("expansion_hint", ""),
+                    "description": spec.get("description", ""),
+                }
+            )
+        return surface
 
     @property
     def budget(self) -> BudgetTracker:
@@ -161,6 +271,11 @@ class SwarmEngine:
 
         seed_ind = Population.make_individual(base_workflow, generation=0)
         pop.add(seed_ind)
+        # The seed defines the mode contract, and every variant built from it is
+        # held to that contract immediately: an invalid individual admitted here
+        # becomes a parent later, so a broken mode would be inherited by every
+        # candidate descended from it.
+        self.set_seed_contract(base_workflow)
         self._novelty.add(base_workflow)
         if self._mode_registry:
             self._mode_registry.register(seed_ind.id, 0, base_workflow)
@@ -183,6 +298,13 @@ class SwarmEngine:
             mutated_wf, mutation_rec = result
             if not self._novelty.is_novel(mutated_wf):
                 continue
+            if self._validator is not None:
+                reasons = self._validator.issues(mutated_wf)
+                if reasons:
+                    self._rejections.append(
+                        {"candidate": mutated_wf.name, "optimizer": "seed", "reasons": reasons}
+                    )
+                    continue
             self._novelty.add(mutated_wf)
             ind = Population.make_individual(
                 mutated_wf,
@@ -249,21 +371,31 @@ class SwarmEngine:
                 if self._mode_registry:
                     self._mode_registry.register(ind.id, 0, wf)
 
-    def evolve_generation(
+    # ── Decomposable generation steps ──────────────────────────────────────
+    # evolve_generation runs these in order. They are public so the outer-loop
+    # graph can drive each step as its own node, which is what makes the loop
+    # legible and lets a model-owned `propose` node sit between reflect and apply.
+
+    def evaluate_population(
         self,
         population: Population,
-        generation: int,
-        project_dir: str = "",
-    ) -> GenerationSummary:
-        """Run one generation of evolution."""
-        instances = self._subset.select(
-            self._config.training_instances, generation, self._budget.remaining
-        )
+        project_dir: str,
+        instances: list[str],
+        skip_ids: set[str] | None = None,
+    ) -> int:
+        """Evaluate every individual in the population and archive the results.
 
-        # Evaluate current population
-        for ind in population.individuals:
+        ``skip_ids`` names individuals already evaluated by an earlier step, so a
+        decomposed loop can evaluate only what is new instead of paying for the
+        whole population every cycle. Returns how many were evaluated; stops
+        early when the budget is spent.
+        """
+        evaluated = 0
+        for ind in list(population.individuals):
             if self._budget.exhausted:
                 break
+            if skip_ids and ind.id in skip_ids:
+                continue
             wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
             ev = self._evaluator.evaluate(wf, project_dir, instances, individual_id=ind.id)
             self._budget.consume(1, cost_usd=ev.cost_usd)
@@ -271,55 +403,38 @@ class SwarmEngine:
             population.remove(ind.id)
             population.add(updated)
             self._archive.add(updated)
+            evaluated += 1
+        return evaluated
 
-        # Reflect on this generation's results
-        if generation > 0 or len(population.individuals) >= 2:
-            records = []
-            kvbi: dict[str, dict[str, object]] = {}
-            for ind in population.individuals:
-                cycle_rec = self._evaluator.get_cycle_record(ind.id)
-                records.append((ind.id, ind.score, cycle_rec))
-                ind_wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
-                if ind_wf.knob_values:
-                    kvbi[ind.id] = dict(ind_wf.knob_values)
-            self._last_reflection = self._reflector.reflect(
-                records, generation, knob_values_by_id=kvbi,
-            )
+    def reflect_generation(
+        self, population: Population, generation: int
+    ) -> ReflectionReport | None:
+        """Contrastive reflection over this generation's results."""
+        if not (generation > 0 or len(population.individuals) >= 2):
+            return self._last_reflection
+        records = []
+        kvbi: dict[str, dict[str, object]] = {}
+        for ind in population.individuals:
+            cycle_rec = self._evaluator.get_cycle_record(ind.id)
+            records.append((ind.id, ind.score, cycle_rec))
+            ind_wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
+            if ind_wf.knob_values:
+                kvbi[ind.id] = dict(ind_wf.knob_values)
+        self._last_reflection = self._reflector.reflect(
+            records, generation, knob_values_by_id=kvbi,
+        )
+        return self._last_reflection
 
-        # Select parents and create offspring
-        mutations_applied: list[MutationRecord] = []
-        novel_count = 0
-        rejected_dupes = 0
-        offspring: list[tuple[Workflow, MutationRecord, str]] = []
-
-        mutation_rate = self._strategy.get_mutation_rate(generation)
-        for _ in range(self._config.population_size):
-            parent = self._archive.sample_parent(
-                self._config.tournament_size,
-                rank_weighted=self._config.rank_weighted_selection,
-            )
-            if parent is None:
-                continue
-            parent_wf = Workflow.from_dict(parent.workflow_data)  # type: ignore[arg-type]
-            mutation_result = apply_random_mutation(
-                parent_wf,
-                self._strategy,
-                generation,
-                frozen_nodes=set(self._config.frozen_node_ids) | _auto_frozen_nodes(parent_wf),
-                reflection_report=self._last_reflection,
-            )
-            if mutation_result is None:
-                continue
-            child_wf, mutation_rec = mutation_result
-            if self._novelty.is_novel(child_wf):
-                self._novelty.add(child_wf)
-                offspring.append((child_wf, mutation_rec, parent.id))
-                mutations_applied.append(mutation_rec)
-                novel_count += 1
-            else:
-                rejected_dupes += 1
-
-        # Evaluate offspring and add to population
+    def evaluate_offspring(
+        self,
+        offspring: list[tuple[Workflow, MutationRecord, str]],
+        population: Population,
+        generation: int,
+        instances: list[str],
+        project_dir: str,
+    ) -> int:
+        """Turn validated offspring into individuals, evaluate and archive them."""
+        added = 0
         for child_wf, mutation_rec, parent_id in offspring:
             if self._budget.exhausted:
                 break
@@ -331,11 +446,140 @@ class SwarmEngine:
             )
             if self._mode_registry:
                 self._mode_registry.register(ind.id, generation, child_wf)
-            eval_result = self._evaluator.evaluate(child_wf, project_dir, instances, individual_id=ind.id)
+            eval_result = self._evaluator.evaluate(
+                child_wf, project_dir, instances, individual_id=ind.id
+            )
             self._budget.consume(1, cost_usd=eval_result.cost_usd)
-            updated = ind.model_copy(update={"score": eval_result.score, "cost_usd": eval_result.cost_usd})
+            updated = ind.model_copy(
+                update={"score": eval_result.score, "cost_usd": eval_result.cost_usd}
+            )
             population.add(updated)
             self._archive.add(updated)
+            added += 1
+        return added
+
+    def validate_and_select(
+        self,
+        proposals: list[Proposal],
+        population: Population,
+        generation: int,
+    ) -> tuple[list[tuple[Workflow, MutationRecord, str]], int, int, int, int]:
+        """Filter proposals into offspring: novelty, then the mode contract.
+
+        Returns ``(offspring, novel, duplicates, invalid, applied)``. Shared by
+        the monolithic generation and by a graph-driven `apply` step so both
+        enforce the same rules.
+        """
+        offspring: list[tuple[Workflow, MutationRecord, str]] = []
+        novel = duplicates = invalid = 0
+        self._ensure_validator(population)
+        for proposal in proposals:
+            child_wf = proposal.workflow
+            knob = (proposal.before or {}).get("knob")
+            if knob and str(knob) in self._frozen_knobs:
+                self._rejections.append(
+                    {"candidate": child_wf.name, "optimizer": proposal.optimizer,
+                     "reasons": [f"knob '{knob}' is frozen by steering"]}
+                )
+                invalid += 1
+                continue
+            if not self._novelty.is_novel(child_wf):
+                duplicates += 1
+                continue
+            reasons = self._validator.issues(child_wf) if self._validator else []
+            if reasons:
+                self._rejections.append(
+                    {"candidate": child_wf.name, "optimizer": proposal.optimizer,
+                     "reasons": reasons}
+                )
+                invalid += 1
+                continue
+            self._novelty.add(child_wf)
+            record = MutationRecord(
+                operator=_operator_of(proposal.operator),
+                target_node=proposal.target_node,
+                before=dict(proposal.before or {}),
+                after=dict(proposal.after or {}),
+                rationale=proposal.rationale or None,
+            )
+            self._proposal_rationales[child_wf.name] = proposal
+            offspring.append((child_wf, record, proposal.parent_id or ""))
+            novel += 1
+        return offspring, novel, duplicates, invalid, len(proposals)
+
+    def build_proposal_context(
+        self, generation: int, population: Population
+    ) -> ProposalContext:
+        """Assemble the gradient an optimizer conditions its proposal on."""
+
+        def sample_parent() -> tuple[str, Workflow] | None:
+            parent = self._archive.sample_parent(
+                self._config.tournament_size,
+                rank_weighted=self._config.rank_weighted_selection,
+            )
+            if parent is None:
+                return None
+            return parent.id, Workflow.from_dict(parent.workflow_data)  # type: ignore[arg-type]
+
+        best = self._archive.best()
+        return ProposalContext(
+            generation=generation,
+            sample_parent=sample_parent,
+            frozen_nodes=set(self._config.frozen_node_ids),
+            reflection=self._last_reflection,
+            archive_stats={"size": self._archive.size, "best_score": best.score if best else None},
+            traces=(
+                self._trace_source.recent(32)
+                if self._trace_source is not None
+                else list(self._traces)
+            ),
+            knob_surface=self._knob_surface(),
+        )
+
+    def evolve_generation(
+        self,
+        population: Population,
+        generation: int,
+        project_dir: str = "",
+    ) -> GenerationSummary:
+        """Run one generation of evolution."""
+        instances = self._subset.select(
+            self._config.training_instances, generation, self._budget.remaining
+        )
+
+        self.evaluate_population(population, project_dir, instances)
+
+        self.reflect_generation(population, generation)
+
+        # Propose, filter and select offspring. All the rules live in
+        # validate_and_select so a graph-driven `apply` step enforces exactly
+        # what the monolithic generation does.
+        mutation_rate = self._strategy.get_mutation_rate(generation)
+        proposals = self._optimizer.propose(
+            self.build_proposal_context(generation, population),
+            self._config.population_size,
+        )
+        offspring, novel_count, rejected_dupes, rejected_invalid, _applied = (
+            self.validate_and_select(proposals, population, generation)
+        )
+        mutations_applied: list[MutationRecord] = [rec for _wf, rec, _pid in offspring]
+
+        offspring_evaluated = self.evaluate_offspring(
+            offspring, population, generation, instances, project_dir
+        )
+        if novel_count and not offspring_evaluated:
+            # The budget ran out before a single generated candidate could be
+            # tried. Without this the run still reports a new generation and
+            # looks productive while having tested nothing it proposed.
+            log.warning(
+                "budget_exhausted_before_offspring",
+                generation=generation,
+                proposed=novel_count,
+                evaluated=offspring_evaluated,
+                budget_total=self._budget._total,
+                population_size=self._config.population_size,
+                action="raise the budget above the population size",
+            )
 
         # Cleanup non-surviving ephemeral mode files
         if self._mode_registry:
@@ -401,6 +645,8 @@ class SwarmEngine:
             mutations_applied=mutations_applied,
             novel_count=novel_count,
             rejected_duplicates=rejected_dupes,
+            rejected_invalid=rejected_invalid,
+            offspring_evaluated=offspring_evaluated,
             holdout_score=holdout_score,
             hyperparameters=hp_record,
         )
