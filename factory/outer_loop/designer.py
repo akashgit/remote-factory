@@ -15,6 +15,7 @@ from factory.outer_loop.models import EvalResult, MutationRecord, MutationType
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    DataNode,
     Edge,
     FnNode,
     GateNode,
@@ -69,11 +70,19 @@ class DesignerAgent:
             Edge(source="researcher", target="builder"),
             Edge(source="builder", target="gate_qa"),
         ]
+
+        start_node = "researcher"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start_node, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start_node = new_start
+
         wf = Workflow(
             name=f"minimal_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
             edges=edges,
-            start_node="researcher",
+            start_node=start_node,
         )
         log.info("designed_minimal", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
@@ -170,11 +179,19 @@ class DesignerAgent:
             Edge(source="code_reviewer", target="adversarial_tester"),
             Edge(source="adversarial_tester", target="gate_qa"),
         ]
+
+        start_node = "study"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start_node, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start_node = new_start
+
         wf = Workflow(
             name=f"thorough_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
             edges=edges,
-            start_node="study",
+            start_node=start_node,
         )
         log.info("designed_thorough", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
@@ -241,6 +258,12 @@ class DesignerAgent:
         _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start = new_start
+
         wf = Workflow(
             name=f"custom_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
@@ -351,6 +374,59 @@ def _inject_frozen_nodes(
             nodes[frozen_id] = seed_workflow.nodes[frozen_id]
         else:
             log.warning("frozen_node_missing_in_seed", node_id=frozen_id)
+
+
+def _rewire_data_nodes(
+    nodes: dict[str, object],
+    edges: list[Edge],
+    original_start: str,
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> str | None:
+    """Rewire injected frozen DataNodes so they integrate into the template.
+
+    For each frozen DataNode:
+    1. Update subgraph_entry → template's original start_node
+    2. Update subgraph_exit  → template's terminal node (no outgoing edges)
+    3. Add edge from DataNode → subgraph_entry
+
+    Returns the DataNode ID (new start_node) or None if no DataNode was injected.
+    """
+    if not seed_workflow or not frozen_node_ids:
+        return None
+
+    # Find terminal node: the node with no outgoing edges (among template edges)
+    sources = {e.source for e in edges}
+    all_node_ids = set(nodes.keys())
+    terminal_candidates = all_node_ids - sources
+    # Exclude the frozen DataNodes themselves from terminal candidates
+    frozen_data_ids: set[str] = set()
+
+    for fid in frozen_node_ids:
+        node = nodes.get(fid)
+        if isinstance(node, DataNode):
+            frozen_data_ids.add(fid)
+
+    if not frozen_data_ids:
+        return None
+
+    terminal_candidates -= frozen_data_ids
+    terminal_node = next(iter(terminal_candidates)) if terminal_candidates else original_start
+
+    new_start: str | None = None
+    for data_id in frozen_data_ids:
+        data_node = nodes[data_id]
+        assert isinstance(data_node, DataNode)
+        # Replace with updated subgraph_entry/exit pointing to template nodes
+        updated = data_node.model_copy(
+            update={"subgraph_entry": original_start, "subgraph_exit": terminal_node}
+        )
+        nodes[data_id] = updated
+        # Add edge from DataNode → subgraph_entry
+        edges.insert(0, Edge(source=data_id, target=original_start))
+        new_start = data_id
+
+    return new_start
 
 
 def extract_telemetry(eval_result: EvalResult) -> dict[str, object]:

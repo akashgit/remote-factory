@@ -7,6 +7,8 @@ from factory.outer_loop.models import MutationType
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    DataItem,
+    DataNode,
     Edge,
     FnNode,
     Workflow,
@@ -373,3 +375,120 @@ class TestFrozenNodePreservation:
         # Verify _auto_frozen_nodes detects the DataNode
         auto_frozen = _auto_frozen_nodes(seed)
         assert "positions" in auto_frozen
+
+
+class TestDataNodeRewiring:
+    """Tests that frozen DataNodes are properly wired into designer templates."""
+
+    @staticmethod
+    def _seed_with_data_node() -> Workflow:
+        """Seed workflow containing a DataNode with subgraph refs to 'solver'."""
+        return Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                ),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+
+    def test_minimal_start_node_is_data_node(self) -> None:
+        """Designer variant with DataNode has start_node == DataNode ID."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert wf.start_node == "positions"
+
+    def test_minimal_subgraph_entry_points_to_template_start(self) -> None:
+        """DataNode.subgraph_entry points to the template's original start."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        data_node = wf.nodes["positions"]
+        assert isinstance(data_node, DataNode)
+        assert data_node.subgraph_entry == "researcher"
+
+    def test_minimal_subgraph_exit_points_to_terminal(self) -> None:
+        """DataNode.subgraph_exit points to template's terminal node."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        data_node = wf.nodes["positions"]
+        assert isinstance(data_node, DataNode)
+        assert data_node.subgraph_exit == "gate_qa"
+
+    def test_minimal_has_edge_from_data_node_to_entry(self) -> None:
+        """Designer variant has edge from DataNode → subgraph_entry."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        edge_pairs = [(e.source, e.target) for e in wf.edges]
+        assert ("positions", "researcher") in edge_pairs
+
+    def test_minimal_without_data_node_unchanged(self) -> None:
+        """Designer without frozen DataNode retains original start_node."""
+        designer = DesignerAgent()
+        wf = designer.design_minimal("bench")
+        assert wf.start_node == "researcher"
+        edge_sources = {e.source for e in wf.edges}
+        assert "positions" not in edge_sources
+
+    def test_thorough_start_node_is_data_node(self) -> None:
+        """design_thorough variant with DataNode has start_node == DataNode ID."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_thorough(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert wf.start_node == "positions"
+        data_node = wf.nodes["positions"]
+        assert isinstance(data_node, DataNode)
+        assert data_node.subgraph_entry == "study"
+        assert data_node.subgraph_exit == "gate_qa"
+        edge_pairs = [(e.source, e.target) for e in wf.edges]
+        assert ("positions", "study") in edge_pairs
+
+    def test_custom_start_node_is_data_node(self) -> None:
+        """design_custom variant with DataNode has start_node == DataNode ID."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_custom(
+            "bench",
+            {"max_nodes": 6},
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        assert wf.start_node == "positions"
+        data_node = wf.nodes["positions"]
+        assert isinstance(data_node, DataNode)
+        assert data_node.subgraph_entry == "researcher"
+        assert data_node.subgraph_exit == "gate_qa"
+        edge_pairs = [(e.source, e.target) for e in wf.edges]
+        assert ("positions", "researcher") in edge_pairs
