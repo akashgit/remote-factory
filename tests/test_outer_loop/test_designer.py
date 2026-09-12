@@ -438,8 +438,8 @@ class TestDataNodeRewiring:
         assert isinstance(data_node, DataNode)
         assert data_node.subgraph_exit == "gate_qa"
 
-    def test_minimal_has_edge_from_data_node_to_entry(self) -> None:
-        """Designer variant has edge from DataNode → subgraph_entry."""
+    def test_minimal_no_explicit_edge_from_data_node_to_entry(self) -> None:
+        """No explicit edge from DataNode to subgraph_entry (executor uses subgraph_entry directly)."""
         designer = DesignerAgent()
         seed = self._seed_with_data_node()
         wf = designer.design_minimal(
@@ -448,7 +448,7 @@ class TestDataNodeRewiring:
             frozen_node_ids={"positions"},
         )
         edge_pairs = [(e.source, e.target) for e in wf.edges]
-        assert ("positions", "researcher") in edge_pairs
+        assert ("positions", "researcher") not in edge_pairs
 
     def test_minimal_without_data_node_unchanged(self) -> None:
         """Designer without frozen DataNode retains original start_node."""
@@ -472,8 +472,9 @@ class TestDataNodeRewiring:
         assert isinstance(data_node, DataNode)
         assert data_node.subgraph_entry == "study"
         assert data_node.subgraph_exit == "gate_qa"
+        # No explicit edge from DataNode to subgraph_entry
         edge_pairs = [(e.source, e.target) for e in wf.edges]
-        assert ("positions", "study") in edge_pairs
+        assert ("positions", "study") not in edge_pairs
 
     def test_custom_start_node_is_data_node(self) -> None:
         """design_custom variant with DataNode has start_node == DataNode ID."""
@@ -490,5 +491,58 @@ class TestDataNodeRewiring:
         assert isinstance(data_node, DataNode)
         assert data_node.subgraph_entry == "researcher"
         assert data_node.subgraph_exit == "gate_qa"
+        # No explicit edge from DataNode to subgraph_entry
         edge_pairs = [(e.source, e.target) for e in wf.edges]
-        assert ("positions", "researcher") in edge_pairs
+        assert ("positions", "researcher") not in edge_pairs
+
+    def test_rewired_workflow_validates_graph(self) -> None:
+        """Rewired workflow with DataNode passes validate_graph() without issues."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        issues = wf.validate_graph()
+        assert issues == [], f"Validation issues: {issues}"
+
+    def test_data_node_id_collision_with_start(self) -> None:
+        """DataNode ID == template start_node must not create self-referential subgraph_entry."""
+        designer = DesignerAgent()
+        # Create a seed where the DataNode ID is 'researcher' — same as
+        # the minimal template's start_node.
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "researcher": DataNode(
+                    id="researcher",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                ),
+            },
+            edges=[Edge(source="researcher", target="solver")],
+            start_node="researcher",
+        )
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"researcher"},
+        )
+        data_node = wf.nodes["researcher"]
+        assert isinstance(data_node, DataNode)
+        # subgraph_entry must NOT be 'researcher' (self-reference)
+        assert data_node.subgraph_entry != "researcher"
+        # It should point to the first node reachable from original start via edges
+        assert data_node.subgraph_entry == "builder"
+        # No structural issues (cycle, double-execution edge, unreachable).
+        # Data dependency warnings are expected since the DataNode replaced
+        # the researcher that would normally write the file.
+        issues = wf.validate_graph()
+        structural = [i for i in issues if "no predecessor writes" not in i]
+        assert structural == [], f"Structural issues: {structural}"

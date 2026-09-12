@@ -388,7 +388,11 @@ def _rewire_data_nodes(
     For each frozen DataNode:
     1. Update subgraph_entry → template's original start_node
     2. Update subgraph_exit  → template's terminal node (no outgoing edges)
-    3. Add edge from DataNode → subgraph_entry
+
+    No explicit edge is added from the DataNode to subgraph_entry — the
+    executor reads subgraph_entry directly from the DataNode object.
+    Adding an explicit edge would fail validation (_validate_datanode_edges
+    rejects edges from a DataNode to its own subgraph nodes).
 
     Returns the DataNode ID (new start_node) or None if no DataNode was injected.
     """
@@ -417,13 +421,25 @@ def _rewire_data_nodes(
     for data_id in frozen_data_ids:
         data_node = nodes[data_id]
         assert isinstance(data_node, DataNode)
+
+        # Determine subgraph entry: if the DataNode ID collides with the
+        # template's original_start, follow edges to find the actual first
+        # template node (otherwise subgraph_entry would point to itself).
+        # Also remove the now-stale edges from original_start — they would
+        # become invalid edges from the DataNode to its own subgraph.
+        entry = original_start
+        if data_id == original_start:
+            for edge in edges:
+                if edge.source == original_start:
+                    entry = edge.target
+                    break
+            edges[:] = [e for e in edges if e.source != original_start]
+
         # Replace with updated subgraph_entry/exit pointing to template nodes
         updated = data_node.model_copy(
-            update={"subgraph_entry": original_start, "subgraph_exit": terminal_node}
+            update={"subgraph_entry": entry, "subgraph_exit": terminal_node}
         )
         nodes[data_id] = updated
-        # Add edge from DataNode → subgraph_entry
-        edges.insert(0, Edge(source=data_id, target=original_start))
         new_start = data_id
 
     return new_start
