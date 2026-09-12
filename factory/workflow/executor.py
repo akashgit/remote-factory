@@ -857,12 +857,41 @@ class WorkflowExecutor:
                             prompt=resolved_task.prompt(inst),
                         )
 
+                        # Diagnostic: list files created by setup()
+                        _setup_files = [
+                            str(f.relative_to(item_project_path))
+                            for f in item_project_path.rglob('*') if f.is_file()
+                        ]
+                        log.info(
+                            'data_item_setup_complete',
+                            item_id=item.id,
+                            workspace=str(item_project_path),
+                            files_found=len(_setup_files),
+                            files=_setup_files[:20],
+                        )
+
                     # Re-scan subgraph reads for files created by setup()
                     setup_reads: set[str] = set()
                     for sg_node in sub_workflow.nodes.values():
                         for r in sg_node.reads:
                             if (item_project_path / r).exists():
                                 setup_reads.add(r)
+                            else:
+                                # Check if file exists under a different relative path
+                                basename = Path(r).name
+                                matches = [
+                                    str(f.relative_to(item_project_path))
+                                    for f in item_project_path.rglob(basename)
+                                    if f.is_file()
+                                ]
+                                if matches:
+                                    log.warning(
+                                        'setup_read_path_mismatch',
+                                        node_id=sg_node.id,
+                                        declared_read=r,
+                                        found_at=matches,
+                                        hint='node.reads path does not match setup() output location',
+                                    )
 
                     # Write current_item.json for subgraph visibility
                     item_json_path = item_project_path / ".factory" / "current_item.json"
@@ -1456,6 +1485,15 @@ class WorkflowExecutor:
             if not missing:
                 return
             if waited >= max_wait:
+                # Diagnostic: show what files exist vs what's expected
+                existing = sorted(self.completed_files)
+                log.warning(
+                    'wait_for_reads_timeout_diagnostic',
+                    node_id=node.id,
+                    missing_reads=sorted(missing),
+                    completed_files_count=len(self.completed_files),
+                    sample_completed=existing[:10],
+                )
                 self.result.halted = True
                 self.result.halt_reason = (
                     f"node '{node.id}' timed out waiting for reads: {sorted(missing)}"

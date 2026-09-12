@@ -1797,3 +1797,155 @@ class TestDiskReadsRescanAfterSetup:
         # The sub-executor's completed_files must contain the setup-written file
         assert len(captured_completed) == 1
         assert setup_file in captured_completed[0]
+
+    @pytest.mark.asyncio
+    async def test_data_node_loop_with_agent_body(self, tmp_path: Path) -> None:
+        """DataNode + Loop where body is an AgentNode — loop should iterate via RELOOP."""
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import AgentNode, AgentRole, GateNode
+
+        project_path = tmp_path
+        (project_path / '.factory').mkdir(parents=True, exist_ok=True)
+        counter_file = project_path / 'counter.txt'
+        pp = str(project_path)
+
+        # Agent body: mock agent_fn that appends to counter file
+        call_count = 0
+
+        async def mock_agent_fn(role, task, proj_path, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cf = Path(proj_path) / 'counter.txt'
+            cf.parent.mkdir(parents=True, exist_ok=True)
+            with open(cf, 'a') as f:
+                f.write(f'move {call_count}\n')
+            return (f'Generated move {call_count}', 0)
+
+        generator = AgentNode(
+            id='generator',
+            role=AgentRole.BUILDER,
+            prompt_template='Generate the next move',
+            reads=set(),
+            writes=set(),  # mock_agent_fn handles file I/O directly
+            timeout=30,
+        )
+        body_pkg = Package(
+            name='gen_body',
+            graph=Workflow(
+                name='gen_graph',
+                nodes={'generator': generator},
+                edges=[],
+                start_node='generator',
+            ),
+            entry_node='generator',
+            exit_node='generator',
+        )
+
+        gate = GateNode(
+            id='game_gate',
+            evaluator_type='fn',
+            evaluator_command=(
+                f"python3 -c \""
+                f"import pathlib; "
+                f"p=pathlib.Path('{pp}/counter.txt'); "
+                f"c=len(p.read_text().splitlines()) if p.exists() else 0; "
+                f"print('PROCEED' if c >= 3 else 'RELOOP: keep playing')"
+                f"\""
+            ),
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=10, name='game_loop')
+
+        data_node = DataNode(
+            id='game_data',
+            inline_items=[DataItem(id='game1', prompt='Play chess')],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {'game_data': data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name='agent_loop_test',
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node='game_data',
+        )
+
+        issues = wf.validate_graph()
+        assert not issues, f'Validation issues: {issues}'
+
+        executor = WorkflowExecutor(wf, project_path, agent_fn=mock_agent_fn)
+        result = await executor.execute()
+
+        assert result.success, f'Execution failed: {result.halt_reason}'
+        assert counter_file.exists(), 'counter.txt should exist'
+        lines = counter_file.read_text().strip().splitlines()
+        assert len(lines) == 3, f'Expected 3 lines (3 iterations), got {len(lines)}: {lines}'
+        assert call_count == 3, f'Expected agent called 3 times, got {call_count}'
+
+    @pytest.mark.asyncio
+    async def test_setup_read_path_mismatch_logs_warning(self, tmp_path: Path) -> None:
+        """When setup() creates a file at a different path than node.reads expects,
+        the reader should timeout waiting for the mismatched read path."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        project_path = tmp_path
+        (project_path / '.factory').mkdir(parents=True, exist_ok=True)
+
+        # Create a file at .factory/memory.md but declare reads as 'memory.md'
+        (project_path / '.factory' / 'memory.md').write_text('game state')
+
+        wf = Workflow(
+            name='mismatch_test',
+            nodes={
+                'data': DataNode(
+                    id='data',
+                    inline_items=[DataItem(id='item1', prompt='test')],
+                    subgraph_entry='reader',
+                    subgraph_exit='reader',
+                ),
+                'reader': FnNode(
+                    id='reader',
+                    command='echo ok',
+                    reads={'memory.md'},  # WRONG — file is at .factory/memory.md
+                ),
+            },
+            edges=[],
+            start_node='data',
+        )
+
+        # Patch max_wait to avoid 60s timeout in CI
+        async def fast_wait(self_inner, node):
+            # Reduced max_wait for test speed
+            poll_interval = 0.1
+            waited = 0.0
+            while True:
+                missing = node.reads - self_inner.completed_files
+                if not missing:
+                    return
+                if waited >= 0.3:
+                    self_inner.result.halted = True
+                    self_inner.result.halt_reason = (
+                        f"node '{node.id}' timed out waiting for reads: {sorted(missing)}"
+                    )
+                    return
+                await asyncio.sleep(poll_interval)
+                waited += poll_interval
+
+        with patch.object(WorkflowExecutor, '_wait_for_reads', fast_wait):
+            executor = WorkflowExecutor(wf, project_path, dry_run=False)
+            result = await executor.execute()
+
+        # DataNode fault-isolates: outer succeeds but inner item fails due to read timeout
+        assert result.success
+        parsed = json.loads(result.node_outputs['data'])
+        assert len(parsed) == 1
+        item_result = parsed[0]
+        # Inner executor halted waiting for 'memory.md' that doesn't exist at that path
+        assert not item_result['success']
+        assert item_result['nodes_executed'] == 0  # reader never ran
