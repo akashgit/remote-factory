@@ -263,9 +263,10 @@ class AutoresearchOptimizer:
             )
             return None
 
-        # A node-field knob names a path (`<node>.<field>`); setting it in
-        # knob_values alone would leave the node unchanged, which is the defect
-        # that made prompt knobs decorative.
+        # How a value is applied depends on WHERE it is consumed, not on its kind:
+        # a `<node>.<field>` knob lives on a node and must be written there, while
+        # an op-level knob lives in knob_values and reaches its op via SRF_KNOBS.
+        # Deciding by kind conflated the two and refused `acceptance_mode`.
         if "." in edit.knob:
             node_id, field_name = edit.knob.split(".", 1)
             candidate = Workflow.from_dict(parent.to_dict())
@@ -283,13 +284,11 @@ class AutoresearchOptimizer:
             candidate.knob_bounds = dict(parent.knob_bounds)
             candidate.knob_bounds[edit.knob] = [*bounds, value]
 
-        # A prompt knob only means something if the prompt reaches the node it
-        # names; writing knob_values alone leaves the mode behaving unchanged.
-        if knob.get("kind") == "prompt":
-            node_id = str(knob.get("node_id") or "")
-            if node_id and not AutoresearchOptimizer._set_node_prompt(candidate, node_id, value):
-                log.info("autoresearch_prompt_node_missing", knob=edit.knob, node_id=node_id)
-                return None
+        # An op-level knob is consumed by the op through SRF_KNOBS, so its value
+        # lives in knob_values regardless of what kind it is. `acceptance_mode` is
+        # a prompt knob in the sense that its value names a policy, but it is read
+        # by an op, not written onto a node -- discriminating on `kind` here
+        # refused a legitimate knob.
         return candidate, f"{edit.knob}: {knob.get('value')} -> {value}"
 
 

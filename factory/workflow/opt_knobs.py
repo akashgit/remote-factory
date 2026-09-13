@@ -246,7 +246,9 @@ def mode_parameters(workflow: Workflow) -> ModeParameters:
 
     # Knobs an op declares it reads, resolved from the module each node runs.
     for node_id, node in workflow.nodes.items():
-        command = getattr(node, "command", "") or ""
+        # A gate runs its evaluator through `evaluator_command`, so reading only
+        # `command` silently dropped every knob a gate's op declares.
+        command = getattr(node, "command", "") or getattr(node, "evaluator_command", "") or ""
         if not command:
             continue
         for name, spec in op_knobs(command).items():

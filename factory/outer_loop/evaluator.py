@@ -490,20 +490,18 @@ class SwarmEvaluator:
     def _compute_composite(self, result: EvalResult) -> float:
         """Weighted fitness the archive scores on, from ``config.fitness_weights``.
 
-        Note this is an affine transform of the task metric, not the metric
-        itself: at zero cost and complexity it adds a constant
-        ``hygiene + cost + complexity`` share regardless of how the task went. Set
-        ``fitness_weights`` to ``{"benchmark": 1.0}`` to search on the task score
-        directly.
+        The default is the task metric alone. Any weight on hygiene, cost or
+        complexity adds a term the optimiser can trade against the task, so those
+        are opt-in rather than assumed.
         """
         w = self._config.fitness_weights or {}
         norm_cost = min(result.cost_usd / 10.0, 1.0) if result.cost_usd > 0 else 0.0
         norm_complexity = min(result.complexity / 20.0, 1.0) if result.complexity > 0 else 0.0
         return (
-            w.get("benchmark", 0.6) * result.benchmark_score
-            + w.get("hygiene", 0.2) * result.hygiene_score
-            + w.get("cost", 0.1) * (1.0 - norm_cost)
-            + w.get("complexity", 0.1) * (1.0 - norm_complexity)
+            w.get("benchmark", 1.0) * result.benchmark_score
+            + w.get("hygiene", 0.0) * result.hygiene_score
+            + w.get("cost", 0.0) * (1.0 - norm_cost)
+            + w.get("complexity", 0.0) * (1.0 - norm_complexity)
         )
 
     @staticmethod
