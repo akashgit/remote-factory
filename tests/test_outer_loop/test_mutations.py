@@ -960,7 +960,7 @@ class TestAutoFrozenNodes:
         ]
         wf = Workflow(name="with_data", nodes=nodes, edges=edges, start_node="study")
         frozen = _auto_frozen_nodes(wf)
-        assert frozen == {"data_loader"}
+        assert frozen == {"data_loader", "builder"}
 
     def test_auto_frozen_nodes_empty_when_no_data_nodes(self) -> None:
         from factory.outer_loop.engine import _auto_frozen_nodes
@@ -1012,3 +1012,78 @@ class TestAutoFrozenNodes:
         assert mutate_params(
             wf, "data_loader", {"timeout": 999}, frozen_nodes=frozen,
         ) is None
+
+    def test_auto_frozen_nodes_includes_multi_node_subgraph(self) -> None:
+        """Subgraph spanning multiple nodes is fully frozen."""
+        from factory.outer_loop.engine import _auto_frozen_nodes
+        from factory.workflow.primitives import DataNode, DataItem
+
+        nodes: dict[str, AgentNode | FnNode | DataNode] = {
+            "data_loader": DataNode(
+                id="data_loader",
+                inline_items=[DataItem(id="item1", prompt="test")],
+                subgraph_entry="sub_entry",
+                subgraph_exit="sub_exit",
+            ),
+            "sub_entry": AgentNode(id="sub_entry", role=AgentRole.BUILDER),
+            "sub_mid": FnNode(id="sub_mid", command="echo mid"),
+            "sub_exit": AgentNode(id="sub_exit", role=AgentRole.CODE_REVIEWER),
+            "external": FnNode(id="external", command="echo external"),
+        }
+        edges = [
+            Edge(source="external", target="data_loader"),
+            Edge(source="data_loader", target="sub_entry"),
+            Edge(source="sub_entry", target="sub_mid"),
+            Edge(source="sub_mid", target="sub_exit"),
+        ]
+        wf = Workflow(
+            name="multi_subgraph", nodes=nodes, edges=edges, start_node="external",
+        )
+        frozen = _auto_frozen_nodes(wf)
+        # DataNode + all subgraph nodes frozen
+        assert frozen == {"data_loader", "sub_entry", "sub_mid", "sub_exit"}
+        # External node is NOT frozen
+        assert "external" not in frozen
+
+    def test_subgraph_node_protected_from_removal(self) -> None:
+        """Subgraph nodes auto-frozen via DataNode cannot be removed."""
+        from factory.outer_loop.engine import _auto_frozen_nodes
+        from factory.workflow.primitives import DataNode, DataItem
+
+        nodes: dict[str, AgentNode | FnNode | DataNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "data_loader": DataNode(
+                id="data_loader",
+                inline_items=[DataItem(id="item1", prompt="test")],
+                subgraph_entry="sub_builder",
+                subgraph_exit="sub_builder",
+            ),
+            "sub_builder": AgentNode(id="sub_builder", role=AgentRole.BUILDER),
+        }
+        edges = [
+            Edge(source="start", target="data_loader"),
+            Edge(source="data_loader", target="sub_builder"),
+        ]
+        wf = Workflow(
+            name="protected_subgraph", nodes=nodes, edges=edges, start_node="start",
+        )
+
+        # With DataNode present, sub_builder is auto-frozen
+        frozen = _auto_frozen_nodes(wf)
+        assert "sub_builder" in frozen
+        assert remove_node(wf, "sub_builder", frozen_nodes=frozen) is None
+
+        # Without DataNode, sub_builder is NOT frozen and can be removed
+        nodes_no_data: dict[str, AgentNode | FnNode] = {
+            "start": FnNode(id="start", command="echo start"),
+            "sub_builder": AgentNode(id="sub_builder", role=AgentRole.BUILDER),
+        }
+        edges_no_data = [Edge(source="start", target="sub_builder")]
+        wf_no_data = Workflow(
+            name="no_data", nodes=nodes_no_data, edges=edges_no_data,
+            start_node="start",
+        )
+        frozen_no_data = _auto_frozen_nodes(wf_no_data)
+        assert "sub_builder" not in frozen_no_data
+        result = remove_node(wf_no_data, "sub_builder", frozen_nodes=frozen_no_data)
+        assert result is not None
