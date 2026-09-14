@@ -155,6 +155,18 @@ class Package(BaseModel):
             wf.knob_expandable = {
                 k.name: k.expansion_hint for k in self.knobs if k.expandable
             }
+            wf.knob_specs = {
+                k.name: {
+                    "kind": k.kind,
+                    "node_id": k.node_id,
+                    "default": k.default,
+                    "bounds": list(k.bounds),
+                    "expandable": k.expandable,
+                    "expansion_hint": k.expansion_hint,
+                    "description": k.description,
+                }
+                for k in self.knobs
+            }
         wf.knob_values.update(saved_prompts)
         wf.knob_expandable.update(saved_expandable)
         for key, val in list(wf.knob_values.items()):
