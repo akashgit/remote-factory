@@ -7,9 +7,8 @@ or `factory ceo /path --mode research-standalone`.
 
 from typing import Any
 
-from factory.models import ProjectState
 from factory.workflow.definitions import ResearcherConfig, _research_subgraph
-from factory.workflow.primitives import AgentNode, Edge, Workflow
+from factory.workflow.primitives import AgentNode, Edge, ProjectState, Workflow
 
 meta = {
     "name": "research-standalone",

@@ -12,13 +12,13 @@ Dataset: red-hat-ai/SWE-benchify-hard on Harbor Hub.
 
 from typing import Any
 
-from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     Edge,
     FnNode,
     GateNode,
+    ProjectState,
     VerdictType,
     Workflow,
 )

@@ -11,13 +11,13 @@ YAML annotations to override slot values (prompt, timeout, etc.) at runtime.
 import os
 from typing import Any, Literal
 
-from factory.models import ProjectState
 from factory.workflow.llm_tools import BASH_TOOL
 from factory.workflow.primitives import (
     Edge,
     FnNode,
     GateNode,
     LLMNode,
+    ProjectState,
     VerdictType,
     Workflow,
 )

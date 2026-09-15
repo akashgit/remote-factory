@@ -11,11 +11,11 @@ mutations for the next generation.
 
 from typing import Any
 
-from factory.models import ProjectState
 from factory.workflow.primitives import (
     Edge,
     FnNode,
     GateNode,
+    ProjectState,
     VerdictType,
     Workflow,
 )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from factory.models import ProjectState
 from factory.workflow.contributed.salitrap import meta, workflow
 from factory.workflow.definitions import register_all
 from factory.workflow.primitives import (
@@ -10,6 +9,7 @@ from factory.workflow.primitives import (
     AgentRole,
     FnNode,
     GateNode,
+    ProjectState,
     VerdictType,
 )
 
