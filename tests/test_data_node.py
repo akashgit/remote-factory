@@ -1670,7 +1670,7 @@ class TestDataNodeLoopSubgraph:
         """Loop Package compiled into a Workflow preserves all 3 loop edges in subgraph."""
         from factory.workflow.executor import _collect_subgraph_nodes
         from factory.workflow.package import Loop, Package
-        from factory.workflow.primitives import GateNode
+        from factory.workflow.primitives import GateNode, VerdictType
 
         body_node = FnNode(
             id="loop_body",
