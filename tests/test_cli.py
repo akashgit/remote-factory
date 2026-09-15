@@ -3052,7 +3052,14 @@ class TestDataNodeTaskFlags:
             data_node=True,
         )
         assert "## DataNode Directive" in task
-        assert "per-item subgraph" in task
+        # New directive tells Builder to include DataNode directly
+        assert "DataNode" in task
+        assert "start_node" in task
+        # Example code block is present
+        assert "```python" in task
+        assert "DataNode(" in task
+        assert "subgraph_entry" in task
+        assert "subgraph_exit" in task
 
     def test_build_ceo_task_task_directive(self, tmp_path):
         """_build_ceo_task injects Task directive when task_context is provided."""
@@ -3108,6 +3115,10 @@ class TestDataNodeTaskFlags:
         )
         assert "## DataNode Directive" in task
         assert "## Task Directive" in task
+        # DataNode directive tells Builder to include DataNode as start_node
+        assert "DataNode" in task
+        assert "start_node" in task
+        assert "```python" in task
         # DataNode directive comes before Task directive
         dn_pos = task.index("## DataNode Directive")
         td_pos = task.index("## Task Directive")
