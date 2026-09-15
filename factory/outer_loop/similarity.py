@@ -173,7 +173,14 @@ class NoveltyFilter:
 
         t = threshold if threshold is not None else self.min_edit_distance
         for archived in self._archived_workflows:
-            if archived.knob_values == workflow.knob_values and graph_edit_distance(workflow, archived) < t:
+            if archived.knob_values != workflow.knob_values:
+                continue
+            ged = graph_edit_distance(workflow, archived)
+            if ged == 0:
+                # Identical topology — if hash is novel (checked above),
+                # the difference is content-only (prompts, params) → novel
+                continue
+            if ged < t:
                 return False
 
         return True

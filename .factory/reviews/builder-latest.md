@@ -1,17 +1,26 @@
-# Builder Report — Diagnostic Logging & AgentNode Loop Test
+# Builder Agent Output
 
-## Changes Made
+- **timestamp:** 2026-09-15
+- **exit_code:** 0
+- **branch:** factory/run-e3ddbac6
+- **pr:** #1494 (existing — pushed fixes to branch)
 
-### factory/workflow/executor.py
-- **data_item_setup_complete log**: After `setup()` call, logs the files created in the workspace (item_id, workspace path, file count, first 20 files)
-- **setup_read_path_mismatch warning**: During setup_reads rescan, detects when a declared read path doesn't match the actual file location by searching for the basename recursively
-- **wait_for_reads_timeout_diagnostic warning**: When `_wait_for_reads` times out, logs what files DO exist in completed_files vs what's missing
+## Changes
 
-### tests/test_data_node.py
-- **test_data_node_loop_with_agent_body**: Integration test for DataNode + Loop(AgentNode body, fn GateNode). Uses a mock agent_fn that appends to counter.txt, gate checks line count, verifies 3 iterations via RELOOP→PROCEED cycle
-- **test_setup_read_path_mismatch_logs_warning**: Tests that a mismatched read path (file at `.factory/memory.md` but node reads `memory.md`) causes the inner executor to halt, with a fast timeout patch to avoid 60s CI delay
+### Fix A — `tests/test_compose.py` (path resolution)
+- Added module-level constant `_CHESS_EVOLVE_TOML` using `Path(__file__).resolve().parent.parent / ...` to resolve the chess-evolve.toml path absolutely (stable under pytest-xdist `-n auto` where CWD differs from repo root)
+- Updated both `test_chess_evolve_toml_no_builder_required` and `test_chess_evolve_toml_passes_any_workflow` to use the constant instead of the relative path string
 
-## Test Results
-- All 69 tests in test_data_node.py pass
-- All 747 workflow-related tests pass (8 skipped)
-- No lint errors in modified files
+### Fix B — `factory/outer_loop/similarity.py` (NoveltyFilter GED=0 logic)
+- Modified the GED loop in `NoveltyFilter.is_novel()` to `continue` when `ged == 0` (identical topology)
+- Rationale: When GED=0, topology is identical to an archived workflow. If the structural hash check above already passed (hash is novel), the difference must be content-only (prompts, params). Content-only mutations are intentionally novel — exact duplicates are caught by the hash dedup. The GED loop should only reject when topology distance is non-zero but below threshold.
+
+## Verification
+
+- 3 previously-failing tests now pass:
+  - `test_chess_evolve_toml_no_builder_required` ✅
+  - `test_chess_evolve_toml_passes_any_workflow` ✅
+  - `test_prompt_only_mutation_passes_is_novel` ✅
+- Full test suites pass with no regressions:
+  - `tests/test_compose.py`: 51/51 passed
+  - `tests/test_outer_loop/test_similarity.py`: 18/18 passed

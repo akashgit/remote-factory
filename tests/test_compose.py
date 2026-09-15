@@ -25,6 +25,9 @@ from factory.task import (
 )
 
 
+_CHESS_EVOLVE_TOML = Path(__file__).resolve().parent.parent / "benchmarks" / "configs" / "chess-evolve.toml"
+
+
 # ── Capability StrEnum tests ────────────────────────────────────
 
 
@@ -271,7 +274,7 @@ class TestTomlTaskCapabilities:
         """chess-evolve.toml with required_capabilities=[] should need no capabilities."""
         from factory.task import TaskDefinition
 
-        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        defn = TaskDefinition.from_toml(_CHESS_EVOLVE_TOML)
         assert defn.constraints.required_capabilities == []
         task = Task(definition=defn)
         caps = TaskCapabilities.from_task(task)
@@ -281,7 +284,7 @@ class TestTomlTaskCapabilities:
         """chess-evolve.toml should pass composition with a research-only workflow."""
         from factory.task import TaskDefinition
 
-        defn = TaskDefinition.from_toml("benchmarks/configs/chess-evolve.toml")
+        defn = TaskDefinition.from_toml(_CHESS_EVOLVE_TOML)
         task = Task(definition=defn)
         wf = _make_workflow(researcher=True, name="research-only")
         validate_composition(wf, task)
