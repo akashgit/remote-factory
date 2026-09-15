@@ -43,7 +43,7 @@ class DesignerAgent:
 
         Structure: researcher → builder → gate
         """
-        nodes: dict[str, AgentNode | FnNode | GateNode] = {
+        nodes: dict[str, NodeType] = {
             "researcher": AgentNode(
                 id="researcher",
                 role=AgentRole.RESEARCHER,
@@ -101,7 +101,7 @@ class DesignerAgent:
         """
         from factory.workflow.primitives import ForkNode, JoinNode
 
-        nodes: dict[str, AgentNode | FnNode | GateNode | ForkNode | JoinNode] = {
+        nodes: dict[str, NodeType] = {
             "study": FnNode(
                 id="study",
                 command="factory study {project_path}",
@@ -216,7 +216,7 @@ class DesignerAgent:
         raw_roles = constraints.get("require_roles", [])
         require_roles: list[object] = list(raw_roles) if isinstance(raw_roles, list) else []
 
-        nodes: dict[str, AgentNode | FnNode | GateNode] = {}
+        nodes: dict[str, NodeType] = {}
         edges: list[Edge] = []
         prev_id: str | None = None
 
