@@ -19,6 +19,7 @@ from factory.workflow.primitives import (
     Edge,
     FnNode,
     GateNode,
+    NodeType,
     Workflow,
 )
 
@@ -353,7 +354,7 @@ class DesignerAgent:
 
 
 def _inject_frozen_nodes(
-    nodes: dict[str, object],
+    nodes: dict[str, NodeType],
     seed_workflow: Workflow | None,
     frozen_node_ids: set[str] | None,
 ) -> None:
@@ -377,7 +378,7 @@ def _inject_frozen_nodes(
 
 
 def _rewire_data_nodes(
-    nodes: dict[str, object],
+    nodes: dict[str, NodeType],
     edges: list[Edge],
     original_start: str,
     seed_workflow: Workflow | None,
