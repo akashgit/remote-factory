@@ -12,6 +12,7 @@ from __future__ import annotations
 import structlog
 
 from factory.outer_loop.models import EvalResult, MutationRecord, MutationType
+from factory.workflow.executor import _collect_subgraph_nodes
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -65,12 +66,12 @@ class DesignerAgent:
             ),
         }
 
-        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
-
         edges = [
             Edge(source="researcher", target="builder"),
             Edge(source="builder", target="gate_qa"),
         ]
+
+        _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         start_node = "researcher"
         new_start = _rewire_data_nodes(
@@ -166,8 +167,6 @@ class DesignerAgent:
             ),
         }
 
-        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
-
         edges = [
             Edge(source="study", target="researcher"),
             Edge(source="researcher", target="strategist"),
@@ -180,6 +179,8 @@ class DesignerAgent:
             Edge(source="code_reviewer", target="adversarial_tester"),
             Edge(source="adversarial_tester", target="gate_qa"),
         ]
+
+        _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         start_node = "study"
         new_start = _rewire_data_nodes(
@@ -256,7 +257,7 @@ class DesignerAgent:
             )
             edges.append(Edge(source=prev_id, target=gate_id))
 
-        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+        _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
         new_start = _rewire_data_nodes(
@@ -355,15 +356,26 @@ class DesignerAgent:
 
 def _inject_frozen_nodes(
     nodes: dict[str, NodeType],
+    edges: list[Edge],
     seed_workflow: Workflow | None,
     frozen_node_ids: set[str] | None,
 ) -> None:
     """Inject frozen nodes from a seed workflow into a template nodes dict.
 
     Frozen nodes take precedence over template nodes on ID collision.
+
+    When a frozen node is a DataNode, its subgraph nodes (from subgraph_entry
+    to subgraph_exit) and their connecting edges are also injected from the
+    seed workflow. This ensures the DataNode's subgraph references remain valid
+    in the variant.
+
+    Limitation: nested DataNodes within a subgraph are NOT recursively expanded.
     """
     if not seed_workflow or not frozen_node_ids:
         return
+
+    existing_edge_sigs = {(e.source, e.target, e.condition) for e in edges}
+
     for frozen_id in frozen_node_ids:
         if frozen_id in seed_workflow.nodes:
             if frozen_id in nodes:
@@ -373,6 +385,47 @@ def _inject_frozen_nodes(
                     action="preferring_frozen_over_template",
                 )
             nodes[frozen_id] = seed_workflow.nodes[frozen_id]
+
+            node = seed_workflow.nodes[frozen_id]
+            if isinstance(node, DataNode):
+                # Validate subgraph entry/exit exist in seed
+                if node.subgraph_entry not in seed_workflow.nodes:
+                    log.warning(
+                        "data_node_missing_subgraph_entry",
+                        data_node_id=frozen_id,
+                        subgraph_entry=node.subgraph_entry,
+                    )
+                    continue
+                if node.subgraph_exit not in seed_workflow.nodes:
+                    log.warning(
+                        "data_node_missing_subgraph_exit",
+                        data_node_id=frozen_id,
+                        subgraph_exit=node.subgraph_exit,
+                    )
+                    continue
+
+                subgraph_ids = _collect_subgraph_nodes(
+                    seed_workflow, node.subgraph_entry, node.subgraph_exit
+                )
+
+                # Copy subgraph nodes, deduplicating
+                for sg_id in subgraph_ids:
+                    if sg_id not in nodes:
+                        nodes[sg_id] = seed_workflow.nodes[sg_id]
+
+                # Copy subgraph-internal edges, deduplicating
+                for edge in seed_workflow.edges:
+                    if edge.source in subgraph_ids and edge.target in subgraph_ids:
+                        sig = (edge.source, edge.target, edge.condition)
+                        if sig not in existing_edge_sigs:
+                            edges.append(edge)
+                            existing_edge_sigs.add(sig)
+
+                log.debug(
+                    "injecting_data_node_subgraph",
+                    data_node_id=frozen_id,
+                    subgraph_node_count=len(subgraph_ids),
+                )
         else:
             log.warning("frozen_node_missing_in_seed", node_id=frozen_id)
 
@@ -415,7 +468,22 @@ def _rewire_data_nodes(
     if not frozen_data_ids:
         return None
 
+    # Exclude DataNodes and their subgraph nodes from terminal candidates.
+    # Subgraph nodes are injected by _inject_frozen_nodes but will be
+    # orphaned after rewiring — they must not influence terminal selection.
+    subgraph_node_ids: set[str] = set()
+    for fid in frozen_data_ids:
+        fnode = nodes[fid]
+        assert isinstance(fnode, DataNode)
+        if (seed_workflow
+                and fnode.subgraph_entry in seed_workflow.nodes
+                and fnode.subgraph_exit in seed_workflow.nodes):
+            subgraph_node_ids |= _collect_subgraph_nodes(
+                seed_workflow, fnode.subgraph_entry, fnode.subgraph_exit
+            )
+
     terminal_candidates -= frozen_data_ids
+    terminal_candidates -= subgraph_node_ids
     terminal_node = next(iter(terminal_candidates)) if terminal_candidates else original_start
 
     new_start: str | None = None
