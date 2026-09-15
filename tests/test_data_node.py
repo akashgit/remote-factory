@@ -1530,7 +1530,7 @@ class TestDataNodeLoopSubgraph:
         """DataNode whose subgraph is a Loop should execute body 3 times via fn gate."""
         from factory.workflow.executor import WorkflowExecutor
         from factory.workflow.package import Loop, Package
-        from factory.workflow.primitives import GateNode, VerdictType
+        from factory.workflow.primitives import GateNode
 
         project_path = tmp_path
         (project_path / ".factory").mkdir(parents=True, exist_ok=True)
@@ -1611,7 +1611,7 @@ class TestDataNodeLoopSubgraph:
     def test_data_node_loop_wrong_exit_warns(self) -> None:
         """DataNode with subgraph_exit pointing to GateNode should produce a validation warning."""
         from factory.workflow.package import Loop, Package
-        from factory.workflow.primitives import GateNode, VerdictType
+        from factory.workflow.primitives import GateNode
 
         body_node = FnNode(
             id="loop_body",
@@ -1670,7 +1670,7 @@ class TestDataNodeLoopSubgraph:
         """Loop Package compiled into a Workflow preserves all 3 loop edges in subgraph."""
         from factory.workflow.executor import _collect_subgraph_nodes
         from factory.workflow.package import Loop, Package
-        from factory.workflow.primitives import GateNode, VerdictType
+        from factory.workflow.primitives import GateNode
 
         body_node = FnNode(
             id="loop_body",
