@@ -1494,3 +1494,458 @@ class TestStepWithDataNodeCoverage:
             record = loop._step_with_data_node()
 
         assert record.score_end == 0.0
+
+
+# ── disk_reads re-scan after setup() ────────────────────────────
+
+
+class _SetupWritingTask:
+    """Task whose setup() creates a file that a subgraph node reads."""
+
+    def __init__(self, setup_file: str) -> None:
+        self._setup_file = setup_file
+
+    def instances(self):
+        from factory.task import TaskInstance
+        return [TaskInstance(id="inst1")]
+
+    def setup(self, instance: Any, workspace: Path) -> None:
+        target = workspace / self._setup_file
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("setup content")
+
+    def prompt(self, instance: Any) -> str:
+        return "go"
+
+    def verify(self, instance: Any, workspace: Path):
+        from factory.task import VerifyResult
+        return VerifyResult(passed=True, score=1.0)
+
+
+class TestDataNodeLoopSubgraph:
+    """DataNode + Loop/Gate subgraph integration tests."""
+
+    @pytest.mark.asyncio
+    async def test_data_node_with_loop_subgraph(self, tmp_path: Path) -> None:
+        """DataNode whose subgraph is a Loop should execute body 3 times via fn gate."""
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode
+
+        project_path = tmp_path
+        (project_path / ".factory").mkdir(parents=True, exist_ok=True)
+        counter_file = project_path / "counter.txt"
+
+        pp = str(project_path)
+
+        body_node = FnNode(
+            id="loop_body",
+            command=f"python3 -c \"open('{pp}/counter.txt','a').write('x\\n')\"",
+            reads=set(),
+            writes={"counter.txt"},
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command=(
+                f"python3 -c \""
+                f"import pathlib; "
+                f"p=pathlib.Path('{pp}/counter.txt'); "
+                f"c=len(p.read_text().splitlines()) if p.exists() else 0; "
+                f"print('PROCEED' if c >= 3 else 'RELOOP: try again')"
+                f"\""
+            ),
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=10, name="test_loop")
+
+        # Build DataNode workflow with correct subgraph_exit = loop exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="loop_data_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        # Validate graph — should have no issues
+        issues = wf.validate_graph()
+        assert not issues, f"Unexpected validation issues: {issues}"
+
+        executor = WorkflowExecutor(wf, project_path, dry_run=False)
+        result = await executor.execute()
+
+        assert result.success, f"Execution failed: {result.halt_reason}"
+        assert counter_file.exists(), "counter.txt should exist"
+        lines = counter_file.read_text().splitlines()
+        assert len(lines) == 3, f"Expected 3 lines, got {len(lines)}"
+        # Check inner executor nodes: 3 body + 3 gate + 1 exit = 7
+        parsed = json.loads(result.node_outputs["data_driver"])
+        assert len(parsed) == 1
+        inner_nodes = parsed[0]["nodes_executed"]
+        assert inner_nodes >= 7, f"Expected >= 7 inner nodes, got {inner_nodes}"
+
+    def test_data_node_loop_wrong_exit_warns(self) -> None:
+        """DataNode with subgraph_exit pointing to GateNode should produce a validation warning."""
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode
+
+        body_node = FnNode(
+            id="loop_body",
+            command="echo body",
+            reads=set(),
+            writes={"counter.txt"},
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command="echo PROCEED",
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=5, name="test_loop")
+
+        # INCORRECT: subgraph_exit points to gate instead of exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=gate.id,  # WRONG — should be loop_pkg.exit_node
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="wrong_exit_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        issues = wf.validate_graph()
+        gate_warnings = [
+            i for i in issues
+            if "GateNode" in i and "subgraph_exit" in i
+        ]
+        assert len(gate_warnings) >= 1, f"Expected GateNode warning, got: {issues}"
+
+    def test_loop_package_compiled_preserves_edges(self) -> None:
+        """Loop Package compiled into a Workflow preserves all 3 loop edges in subgraph."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import GateNode, VerdictType
+
+        body_node = FnNode(
+            id="loop_body",
+            command="echo body",
+            reads=set(),
+        )
+        body_pkg = Package(
+            name="body",
+            graph=Workflow(
+                name="body_graph",
+                nodes={"loop_body": body_node},
+                edges=[],
+                start_node="loop_body",
+            ),
+            entry_node="loop_body",
+            exit_node="loop_body",
+        )
+
+        gate = GateNode(
+            id="loop_gate",
+            evaluator_type="fn",
+            evaluator_command="echo PROCEED",
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=5, name="test_loop")
+
+        # Build DataNode with CORRECT exit_node
+        data_node = DataNode(
+            id="data_driver",
+            inline_items=[DataItem(id="game1", prompt="play")],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {"data_driver": data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name="edge_preservation_test",
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node="data_driver",
+        )
+
+        # Collect subgraph nodes
+        subgraph_ids = _collect_subgraph_nodes(
+            wf, loop_pkg.entry_node, loop_pkg.exit_node,
+        )
+
+        # All 3 loop nodes + exit must be in subgraph
+        assert "loop_body" in subgraph_ids
+        assert "loop_gate" in subgraph_ids
+        assert loop_pkg.exit_node in subgraph_ids
+
+        # Extract subgraph and check edges
+        sub_wf = wf.subgraph(subgraph_ids, name="sub", start_node=loop_pkg.entry_node)
+
+        # Check all 3 loop edges are preserved
+        edge_tuples = [(e.source, e.target, e.condition) for e in sub_wf.edges]
+
+        # body → gate (unconditional)
+        assert ("loop_body", "loop_gate", None) in edge_tuples, (
+            f"Missing body→gate edge. Edges: {edge_tuples}"
+        )
+        # gate → body (RELOOP)
+        assert ("loop_gate", "loop_body", VerdictType.RELOOP) in edge_tuples, (
+            f"Missing gate→body RELOOP edge. Edges: {edge_tuples}"
+        )
+        # gate → exit (PROCEED)
+        assert ("loop_gate", loop_pkg.exit_node, VerdictType.PROCEED) in edge_tuples, (
+            f"Missing gate→exit PROCEED edge. Edges: {edge_tuples}"
+        )
+
+
+class TestDiskReadsRescanAfterSetup:
+    """setup()-created files must appear in sub-executor completed_files."""
+
+    def test_setup_created_file_in_completed_files(self, tmp_path: Path) -> None:
+        """When task.setup() writes a file declared in a subgraph node's reads,
+        the sub-executor's completed_files must include it so _wait_for_reads()
+        doesn't block for 60 s."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        setup_file = "data/input.txt"
+
+        wf = Workflow(
+            name="rescan_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    task_ref="fake.module:SetupWritingTask",
+                    subgraph_entry="reader",
+                    subgraph_exit="reader",
+                ),
+                "reader": FnNode(
+                    id="reader",
+                    command="echo ok",
+                    reads={setup_file},
+                ),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        fake_task = _SetupWritingTask(setup_file)
+
+        # Capture the completed_files set on the sub-executor
+        captured_completed: list[set[str]] = []
+        original_execute = WorkflowExecutor.execute
+
+        async def spy_execute(self_inner):
+            if self_inner.workflow.name.endswith("__data_item"):
+                captured_completed.append(set(self_inner.completed_files))
+            return await original_execute(self_inner)
+
+        with patch("factory.task.TaskRef.resolve", return_value=fake_task), \
+             patch.object(WorkflowExecutor, "execute", spy_execute):
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            result = asyncio.run(executor.execute())
+
+        assert result.success, f"halted: {result.halt_reason}"
+        # The sub-executor's completed_files must contain the setup-written file
+        assert len(captured_completed) == 1
+        assert setup_file in captured_completed[0]
+
+    @pytest.mark.asyncio
+    async def test_data_node_loop_with_agent_body(self, tmp_path: Path) -> None:
+        """DataNode + Loop where body is an AgentNode — loop should iterate via RELOOP."""
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.package import Loop, Package
+        from factory.workflow.primitives import AgentNode, AgentRole, GateNode
+
+        project_path = tmp_path
+        (project_path / '.factory').mkdir(parents=True, exist_ok=True)
+        counter_file = project_path / 'counter.txt'
+        pp = str(project_path)
+
+        # Agent body: mock agent_fn that appends to counter file
+        call_count = 0
+
+        async def mock_agent_fn(role, task, proj_path, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cf = Path(proj_path) / 'counter.txt'
+            cf.parent.mkdir(parents=True, exist_ok=True)
+            with open(cf, 'a') as f:
+                f.write(f'move {call_count}\n')
+            return (f'Generated move {call_count}', 0)
+
+        generator = AgentNode(
+            id='generator',
+            role=AgentRole.BUILDER,
+            prompt_template='Generate the next move',
+            reads=set(),
+            writes=set(),  # mock_agent_fn handles file I/O directly
+            timeout=30,
+        )
+        body_pkg = Package(
+            name='gen_body',
+            graph=Workflow(
+                name='gen_graph',
+                nodes={'generator': generator},
+                edges=[],
+                start_node='generator',
+            ),
+            entry_node='generator',
+            exit_node='generator',
+        )
+
+        gate = GateNode(
+            id='game_gate',
+            evaluator_type='fn',
+            evaluator_command=(
+                f"python3 -c \""
+                f"import pathlib; "
+                f"p=pathlib.Path('{pp}/counter.txt'); "
+                f"c=len(p.read_text().splitlines()) if p.exists() else 0; "
+                f"print('PROCEED' if c >= 3 else 'RELOOP: keep playing')"
+                f"\""
+            ),
+            reads=set(),
+        )
+
+        loop_pkg = Loop(body_pkg, gate, max_iterations=10, name='game_loop')
+
+        data_node = DataNode(
+            id='game_data',
+            inline_items=[DataItem(id='game1', prompt='Play chess')],
+            subgraph_entry=loop_pkg.entry_node,
+            subgraph_exit=loop_pkg.exit_node,
+        )
+
+        all_nodes: dict[str, Any] = {'game_data': data_node}
+        for nid, node in loop_pkg.graph.nodes.items():
+            all_nodes[nid] = node
+
+        wf = Workflow(
+            name='agent_loop_test',
+            nodes=all_nodes,
+            edges=list(loop_pkg.graph.edges),
+            start_node='game_data',
+        )
+
+        issues = wf.validate_graph()
+        assert not issues, f'Validation issues: {issues}'
+
+        executor = WorkflowExecutor(wf, project_path, agent_fn=mock_agent_fn)
+        result = await executor.execute()
+
+        assert result.success, f'Execution failed: {result.halt_reason}'
+        assert counter_file.exists(), 'counter.txt should exist'
+        lines = counter_file.read_text().strip().splitlines()
+        assert len(lines) == 3, f'Expected 3 lines (3 iterations), got {len(lines)}: {lines}'
+        assert call_count == 3, f'Expected agent called 3 times, got {call_count}'
+
+    @pytest.mark.asyncio
+    async def test_setup_read_path_mismatch_logs_warning(self, tmp_path: Path) -> None:
+        """When setup() creates a file at a different path than node.reads expects,
+        the reader should timeout waiting for the mismatched read path."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        project_path = tmp_path
+        (project_path / '.factory').mkdir(parents=True, exist_ok=True)
+
+        # Create a file at .factory/memory.md but declare reads as 'memory.md'
+        (project_path / '.factory' / 'memory.md').write_text('game state')
+
+        wf = Workflow(
+            name='mismatch_test',
+            nodes={
+                'data': DataNode(
+                    id='data',
+                    inline_items=[DataItem(id='item1', prompt='test')],
+                    subgraph_entry='reader',
+                    subgraph_exit='reader',
+                ),
+                'reader': FnNode(
+                    id='reader',
+                    command='echo ok',
+                    reads={'memory.md'},  # WRONG — file is at .factory/memory.md
+                ),
+            },
+            edges=[],
+            start_node='data',
+        )
+
+        # Patch max_wait to avoid 60s timeout in CI
+        async def fast_wait(self_inner, node):
+            # Reduced max_wait for test speed
+            poll_interval = 0.1
+            waited = 0.0
+            while True:
+                missing = node.reads - self_inner.completed_files
+                if not missing:
+                    return
+                if waited >= 0.3:
+                    self_inner.result.halted = True
+                    self_inner.result.halt_reason = (
+                        f"node '{node.id}' timed out waiting for reads: {sorted(missing)}"
+                    )
+                    return
+                await asyncio.sleep(poll_interval)
+                waited += poll_interval
+
+        with patch.object(WorkflowExecutor, '_wait_for_reads', fast_wait):
+            executor = WorkflowExecutor(wf, project_path, dry_run=False)
+            result = await executor.execute()
+
+        # DataNode fault-isolates: outer succeeds but inner item fails due to read timeout
+        assert result.success
+        parsed = json.loads(result.node_outputs['data'])
+        assert len(parsed) == 1
+        item_result = parsed[0]
+        # Inner executor halted waiting for 'memory.md' that doesn't exist at that path
+        assert not item_result['success']
+        assert item_result['nodes_executed'] == 0  # reader never ran

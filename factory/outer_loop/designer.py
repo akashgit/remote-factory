@@ -15,9 +15,11 @@ from factory.outer_loop.models import EvalResult, MutationRecord, MutationType
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    DataNode,
     Edge,
     FnNode,
     GateNode,
+    NodeType,
     Workflow,
 )
 
@@ -31,12 +33,17 @@ class DesignerAgent:
     Mutation mode proposes targeted mutations from failure telemetry.
     """
 
-    def design_minimal(self, benchmark_spec: str) -> Workflow:
+    def design_minimal(
+        self,
+        benchmark_spec: str,
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create a 3-4 node workflow optimized for speed.
 
         Structure: researcher → builder → gate
         """
-        nodes: dict[str, AgentNode | FnNode | GateNode] = {
+        nodes: dict[str, NodeType] = {
             "researcher": AgentNode(
                 id="researcher",
                 role=AgentRole.RESEARCHER,
@@ -57,20 +64,36 @@ class DesignerAgent:
                 reads={".factory/reviews/builder-latest.md"},
             ),
         }
+
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+
         edges = [
             Edge(source="researcher", target="builder"),
             Edge(source="builder", target="gate_qa"),
         ]
+
+        start_node = "researcher"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start_node, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start_node = new_start
+
         wf = Workflow(
             name=f"minimal_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
             edges=edges,
-            start_node="researcher",
+            start_node=start_node,
         )
         log.info("designed_minimal", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
 
-    def design_thorough(self, benchmark_spec: str) -> Workflow:
+    def design_thorough(
+        self,
+        benchmark_spec: str,
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create an 8-10 node workflow optimized for thoroughness.
 
         Structure: study → researcher → strategist → fork(builder_a, builder_b)
@@ -78,7 +101,7 @@ class DesignerAgent:
         """
         from factory.workflow.primitives import ForkNode, JoinNode
 
-        nodes: dict[str, AgentNode | FnNode | GateNode | ForkNode | JoinNode] = {
+        nodes: dict[str, NodeType] = {
             "study": FnNode(
                 id="study",
                 command="factory study {project_path}",
@@ -142,6 +165,9 @@ class DesignerAgent:
                 reads={".factory/reviews/adversarial-qa.md"},
             ),
         }
+
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+
         edges = [
             Edge(source="study", target="researcher"),
             Edge(source="researcher", target="strategist"),
@@ -154,16 +180,30 @@ class DesignerAgent:
             Edge(source="code_reviewer", target="adversarial_tester"),
             Edge(source="adversarial_tester", target="gate_qa"),
         ]
+
+        start_node = "study"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start_node, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start_node = new_start
+
         wf = Workflow(
             name=f"thorough_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
             edges=edges,
-            start_node="study",
+            start_node=start_node,
         )
         log.info("designed_thorough", nodes=len(wf.nodes), benchmark=benchmark_spec[:40])
         return wf
 
-    def design_custom(self, benchmark_spec: str, constraints: dict[str, object]) -> Workflow:
+    def design_custom(
+        self,
+        benchmark_spec: str,
+        constraints: dict[str, object],
+        seed_workflow: Workflow | None = None,
+        frozen_node_ids: set[str] | None = None,
+    ) -> Workflow:
         """Create a custom from-scratch workflow with optional constraints.
 
         Constraints can specify:
@@ -176,7 +216,7 @@ class DesignerAgent:
         raw_roles = constraints.get("require_roles", [])
         require_roles: list[object] = list(raw_roles) if isinstance(raw_roles, list) else []
 
-        nodes: dict[str, AgentNode | FnNode | GateNode] = {}
+        nodes: dict[str, NodeType] = {}
         edges: list[Edge] = []
         prev_id: str | None = None
 
@@ -216,7 +256,15 @@ class DesignerAgent:
             )
             edges.append(Edge(source=prev_id, target=gate_id))
 
+        _inject_frozen_nodes(nodes, seed_workflow, frozen_node_ids)
+
         start = core_roles[0][0] if core_roles else "gate_qa"
+        new_start = _rewire_data_nodes(
+            nodes, edges, start, seed_workflow, frozen_node_ids
+        )
+        if new_start is not None:
+            start = new_start
+
         wf = Workflow(
             name=f"custom_{_slug(benchmark_spec)}",
             nodes=nodes,  # type: ignore[arg-type]
@@ -303,6 +351,99 @@ class DesignerAgent:
             ))
 
         return proposals[:3]
+
+
+def _inject_frozen_nodes(
+    nodes: dict[str, NodeType],
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> None:
+    """Inject frozen nodes from a seed workflow into a template nodes dict.
+
+    Frozen nodes take precedence over template nodes on ID collision.
+    """
+    if not seed_workflow or not frozen_node_ids:
+        return
+    for frozen_id in frozen_node_ids:
+        if frozen_id in seed_workflow.nodes:
+            if frozen_id in nodes:
+                log.warning(
+                    "frozen_node_collision",
+                    node_id=frozen_id,
+                    action="preferring_frozen_over_template",
+                )
+            nodes[frozen_id] = seed_workflow.nodes[frozen_id]
+        else:
+            log.warning("frozen_node_missing_in_seed", node_id=frozen_id)
+
+
+def _rewire_data_nodes(
+    nodes: dict[str, NodeType],
+    edges: list[Edge],
+    original_start: str,
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> str | None:
+    """Rewire injected frozen DataNodes so they integrate into the template.
+
+    For each frozen DataNode:
+    1. Update subgraph_entry → template's original start_node
+    2. Update subgraph_exit  → template's terminal node (no outgoing edges)
+
+    No explicit edge is added from the DataNode to subgraph_entry — the
+    executor reads subgraph_entry directly from the DataNode object.
+    Adding an explicit edge would fail validation (_validate_datanode_edges
+    rejects edges from a DataNode to its own subgraph nodes).
+
+    Returns the DataNode ID (new start_node) or None if no DataNode was injected.
+    """
+    if not seed_workflow or not frozen_node_ids:
+        return None
+
+    # Find terminal node: the node with no outgoing edges (among template edges)
+    sources = {e.source for e in edges}
+    all_node_ids = set(nodes.keys())
+    terminal_candidates = all_node_ids - sources
+    # Exclude the frozen DataNodes themselves from terminal candidates
+    frozen_data_ids: set[str] = set()
+
+    for fid in frozen_node_ids:
+        node = nodes.get(fid)
+        if isinstance(node, DataNode):
+            frozen_data_ids.add(fid)
+
+    if not frozen_data_ids:
+        return None
+
+    terminal_candidates -= frozen_data_ids
+    terminal_node = next(iter(terminal_candidates)) if terminal_candidates else original_start
+
+    new_start: str | None = None
+    for data_id in frozen_data_ids:
+        data_node = nodes[data_id]
+        assert isinstance(data_node, DataNode)
+
+        # Determine subgraph entry: if the DataNode ID collides with the
+        # template's original_start, follow edges to find the actual first
+        # template node (otherwise subgraph_entry would point to itself).
+        # Also remove the now-stale edges from original_start — they would
+        # become invalid edges from the DataNode to its own subgraph.
+        entry = original_start
+        if data_id == original_start:
+            for edge in edges:
+                if edge.source == original_start:
+                    entry = edge.target
+                    break
+            edges[:] = [e for e in edges if e.source != original_start]
+
+        # Replace with updated subgraph_entry/exit pointing to template nodes
+        updated = data_node.model_copy(
+            update={"subgraph_entry": entry, "subgraph_exit": terminal_node}
+        )
+        nodes[data_id] = updated
+        new_start = data_id
+
+    return new_start
 
 
 def extract_telemetry(eval_result: EvalResult) -> dict[str, object]:

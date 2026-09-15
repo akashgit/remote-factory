@@ -23,6 +23,10 @@ def structural_hash(workflow: Workflow) -> str:
         node = workflow.nodes[nid]
         d = node.model_dump(mode="json")
         d["_type"] = type(node).__name__
+        if hasattr(node, "prompt_template"):
+            d["_prompt_hash"] = hashlib.sha256(
+                (getattr(node, "prompt_template", "") or "").encode()
+            ).hexdigest()
         nodes_canonical.append(d)
 
     edges_canonical = sorted(
@@ -169,7 +173,14 @@ class NoveltyFilter:
 
         t = threshold if threshold is not None else self.min_edit_distance
         for archived in self._archived_workflows:
-            if archived.knob_values == workflow.knob_values and graph_edit_distance(workflow, archived) < t:
+            if archived.knob_values != workflow.knob_values:
+                continue
+            ged = graph_edit_distance(workflow, archived)
+            if ged == 0:
+                # Identical topology — if hash is novel (checked above),
+                # the difference is content-only (prompts, params) → novel
+                continue
+            if ged < t:
                 return False
 
         return True

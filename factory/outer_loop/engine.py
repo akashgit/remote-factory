@@ -40,10 +40,27 @@ PLATEAU_WINDOW = 3
 
 
 def _auto_frozen_nodes(workflow: Workflow) -> set[str]:
-    """Return node IDs that should always be frozen during mutation."""
-    from factory.workflow.primitives import DataNode
+    """Return node IDs that should always be frozen during mutation.
 
-    return {nid for nid, node in workflow.nodes.items() if isinstance(node, DataNode)}
+    Includes DataNode IDs and all nodes in their subgraphs (entry→exit).
+    """
+    from factory.workflow.primitives import DataNode
+    from factory.workflow.executor import _collect_subgraph_nodes
+
+    frozen: set[str] = set()
+    for nid, node in workflow.nodes.items():
+        if isinstance(node, DataNode):
+            frozen.add(nid)
+            subgraph_ids = _collect_subgraph_nodes(
+                workflow, node.subgraph_entry, node.subgraph_exit,
+            )
+            frozen.update(subgraph_ids)
+            log.debug(
+                "data_node_subgraph_frozen",
+                data_node=nid,
+                subgraph_ids=list(subgraph_ids),
+            )
+    return frozen
 
 
 class BudgetTracker:
@@ -195,7 +212,7 @@ class SwarmEngine:
                 self._mode_registry.register(ind.id, 0, mutated_wf)
 
         if designer_count > 0:
-            self._add_designer_variants(pop, cfg, designer_count)
+            self._add_designer_variants(pop, cfg, designer_count, base_workflow)
 
         log.info(
             "population_seeded",
@@ -210,21 +227,34 @@ class SwarmEngine:
         pop: Population,
         cfg: SwarmConfig,
         designer_count: int,
+        seed_workflow: Workflow | None = None,
     ) -> None:
         """Add from-scratch designed workflows to the population."""
         benchmark_spec = cfg.benchmark
         designs: list[Workflow] = []
+        frozen_ids = set(cfg.frozen_node_ids) if cfg.frozen_node_ids else set()
+        if seed_workflow is not None:
+            frozen_ids |= _auto_frozen_nodes(seed_workflow)
+        frozen = frozen_ids if frozen_ids else None
 
         if designer_count >= 1:
             try:
-                minimal = self._designer.design_minimal(benchmark_spec)
+                minimal = self._designer.design_minimal(
+                    benchmark_spec,
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
+                )
                 designs.append(minimal)
             except Exception:
                 log.warning("designer_minimal_failed", exc_info=True)
 
         if designer_count >= 2:
             try:
-                thorough = self._designer.design_thorough(benchmark_spec)
+                thorough = self._designer.design_thorough(
+                    benchmark_spec,
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
+                )
                 designs.append(thorough)
             except Exception:
                 log.warning("designer_thorough_failed", exc_info=True)
@@ -234,6 +264,8 @@ class SwarmEngine:
                 custom = self._designer.design_custom(
                     benchmark_spec,
                     {"max_nodes": 4 + i, "parallel": i % 2 == 0},
+                    seed_workflow=seed_workflow,
+                    frozen_node_ids=frozen,
                 )
                 designs.append(custom)
             except Exception:

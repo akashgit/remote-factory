@@ -729,3 +729,144 @@ class TestInitialContextGuard:
 
         executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
         assert executor.node_context == {}
+
+
+class TestRunAgentPersistsToNodeWrites:
+    """Gap 1: _run_agent() persists stdout to node.writes paths."""
+
+    async def test_run_agent_persists_to_node_writes(self, tmp_project: Path) -> None:
+        """AgentNode with writes={'output.md'} persists agent stdout to that file."""
+        from unittest.mock import AsyncMock
+
+        wf = Workflow(
+            name="persist_test",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                    writes={"output.md"},
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        mock_agent_fn = AsyncMock(return_value=("agent output", 0))
+        executor = WorkflowExecutor(wf, tmp_project, agent_fn=mock_agent_fn)
+        await executor.execute()
+
+        output_file = tmp_project / "output.md"
+        assert output_file.exists()
+        assert output_file.read_text() == "agent output"
+
+    async def test_run_agent_no_writes_skips_file_creation(self, tmp_project: Path) -> None:
+        """AgentNode without writes doesn't create extra files."""
+        from unittest.mock import AsyncMock
+
+        wf = Workflow(
+            name="no_writes_test",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        files_before = set(tmp_project.rglob("*"))
+        mock_agent_fn = AsyncMock(return_value=("agent output", 0))
+        executor = WorkflowExecutor(wf, tmp_project, agent_fn=mock_agent_fn)
+        await executor.execute()
+
+        files_after = set(tmp_project.rglob("*"))
+        new_files = files_after - files_before
+        # Only event log files should be created, not agent output files
+        for f in new_files:
+            assert "output.md" not in f.name
+
+
+class TestAgentFnInjection:
+    """Gap 2: WorkflowExecutor supports agent_fn injection."""
+
+    async def test_custom_agent_fn_used(self, tmp_project: Path) -> None:
+        """Custom agent_fn is called instead of default invoke_agent."""
+        from unittest.mock import AsyncMock
+
+        mock_fn = AsyncMock(return_value=("custom output", 0))
+
+        wf = Workflow(
+            name="custom_fn_test",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, agent_fn=mock_fn)
+        await executor.execute()
+
+        mock_fn.assert_called_once()
+
+    async def test_agent_fn_propagates_to_data_node_sub_executor(
+        self, tmp_project: Path,
+    ) -> None:
+        """agent_fn propagates to DataNode per-item sub-executors."""
+        from unittest.mock import AsyncMock
+
+        from factory.workflow.primitives import DataItem, DataNode
+
+        mock_fn = AsyncMock(return_value=("sub output", 0))
+
+        wf = Workflow(
+            name="data_propagation_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="item1", prompt="do it")],
+                    subgraph_entry="sub_agent",
+                    subgraph_exit="sub_agent",
+                ),
+                "sub_agent": AgentNode(
+                    id="sub_agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="data",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, agent_fn=mock_fn)
+        result = await executor.execute()
+
+        assert result.success
+        mock_fn.assert_called_once()
+
+    def test_agent_fn_defaults_to_invoke_agent(self, tmp_project: Path) -> None:
+        """When agent_fn is not provided, defaults to invoke_agent."""
+        from factory.agents.runner import invoke_agent
+
+        wf = Workflow(
+            name="default_fn_test",
+            nodes={
+                "agent": AgentNode(
+                    id="agent",
+                    role=AgentRole.BUILDER,
+                    prompt_template="build",
+                ),
+            },
+            edges=[],
+            start_node="agent",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project)
+        assert executor._agent_fn is invoke_agent
