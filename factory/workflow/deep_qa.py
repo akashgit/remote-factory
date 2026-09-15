@@ -7,9 +7,8 @@ Triggered via `factory workflow run deep-qa` or `factory ceo /path --mode deep-q
 
 from typing import Any
 
-from factory.models import ProjectState
 from factory.workflow.definitions import _deep_qa_subgraph
-from factory.workflow.primitives import AgentNode, Edge, FnNode, GateNode, VerdictType, Workflow
+from factory.workflow.primitives import AgentNode, Edge, FnNode, GateNode, ProjectState, VerdictType, Workflow
 
 meta = {
     "name": "deep-qa",

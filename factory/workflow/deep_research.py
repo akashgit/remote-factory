@@ -9,13 +9,13 @@ Triggered via `factory workflow run deep-research` or
 
 from typing import Any
 
-from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     ArtifactCheck,
     Edge,
     GateNode,
+    ProjectState,
     Study,
     VerdictType,
     Workflow,
