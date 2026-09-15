@@ -3164,16 +3164,34 @@ class TestDataNodeTaskFlags:
     # ── cmd_ceo() validation path tests ────────────────────────
 
     def test_cmd_ceo_data_node_requires_create_mode(self, tmp_path, capsys):
-        """--data-node without --mode create should print error and return 1."""
+        """--data-node without --mode create or create-v2 should print error and return 1."""
         result = main(["ceo", str(tmp_path), "--mode", "design", "--data-node"])
         assert result == 1
-        assert "--data-node requires --mode create" in capsys.readouterr().err
+        assert "--data-node requires --mode create or --mode create-v2" in capsys.readouterr().err
 
     def test_cmd_ceo_task_requires_create_mode(self, tmp_path, capsys):
-        """--task without --mode create should print error and return 1."""
+        """--task without --mode create or create-v2 should print error and return 1."""
         result = main(["ceo", str(tmp_path), "--mode", "design", "--task", "swe-bench"])
         assert result == 1
-        assert "--task requires --mode create" in capsys.readouterr().err
+        assert "--task requires --mode create or --mode create-v2" in capsys.readouterr().err
+
+    def test_cmd_ceo_data_node_accepted_with_create_v2(self, tmp_path, capsys):
+        """--data-node with --mode create-v2 should NOT be rejected by mode validation."""
+        with patch("factory.cli.ceo._execute_ceo", return_value=0):
+            result = main(["ceo", str(tmp_path), "--mode", "create-v2", "--focus", "my pipeline", "--data-node"])
+        captured = capsys.readouterr()
+        # Should NOT contain the mode-validation error
+        assert "--data-node requires --mode create" not in captured.err
+        assert result != 1 or "--data-node requires" not in captured.err
+
+    def test_cmd_ceo_task_accepted_with_create_v2(self, tmp_path, capsys):
+        """--task with --mode create-v2 should NOT be rejected by mode validation."""
+        with patch("factory.cli.ceo._execute_ceo", return_value=0):
+            result = main(["ceo", str(tmp_path), "--mode", "create-v2", "--focus", "my pipeline", "--task", "swe-bench"])
+        captured = capsys.readouterr()
+        # Should NOT contain the mode-validation error
+        assert "--task requires --mode create" not in captured.err
+        assert result != 1 or "--task requires" not in captured.err
 
     def test_cmd_ceo_task_import_error(self, tmp_path, capsys):
         """--task with invalid ref should print clean error and return 1."""

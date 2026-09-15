@@ -93,19 +93,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         )
         plugin_folder = None
 
-    # --data-node requires --mode create
-    if data_node and mode != "create":
+    # --data-node requires --mode create or --mode create-v2
+    if data_node and mode not in ("create", "create-v2"):
         print(
-            "Error: --data-node requires --mode create. "
+            "Error: --data-node requires --mode create or --mode create-v2. "
             "Usage: factory ceo /path --mode create --focus 'my pipeline' --data-node",
             file=sys.stderr,
         )
         return 1
 
-    # --task also requires --mode create (but NOT --data-node)
-    if task_ref_raw and mode != "create":
+    # --task also requires --mode create or --mode create-v2 (but NOT --data-node)
+    if task_ref_raw and mode not in ("create", "create-v2"):
         print(
-            "Error: --task requires --mode create. "
+            "Error: --task requires --mode create or --mode create-v2. "
             "Usage: factory ceo /path --mode create --focus 'my pipeline' --task my-task",
             file=sys.stderr,
         )
