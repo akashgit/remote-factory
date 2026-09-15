@@ -134,3 +134,43 @@ class TestWrapWithDataNode:
         )
         with pytest.raises(ValueError, match="collision"):
             wrap_with_data_node(wf)
+
+    def test_invalid_start_node_raises(self) -> None:
+        """start_node not found in workflow nodes raises ValueError."""
+        wf = Workflow(
+            name="t",
+            nodes={"a": FnNode(id="a", command="echo a")},
+            edges=[],
+            start_node="missing",
+        )
+        with pytest.raises(ValueError, match="start_node"):
+            wrap_with_data_node(wf)
+
+    def test_no_terminal_node_raises(self) -> None:
+        """Cycle with no terminal node (every node has outgoing edges) raises ValueError."""
+        wf = Workflow(
+            name="t",
+            nodes={
+                "a": FnNode(id="a", command="echo a"),
+                "b": FnNode(id="b", command="echo b"),
+            },
+            edges=[Edge(source="a", target="b"), Edge(source="b", target="a")],
+            start_node="a",
+        )
+        with pytest.raises(ValueError, match="No terminal"):
+            wrap_with_data_node(wf)
+
+    def test_multiple_terminal_nodes_raises(self) -> None:
+        """Multiple terminal nodes (>1 node with no outgoing edges) raises ValueError."""
+        wf = Workflow(
+            name="t",
+            nodes={
+                "a": FnNode(id="a", command="echo a"),
+                "b": FnNode(id="b", command="echo b"),
+                "c": FnNode(id="c", command="echo c"),
+            },
+            edges=[Edge(source="a", target="b")],
+            start_node="a",
+        )
+        with pytest.raises(ValueError, match="Multiple terminal"):
+            wrap_with_data_node(wf)

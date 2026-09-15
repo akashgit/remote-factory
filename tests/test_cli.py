@@ -3160,3 +3160,133 @@ class TestDataNodeTaskFlags:
             data_node=True,
         )
         assert "## DataNode Directive" not in task
+
+    # ── cmd_ceo() validation path tests ────────────────────────
+
+    def test_cmd_ceo_data_node_requires_create_mode(self, tmp_path, capsys):
+        """--data-node without --mode create should print error and return 1."""
+        result = main(["ceo", str(tmp_path), "--mode", "design", "--data-node"])
+        assert result == 1
+        assert "--data-node requires --mode create" in capsys.readouterr().err
+
+    def test_cmd_ceo_task_requires_create_mode(self, tmp_path, capsys):
+        """--task without --mode create should print error and return 1."""
+        result = main(["ceo", str(tmp_path), "--mode", "design", "--task", "swe-bench"])
+        assert result == 1
+        assert "--task requires --mode create" in capsys.readouterr().err
+
+    def test_cmd_ceo_task_import_error(self, tmp_path, capsys):
+        """--task with invalid ref should print clean error and return 1."""
+        result = main([
+            "ceo", str(tmp_path), "--mode", "create",
+            "--focus", "my pipeline", "--task", "bad.nonexistent.mod:BadTask",
+        ])
+        assert result == 1
+        assert "could not be resolved" in capsys.readouterr().err
+
+    # ── _resolve_task_for_directive() tests ────────────────────
+
+    def test_resolve_qualified_ref(self):
+        """Qualified ref (with ':') resolves via TaskRef.resolve()."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "test-task"
+        mock_defn.description = "A test task"
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = []
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("my.mod:MyTask", Path("/tmp"))
+
+        assert result["name"] == "test-task"
+        assert result["ref_string"] == "my.mod:MyTask"
+        assert result["scoring_method"] == "exit_code"
+        assert result["verify_command"] == ""
+        assert result["timeout"] == 600
+
+    def test_resolve_simple_name(self):
+        """Simple name (no ':') resolves via TaskRegistry.load_task()."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "my-task"
+        mock_defn.description = "desc"
+        mock_defn.scoring.method = "json"
+        mock_defn.scoring.metric_path = "accuracy"
+        mock_defn.verify_config = MagicMock(command="pytest")
+        mock_defn.constraints = MagicMock(timeout=300)
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = []
+
+        with patch("factory.task_registry.TaskRegistry") as MockRegistry:
+            MockRegistry.load_task.return_value = mock_task
+            result = _resolve_task_for_directive("my-task", Path("/tmp"))
+
+        assert result["name"] == "my-task"
+        assert result["ref_string"] == "my-task"
+        assert result["scoring_method"] == "json"
+        assert result["scoring_metric_path"] == "accuracy"
+        assert result["verify_command"] == "pytest"
+        assert result["timeout"] == 300
+
+    def test_resolve_extracts_field_names_and_sample_prompt(self):
+        """_resolve_task_for_directive extracts field_names and sample_prompt from instances."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "test"
+        mock_defn.description = ""
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_instance = MagicMock()
+        mock_instance.metadata = {"repo": "x", "problem": "y"}
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = [mock_instance]
+        mock_task.prompt.return_value = "Fix this bug in repo x"
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("mod:Task", Path("/tmp"))
+
+        assert result["field_names"] == ["problem", "repo"]
+        assert result["sample_prompt"] == "Fix this bug in repo x"
+
+    def test_resolve_graceful_degradation_on_instances_error(self):
+        """_resolve_task_for_directive gracefully handles instances() raising."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "broken"
+        mock_defn.description = ""
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.side_effect = RuntimeError("data not available")
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("mod:Task", Path("/tmp"))
+
+        # Graceful degradation: empty field_names and sample_prompt
+        assert result["field_names"] == []
+        assert result["sample_prompt"] == ""
+        assert result["name"] == "broken"
