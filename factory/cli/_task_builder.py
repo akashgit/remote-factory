@@ -188,6 +188,9 @@ def _build_ceo_task(
     update_existing_mode: str | None = None,
     plugin_mode: bool = False,
     plugin_folder: str | None = None,
+    data_node: bool = False,
+    task_ref: str | None = None,
+    task_context: dict | None = None,
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
@@ -446,6 +449,92 @@ def _build_ceo_task(
             f"The implementation targets THIS project (the factory codebase). "
             f"Key files to modify: factory/workflow/definitions.py, "
             f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
+        )
+
+    # --- DataNode directive: Builder designs a per-item subgraph ---
+    if create_description and data_node:
+        task += (
+            "\n\n## DataNode Directive\n\n"
+            "**data_node:** true\n\n"
+            "The workflow you design will be wrapped in a per-item data iteration "
+            "layer. Design your workflow as a **per-item subgraph** — it "
+            "will receive one data item at a time via `initial_context`.\n\n"
+            "**Your responsibility:**\n"
+            "- Design the per-item processing pipeline (the subgraph nodes and edges)\n"
+            "- Your entry node receives the item's context as its initial prompt\n"
+            "- Focus on processing ONE item correctly — iteration is handled for you\n"
+            "- Your workflow should have a single clear entry node and a single terminal node\n\n"
+            "**NOT your responsibility (handled mechanically post-build):**\n"
+            "- Data iteration node creation and configuration — added automatically after you build\n"
+            "- Data source binding — resolved at runtime via `--data <path>` or task_ref\n"
+            "- Iteration logic — handled per-item dispatch\n"
+            "- Score aggregation across items\n\n"
+            "**Constraints:**\n"
+            "- Do NOT add data-loading or iteration nodes\n"
+            "- Do NOT hardcode data file paths in your workflow\n"
+            "- Do NOT design looping/iteration logic — iteration is handled for you\n"
+            "- Your workflow MUST have exactly one terminal node (a node with no outgoing edges)\n"
+        )
+
+    # --- Task directive: Builder receives Task contract context ---
+    if create_description and task_context:
+        tc = task_context
+        task += (
+            "\n\n## Task Directive\n\n"
+            f"**task_ref:** {tc.get('ref_string', task_ref or '(unknown)')}\n\n"
+            f"A Task class provides custom setup/verify hooks for this workflow.\n\n"
+            f"**Task:** {tc.get('name', 'unknown')}\n"
+        )
+        if tc.get("description"):
+            task += f"**Description:** {tc['description']}\n"
+        task += "\n"
+
+        # Field names from instance metadata
+        if tc.get("field_names"):
+            fields_str = ", ".join(f"`{f}`" for f in tc["field_names"])
+            task += (
+                f"**Instance fields:** {fields_str}\n"
+                "Each data instance provides these metadata fields to your workflow.\n\n"
+            )
+
+        # Sample prompt output
+        if tc.get("sample_prompt"):
+            # Truncate very long prompts
+            sample = tc["sample_prompt"]
+            if len(sample) > 1500:
+                sample = sample[:1500] + "\n... (truncated)"
+            task += (
+                "**Sample prompt (what the agent will receive per item):**\n"
+                f"```\n{sample}\n```\n\n"
+            )
+
+        # Scoring contract
+        scoring_method = tc.get("scoring_method", "exit_code")
+        task += "**Scoring contract:**\n"
+        if scoring_method == "json":
+            metric_path = tc.get("scoring_metric_path", "score")
+            task += (
+                f"- Method: JSON scoring — your workflow's output is scored by "
+                f"extracting `{metric_path}` from JSON output\n"
+            )
+        else:
+            task += (
+                "- Method: exit_code scoring — exit code 0 = pass, non-zero = fail\n"
+            )
+        if tc.get("verify_command"):
+            task += f"- Verify command: `{tc['verify_command']}`\n"
+        if tc.get("timeout"):
+            task += f"- Timeout: {tc['timeout']}s\n"
+        task += "\n"
+
+        task += (
+            "**Your responsibility:**\n"
+            "- Design workflow nodes that process the Task's prompt output\n"
+            "- Ensure your workflow's output is compatible with the Task's verify hook\n\n"
+            "**NOT your responsibility (handled by the Task class):**\n"
+            "- Setup logic (Task.setup() runs before your workflow per item)\n"
+            "- Verification logic (Task.verify() runs after your workflow per item)\n"
+            "- Instance generation (Task.instances() provides data items)\n"
         )
 
     if prompt_file:

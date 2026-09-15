@@ -240,9 +240,9 @@ class DataNode(Node):
             self.source_path is not None,
             bool(self.inline_items),
         ]
-        if sum(sources) != 1:
+        if sum(sources) > 1:
             raise ValueError(
-                "Exactly one of task_ref, source_path, or inline_items must be set"
+                "At most one of task_ref, source_path, or inline_items may be set"
             )
         if self.source_path is not None and self.source_format is None:
             raise ValueError("source_path requires source_format to be set")

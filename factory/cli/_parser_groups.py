@@ -454,6 +454,15 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--folder", default=None, metavar="PATH",
                     help="Output directory for plugin package (default: ./<mode-name>-plugin). "
                          "Only used with --plugin.")
+    p.add_argument("--data-node", action="store_true", default=False, dest="data_node",
+                    help="Wrap the created workflow in a DataNode for per-item data iteration. "
+                         "Builder designs a per-item subgraph; DataNode wrapping is added "
+                         "mechanically after. Requires --mode create.")
+    p.add_argument("--task", default=None, metavar="TASK_REF", dest="task_ref",
+                    help="Task class reference (name or module:Class format) providing "
+                         "setup/verify hooks. Injects Task context (fields, sample prompt, "
+                         "scoring contract) into the Builder directive. "
+                         "Works with or without --data-node.")
     p.add_argument("--engine", choices=["skill", "tool", "deterministic"], default="skill",
                     help="Execution engine: skill (CEO follows SKILL.md, default), "
                          "tool (CEO drives via factory workflow tool commands), "

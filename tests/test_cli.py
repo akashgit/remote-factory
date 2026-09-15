@@ -3006,3 +3006,157 @@ class TestJustPlanFlag:
         """_build_ceo_task omits the plan directive when just_plan=False."""
         task = _build_ceo_task(tmp_path, "design", just_plan=False)
         assert "## Plan Loop (Just Plan)" not in task
+
+
+class TestDataNodeTaskFlags:
+    """Tests for --data-node and --task CLI flags."""
+
+    def test_data_node_flag_parsed(self):
+        """--data-node sets data_node=True."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/test", "--data-node"])
+        assert getattr(args, "data_node", False) is True
+
+    def test_task_flag_parsed(self):
+        """--task sets task_ref."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["ceo", "/tmp/test", "--mode", "create", "--task", "swe-bench"]
+        )
+        assert getattr(args, "task_ref") == "swe-bench"
+        assert getattr(args, "data_node", False) is False
+
+    def test_both_flags_parsed(self):
+        """--data-node --task together are parsed correctly."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["ceo", "/tmp/test", "--mode", "create",
+             "--data-node", "--task", "my.mod:MyTask"]
+        )
+        assert getattr(args, "data_node") is True
+        assert getattr(args, "task_ref") == "my.mod:MyTask"
+
+    def test_default_values(self):
+        """Without flags, defaults are False/None."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/test"])
+        assert getattr(args, "data_node", False) is False
+        assert getattr(args, "task_ref", None) is None
+
+    def test_build_ceo_task_data_node_directive(self, tmp_path):
+        """_build_ceo_task injects DataNode directive when data_node=True."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            data_node=True,
+        )
+        assert "## DataNode Directive" in task
+        assert "per-item subgraph" in task
+
+    def test_build_ceo_task_task_directive(self, tmp_path):
+        """_build_ceo_task injects Task directive when task_context is provided."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "swe-bench",
+                "description": "Bug fix task",
+                "field_names": ["repo", "problem_statement"],
+                "sample_prompt": "Fix this bug...",
+                "ref_string": "examples.swe_bench_task:SWEBenchTask",
+                "scoring_method": "exit_code",
+                "scoring_metric_path": "score",
+                "verify_command": "pytest",
+                "timeout": 300,
+            },
+        )
+        assert "## Task Directive" in task
+        assert "swe-bench" in task
+        assert "`repo`" in task
+        assert "`problem_statement`" in task
+        assert "exit_code" in task
+
+    def test_build_ceo_task_no_pollution_without_flags(self, tmp_path):
+        """Without --data-node or --task, no DataNode/Task directives injected."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+        )
+        assert "## DataNode Directive" not in task
+        assert "## Task Directive" not in task
+
+    def test_build_ceo_task_both_flags(self, tmp_path):
+        """Both --data-node and --task inject both directives."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            data_node=True,
+            task_ref="x:Y",
+            task_context={
+                "name": "my-task",
+                "description": "",
+                "field_names": ["f1"],
+                "sample_prompt": "do stuff",
+                "ref_string": "x:Y",
+                "scoring_method": "json",
+                "scoring_metric_path": "win_rate",
+            },
+        )
+        assert "## DataNode Directive" in task
+        assert "## Task Directive" in task
+        # DataNode directive comes before Task directive
+        dn_pos = task.index("## DataNode Directive")
+        td_pos = task.index("## Task Directive")
+        assert dn_pos < td_pos
+
+    def test_build_ceo_task_json_scoring(self, tmp_path):
+        """JSON scoring method shows metric path."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "t",
+                "description": "",
+                "field_names": [],
+                "sample_prompt": "",
+                "ref_string": "x:Y",
+                "scoring_method": "json",
+                "scoring_metric_path": "win_rate",
+            },
+        )
+        assert "JSON scoring" in task
+        assert "`win_rate`" in task
+
+    def test_build_ceo_task_sample_prompt_truncation(self, tmp_path):
+        """Long sample prompts (>1500 chars) are truncated."""
+        long_prompt = "x" * 2000
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "t",
+                "description": "",
+                "field_names": [],
+                "sample_prompt": long_prompt,
+                "ref_string": "x:Y",
+                "scoring_method": "exit_code",
+            },
+        )
+        assert "... (truncated)" in task
+        # The full 2000-char prompt should NOT appear
+        assert long_prompt not in task
+
+    def test_data_node_directive_not_in_non_create_mode(self, tmp_path):
+        """DataNode directive NOT injected when create_description is None."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            data_node=True,
+        )
+        assert "## DataNode Directive" not in task
