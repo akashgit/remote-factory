@@ -907,7 +907,8 @@ class WorkflowExecutor:
                             agent_fn=self._agent_fn,
                             initial_context=item.prompt or None,
                         )
-                        item_executor.completed_files = self.completed_files | disk_reads | setup_reads
+                        # Include current_item.json so subgraph nodes don't block on read-wait
+                        item_executor.completed_files = self.completed_files | disk_reads | setup_reads | {".factory/current_item.json"}
                         item_result = await item_executor.execute()
                     finally:
                         item_json_path.unlink(missing_ok=True)
