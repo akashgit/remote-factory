@@ -76,7 +76,7 @@ factory agent <role> --task "<task description>" --project /path/to/project [--t
 
 - **Do NOT** run `factory agent <role>` in the background except for the allowed exceptions
 - **Do NOT** `tail -f` any log file waiting for subagent output — there is no such file
-- **Do NOT** poll for subagent completion via any mechanism — the call is blocking
+- **Do NOT** poll using the Claude Code task output file (`/tmp/.../tasks/xxx.output`). If a command is auto-backgrounded (exceeded timeout), poll for the node's output artifacts instead (see Backgrounding Recovery below)
 
 **Why:** The factory's `invoke_agent` function is synchronous by design. It:
 1. Runs the subagent as a blocking subprocess
@@ -104,6 +104,27 @@ echo "All researchers complete"
 This single Bash call blocks until all 3 researchers finish. The `&` backgrounds each within the shell process, and `wait` ensures the call only returns when all are done.
 
 **Exception 2 — Archivist (fire-and-forget):** Post-verdict archivist invocations run async with `&` **in a single Bash tool call** (NOT `run_in_background: True`). The CEO continues immediately. No `wait` needed — the final blocking archive at cycle end catches any gaps.
+
+**Backgrounding Recovery:** When a Bash command exceeds the tool timeout (typically 600s), the runtime auto-backgrounds it and returns a message like `Command did not complete within its 600s timeout and was moved to the background`. This is expected for long-running agents (directors, builders). When this happens:
+
+1. **Poll for the output artifact**, not the task output file. The artifact verification block immediately after the command in the SKILL.md tells you what file to check and its minimum size. Use that as your polling condition:
+```bash
+# CORRECT — poll for the known output artifact from the SKILL.md verification block
+while [ ! -f "$PROJECT_PATH/<artifact_path>" ] || [ "$(wc -c < "$PROJECT_PATH/<artifact_path>" 2>/dev/null)" -lt <min_size> ]; do
+  sleep 15
+done
+```
+
+2. **Never poll the Claude Code task output file** — its format is internal and string matching against it is fragile:
+```bash
+# FORBIDDEN — fragile grep on internal task output, causes infinite loops (issue #1512)
+while true; do
+  if grep -q "some pattern" "/tmp/.../tasks/xxx.output"; then break; fi
+  sleep 30
+done
+```
+
+3. After the artifact appears, proceed to the artifact verification step as normal.
 
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|
