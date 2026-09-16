@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import shlex
 import time
@@ -1582,9 +1583,9 @@ def _collect_subgraph_nodes(
 
     def _bfs(start: str, adjacency: dict[str, list[str]], stop_at: str) -> set[str]:
         visited: set[str] = set()
-        queue = [start]
+        queue: deque[str] = deque([start])
         while queue:
-            nid = queue.pop(0)
+            nid = queue.popleft()
             if nid in visited:
                 continue
             visited.add(nid)

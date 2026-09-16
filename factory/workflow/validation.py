@@ -187,25 +187,8 @@ def _collect_subgraph_nodes(
     entry: str,
     exit_node: str,
 ) -> set[str]:
-    """Collect all node IDs on paths from entry to exit_node (inclusive)."""
-    edges_by_source: dict[str, list[str]] = {}
-    for edge in workflow.edges:
-        edges_by_source.setdefault(edge.source, []).append(edge.target)
-
-    visited: set[str] = set()
-    queue = [entry]
-    while queue:
-        nid = queue.pop(0)
-        if nid in visited:
-            continue
-        visited.add(nid)
-        if nid == exit_node:
-            continue
-        for target in edges_by_source.get(nid, []):
-            if target not in visited:
-                queue.append(target)
-
-    return visited
+    from factory.workflow.executor import _collect_subgraph_nodes as _exec_collect
+    return _exec_collect(workflow, entry, exit_node)
 
 
 def validate_workflow(workflow: Workflow) -> list[str]:
