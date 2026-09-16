@@ -1390,6 +1390,9 @@ def _get_builtin_registry() -> dict[str, Any]:
         "create-v2": lambda: __import__(
             "factory.workflow.contributed.create_v2", fromlist=["workflow"]
         ).workflow(),
+        "batch-summarizer": lambda: __import__(
+            "factory.workflow.contributed.batch_summarizer", fromlist=["workflow"]
+        ).workflow(),
     }
     return _BUILTIN_REGISTRY
 
