@@ -79,14 +79,14 @@ def test_all_nodes_have_annotations(workflow_name: str) -> None:
     templatized = workflow_to_skill_md(wf)
     _, annotations = split_skill(templatized)
 
-    from factory.workflow.primitives import ForkNode, SubgraphForkNode
+    from factory.workflow.executor import _collect_subgraph_nodes
+    from factory.workflow.primitives import DataNode, ForkNode, SubgraphForkNode
     fork_targets: set[str] = set()
     subgraph_nodes: set[str] = set()
     for node in wf.nodes.values():
         if isinstance(node, ForkNode):
             fork_targets.update(node.targets)
-        elif isinstance(node, SubgraphForkNode):
-            from factory.workflow.executor import _collect_subgraph_nodes
+        elif isinstance(node, (SubgraphForkNode, DataNode)):
             subgraph_nodes |= _collect_subgraph_nodes(wf, node.subgraph_entry, node.subgraph_exit)
 
     for node_id in wf.nodes:
