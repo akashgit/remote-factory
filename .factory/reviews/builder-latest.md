@@ -1,26 +1,41 @@
-# Builder Agent Output
+# Builder Review — batch-summarizer workflow
 
-- **timestamp:** 2026-09-15
-- **exit_code:** 0
-- **branch:** factory/run-e3ddbac6
-- **pr:** #1494 (existing — pushed fixes to branch)
+## Summary
 
-## Changes
+Implemented the `batch-summarizer` project-local workflow as specified in `.factory/strategy/current.md`.
 
-### Fix A — `tests/test_compose.py` (path resolution)
-- Added module-level constant `_CHESS_EVOLVE_TOML` using `Path(__file__).resolve().parent.parent / ...` to resolve the chess-evolve.toml path absolutely (stable under pytest-xdist `-n auto` where CWD differs from repo root)
-- Updated both `test_chess_evolve_toml_no_builder_required` and `test_chess_evolve_toml_passes_any_workflow` to use the constant instead of the relative path string
+## Files Created
 
-### Fix B — `factory/outer_loop/similarity.py` (NoveltyFilter GED=0 logic)
-- Modified the GED loop in `NoveltyFilter.is_novel()` to `continue` when `ged == 0` (identical topology)
-- Rationale: When GED=0, topology is identical to an archived workflow. If the structural hash check above already passed (hash is novel), the difference must be content-only (prompts, params). Content-only mutations are intentionally novel — exact duplicates are caught by the hash dedup. The GED loop should only reject when topology distance is non-zero but below threshold.
+| File | Purpose |
+|------|---------|
+| `.factory/workflows/batch_summarizer.py` | Project-local workflow definition |
+| `tests/test_batch_summarizer_workflow.py` | 10 test cases covering graph validation, structure, and SKILL.md export |
+| `skills/workflow-batch-summarizer/SKILL.md` | Auto-generated skill file for CEO agent consumption |
 
-## Verification
+## Implementation Details
 
-- 3 previously-failing tests now pass:
-  - `test_chess_evolve_toml_no_builder_required` ✅
-  - `test_chess_evolve_toml_passes_any_workflow` ✅
-  - `test_prompt_only_mutation_passes_is_novel` ✅
-- Full test suites pass with no regressions:
-  - `tests/test_compose.py`: 51/51 passed
-  - `tests/test_outer_loop/test_similarity.py`: 18/18 passed
+- **DataNode (`document_loader`)**: Created via `DataNode.model_construct()` to bypass Pydantic's `_validate_source` check — the data source is late-bound via `--data <path>` CLI flag at runtime
+- **Workflow**: Also created via `Workflow.model_construct()` because Pydantic's strict union validation on the `nodes` dict re-validates the DataNode through the discriminated union, re-triggering `_validate_source`
+- **AgentNode (`summarizer`)**: BUILDER role with prompt template for document summarization, 300s timeout
+- **Zero edges**: DataNode dispatches to its subgraph internally; single-node subgraph needs no internal edges
+- **Meta dict**: `name="batch-summarizer"`, description matches spec
+
+## Validation
+
+- `factory workflow validate batch-summarizer --file .factory/workflows/batch_summarizer.py` → VALID (2 nodes, 0 edges)
+- `factory workflow export-skills --output-dir skills --project-path .` → generated `skills/workflow-batch-summarizer/SKILL.md`
+- `pytest tests/test_batch_summarizer_workflow.py -v` → 10/10 passed
+- `ruff check` → clean
+
+## Test Coverage
+
+1. `test_graph_validates` — validate_graph() returns no issues
+2. `test_start_node_is_data_node` — start_node is DataNode 'document_loader'
+3. `test_subgraph_entry_exit` — subgraph_entry/exit both point to 'summarizer'
+4. `test_data_source_is_late_bound` — no source_path, task_ref, or inline_items
+5. `test_no_edges_from_datanode_to_subgraph` — no explicit edges from DataNode to subgraph
+6. `test_meta_dict` — meta dict well-formed with name and description
+7. `test_summarizer_is_builder_agent` — AgentNode with BUILDER role
+8. `test_skill_md_generation` — workflow_to_skill_md() produces valid output
+9. `test_workflow_name_matches_meta` — Workflow.name matches meta['name']
+10. `test_node_count` — exactly 2 nodes: document_loader + summarizer
