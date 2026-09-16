@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 from collections import deque
 import json
 import shlex
@@ -103,7 +104,6 @@ class WorkflowExecutor:
             from factory.agents.runner import invoke_agent
 
             self._agent_fn = invoke_agent
-        import builtins
         self._input_fn: Callable[[str], str] = input_fn if input_fn is not None else builtins.input
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
@@ -1271,12 +1271,14 @@ class WorkflowExecutor:
                 f"Gate '{node.id}' [{self.workflow.name}] — enter verdict: proceed / reloop / halt"
             )
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, self._input_fn, f"\n{prompt_text}\n> ")
+            try:
+                response = await loop.run_in_executor(None, self._input_fn, f"\n{prompt_text}\n> ")
+            except EOFError:
+                return Verdict.halt(reason=f"gate '{node.id}': stdin closed (non-interactive context)")
             r = response.strip().lower()
             log.info("gate.user_verdict", gate_id=node.id, raw=r)
             if "reloop" in r:
-                # Use explicit target from response ("reloop <node>") or fall back
-                # to the first RELOOP edge target defined in the graph.
+                # Resolve target: explicit in response ("reloop <node>") or first RELOOP edge.
                 parts = r.split()
                 reloop_idx = next(i for i, p in enumerate(parts) if "reloop" in p)
                 explicit_target = parts[reloop_idx + 1] if reloop_idx + 1 < len(parts) else ""
@@ -1285,7 +1287,9 @@ class WorkflowExecutor:
                         if edge.condition == VerdictType.RELOOP:
                             explicit_target = edge.target
                             break
-                return Verdict.reloop(target=explicit_target or node.id, feedback=r)
+                if not explicit_target:
+                    return Verdict.halt(reason=f"gate '{node.id}': reloop requested but no RELOOP edge configured")
+                return Verdict.reloop(target=explicit_target, feedback=r)
             if "halt" in r:
                 return Verdict.halt(reason=f"user halted at gate '{node.id}'")
             return Verdict.proceed()

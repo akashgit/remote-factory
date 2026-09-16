@@ -550,6 +550,37 @@ class TestUserGateInteractive:
         await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
         assert not called, "input_fn should not be called when auto_approve=True"
 
+    async def test_eof_on_stdin_halts_cleanly(self, tmp_project: Path) -> None:
+        """EOFError from stdin (non-interactive context) produces a clean HALT."""
+        def raise_eof(_prompt: str) -> str:
+            raise EOFError
+
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=raise_eof)
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "stdin closed" in verdict.reason
+
+    async def test_reloop_without_edge_halts_cleanly(self, tmp_project: Path) -> None:
+        """User typing 'reloop' on a gate with no RELOOP edge produces a clean HALT."""
+        wf = Workflow(
+            name="no_reloop_edge",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b"),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "reloop")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "no RELOOP edge" in verdict.reason
+
 
 # ── Gate verdict parsing fails closed (issue #1250) ──────────────
 
