@@ -90,6 +90,7 @@ class WorkflowExecutor:
         auto_approve: bool = False,
         initial_context: str | None = None,
         agent_fn: Callable[..., Any] | None = None,
+        input_fn: Callable[[str], str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
@@ -102,6 +103,8 @@ class WorkflowExecutor:
             from factory.agents.runner import invoke_agent
 
             self._agent_fn = invoke_agent
+        import builtins
+        self._input_fn: Callable[[str], str] = input_fn if input_fn is not None else builtins.input
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -1263,6 +1266,28 @@ class WorkflowExecutor:
         if node.evaluator_type == "user":
             if self.auto_approve:
                 log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
+                return Verdict.proceed()
+            prompt_text = node.gate_prompt or (
+                f"Gate '{node.id}' [{self.workflow.name}] — enter verdict: proceed / reloop / halt"
+            )
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, self._input_fn, f"\n{prompt_text}\n> ")
+            r = response.strip().lower()
+            log.info("gate.user_verdict", gate_id=node.id, raw=r)
+            if "reloop" in r:
+                # Use explicit target from response ("reloop <node>") or fall back
+                # to the first RELOOP edge target defined in the graph.
+                parts = r.split()
+                reloop_idx = next(i for i, p in enumerate(parts) if "reloop" in p)
+                explicit_target = parts[reloop_idx + 1] if reloop_idx + 1 < len(parts) else ""
+                if not explicit_target:
+                    for edge in self._edge_index.get(node.id, []):
+                        if edge.condition == VerdictType.RELOOP:
+                            explicit_target = edge.target
+                            break
+                return Verdict.reloop(target=explicit_target or node.id, feedback=r)
+            if "halt" in r:
+                return Verdict.halt(reason=f"user halted at gate '{node.id}'")
             return Verdict.proceed()
 
         if node.evaluator_type == "fn":
