@@ -75,6 +75,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     plugin_mode = getattr(args, "plugin", False)
     plugin_folder = getattr(args, "folder", None)
+    data_node = getattr(args, "data_node", False)
+    task_ref_raw: str | None = getattr(args, "task_ref", None)
 
     if plugin_mode and mode != "create":
         print(
@@ -90,6 +92,36 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         plugin_folder = None
+
+    # --data-node requires --mode create or --mode create-v2
+    if data_node and mode not in ("create", "create-v2"):
+        print(
+            "Error: --data-node requires --mode create or --mode create-v2. "
+            "Usage: factory ceo /path --mode create --focus 'my pipeline' --data-node",
+            file=sys.stderr,
+        )
+        return 1
+
+    # --task also requires --mode create or --mode create-v2 (but NOT --data-node)
+    if task_ref_raw and mode not in ("create", "create-v2"):
+        print(
+            "Error: --task requires --mode create or --mode create-v2. "
+            "Usage: factory ceo /path --mode create --focus 'my pipeline' --task my-task",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Resolve --task to extract context for directive injection
+    task_context: dict | None = None
+    if task_ref_raw:
+        try:
+            task_context = _resolve_task_for_directive(task_ref_raw, project_path)
+        except (ImportError, KeyError, TypeError, ValueError) as exc:
+            print(
+                f"Error: --task {task_ref_raw!r} could not be resolved: {exc}",
+                file=sys.stderr,
+            )
+            return 1
 
     no_github = getattr(args, "no_github", False)
     issue_number: int | None = None
@@ -161,6 +193,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         update_existing_mode=update_existing_mode,
         plugin_mode=plugin_mode,
         plugin_folder=plugin_folder,
+        data_node=data_node,
+        task_ref=task_ref_raw,
+        task_context=task_context,
         deferred_spec=deferred_spec,
         needs_materialize=needs_materialize,
         refine_request=refine_request,
@@ -173,6 +208,55 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         from_plan=from_plan,
         just_plan=just_plan,
     )
+
+
+def _resolve_task_for_directive(
+    task_ref_raw: str, project_path: Path
+) -> dict:
+    """Resolve a task reference and extract context for Builder directive injection."""
+    from factory.task import TaskRef
+
+    if ":" in task_ref_raw:
+        # Qualified reference: module.path:ClassName
+        task = TaskRef(ref=task_ref_raw).resolve()
+        ref_string = task_ref_raw
+    else:
+        # Simple name: resolve via TaskRegistry
+        from factory.task_registry import TaskRegistry
+
+        task = TaskRegistry.load_task(task_ref_raw, project_path)
+        ref_string = task_ref_raw
+
+    # Extract context from the resolved Task
+    defn = task.to_definition() if hasattr(task, "to_definition") else getattr(task, "_definition", None)
+
+    # Get first instance for field names and sample prompt
+    field_names: list[str] = []
+    sample_prompt: str = ""
+    try:
+        instances = list(task.instances())
+        if instances:
+            first = instances[0]
+            field_names = sorted(first.metadata.keys())
+            sample_prompt = task.prompt(first)
+    except Exception:
+        pass  # Graceful degradation — directive works without sample data
+
+    result: dict = {
+        "name": defn.name if defn else task_ref_raw,
+        "description": defn.description if defn else "",
+        "field_names": field_names,
+        "sample_prompt": sample_prompt,
+        "ref_string": ref_string,
+    }
+
+    if defn:
+        result["scoring_method"] = defn.scoring.method
+        result["scoring_metric_path"] = defn.scoring.metric_path
+        result["verify_command"] = defn.verify_config.command if defn.verify_config else ""
+        result["timeout"] = defn.constraints.timeout if defn.constraints else 600
+
+    return result
 
 
 def cmd_refactory(args: argparse.Namespace) -> int:

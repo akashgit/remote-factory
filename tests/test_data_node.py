@@ -82,16 +82,20 @@ class TestDataNode:
         assert node.source_path == "/data/items"
         assert node.source_format == "directory"
 
-    def test_no_source_raises(self) -> None:
-        with pytest.raises(ValidationError, match="Exactly one"):
-            DataNode(
-                id="dn",
-                subgraph_entry="a",
-                subgraph_exit="b",
-            )
+    def test_no_source_allowed_late_bound(self) -> None:
+        """A DataNode with zero sources is valid (late-bound template)."""
+        dn = DataNode(
+            id="dn",
+            subgraph_entry="a",
+            subgraph_exit="b",
+        )
+        assert dn.task_ref is None
+        assert dn.source_path is None
+        assert dn.inline_items == []
 
     def test_multiple_sources_raises(self) -> None:
-        with pytest.raises(ValidationError, match="Exactly one"):
+        """Multiple sources are still rejected."""
+        with pytest.raises(ValidationError, match="At most one"):
             DataNode(
                 id="dn",
                 task_ref="x",

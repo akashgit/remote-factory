@@ -188,6 +188,9 @@ def _build_ceo_task(
     update_existing_mode: str | None = None,
     plugin_mode: bool = False,
     plugin_folder: str | None = None,
+    data_node: bool = False,
+    task_ref: str | None = None,
+    task_context: dict | None = None,
     from_plan: str | None = None,
     from_plan_feedback: list[str] | None = None,
     just_plan: bool = False,
@@ -446,6 +449,130 @@ def _build_ceo_task(
             f"The implementation targets THIS project (the factory codebase). "
             f"Key files to modify: factory/workflow/definitions.py, "
             f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
+        )
+
+    # --- DataNode directive: Builder creates workflow WITH DataNode ---
+    if create_description and data_node:
+        task += (
+            "\n\n## DataNode Directive\n\n"
+            "**data_node:** true\n\n"
+            "Your workflow MUST include a **DataNode** as the start_node. "
+            "The DataNode iterates over data items and runs a per-item subgraph "
+            "for each one.\n\n"
+            "**How to build the workflow:**\n"
+            "1. Design your per-item processing pipeline (the subgraph) — these are "
+            "the nodes that process ONE data item\n"
+            "2. Identify the subgraph entry node (first node) and exit node (last node)\n"
+            "3. Create a DataNode with:\n"
+            "   - `id='data'` (or another unique ID)\n"
+            "   - `subgraph_entry='<your_entry_node_id>'`\n"
+            "   - `subgraph_exit='<your_exit_node_id>'`\n"
+            "   - No source set (data source is resolved at runtime via `--data <path>`)\n"
+            "4. Set the DataNode as the workflow's `start_node`\n"
+            "5. Include ALL nodes (DataNode + subgraph nodes) in the workflow\n\n"
+            "**Example structure:**\n"
+            "```python\n"
+            "from factory.workflow.primitives import DataNode, AgentNode, Edge, Workflow\n\n"
+            "nodes = {\n"
+            "    'data': DataNode(\n"
+            "        id='data',\n"
+            "        subgraph_entry='process',\n"
+            "        subgraph_exit='evaluate',\n"
+            "    ),\n"
+            "    'process': AgentNode(id='process', role=AgentRole.BUILDER, ...),\n"
+            "    'evaluate': AgentNode(id='evaluate', role=AgentRole.HEALTH_CHECKER, ...),\n"
+            "}\n"
+            "edges = [Edge(source='process', target='evaluate')]  # subgraph edges only\n"
+            "# NOTE: No edge from 'data' to 'process' — DataNode dispatches internally\n"
+            "workflow = Workflow(name='...', nodes=nodes, edges=edges, start_node='data')\n"
+            "```\n\n"
+            "**How subgraph nodes access the current item:**\n"
+            "Before each subgraph invocation, the DataNode executor writes the current "
+            "item to `.factory/current_item.json`. Your agent nodes MUST read this file "
+            "to get the item data.\n\n"
+            "The JSON file has this structure (same for all data source types — "
+            "directory, JSONL, CSV, task_ref, inline)::\n"
+            "```json\n"
+            "{\n"
+            '  "id": "item-001",\n'
+            '  "path": "/data/items/item-001" or null,\n'
+            '  "metadata": {"key": "value", ...},\n'
+            '  "prompt": "The full prompt text for this item"\n'
+            "}\n"
+            "```\n\n"
+            "**Important:** Do NOT use template variables like `{current_item_id}` or "
+            "`{item.prompt}` in node prompts — read `.factory/current_item.json` directly. "
+            'Example agent prompt: "Read .factory/current_item.json for the current data item, '
+            'then process it according to..."\n\n'
+            "**Constraints:**\n"
+            "- The DataNode MUST be the start_node\n"
+            "- Do NOT add edges from the DataNode to the subgraph entry — "
+            "DataNode references the subgraph via subgraph_entry/subgraph_exit fields\n"
+            "- Do NOT set source_path, task_ref, or inline_items on the DataNode — "
+            "the data source is late-bound (resolved at runtime)\n"
+            "- The subgraph must have exactly one entry node and one exit node\n"
+            "- Do NOT hardcode data file paths\n"
+        )
+
+    # --- Task directive: Builder receives Task contract context ---
+    if create_description and task_context:
+        tc = task_context
+        task += (
+            "\n\n## Task Directive\n\n"
+            f"**task_ref:** {tc.get('ref_string', task_ref or '(unknown)')}\n\n"
+            f"A Task class provides custom setup/verify hooks for this workflow.\n\n"
+            f"**Task:** {tc.get('name', 'unknown')}\n"
+        )
+        if tc.get("description"):
+            task += f"**Description:** {tc['description']}\n"
+        task += "\n"
+
+        # Field names from instance metadata
+        if tc.get("field_names"):
+            fields_str = ", ".join(f"`{f}`" for f in tc["field_names"])
+            task += (
+                f"**Instance fields:** {fields_str}\n"
+                "Each data instance provides these metadata fields to your workflow.\n\n"
+            )
+
+        # Sample prompt output
+        if tc.get("sample_prompt"):
+            # Truncate very long prompts
+            sample = tc["sample_prompt"]
+            if len(sample) > 1500:
+                sample = sample[:1500] + "\n... (truncated)"
+            task += (
+                "**Sample prompt (what the agent will receive per item):**\n"
+                f"```\n{sample}\n```\n\n"
+            )
+
+        # Scoring contract
+        scoring_method = tc.get("scoring_method", "exit_code")
+        task += "**Scoring contract:**\n"
+        if scoring_method == "json":
+            metric_path = tc.get("scoring_metric_path", "score")
+            task += (
+                f"- Method: JSON scoring — your workflow's output is scored by "
+                f"extracting `{metric_path}` from JSON output\n"
+            )
+        else:
+            task += (
+                "- Method: exit_code scoring — exit code 0 = pass, non-zero = fail\n"
+            )
+        if tc.get("verify_command"):
+            task += f"- Verify command: `{tc['verify_command']}`\n"
+        if tc.get("timeout"):
+            task += f"- Timeout: {tc['timeout']}s\n"
+        task += "\n"
+
+        task += (
+            "**Your responsibility:**\n"
+            "- Design workflow nodes that process the Task's prompt output\n"
+            "- Ensure your workflow's output is compatible with the Task's verify hook\n\n"
+            "**NOT your responsibility (handled by the Task class):**\n"
+            "- Setup logic (Task.setup() runs before your workflow per item)\n"
+            "- Verification logic (Task.verify() runs after your workflow per item)\n"
+            "- Instance generation (Task.instances() provides data items)\n"
         )
 
     if prompt_file:

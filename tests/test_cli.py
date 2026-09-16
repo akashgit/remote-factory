@@ -3006,3 +3006,324 @@ class TestJustPlanFlag:
         """_build_ceo_task omits the plan directive when just_plan=False."""
         task = _build_ceo_task(tmp_path, "design", just_plan=False)
         assert "## Plan Loop (Just Plan)" not in task
+
+
+class TestDataNodeTaskFlags:
+    """Tests for --data-node and --task CLI flags."""
+
+    def test_data_node_flag_parsed(self):
+        """--data-node sets data_node=True."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/test", "--data-node"])
+        assert getattr(args, "data_node", False) is True
+
+    def test_task_flag_parsed(self):
+        """--task sets task_ref."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["ceo", "/tmp/test", "--mode", "create", "--task", "swe-bench"]
+        )
+        assert getattr(args, "task_ref") == "swe-bench"
+        assert getattr(args, "data_node", False) is False
+
+    def test_both_flags_parsed(self):
+        """--data-node --task together are parsed correctly."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["ceo", "/tmp/test", "--mode", "create",
+             "--data-node", "--task", "my.mod:MyTask"]
+        )
+        assert getattr(args, "data_node") is True
+        assert getattr(args, "task_ref") == "my.mod:MyTask"
+
+    def test_default_values(self):
+        """Without flags, defaults are False/None."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/tmp/test"])
+        assert getattr(args, "data_node", False) is False
+        assert getattr(args, "task_ref", None) is None
+
+    def test_build_ceo_task_data_node_directive(self, tmp_path):
+        """_build_ceo_task injects DataNode directive when data_node=True."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            data_node=True,
+        )
+        assert "## DataNode Directive" in task
+        # New directive tells Builder to include DataNode directly
+        assert "DataNode" in task
+        assert "start_node" in task
+        # Example code block is present
+        assert "```python" in task
+        assert "DataNode(" in task
+        assert "subgraph_entry" in task
+        assert "subgraph_exit" in task
+        # current_item.json documentation is present
+        assert "current_item.json" in task
+        # Template variables warning is present
+        assert "template variables" in task
+        # JSON structure example is present
+        assert '"id"' in task
+        assert '"prompt"' in task
+        assert '"metadata"' in task
+
+    def test_build_ceo_task_task_directive(self, tmp_path):
+        """_build_ceo_task injects Task directive when task_context is provided."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "swe-bench",
+                "description": "Bug fix task",
+                "field_names": ["repo", "problem_statement"],
+                "sample_prompt": "Fix this bug...",
+                "ref_string": "examples.swe_bench_task:SWEBenchTask",
+                "scoring_method": "exit_code",
+                "scoring_metric_path": "score",
+                "verify_command": "pytest",
+                "timeout": 300,
+            },
+        )
+        assert "## Task Directive" in task
+        assert "swe-bench" in task
+        assert "`repo`" in task
+        assert "`problem_statement`" in task
+        assert "exit_code" in task
+
+    def test_build_ceo_task_no_pollution_without_flags(self, tmp_path):
+        """Without --data-node or --task, no DataNode/Task directives injected."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+        )
+        assert "## DataNode Directive" not in task
+        assert "## Task Directive" not in task
+
+    def test_build_ceo_task_both_flags(self, tmp_path):
+        """Both --data-node and --task inject both directives."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            data_node=True,
+            task_ref="x:Y",
+            task_context={
+                "name": "my-task",
+                "description": "",
+                "field_names": ["f1"],
+                "sample_prompt": "do stuff",
+                "ref_string": "x:Y",
+                "scoring_method": "json",
+                "scoring_metric_path": "win_rate",
+            },
+        )
+        assert "## DataNode Directive" in task
+        assert "## Task Directive" in task
+        # DataNode directive tells Builder to include DataNode as start_node
+        assert "DataNode" in task
+        assert "start_node" in task
+        assert "```python" in task
+        # DataNode directive comes before Task directive
+        dn_pos = task.index("## DataNode Directive")
+        td_pos = task.index("## Task Directive")
+        assert dn_pos < td_pos
+
+    def test_build_ceo_task_json_scoring(self, tmp_path):
+        """JSON scoring method shows metric path."""
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "t",
+                "description": "",
+                "field_names": [],
+                "sample_prompt": "",
+                "ref_string": "x:Y",
+                "scoring_method": "json",
+                "scoring_metric_path": "win_rate",
+            },
+        )
+        assert "JSON scoring" in task
+        assert "`win_rate`" in task
+
+    def test_build_ceo_task_sample_prompt_truncation(self, tmp_path):
+        """Long sample prompts (>1500 chars) are truncated."""
+        long_prompt = "x" * 2000
+        task = _build_ceo_task(
+            tmp_path,
+            "create",
+            create_description="my pipeline",
+            task_context={
+                "name": "t",
+                "description": "",
+                "field_names": [],
+                "sample_prompt": long_prompt,
+                "ref_string": "x:Y",
+                "scoring_method": "exit_code",
+            },
+        )
+        assert "... (truncated)" in task
+        # The full 2000-char prompt should NOT appear
+        assert long_prompt not in task
+
+    def test_data_node_directive_not_in_non_create_mode(self, tmp_path):
+        """DataNode directive NOT injected when create_description is None."""
+        task = _build_ceo_task(
+            tmp_path,
+            "design",
+            data_node=True,
+        )
+        assert "## DataNode Directive" not in task
+
+    # ── cmd_ceo() validation path tests ────────────────────────
+
+    def test_cmd_ceo_data_node_requires_create_mode(self, tmp_path, capsys):
+        """--data-node without --mode create or create-v2 should print error and return 1."""
+        result = main(["ceo", str(tmp_path), "--mode", "design", "--data-node"])
+        assert result == 1
+        assert "--data-node requires --mode create or --mode create-v2" in capsys.readouterr().err
+
+    def test_cmd_ceo_task_requires_create_mode(self, tmp_path, capsys):
+        """--task without --mode create or create-v2 should print error and return 1."""
+        result = main(["ceo", str(tmp_path), "--mode", "design", "--task", "swe-bench"])
+        assert result == 1
+        assert "--task requires --mode create or --mode create-v2" in capsys.readouterr().err
+
+    def test_cmd_ceo_data_node_accepted_with_create_v2(self, tmp_path, capsys):
+        """--data-node with --mode create-v2 should NOT be rejected by mode validation."""
+        with patch("factory.cli.ceo._execute_ceo", return_value=0):
+            result = main(["ceo", str(tmp_path), "--mode", "create-v2", "--focus", "my pipeline", "--data-node"])
+        captured = capsys.readouterr()
+        # Should NOT contain the mode-validation error
+        assert "--data-node requires --mode create" not in captured.err
+        assert result != 1 or "--data-node requires" not in captured.err
+
+    def test_cmd_ceo_task_accepted_with_create_v2(self, tmp_path, capsys):
+        """--task with --mode create-v2 should NOT be rejected by mode validation."""
+        with patch("factory.cli.ceo._execute_ceo", return_value=0):
+            result = main(["ceo", str(tmp_path), "--mode", "create-v2", "--focus", "my pipeline", "--task", "swe-bench"])
+        captured = capsys.readouterr()
+        # Should NOT contain the mode-validation error
+        assert "--task requires --mode create" not in captured.err
+        assert result != 1 or "--task requires" not in captured.err
+
+    def test_cmd_ceo_task_import_error(self, tmp_path, capsys):
+        """--task with invalid ref should print clean error and return 1."""
+        result = main([
+            "ceo", str(tmp_path), "--mode", "create",
+            "--focus", "my pipeline", "--task", "bad.nonexistent.mod:BadTask",
+        ])
+        assert result == 1
+        assert "could not be resolved" in capsys.readouterr().err
+
+    # ── _resolve_task_for_directive() tests ────────────────────
+
+    def test_resolve_qualified_ref(self):
+        """Qualified ref (with ':') resolves via TaskRef.resolve()."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "test-task"
+        mock_defn.description = "A test task"
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = []
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("my.mod:MyTask", Path("/tmp"))
+
+        assert result["name"] == "test-task"
+        assert result["ref_string"] == "my.mod:MyTask"
+        assert result["scoring_method"] == "exit_code"
+        assert result["verify_command"] == ""
+        assert result["timeout"] == 600
+
+    def test_resolve_simple_name(self):
+        """Simple name (no ':') resolves via TaskRegistry.load_task()."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "my-task"
+        mock_defn.description = "desc"
+        mock_defn.scoring.method = "json"
+        mock_defn.scoring.metric_path = "accuracy"
+        mock_defn.verify_config = MagicMock(command="pytest")
+        mock_defn.constraints = MagicMock(timeout=300)
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = []
+
+        with patch("factory.task_registry.TaskRegistry") as MockRegistry:
+            MockRegistry.load_task.return_value = mock_task
+            result = _resolve_task_for_directive("my-task", Path("/tmp"))
+
+        assert result["name"] == "my-task"
+        assert result["ref_string"] == "my-task"
+        assert result["scoring_method"] == "json"
+        assert result["scoring_metric_path"] == "accuracy"
+        assert result["verify_command"] == "pytest"
+        assert result["timeout"] == 300
+
+    def test_resolve_extracts_field_names_and_sample_prompt(self):
+        """_resolve_task_for_directive extracts field_names and sample_prompt from instances."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "test"
+        mock_defn.description = ""
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_instance = MagicMock()
+        mock_instance.metadata = {"repo": "x", "problem": "y"}
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.return_value = [mock_instance]
+        mock_task.prompt.return_value = "Fix this bug in repo x"
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("mod:Task", Path("/tmp"))
+
+        assert result["field_names"] == ["problem", "repo"]
+        assert result["sample_prompt"] == "Fix this bug in repo x"
+
+    def test_resolve_graceful_degradation_on_instances_error(self):
+        """_resolve_task_for_directive gracefully handles instances() raising."""
+        from factory.cli.ceo import _resolve_task_for_directive
+
+        mock_defn = MagicMock()
+        mock_defn.name = "broken"
+        mock_defn.description = ""
+        mock_defn.scoring.method = "exit_code"
+        mock_defn.scoring.metric_path = "score"
+        mock_defn.verify_config = None
+        mock_defn.constraints = None
+
+        mock_task = MagicMock()
+        mock_task.to_definition.return_value = mock_defn
+        mock_task.instances.side_effect = RuntimeError("data not available")
+
+        with patch("factory.task.TaskRef") as MockRef:
+            MockRef.return_value.resolve.return_value = mock_task
+            result = _resolve_task_for_directive("mod:Task", Path("/tmp"))
+
+        # Graceful degradation: empty field_names and sample_prompt
+        assert result["field_names"] == []
+        assert result["sample_prompt"] == ""
+        assert result["name"] == "broken"
