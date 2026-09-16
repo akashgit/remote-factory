@@ -1971,6 +1971,43 @@ class TestCreateModeFocus:
         mock_run.assert_called_once()
 
 
+class TestTaskSetupModeFocus:
+    """Tests for --focus working with --mode task-setup."""
+
+    def test_focus_accepted_with_task_setup_mode(self, tmp_path):
+        """--focus is not rejected by _validate_late_flags when --mode task-setup is set."""
+        from factory.cli._ceo_helpers import _validate_late_flags
+
+        result = _validate_late_flags(
+            mode="task-setup",
+            focus="chess engine evaluation",
+            prompt_file=None,
+            research_ideation=None,
+            design_existing=False,
+            project_path=tmp_path,
+            no_github=False,
+            issue_number=None,
+        )
+        assert result is None
+
+    def test_focus_rejected_with_unknown_mode(self, tmp_path, capsys):
+        """--focus is rejected by _validate_late_flags for an unrecognized mode."""
+        from factory.cli._ceo_helpers import _validate_late_flags
+
+        result = _validate_late_flags(
+            mode="bogus",
+            focus="something",
+            prompt_file=None,
+            research_ideation=None,
+            design_existing=False,
+            project_path=tmp_path,
+            no_github=False,
+            issue_number=None,
+        )
+        assert result == 1
+        assert "task-setup" in capsys.readouterr().err
+
+
 class TestProfileParser:
     def test_profile_build_subcommand(self):
         parser = build_parser()

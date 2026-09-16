@@ -345,7 +345,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in (*DESIGN_MODES, "research"):
+    if focus and mode not in (*DESIGN_MODES, "research", "task-setup"):
         print(
             f"Error: --focus (targeted mode) only works in design or research mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",
