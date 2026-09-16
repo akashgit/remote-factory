@@ -1568,23 +1568,33 @@ def _collect_subgraph_nodes(
     entry: str,
     exit_node: str,
 ) -> set[str]:
-    """Collect all node IDs on paths from entry to exit_node (inclusive)."""
+    """Collect all node IDs on paths from entry to exit_node (inclusive).
+
+    Uses bidirectional BFS: intersect nodes reachable forward from entry
+    with nodes reachable backward from exit_node.  This excludes stray
+    branches that are reachable from entry but do not lead to exit_node.
+    """
     edges_by_source: dict[str, list[str]] = {}
+    edges_by_target: dict[str, list[str]] = {}
     for edge in workflow.edges:
         edges_by_source.setdefault(edge.source, []).append(edge.target)
+        edges_by_target.setdefault(edge.target, []).append(edge.source)
 
-    # BFS from entry, stop at exit_node
-    visited: set[str] = set()
-    queue = [entry]
-    while queue:
-        nid = queue.pop(0)
-        if nid in visited:
-            continue
-        visited.add(nid)
-        if nid == exit_node:
-            continue
-        for target in edges_by_source.get(nid, []):
-            if target not in visited:
-                queue.append(target)
+    def _bfs(start: str, adjacency: dict[str, list[str]], stop_at: str) -> set[str]:
+        visited: set[str] = set()
+        queue = [start]
+        while queue:
+            nid = queue.pop(0)
+            if nid in visited:
+                continue
+            visited.add(nid)
+            if nid == stop_at:
+                continue
+            for neighbour in adjacency.get(nid, []):
+                if neighbour not in visited:
+                    queue.append(neighbour)
+        return visited
 
-    return visited
+    forward = _bfs(entry, edges_by_source, stop_at=exit_node)
+    backward = _bfs(exit_node, edges_by_target, stop_at=entry)
+    return forward & backward

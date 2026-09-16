@@ -870,3 +870,60 @@ class TestAgentFnInjection:
 
         executor = WorkflowExecutor(wf, tmp_project)
         assert executor._agent_fn is invoke_agent
+
+
+# ── _collect_subgraph_nodes ─────────────────────────────────────
+
+
+class TestCollectSubgraphNodes:
+    """Verify _collect_subgraph_nodes returns only nodes on entry→exit paths."""
+
+    def _make_workflow(self, edges: list[tuple[str, str]], nodes: list[str]) -> Workflow:
+        return Workflow(
+            name="test",
+            nodes={n: FnNode(id=n, command="echo") for n in nodes},
+            edges=[Edge(source=s, target=t) for s, t in edges],
+            start_node=nodes[0],
+        )
+
+    def test_linear_chain(self) -> None:
+        from factory.workflow.executor import _collect_subgraph_nodes
+
+        wf = self._make_workflow(
+            nodes=["a", "b", "c"],
+            edges=[("a", "b"), ("b", "c")],
+        )
+        assert _collect_subgraph_nodes(wf, "a", "c") == {"a", "b", "c"}
+
+    def test_stray_branch_excluded(self) -> None:
+        """Node reachable from entry but not on any path to exit is excluded."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+
+        # a -> b -> c (exit)
+        # a -> stray (dead end, not connected to c)
+        wf = self._make_workflow(
+            nodes=["a", "b", "c", "stray"],
+            edges=[("a", "b"), ("b", "c"), ("a", "stray")],
+        )
+        result = _collect_subgraph_nodes(wf, "a", "c")
+        assert "stray" not in result
+        assert result == {"a", "b", "c"}
+
+    def test_parallel_branches_both_included(self) -> None:
+        """Both branches of a fork that converge at exit are included."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+
+        # entry -> left -> exit
+        # entry -> right -> exit
+        wf = self._make_workflow(
+            nodes=["entry", "left", "right", "exit"],
+            edges=[("entry", "left"), ("entry", "right"), ("left", "exit"), ("right", "exit")],
+        )
+        assert _collect_subgraph_nodes(wf, "entry", "exit") == {"entry", "left", "right", "exit"}
+
+    def test_entry_equals_exit(self) -> None:
+        """When entry is the exit node, only that node is returned."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+
+        wf = self._make_workflow(nodes=["a", "b"], edges=[("a", "b")])
+        assert _collect_subgraph_nodes(wf, "a", "a") == {"a"}
