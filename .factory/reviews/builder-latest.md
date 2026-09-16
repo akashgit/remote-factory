@@ -1,26 +1,22 @@
-# Builder Agent Output
+# Builder Review: batch-summarizer workflow
 
-- **timestamp:** 2026-09-15
-- **exit_code:** 0
-- **branch:** factory/run-e3ddbac6
-- **pr:** #1494 (existing — pushed fixes to branch)
+## Summary
+Implemented the batch-summarizer contributed workflow per the approved spec at `.factory/strategy/current.md`.
 
-## Changes
+## Files Created
+- `factory/workflow/contributed/batch_summarizer/__init__.py` — Re-exports `meta` and `workflow`
+- `factory/workflow/contributed/batch_summarizer/workflow.py` — 5-node graph (scan_dir → data_loop[summarize → write_summary] → collect_index) with 3 explicit edges, trigger, FILE_READ_TOOL import, inline FILE_WRITE_TOOL ToolDef
+- `factory/workflow/contributed/batch_summarizer/README.md` — Usage documentation
+- `factory/workflow/contributed/batch_summarizer/test_workflow.py` — 29 structural tests across 7 test classes
 
-### Fix A — `tests/test_compose.py` (path resolution)
-- Added module-level constant `_CHESS_EVOLVE_TOML` using `Path(__file__).resolve().parent.parent / ...` to resolve the chess-evolve.toml path absolutely (stable under pytest-xdist `-n auto` where CWD differs from repo root)
-- Updated both `test_chess_evolve_toml_no_builder_required` and `test_chess_evolve_toml_passes_any_workflow` to use the constant instead of the relative path string
+## Files Modified
+- `factory/workflow/definitions.py` — Added `"batch-summarizer"` to `_get_builtin_registry()` using lazy import lambda pattern
 
-### Fix B — `factory/outer_loop/similarity.py` (NoveltyFilter GED=0 logic)
-- Modified the GED loop in `NoveltyFilter.is_novel()` to `continue` when `ged == 0` (identical topology)
-- Rationale: When GED=0, topology is identical to an archived workflow. If the structural hash check above already passed (hash is novel), the difference must be content-only (prompts, params). Content-only mutations are intentionally novel — exact duplicates are caught by the hash dedup. The GED loop should only reject when topology distance is non-zero but below threshold.
+## Validation Results
+- All 29 tests pass (`pytest factory/workflow/contributed/batch_summarizer/test_workflow.py -v`)
+- Graph validates via `factory workflow validate --file factory/workflow/contributed/batch_summarizer/workflow.py` → VALID (5 nodes, 3 edges)
+- `ruff check` passes with no issues
 
-## Verification
-
-- 3 previously-failing tests now pass:
-  - `test_chess_evolve_toml_no_builder_required` ✅
-  - `test_chess_evolve_toml_passes_any_workflow` ✅
-  - `test_prompt_only_mutation_passes_is_novel` ✅
-- Full test suites pass with no regressions:
-  - `tests/test_compose.py`: 51/51 passed
-  - `tests/test_outer_loop/test_similarity.py`: 18/18 passed
+## Notes
+- Added `.factory/current_item.json` and `.factory/batch_summarizer/summaries/` to DataNode's `writes` set to satisfy the graph validator's data dependency check (the DataNode executor writes `current_item.json` implicitly, and the subgraph writes to `summaries/`)
+- `factory workflow validate batch-summarizer` (name-based) fails for ALL contributed workflows (including pre-existing ones like salitrap), not specific to this change. The `--file` flag works correctly.
