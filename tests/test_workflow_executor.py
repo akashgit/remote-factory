@@ -581,6 +581,42 @@ class TestUserGateInteractive:
         assert verdict.type == VerdictType.HALT
         assert "no RELOOP edge" in verdict.reason
 
+    async def test_oserror_on_stdin_halts_cleanly(self, tmp_project: Path) -> None:
+        """OSError (pytest captured stdin) produces a clean HALT."""
+        def raise_oserror(_prompt: str) -> str:
+            raise OSError("reading from stdin while output is captured!")
+
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=raise_oserror)
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "stdin closed" in verdict.reason
+
+    async def test_unrecognized_input_halts_fail_closed(self, tmp_project: Path) -> None:
+        """Unrecognized input halts fail-closed instead of silently proceeding."""
+        for bad_input in ("yes", "no", "cancel", "hault", ""):
+            wf = _user_gate_workflow()
+            executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _, x=bad_input: x)
+            verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+            assert verdict.type == VerdictType.HALT, f"expected HALT for {bad_input!r}"
+            assert "unrecognized" in verdict.reason
+
+    async def test_halt_word_boundary_not_substring(self, tmp_project: Path) -> None:
+        """'asphalt' does not trigger halt; word-boundary matching is enforced."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "asphalt coloring")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        # 'asphalt' has no whole-word 'halt', 'reloop', or 'proceed' — unrecognized → HALT
+        assert verdict.type == VerdictType.HALT
+        assert "unrecognized" in verdict.reason
+
+    async def test_halt_wins_over_reloop(self, tmp_project: Path) -> None:
+        """When both 'halt' and 'reloop' appear, halt wins (checked first)."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "reloop then halt")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+
 
 # ── Gate verdict parsing fails closed (issue #1250) ──────────────
 
