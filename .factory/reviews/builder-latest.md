@@ -1,26 +1,29 @@
-# Builder Agent Output
+# Builder Review — batch-summarizer workflow
 
-- **timestamp:** 2026-09-15
-- **exit_code:** 0
-- **branch:** factory/run-e3ddbac6
-- **pr:** #1494 (existing — pushed fixes to branch)
+## Changes Made
 
-## Changes
+### 1. Relaxed DataNode source validator (`factory/workflow/primitives.py`)
+- Changed `_validate_source` from `sum(sources) != 1` to `sum(sources) > 1`
+- Allows zero sources for late-bound DataNodes (source injected at runtime via `--data`)
+- Kept source_path/source_format validation intact
 
-### Fix A — `tests/test_compose.py` (path resolution)
-- Added module-level constant `_CHESS_EVOLVE_TOML` using `Path(__file__).resolve().parent.parent / ...` to resolve the chess-evolve.toml path absolutely (stable under pytest-xdist `-n auto` where CWD differs from repo root)
-- Updated both `test_chess_evolve_toml_no_builder_required` and `test_chess_evolve_toml_passes_any_workflow` to use the constant instead of the relative path string
+### 2. Created workflow file (`.factory/workflows/batch_summarizer.py`)
+- Project-local workflow discovered automatically by WorkflowRegistry
+- DataNode `data` (start_node, no source, late-bound via `--data`)
+- AgentNode `summarize` (RESEARCHER role, reads `current_item.json`, writes summaries)
+- Zero edges (single-node subgraph, entry == exit)
+- DataNode declares `writes={".factory/current_item.json"}` for data-dependency validation
 
-### Fix B — `factory/outer_loop/similarity.py` (NoveltyFilter GED=0 logic)
-- Modified the GED loop in `NoveltyFilter.is_novel()` to `continue` when `ged == 0` (identical topology)
-- Rationale: When GED=0, topology is identical to an archived workflow. If the structural hash check above already passed (hash is novel), the difference must be content-only (prompts, params). Content-only mutations are intentionally novel — exact duplicates are caught by the hash dedup. The GED loop should only reject when topology distance is non-zero but below threshold.
+### 3. Tests (`tests/test_batch_summarizer_workflow.py`)
+- 14 tests across 7 test classes, all passing
+- Covers: construction, graph validation, no double-execution, subgraph exit safety,
+  serialization round-trip, registry discovery, and negative edge rejection
 
-## Verification
+## Validation Results
 
-- 3 previously-failing tests now pass:
-  - `test_chess_evolve_toml_no_builder_required` ✅
-  - `test_chess_evolve_toml_passes_any_workflow` ✅
-  - `test_prompt_only_mutation_passes_is_novel` ✅
-- Full test suites pass with no regressions:
-  - `tests/test_compose.py`: 51/51 passed
-  - `tests/test_outer_loop/test_similarity.py`: 18/18 passed
+- `factory workflow validate --file .factory/workflows/batch_summarizer.py` → VALID (2 nodes, 0 edges)
+- `factory workflow export-skills --project-path .` → batch-summarizer SKILL.md exported
+- All 14 new tests pass
+- All 32 existing workflow primitives tests pass
+- All 165 smoke tests pass
+- ruff clean on all modified/created files
