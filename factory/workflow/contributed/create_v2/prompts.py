@@ -59,27 +59,6 @@ For each direction in the plan, spawn a researcher agent:
 factory agent researcher --task "<direction.prompt>" --project {project_path}
 ```
 
-CRITICAL: Each `factory agent` call is SYNCHRONOUS — it blocks until the agent
-finishes and returns. Do NOT run agents in background with `&`. Do NOT poll for
-completion. Do NOT create `while` loops checking for output files or grepping
-for strings. The command returning IS the completion signal.
-
-FORBIDDEN (causes infinite hang — issue #1512):
-```bash
-factory agent researcher --task "..." --project $PROJECT_PATH &
-while true; do
-  grep -q "some pattern" "$OUTPUT_FILE" 2>/dev/null && break
-  sleep 5
-done
-```
-
-CORRECT:
-```bash
-factory agent researcher --task "..." --project $PROJECT_PATH
-# Command blocks until done. Read output:
-cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"
-```
-
 Each researcher writes to `.factory/strategy/research-<slug>.md`.
 
 After ALL researchers complete, review quality:
@@ -166,27 +145,6 @@ PHASE 2 — EXECUTE STRATEGIES
 For each perspective in the plan, spawn a strategist agent:
 ```
 factory agent strategist --task "<perspective.prompt>" --project {project_path}
-```
-
-CRITICAL: Each `factory agent` call is SYNCHRONOUS — it blocks until the agent
-finishes and returns. Do NOT run agents in background with `&`. Do NOT poll for
-completion. Do NOT create `while` loops checking for output files or grepping
-for strings. The command returning IS the completion signal.
-
-FORBIDDEN (causes infinite hang — issue #1512):
-```bash
-factory agent strategist --task "..." --project $PROJECT_PATH &
-while true; do
-  grep -q "some pattern" "$OUTPUT_FILE" 2>/dev/null && break
-  sleep 5
-done
-```
-
-CORRECT:
-```bash
-factory agent strategist --task "..." --project $PROJECT_PATH
-# Command blocks until done. Read output:
-cat "$PROJECT_PATH/.factory/reviews/strategist-latest.md"
 ```
 
 Each strategist writes to `.factory/strategy/strategy-<slug>.md`.
