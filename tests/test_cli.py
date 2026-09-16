@@ -3060,6 +3060,14 @@ class TestDataNodeTaskFlags:
         assert "DataNode(" in task
         assert "subgraph_entry" in task
         assert "subgraph_exit" in task
+        # current_item.json documentation is present
+        assert "current_item.json" in task
+        # Template variables warning is present
+        assert "template variables" in task
+        # JSON structure example is present
+        assert '"id"' in task
+        assert '"prompt"' in task
+        assert '"metadata"' in task
 
     def test_build_ceo_task_task_directive(self, tmp_path):
         """_build_ceo_task injects Task directive when task_context is provided."""

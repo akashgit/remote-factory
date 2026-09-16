@@ -486,6 +486,24 @@ def _build_ceo_task(
             "# NOTE: No edge from 'data' to 'process' — DataNode dispatches internally\n"
             "workflow = Workflow(name='...', nodes=nodes, edges=edges, start_node='data')\n"
             "```\n\n"
+            "**How subgraph nodes access the current item:**\n"
+            "Before each subgraph invocation, the DataNode executor writes the current "
+            "item to `.factory/current_item.json`. Your agent nodes MUST read this file "
+            "to get the item data.\n\n"
+            "The JSON file has this structure (same for all data source types — "
+            "directory, JSONL, CSV, task_ref, inline)::\n"
+            "```json\n"
+            "{\n"
+            '  "id": "item-001",\n'
+            '  "path": "/data/items/item-001" or null,\n'
+            '  "metadata": {"key": "value", ...},\n'
+            '  "prompt": "The full prompt text for this item"\n'
+            "}\n"
+            "```\n\n"
+            "**Important:** Do NOT use template variables like `{current_item_id}` or "
+            "`{item.prompt}` in node prompts — read `.factory/current_item.json` directly. "
+            'Example agent prompt: "Read .factory/current_item.json for the current data item, '
+            'then process it according to..."\n\n'
             "**Constraints:**\n"
             "- The DataNode MUST be the start_node\n"
             "- Do NOT add edges from the DataNode to the subgraph entry — "
