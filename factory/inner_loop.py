@@ -45,6 +45,22 @@ class EvalResult:
     artifacts: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _SubprocessExecutionResult:
+    """Duck-types ExecutionResult for CEO subprocess evaluation.
+
+    Provides the same fields that _step_with_task() reads from
+    the real ExecutionResult after execution.
+    """
+
+    success: bool = False
+    halted: bool = False
+    halt_reason: str = ""
+    nodes_executed: int = 0
+    duration_ms: int = 0
+    node_outputs: dict[str, str] = field(default_factory=dict)
+
+
 @runtime_checkable
 class Evaluator(Protocol):
     """Interface for parsing evaluator-specific output artifacts.
@@ -126,6 +142,7 @@ class InnerLoop:
         metric_path: str = "score",
         task: Any | None = None,
         instance: Any | None = None,
+        execution_strategy: str = "executor",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -138,9 +155,11 @@ class InnerLoop:
         self.metric_path = metric_path
         self.task = task
         self.instance = instance
+        self.execution_strategy = execution_strategy
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._has_data_node: bool | None = None
+        self._ceo_cost_warned = False
         self._validate_frozen_nodes()
 
         # When task is set, derive flat fields from it for backward compat
@@ -270,6 +289,63 @@ class InnerLoop:
             )
         return self._has_data_node
 
+    def _run_ceo_subprocess(self, prompt_text: str, engine: str) -> _SubprocessExecutionResult:
+        """Spawn a headless CEO subprocess for workflow evaluation.
+
+        Writes the per-instance prompt to a temp file, spawns
+        ``factory ceo --headless --no-worktree --engine <engine>``,
+        and recovers metrics from cycle_summary.json.
+        """
+        prompt_path = self.factory_dir / "current_prompt.md"
+        self.factory_dir.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_text(prompt_text)
+
+        cmd = [
+            sys.executable, "-m", "factory", "ceo", str(self.project_dir),
+            "--headless", "--no-worktree",
+            "--engine", engine,
+            "--mode", self.mode,
+            "--prompt", str(prompt_path),
+        ]
+
+        env = dict(__import__("os").environ)
+        env["FACTORY_CEO_RESPAWN_DISABLED"] = "1"
+
+        t0 = time.monotonic()
+        try:
+            result = subprocess.run(cmd, cwd=self.project_dir, env=env)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+        except Exception as exc:
+            log.error("ceo_subprocess_failed", error=str(exc))
+            return _SubprocessExecutionResult(
+                success=False,
+                halted=True,
+                halt_reason=str(exc),
+            )
+        finally:
+            if prompt_path.exists():
+                prompt_path.unlink()
+
+        # Recover supplementary metrics from cycle_summary.json
+        summary_path = (
+            self.factory_dir / "outer_loop" / "runs" / self.mode / "cycle_summary.json"
+        )
+        nodes_executed = 0
+        if summary_path.exists():
+            try:
+                summary_data = json.loads(summary_path.read_text())
+                nodes_executed = int(summary_data.get("agents_spawned", 0))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        return _SubprocessExecutionResult(
+            success=result.returncode == 0,
+            halted=result.returncode != 0,
+            halt_reason=f"exit code {result.returncode}" if result.returncode != 0 else "",
+            nodes_executed=nodes_executed,
+            duration_ms=duration_ms,
+        )
+
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Task-driven step: setup → WorkflowExecutor → verify per instance."""
         assert self.task is not None
@@ -312,6 +388,15 @@ class InnerLoop:
             self._history.append(record)
             return record
 
+        # One-time cost warning for CEO subprocess strategies
+        if self.execution_strategy in ("ceo-skill", "ceo-tool") and not self._ceo_cost_warned:
+            log.warning(
+                "ceo_subprocess_cost_warning",
+                execution_strategy=self.execution_strategy,
+                note="CEO subprocess evaluation is 5-10x more expensive per evaluation than executor",
+            )
+            self._ceo_cost_warned = True
+
         event_offset = self._count_lines(self.factory_dir / "events.jsonl")
 
         t0 = time.monotonic()
@@ -335,12 +420,16 @@ class InnerLoop:
 
                 prompt_text = self.task.prompt(inst)
 
-                executor = WorkflowExecutor(
-                    workflow,
-                    self.project_dir,
-                    initial_context=prompt_text,
-                )
-                exec_result = asyncio.run(executor.execute())
+                if self.execution_strategy in ("ceo-skill", "ceo-tool"):
+                    engine = "tool" if self.execution_strategy == "ceo-tool" else "skill"
+                    exec_result = self._run_ceo_subprocess(prompt_text, engine=engine)
+                else:
+                    executor = WorkflowExecutor(
+                        workflow,
+                        self.project_dir,
+                        initial_context=prompt_text,
+                    )
+                    exec_result = asyncio.run(executor.execute())
 
                 vr = self.task.verify(inst, self.project_dir)
 
@@ -430,6 +519,14 @@ class InnerLoop:
         import json
 
         from factory.workflow.executor import WorkflowExecutor
+
+        if self.execution_strategy != "executor":
+            log.warning(
+                "data_node_strategy_fallback",
+                execution_strategy=self.execution_strategy,
+                note="DataNode requires executor path for per-item scoring; "
+                     "falling back to executor",
+            )
 
         t0 = time.monotonic()
 

@@ -237,12 +237,15 @@ class SwarmEngine:
             frozen_ids |= _auto_frozen_nodes(seed_workflow)
         frozen = frozen_ids if frozen_ids else None
 
+        exec_strategy = cfg.execution_strategy
+
         if designer_count >= 1:
             try:
                 minimal = self._designer.design_minimal(
                     benchmark_spec,
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(minimal)
             except Exception:
@@ -254,6 +257,7 @@ class SwarmEngine:
                     benchmark_spec,
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(thorough)
             except Exception:
@@ -266,6 +270,7 @@ class SwarmEngine:
                     {"max_nodes": 4 + i, "parallel": i % 2 == 0},
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(custom)
             except Exception:

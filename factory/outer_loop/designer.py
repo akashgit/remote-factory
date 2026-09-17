@@ -21,6 +21,7 @@ from factory.workflow.primitives import (
     FnNode,
     GateNode,
     NodeType,
+    VerdictType,
     Workflow,
 )
 
@@ -39,6 +40,7 @@ class DesignerAgent:
         benchmark_spec: str,
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create a 3-4 node workflow optimized for speed.
 
@@ -73,6 +75,9 @@ class DesignerAgent:
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges)
+
         start_node = "researcher"
         new_start = _rewire_data_nodes(
             nodes, edges, start_node, seed_workflow, frozen_node_ids
@@ -94,6 +99,7 @@ class DesignerAgent:
         benchmark_spec: str,
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create an 8-10 node workflow optimized for thoroughness.
 
@@ -182,6 +188,9 @@ class DesignerAgent:
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges)
+
         start_node = "study"
         new_start = _rewire_data_nodes(
             nodes, edges, start_node, seed_workflow, frozen_node_ids
@@ -204,6 +213,7 @@ class DesignerAgent:
         constraints: dict[str, object],
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create a custom from-scratch workflow with optional constraints.
 
@@ -258,6 +268,9 @@ class DesignerAgent:
             edges.append(Edge(source=prev_id, target=gate_id))
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
+
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
         new_start = _rewire_data_nodes(
@@ -352,6 +365,62 @@ class DesignerAgent:
             ))
 
         return proposals[:3]
+
+
+def _generate_prompt_template(node: AgentNode) -> str:
+    """Derive a functional prompt_template from an AgentNode's metadata."""
+    role_name = node.role.value.replace("_", " ")
+    parts = [f"Act as a {role_name} for the project at {{project_path}}."]
+
+    if node.reads:
+        reads_list = ", ".join(sorted(node.reads))
+        parts.append(f"Read: {reads_list}.")
+
+    if node.writes:
+        writes_list = ", ".join(sorted(node.writes))
+        parts.append(f"Write your output to: {writes_list}.")
+
+    return " ".join(parts)
+
+
+def _populate_executor_fields(
+    nodes: dict[str, NodeType],
+    edges: list[Edge],
+) -> None:
+    """Populate prompt_template on AgentNodes and PROCEED edges on non-terminal GateNodes.
+
+    Required when execution_strategy='executor' so WorkflowExecutor can
+    construct agent prompts and follow success paths through gates.
+    """
+    # Find terminal nodes (no outgoing edges)
+    sources_with_targets = {e.source for e in edges}
+
+    for node_id, node in nodes.items():
+        if isinstance(node, AgentNode) and not node.prompt_template:
+            nodes[node_id] = node.model_copy(
+                update={"prompt_template": _generate_prompt_template(node)}
+            )
+        elif isinstance(node, GateNode) and node_id in sources_with_targets:
+            # Non-terminal gate: check if it already has a PROCEED edge
+            has_proceed = any(
+                e.source == node_id
+                and e.condition is not None
+                and (
+                    e.condition == VerdictType.PROCEED
+                    or (isinstance(e.condition, str) and e.condition.lower() == "proceed")
+                )
+                for e in edges
+            )
+            if not has_proceed:
+                # Find the unconditional target and add a PROCEED edge
+                for e in edges:
+                    if e.source == node_id and e.condition is None:
+                        edges.append(Edge(
+                            source=node_id,
+                            target=e.target,
+                            condition=VerdictType.PROCEED,
+                        ))
+                        break
 
 
 def _inject_frozen_nodes(

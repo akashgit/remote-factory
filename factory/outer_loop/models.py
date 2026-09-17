@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -113,6 +113,7 @@ class SwarmConfig(BaseModel):
     early_stop_unchanged: int = 3
     task_module: str = ""
     seed_workflow_module: str = ""
+    execution_strategy: Literal["executor", "ceo-skill", "ceo-tool"] = "executor"
 
     @field_validator("holdout_instances")
     @classmethod
