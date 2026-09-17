@@ -72,16 +72,26 @@ class TestPRReviewWorkflowStructure:
 class TestPRReviewNodes:
     """Tests for individual node configuration."""
 
-    def test_fetch_pr_is_fn_node(self) -> None:
-        """fetch_pr is a FnNode running gh CLI commands."""
-        from factory.workflow.primitives import FnNode
+    def test_fetch_pr_is_agent_node(self) -> None:
+        """fetch_pr is an AgentNode (researcher, haiku) that fetches PR data via gh CLI."""
+        from factory.workflow.primitives import AgentNode, AgentRole
 
         wf = workflow()
         node = wf.nodes["fetch_pr"]
-        assert isinstance(node, FnNode)
-        assert "gh pr view" in node.command
-        assert "gh pr diff" in node.command
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+        assert node.model == "haiku"
+        assert node.timeout == 120
+        assert "gh pr view" in node.prompt_template
+        assert "gh pr diff" in node.prompt_template
         assert ".factory/reviews/pr-context.md" in node.writes
+        assert len(node.post_checks) >= 1
+        check = node.post_checks[0]
+        assert check.path == ".factory/reviews/pr-context.md"
+        assert check.must_exist is True
+        assert check.min_size == 100
+        assert "PR Metadata" in check.must_contain
+        assert "PR Diff" in check.must_contain
 
     def test_researcher_pr_node(self) -> None:
         """researcher_pr is an AgentNode with researcher role."""

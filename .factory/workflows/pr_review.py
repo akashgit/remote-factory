@@ -16,7 +16,6 @@ from factory.workflow.primitives import (
     AgentRole,
     ArtifactCheck,
     Edge,
-    FnNode,
     GateNode,
     ProjectState,
     VerdictType,
@@ -41,38 +40,53 @@ def workflow() -> Workflow:
     edges: list[Edge] = []
 
     # ── Node 1: Fetch PR data ─────────────────────────────────────
-    nodes["fetch_pr"] = FnNode(
+    nodes["fetch_pr"] = AgentNode(
         id="fetch_pr",
-        command=(
-            'mkdir -p {project_path}/.factory/reviews && '
-            'cd {project_path} && '
-            '('
-            'echo "# PR Context for Review" && '
-            'echo "" && '
-            'echo "## PR Metadata" && '
-            'gh pr view {focus} --json number,title,body,author,baseRefName,headRefName,files,url,additions,deletions,labels 2>/dev/null && '
-            'echo "" && '
-            'echo "## PR Diff" && '
-            'echo "\\`\\`\\`diff" && '
-            'gh pr diff {focus} 2>/dev/null && '
-            'echo "\\`\\`\\`" && '
-            'echo "" && '
-            'echo "## Linked Issues" && '
-            'for issue_num in $(gh pr view {focus} --json body --jq ".body" 2>/dev/null '
-            '| grep -oE "(close[sd]?|fix(e[sd])?|resolve[sd]?)\\s*#[0-9]+" -i '
-            '| grep -oE "[0-9]+"); do '
-            'echo "### Issue #$issue_num" && '
-            'gh issue view "$issue_num" --json title,body,labels,comments 2>/dev/null && '
-            'echo ""; '
-            'done'
-            ') > .factory/reviews/pr-context.md 2>&1'
-        ),
-        notes=(
-            "Fetch PR metadata, full diff, and linked issue text via gh CLI. "
-            "Extracts issue references from PR body using closes/fixes/resolves patterns. "
-            "All output consolidated into pr-context.md for downstream agents."
+        role=AgentRole.RESEARCHER,
+        model="haiku",
+        timeout=120,
+        prompt_template=(
+            "You are a PR data fetcher. Your job is to gather all context for a "
+            "pull request and write it to a single file.\n\n"
+            "The PR number to review is provided in the context/arguments below "
+            "this prompt. Extract the numeric PR number from it.\n\n"
+            "Run these steps using bash commands:\n\n"
+            "1. Create the output directory:\n"
+            "   mkdir -p {project_path}/.factory/reviews\n\n"
+            "2. Fetch PR metadata (replace <PR_NUMBER> with the actual number):\n"
+            "   gh pr view <PR_NUMBER> --json "
+            "number,title,body,author,baseRefName,headRefName,files,url,"
+            "additions,deletions,labels\n\n"
+            "3. Fetch the full PR diff:\n"
+            "   gh pr diff <PR_NUMBER>\n\n"
+            "4. Extract linked issues from the PR body. Look for patterns like "
+            "'fixes #123', 'closes #456', 'resolves #789' (case-insensitive). "
+            "For each linked issue number, fetch it:\n"
+            "   gh issue view <ISSUE_NUMBER> --json title,body,labels,comments\n\n"
+            "5. Write ALL gathered data to {project_path}/.factory/reviews/pr-context.md "
+            "with this structure:\n"
+            "   # PR Context for Review\n"
+            "   ## PR Metadata\n"
+            "   <paste JSON metadata here>\n"
+            "   ## PR Diff\n"
+            "   ```diff\n"
+            "   <paste full diff here>\n"
+            "   ```\n"
+            "   ## Linked Issues\n"
+            "   ### Issue #<N>\n"
+            "   <paste issue JSON here>\n\n"
+            "IMPORTANT: The output file MUST contain '## PR Metadata' and "
+            "'## PR Diff' sections. Do not skip any step."
         ),
         writes={".factory/reviews/pr-context.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/pr-context.md",
+                must_exist=True,
+                min_size=100,
+                must_contain=["PR Metadata", "PR Diff"],
+            )
+        ],
     )
 
     # ── Node 2: Research PR context ───────────────────────────────

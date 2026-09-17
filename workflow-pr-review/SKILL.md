@@ -9,15 +9,58 @@ argument-hint: "<project_path>"
 
 The user wants: **$ARGUMENTS**
 
-## Step: Fetch Pr
-
-Fetch PR metadata, full diff, and linked issue text via gh CLI. Extracts issue references from PR body using closes/fixes/resolves patterns. All output consolidated into pr-context.md for downstream agents.
+## Phase 1: Researcher — Fetch Pr
 
 ```bash
-mkdir -p $PROJECT_PATH/.factory/reviews && cd $PROJECT_PATH && (echo "# PR Context for Review" && echo "" && echo "## PR Metadata" && gh pr view {focus} --json number,title,body,author,baseRefName,headRefName,files,url,additions,deletions,labels 2>/dev/null && echo "" && echo "## PR Diff" && echo "\`\`\`diff" && gh pr diff {focus} 2>/dev/null && echo "\`\`\`" && echo "" && echo "## Linked Issues" && for issue_num in $(gh pr view {focus} --json body --jq ".body" 2>/dev/null | grep -oE "(close[sd]?|fix(e[sd])?|resolve[sd]?)\s*#[0-9]+" -i | grep -oE "[0-9]+"); do echo "### Issue #$issue_num" && gh issue view "$issue_num" --json title,body,labels,comments 2>/dev/null && echo ""; done) > .factory/reviews/pr-context.md 2>&1
+factory agent researcher --task "You are a PR data fetcher. Your job is to gather all context for a pull request and write it to a single file.
+
+The PR number to review is provided in the context/arguments below this prompt. Extract the numeric PR number from it.
+
+Run these steps using bash commands:
+
+1. Create the output directory:
+   mkdir -p $PROJECT_PATH/.factory/reviews
+
+2. Fetch PR metadata (replace <PR_NUMBER> with the actual number):
+   gh pr view <PR_NUMBER> --json number,title,body,author,baseRefName,headRefName,files,url,additions,deletions,labels
+
+3. Fetch the full PR diff:
+   gh pr diff <PR_NUMBER>
+
+4. Extract linked issues from the PR body. Look for patterns like 'fixes #123', 'closes #456', 'resolves #789' (case-insensitive). For each linked issue number, fetch it:
+   gh issue view <ISSUE_NUMBER> --json title,body,labels,comments
+
+5. Write ALL gathered data to $PROJECT_PATH/.factory/reviews/pr-context.md with this structure:
+   # PR Context for Review
+   ## PR Metadata
+   <paste JSON metadata here>
+   ## PR Diff
+   ```diff
+   <paste full diff here>
+   ```
+   ## Linked Issues
+   ### Issue #<N>
+   <paste issue JSON here>
+
+IMPORTANT: The output file MUST contain '## PR Metadata' and '## PR Diff' sections. Do not skip any step.
+Write output to: .factory/reviews/pr-context.md" --project "$PROJECT_PATH" --timeout 120
 ```
 
-## Phase 1: Researcher Pr
+```bash
+# Artifact verification: fetch_pr
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/pr-context.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: fetch_pr: .factory/reviews/pr-context.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: fetch_pr: .factory/reviews/pr-context.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 100 ] && echo "VERIFY FAIL: fetch_pr: .factory/reviews/pr-context.md smaller than 100 bytes" && _vfail=1
+[ -f "$_f" ] && ! grep -qE 'PR\ Metadata|PR\ Diff' "$_f" && echo "VERIFY FAIL: fetch_pr: .factory/reviews/pr-context.md missing required sentinel (PR Metadata, PR Diff)" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=fetch_pr" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: fetch_pr artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=fetch_pr" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+## Phase 2: Researcher Pr
 
 ```bash
 factory agent researcher --task "You are reviewing a pull request. Read the PR context at .factory/reviews/pr-context.md.
@@ -55,7 +98,7 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=researcher_pr" >> "$PROJECT_
 ```
 *(harness verification — DO NOT SKIP)*
 
-## Phase 2: Code Reviewer — Reviewer Pr
+## Phase 3: Code Reviewer — Reviewer Pr
 
 ```bash
 factory agent code_reviewer --task "You are a specialist code reviewer focused on root-cause analysis and solution validation.
@@ -145,7 +188,7 @@ HALT only if the review is fundamentally broken (e.g., empty, irrelevant, or rev
 
 *On RELOOP: return to `reviewer_pr` (max 3 iterations)*
 
-## Phase 3: Archivist — Finalize Pr
+## Phase 4: Archivist — Finalize Pr
 
 ```bash
 factory agent archivist --task "Read the approved PR review draft at .factory/reviews/reviewer-draft.md.
