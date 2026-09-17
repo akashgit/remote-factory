@@ -56,7 +56,7 @@ class TestPluginTaskBuilder:
             create_description="approval workflow",
             plugin_mode=False,
         )
-        assert "## Create Mode (New Factory Mode)" in task
+        assert "## Create Mode (New Portable Workflow)" in task
         assert "## Create Mode (Plugin Package)" not in task
 
     def test_update_mode_takes_precedence_over_plugin(self, tmp_path: Path):

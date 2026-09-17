@@ -436,19 +436,21 @@ def _build_ceo_task(
 
     elif create_description:
         task += (
-            f"\n\n## Create Mode (New Factory Mode)\n\n"
+            f"\n\n## Create Mode (New Portable Workflow)\n\n"
             f"**Mode description from user:**\n{create_description}\n\n"
-            f"You are in Create mode — a meta-mode for creating new factory modes.\n\n"
+            f"**output_folder:** .factory/workflows/\n\n"
+            f"You are in Create mode — creating a new portable workflow.\n\n"
             f"Follow the Create workflow playbook in your system prompt:\n"
             f"1. Research existing workflow patterns and the user's intent\n"
             f"2. Synthesize a complete workflow specification\n"
             f"3. Present the spec to the user for interactive approval\n"
-            f"4. Implement: workflow definition, SKILL.md, CLI wiring, tests\n"
-            f"5. QA verification (graph validates, SKILL.md generates, CLI recognizes mode)\n"
+            f"4. Implement: write the workflow file to the **output_folder** above\n"
+            f"5. QA verification (graph validates, SKILL.md generates)\n"
             f"6. Open PR for review\n\n"
-            f"The implementation targets THIS project (the factory codebase). "
-            f"Key files to modify: factory/workflow/definitions.py, "
-            f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
+            f"The workflow file goes in the **output_folder** specified above. "
+            f"Do NOT modify factory/workflow/definitions.py, register_all(), "
+            f"WORKFLOW_META, or CLI wiring — portable workflows are auto-discovered "
+            f"by the registry.\n"
         )
 
     # --- DataNode directive: Builder creates workflow WITH DataNode ---

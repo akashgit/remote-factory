@@ -1936,7 +1936,7 @@ class TestCreateModeFocus:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Create Mode (New Factory Mode)" in task
+        assert "## Create Mode (New Portable Workflow)" in task
         assert "a PR validation mode" in task
 
     def test_create_mode_without_focus(self, tmp_path):
@@ -1948,20 +1948,21 @@ class TestCreateModeFocus:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Create Mode (New Factory Mode)" not in task
+        assert "## Create Mode (New Portable Workflow)" not in task
 
     def test_build_ceo_task_create_description(self, tmp_path):
         """_build_ceo_task emits the Create Mode section when create_description is provided."""
         task = _build_ceo_task(tmp_path, "design", create_description="a mode for validating PRs")
-        assert "## Create Mode (New Factory Mode)" in task
+        assert "## Create Mode (New Portable Workflow)" in task
         assert "a mode for validating PRs" in task
         assert "Mode description from user" in task
+        assert "**output_folder:** .factory/workflows/" in task
         assert "## Focus Directive" not in task
 
     def test_build_ceo_task_no_create_description(self, tmp_path):
         """_build_ceo_task omits the Create Mode section when create_description is None."""
         task = _build_ceo_task(tmp_path, "design", create_description=None)
-        assert "## Create Mode (New Factory Mode)" not in task
+        assert "## Create Mode (New Portable Workflow)" not in task
 
     def test_focus_accepted_with_create_v2_mode(self, tmp_path):
         """--focus is accepted when --mode create-v2 is set (issue #1428)."""
