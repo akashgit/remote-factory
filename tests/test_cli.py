@@ -530,7 +530,7 @@ class TestRunFocusIncompatibleMode:
         """cmd_run rejects --focus with a mode other than design or research."""
         result = main(["run", "/some/path", "--mode", "founder", "--focus", "auth"])
         assert result == 1
-        assert "only works in design or research mode" in capsys.readouterr().err
+        assert "only works in design, research, or task-setup mode" in capsys.readouterr().err
 
 
 class TestAutoApproveEvent:

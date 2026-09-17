@@ -1,6 +1,6 @@
 """task-setup: Scaffold a new Task class through interactive research and generation.
 
-v2 director topology — 9 nodes, 11 edges. Directors (CEO agents) dynamically
+v2 director topology — 9 nodes, 12 edges. Directors (CEO agents) dynamically
 spawn sub-agents to adapt research depth to domain complexity. Mandatory outer
 loop feedback researcher and evolution-readiness QA ensure every generated Task
 has rich VerifyResult.details for the factory's reflection and improvement
@@ -14,7 +14,6 @@ from factory.workflow.primitives import (
     AgentRole,
     ArtifactCheck,
     Edge,
-    FnNode,
     GateNode,
     VerdictType,
     Workflow,
@@ -870,7 +869,11 @@ Read these files and produce a concise archive entry:
 - .factory/strategy/qa-report.md — QA results
 - .factory/generated-task-name.txt — task name
 
-Summarize in .factory/archive/task-setup.md:
+Write to `.factory/archive/task-setup-<TASK_NAME>.md` where <TASK_NAME>
+comes from `.factory/generated-task-name.txt`. If no task name is found,
+use `task-setup-unknown.md`.
+
+Summarize:
 1. User's original focus domain
 2. Task format chosen (TOML or Python) and why
 3. Number of instances and their coverage
@@ -880,14 +883,14 @@ Summarize in .factory/archive/task-setup.md:
 7. Generated task file path
 """
 
-# ── FnNode command constant ─────────────────────────────────────
+# ── GateNode evaluator command constant ────────────────────────
 
-_VALIDATE_TASK_COMMAND = (
-    "bash -c '"
-    'TASK_NAME=$(cat {project_path}/.factory/generated-task-name.txt 2>/dev/null | tr -d "\\n\\r"); '
-    'if [ -z "$TASK_NAME" ]; then echo "No task name found in generated-task-name.txt" >&2; exit 1; fi; '
-    'factory task validate "$TASK_NAME" --project {project_path}'
-    "'"
+_VALIDATE_TASK_GATE_COMMAND = (
+    "TASK_NAME=$(cat {project_path}/.factory/generated-task-name.txt 2>/dev/null | tr -d \"\\n\\r\"); "
+    "if [ -z \"$TASK_NAME\" ]; then echo \"reloop: No task name found in generated-task-name.txt\"; exit 0; fi; "
+    "if factory task validate \"$TASK_NAME\" --project {project_path} 2>&1; then "
+    "echo \"pass: task $TASK_NAME validated successfully\"; "
+    "else echo \"reloop: task validation failed — builder should fix the task file\"; fi"
 )
 
 
@@ -895,7 +898,7 @@ _VALIDATE_TASK_COMMAND = (
 
 
 def workflow() -> Workflow:
-    """Build the task-setup v2 workflow graph (9 nodes, 11 edges)."""
+    """Build the task-setup v2 workflow graph (9 nodes, 12 edges)."""
 
     # ── Nodes ──
 
@@ -936,7 +939,9 @@ def workflow() -> Workflow:
         id="gate_research",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
-        max_iterations=2,
+        # Note: max_iterations is advisory metadata; the executor uses
+        # verdict.max_iterations (default 3) for reloop caps.
+        max_iterations=2,  # advisory — see executor docs
         gate_prompt=_GATE_RESEARCH_PROMPT,
         reads={
             ".factory/strategy/research-domain.md",
@@ -1020,17 +1025,18 @@ def workflow() -> Workflow:
         id="gate_qa",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
-        max_iterations=2,
+        # Note: max_iterations is advisory metadata; the executor uses
+        # verdict.max_iterations (default 3) for reloop caps.
+        max_iterations=2,  # advisory — see executor docs
         gate_prompt=_GATE_QA_PROMPT,
         reads={".factory/strategy/qa-report.md"},
     )
 
-    validate_task = FnNode(
+    validate_task = GateNode(
         id="validate_task",
-        command=_VALIDATE_TASK_COMMAND,
-        blocking=True,
+        evaluator_type="fn",
+        evaluator_command=_VALIDATE_TASK_GATE_COMMAND,
         reads={".factory/generated-task-name.txt"},
-        writes=set(),
     )
 
     archivist = AgentNode(
@@ -1044,8 +1050,9 @@ def workflow() -> Workflow:
             ".factory/strategy/research-verification.md",
             ".factory/strategy/research-outer-loop.md",
             ".factory/strategy/qa-report.md",
+            ".factory/generated-task-name.txt",
         },
-        writes={".factory/archive/task-setup.md"},
+        writes={".factory/archive/"},
     )
 
     # ── Assemble nodes dict ──
@@ -1062,7 +1069,7 @@ def workflow() -> Workflow:
         "archivist": archivist,
     }
 
-    # ── Edges (11 total) ──
+    # ── Edges (12 total) ──
 
     edges = [
         # 1. Research complete → CEO evaluates quality
@@ -1081,12 +1088,14 @@ def workflow() -> Workflow:
         Edge(source="builder", target="qa_director", condition=None),
         # 8. QA complete → CEO evaluates results
         Edge(source="qa_director", target="gate_qa", condition=None),
-        # 9. QA passed → FnNode validates task
+        # 9. QA passed → GateNode validates task
         Edge(source="gate_qa", target="validate_task", condition=VerdictType.PROCEED),
         # 10. QA failed → builder fixes issues (back-edge)
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         # 11. Validation passed → archive (non-blocking)
-        Edge(source="validate_task", target="archivist", condition=None),
+        Edge(source="validate_task", target="archivist", condition=VerdictType.PROCEED),
+        # 12. Validation failed → builder fixes issues (back-edge)
+        Edge(source="validate_task", target="builder", condition=VerdictType.RELOOP),
     ]
 
     # ── Build workflow ──

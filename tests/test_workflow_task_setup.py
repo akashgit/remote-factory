@@ -9,7 +9,6 @@ import pytest
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
-    FnNode,
     GateNode,
     VerdictType,
     Workflow,
@@ -61,7 +60,7 @@ class TestGraphStructure:
         assert len(task_setup_wf.nodes) == 9
 
     def test_edge_count(self, task_setup_wf: Workflow) -> None:
-        assert len(task_setup_wf.edges) == 11
+        assert len(task_setup_wf.edges) == 12
 
     def test_start_node(self, task_setup_wf: Workflow) -> None:
         assert task_setup_wf.start_node == "research_director"
@@ -137,12 +136,12 @@ class TestNodeTypes:
         assert node.evaluator_role == AgentRole.CEO
         assert node.max_iterations == 2
 
-    def test_validate_task_is_fn_node(self, task_setup_wf: Workflow) -> None:
+    def test_validate_task_is_gate_node(self, task_setup_wf: Workflow) -> None:
         node = task_setup_wf.nodes["validate_task"]
-        assert isinstance(node, FnNode)
-        assert node.blocking is True
-        assert "factory task validate" in node.command
-        assert "{project_path}" in node.command
+        assert isinstance(node, GateNode)
+        assert node.evaluator_type == "fn"
+        assert "factory task validate" in node.evaluator_command
+        assert "{project_path}" in node.evaluator_command
 
     def test_archivist_is_non_blocking(self, task_setup_wf: Workflow) -> None:
         node = task_setup_wf.nodes["archivist"]
@@ -155,7 +154,7 @@ class TestNodeTypes:
 
 
 class TestTopology:
-    """Verify exact 11-edge wiring matches the specification."""
+    """Verify exact 12-edge wiring matches the specification."""
 
     EXPECTED_EDGES = [
         ("research_director", "gate_research", None),
@@ -168,7 +167,8 @@ class TestTopology:
         ("qa_director", "gate_qa", None),
         ("gate_qa", "validate_task", VerdictType.PROCEED),
         ("gate_qa", "builder", VerdictType.RELOOP),
-        ("validate_task", "archivist", None),
+        ("validate_task", "archivist", VerdictType.PROCEED),
+        ("validate_task", "builder", VerdictType.RELOOP),
     ]
 
     def test_all_expected_edges_present(self, task_setup_wf: Workflow) -> None:
@@ -187,11 +187,12 @@ class TestTopology:
         assert not extra, f"Extra edges found: {extra}"
 
     def test_back_edges_exist(self, task_setup_wf: Workflow) -> None:
-        """Verify three reloop back-edges."""
+        """Verify four reloop back-edges."""
         edges = {(e.source, e.target, e.condition) for e in task_setup_wf.edges}
         assert ("gate_research", "research_director", VerdictType.RELOOP) in edges
         assert ("gate_strategy", "strategy_director", VerdictType.RELOOP) in edges
         assert ("gate_qa", "builder", VerdictType.RELOOP) in edges
+        assert ("validate_task", "builder", VerdictType.RELOOP) in edges
 
 
 # ── Prompt quality ──────────────────────────────────────────────
@@ -334,4 +335,4 @@ class TestRegistryDiscovery:
         assert isinstance(wf, Workflow)
         assert wf.name == "task-setup"
         assert len(wf.nodes) == 9
-        assert len(wf.edges) == 11
+        assert len(wf.edges) == 12
