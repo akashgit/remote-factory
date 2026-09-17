@@ -1,164 +1,114 @@
-# ADR: task-setup Workflow — Director Topology and Prompt Design
+# ADR: task-setup uses a director topology with a mandatory outer loop feedback research phase
 
-*Status: Proposed — under discussion in PR #1509*
-
----
-
-## Context
-
-Creating a new `Task` (the 4-hook interface: `instances()`, `setup()`, `prompt()`, `verify()`) is the entry point for applying the outer loop to a new domain. Without a good Task, the outer loop has no signal to learn from.
-
-The hard part is not code generation. It is `VerifyResult.details`.
-
-`VerifyResult.details` is a dict returned by `verify()` on every evaluation. The outer loop's reflection mechanism reads these dicts across the population to extract patterns like:
-
-> "High-scoring individuals had low blunder_count while low-scoring ones had high blunder_count"
-
-If `details` is sparse (`{"passed": True, "score": 0.7}`), the reflector has nothing to compare. Evolution stalls — mutation suggestions are generic and untargeted. The outer loop can only improve what it can observe.
-
-This creates a design problem: a developer building a new Task is focused on *correctness* (does verify() return the right score?), not on *observability* (does verify() expose enough signal for evolution to improve?). These are different concerns and without explicit guidance, observability is consistently neglected.
-
-A second problem: Task design involves domain research that developers cannot be expected to carry in their heads. What are the right instances? What granularity of `details` enables meaningful comparison? What verification strategy (exit_code vs json) fits the domain? These questions have non-obvious answers that benefit from structured research before any code is written.
+*Status: Proposed*
+*Author: georgosgeorgos*
+*Related: PR #1509, PR #1528*
 
 ---
 
 ## Decision
 
-Use a **director topology** — CEO agents that spawn sub-agents dynamically based on domain complexity — rather than a fixed pipeline of specialist agents.
+task-setup uses a **director topology** — CEO agents that dynamically spawn sub-agents based on domain complexity — and requires a **mandatory outer loop feedback research phase** before any code is generated. The research phase always includes a researcher focused specifically on what `VerifyResult.details` should contain to make the generated Task useful for evolutionary search.
 
-### Topology (proposed two-phase split)
+---
 
-**Phase 1 — Core scaffold:**
-```
-research_director → gate_research → strategy_director → gate_strategy (user) → builder → archivist
-```
+## Context
 
-**Phase 2 — Quality layer:**
-```
-... → builder → qa_director → gate_qa → validate_task (GateNode) → archivist
-```
+Creating a new `Task` (the 4-hook interface: `instances()`, `setup()`, `prompt()`, `verify()`) is the entry point for applying the outer loop to a new domain. The correctness bar is low: if `verify()` returns a score between 0 and 1 and the CLI validates, the Task works. But a Task that works is not the same as a Task that is useful to the outer loop.
 
-### Why directors instead of a fixed pipeline
+`VerifyResult.details` is the learning signal. The outer loop's reflection mechanism reads `details` dicts across the population and extracts patterns like:
 
-A fixed pipeline (researcher_1 → researcher_2 → researcher_3 → synthesizer) works when the number of research dimensions is known in advance. It doesn't work for Task design because:
+> "High-scoring individuals had low blunder_count while low-scoring ones had high blunder_count"
 
-- A chess task needs a tooling researcher (python-chess, Stockfish setup) that a code-generation task doesn't
-- A drug discovery task needs a dataset researcher (PDBbind, existing benchmarks) that a sorting task doesn't
-- Adding fixed nodes for every possible research dimension produces a bloated pipeline where most nodes are no-ops for most domains
+These patterns drive mutation suggestions for the next generation. If `details` is sparse — `{"passed": True, "score": 0.7}` — the reflector has nothing to compare, suggestions are generic, and evolution stalls. The failure is silent: a sparse-details Task passes functional tests, validates, and runs without error. The first observable sign of the problem is a plateau in generation 0 or 1 with no improvement signal.
 
-Directors adapt. The Research Director reads `user-intent.md` and decides which research dimensions are needed. Mandatory dimensions (domain, verification, outer loop feedback) are always spawned. Optional dimensions (tooling, dataset) are spawned when the domain warrants it.
-
-### The mandatory outer loop feedback researcher
-
-Every task-setup run must include a researcher specifically focused on what `VerifyResult.details` should contain for effective outer loop evolution. This is non-negotiable even if the developer thinks it's unnecessary.
-
-**Why mandatory:** The failure mode is silent. A Task with sparse `details` passes all functional tests — it produces correct scores, verify() works, the CLI validates it. But the outer loop's reflection mechanism learns nothing from it. The first sign of the problem is that generations plateau immediately with no improvement signal. By then the Task is deployed and the cost of retrofitting richer details is high.
-
-Making this researcher mandatory creates an explicit forcing function: you must think about observability before implementation.
-
-### Prompt design principles
-
-**1. Generic framing for reflection mechanisms**
-
-Prompts must not hardcode references to the current reflector algorithm. Write:
-
-> "rich domain-specific dimensions enable any algorithm to learn what distinguishes good solutions from bad ones"
-
-Not:
-
-> "contrastive analysis comparing top-K vs bottom-K"
-
-Reason: the reflector algorithm evolves. Prompts that describe it in terms of specific implementation details (`top-K`, `contrastive`, `bottom-K`) will drift and mislead future builders. The invariant — rich details enable better learning — is stable.
-
-**2. Show, don't tell — the chess-evolve example**
-
-Every prompt that explains `VerifyResult.details` design must include the concrete chess example:
-
-```python
-# Good — rich, numeric, comparable
-details = {
-    "wins": 3, "draws": 1, "losses": 1,
-    "blunder_count": 4,
-    "avg_eval": -0.3,
-    "total_moves": 87,
-    "game_results": [{"game": 1, "result": "win", "moves": 18}, ...],
-}
-
-# Anti-example — sparse, unlearnable
-details = {"passed": True, "score": 0.6}
-```
-
-Abstract descriptions of what "good details" look like are insufficient. Developers need a working model.
-
-**3. At least 4 numeric keys**
-
-The reflection mechanism computes differences between good and bad solutions. It needs numeric dimensions to compare. A minimum of 4 numeric keys in `details` is a concrete, checkable criterion. Boolean and string fields are less useful for numeric comparison but are acceptable for error categorization.
-
-**4. Per-instance granularity**
-
-`details` should include per-instance breakdowns (a list of dicts) in addition to aggregate statistics. This enables the reflector to identify which specific instances are hard vs easy, and which mutation patterns improve performance on hard instances specifically.
-
-**5. Categorical error classification**
-
-Include an `error_type` or `failure_category` field that distinguishes types of failures. "Failed on 3 instances" is less useful than "failed on 3 instances: 2 timeout, 1 wrong_output". The reflector can then suggest mutations that address specific failure modes.
-
-### validate_task must be a GateNode, not an FnNode
-
-`factory task validate` is a correctness check, not a terminal step. When validation fails, the builder should fix the issues and re-validate — not restart the entire 9-node workflow from scratch.
-
-**Use:**
-```python
-GateNode(
-    id="validate_task",
-    evaluator_type="fn",
-    evaluator_command="factory task validate --name $(cat {project_path}/.factory/generated-task-name.txt) --project {project_path}",
-    reads={".factory/generated-task-name.txt"},
-)
-# With edges:
-Edge(source="validate_task", target="builder", condition=VerdictType.RELOOP),
-Edge(source="validate_task", target="archivist", condition=VerdictType.PROCEED),
-```
-
-**Not:**
-```python
-FnNode(id="validate_task", command="factory task validate ...")
-# No recovery path — halt on failure forces full workflow restart
-```
-
-### Shell command quoting for project paths
-
-Any FnNode or GateNode command that embeds `{project_path}` must handle paths with spaces. The executor substitutes via `shlex.quote(str(self.project_path))`, which on a path like `/Users/John Smith/project` produces `'/Users/John Smith/project'` — closing the outer `bash -c '...'` string prematurely.
-
-**Safe pattern — use double-quote outer string:**
-```python
-command='bash -c "factory task validate --project {project_path}"'
-```
-
-Or pass as environment variable:
-```python
-command="PROJECT={project_path} bash -c 'factory task validate --project \"$PROJECT\"'"
-```
+The other challenge is that Task design involves domain research a developer cannot be expected to carry in their heads. What are the right instances? What granularity of `details` enables meaningful comparison? What verification strategy fits the domain? These are non-obvious and benefit from structured investigation before implementation.
 
 ---
 
 ## Alternatives considered
 
-**Fixed specialist pipeline**
-A fixed sequence (domain-researcher → verification-researcher → outer-loop-researcher → synthesizer → builder) is simpler to implement and test. Rejected because it doesn't adapt to domain complexity — a drug discovery Task needs 2–3 additional research dimensions a sorting Task doesn't. Fixed pipelines produce either bloat (always-no-op nodes) or inadequate coverage (missing dimensions for complex domains).
+**CLI wizard — prompted interactive input, no agent cost**
 
-**Single-agent workflow**
-One CEO agent that does all research, strategy, and implementation. Simpler topology, fewer moving parts. Rejected because the Tasks this workflow produces will be evaluated by the outer loop many times. The investment in structured research and adversarial QA pays off quickly when a poor `VerifyResult.details` design costs 50+ outer loop evaluations to diagnose.
+A structured questionnaire that asks the developer to fill in instance structure, scoring method, and details schema. Low cost, fast, predictable.
 
-**Prompt-heavy single builder**
-All domain knowledge in one very detailed builder prompt. Rejected because prompts that try to teach domain research, verification strategy, AND details design simultaneously are consistently ignored in practice — the builder focuses on functional correctness and neglects observability.
+Rejected because the questions that matter most — "what numeric dimensions distinguish good solutions from bad ones in your domain?" — require domain research to answer well. A wizard front-loads the difficulty onto the developer at exactly the moment when they have the least information. It also can't adapt: a chess Task and a drug-simulation Task need fundamentally different research questions.
+
+**Headless automated pipeline — no user gate, fixed researcher count**
+
+Three fixed researchers (domain, verification, outer loop feedback) → synthesizer → builder → validate. No human approval step.
+
+Rejected because the strategy synthesis step produces a Task specification that may have wrong assumptions about the domain, the scoring method, or the details schema. Building on a wrong spec wastes the full implementation round-trip. A user gate after strategy is cheap insurance against that. The director pattern is preferred over fixed researchers for the same reason as below.
+
+---
+
+## Why directors over a fixed researcher pipeline
+
+A fixed pipeline with a predetermined number of researchers works when research dimensions are known in advance. For Task design they are not:
+
+- A chess Task needs a tooling researcher (python-chess, Stockfish setup). A sorting Task doesn't.
+- A drug discovery Task needs a dataset researcher (PDBbind, existing benchmarks). A code-generation Task doesn't.
+
+Adding fixed nodes for every possible research dimension produces a bloated pipeline where most nodes are no-ops for most domains. Directors adapt: the Research Director reads the user's domain description and decides which dimensions need investigation. The mandatory dimensions (domain, verification, outer loop feedback) are always spawned. Optional dimensions are spawned when the domain warrants them.
+
+---
+
+## Why the outer loop feedback researcher is mandatory
+
+Every task-setup run requires a researcher focused specifically on what `VerifyResult.details` should contain, even when the developer believes they know their domain.
+
+The failure mode is silent and expensive to retrofit. A Task with sparse `details` passes all tests and validates cleanly. The outer loop runs, scores are computed, and generations proceed. The first sign of the problem is that improvement curves plateau immediately — the reflector is examining `{"passed": True, "score": 0.7}` across the population and has nothing to compare. Diagnosing this requires inspecting cycle records, tracing back to the Task definition, and rebuilding it. By then the outer loop has consumed a budget on an unlearnable objective.
+
+Making the feedback researcher mandatory creates an explicit gate: you must think about observability before implementation. The concrete output — a set of recommended `details` keys with their types and learning value — becomes an input to the builder prompt, not an afterthought.
+
+---
+
+## Prompt design principles
+
+**Generic framing for reflection mechanisms.** Prompts must not reference the current reflector algorithm by name. Write "reflection and improvement mechanisms" and "good solutions vs bad ones," not "contrastive analysis" or "top-K vs bottom-K." The invariant — rich details enable better learning — is stable. The implementation is not.
+
+**Concrete example over abstract description.** Every prompt that explains `VerifyResult.details` design includes the chess-evolve example:
+
+```python
+# Good — numeric, comparable, per-instance
+details = {
+    "wins": 3, "draws": 1, "losses": 1,
+    "blunder_count": 4,
+    "avg_eval": -0.3,
+    "game_results": [{"game": 1, "result": "win", "moves": 18}, ...],
+}
+
+# Anti-example — unlearnable
+details = {"passed": True, "score": 0.6}
+```
+
+**Multiple numeric dimensions.** The reflection mechanism computes differences between populations. It needs numeric fields to do this. Boolean and string fields support error categorization but cannot drive numeric comparison. The builder prompt specifies that `details` must contain several numeric fields — how many is a heuristic that should be revisited as the reflector evolves; the chess example sets the expected level of richness.
+
+**Per-instance granularity.** `details` should include per-instance breakdowns in addition to aggregates. This lets the reflector identify which specific instances drive score differences — and which mutation patterns help on hard instances specifically.
+
+**Categorical error classification.** Include an `error_type` or `failure_category` field. "Failed on 3 instances" is less useful than "failed on 3 instances: 2 timeout, 1 wrong_output."
 
 ---
 
 ## Consequences
 
-- Longer workflow runs (20–40 minutes for complex domains vs 5–10 for a direct build)
-- Higher cost per run (3+ researcher agents + strategy + QA)
-- Significantly better Task quality: richer `VerifyResult.details`, validated before deployment
-- The mandatory outer loop feedback researcher creates a cultural expectation that observability is a first-class concern in Task design
+**Benefits:**
+- Forces observability to be designed before implementation rather than retrofitted
+- Directors adapt research depth to domain complexity — simple domains get fast runs, complex domains get thorough coverage
+- User gate after strategy catches wrong assumptions before code is written
 
-The investment makes sense for Tasks that will be used in multi-generation outer loop runs. For one-off Tasks or exploratory experiments, a direct build may be more appropriate.
+**Tradeoffs:**
+- Director runs are not statically analyzable — sub-agents are spawned at runtime, which makes CI testing of the workflow itself impractical beyond topology checks
+- Every run incurs the cost of 3+ researcher agents plus a strategy phase, even when the developer knows their domain well. Expect 20–40 minutes and meaningful token cost per run
+- Developers building quick experimental Tasks will bypass the workflow entirely and write the Task directly. This is acceptable — the workflow is optimized for Tasks intended for multi-generation outer loop runs
+- Prompt quality cannot be verified statically. The ADR's principles (concrete examples, multiple numeric dimensions, per-instance breakdowns) are criteria, not guarantees. Real validation requires running the workflow and inspecting generated Tasks
+
+---
+
+## Open questions
+
+1. **Retroactive coverage.** `chess_evolve_task.py` predates this ADR. Does this ADR apply retroactively, and if so, what is the migration path?
+
+2. **Numeric dimension threshold.** The chess example has 4 numeric keys (`wins`, `draws`, `losses`, `blunder_count`, `avg_eval`). Is this the right target? Should the outer loop feedback researcher be given an explicit floor, and if so, derived from what property of the reflector?
+
+3. **User gate in headless mode.** `auto_approve=True` bypasses the strategy user gate. What guardrails, if any, should exist for headless task-setup runs?
