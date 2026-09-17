@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from factory.outer_loop.designer import DesignerAgent
+from factory.outer_loop.designer import (
+    DesignerAgent,
+    _propagate_prompts_from_seed,
+    _validate_and_fix,
+)
 from factory.outer_loop.models import MutationType
 from factory.workflow.primitives import (
     AgentNode,
@@ -11,6 +15,8 @@ from factory.workflow.primitives import (
     DataNode,
     Edge,
     FnNode,
+    GateNode,
+    VerdictType,
     Workflow,
 )
 
@@ -727,3 +733,310 @@ class TestInjectFrozenDataNodeSubgraph:
             and "unreachable from start_node" not in i
         ]
         assert structural == [], f"Structural issues: {structural}"
+
+
+class TestPromptPropagation:
+    """Tests for _propagate_prompts_from_seed (Part C)."""
+
+    @staticmethod
+    def _seed_with_prompts() -> Workflow:
+        """Seed workflow with prompt_templates for RESEARCHER and BUILDER."""
+        return Workflow(
+            name="seed",
+            nodes={
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="Research the project deeply.",
+                    writes={".factory/strategy/research.md"},
+                ),
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Build the solution carefully.",
+                    reads={".factory/strategy/research.md"},
+                ),
+            },
+            edges=[Edge(source="researcher", target="builder")],
+            start_node="researcher",
+        )
+
+    def test_propagation_fills_empty_prompts(self) -> None:
+        """Template nodes with empty prompt get the seed's prompt by role."""
+        nodes: dict[str, AgentNode | FnNode] = {
+            "r": AgentNode(id="r", role=AgentRole.RESEARCHER),
+            "b": AgentNode(id="b", role=AgentRole.BUILDER),
+        }
+        seed = self._seed_with_prompts()
+        _propagate_prompts_from_seed(nodes, seed)  # type: ignore[arg-type]
+        assert nodes["r"].prompt_template == "Research the project deeply."  # type: ignore[union-attr]
+        assert nodes["b"].prompt_template == "Build the solution carefully."  # type: ignore[union-attr]
+
+    def test_noop_when_seed_is_none(self) -> None:
+        """No crash and no changes when seed_workflow is None."""
+        nodes: dict[str, AgentNode] = {
+            "r": AgentNode(id="r", role=AgentRole.RESEARCHER),
+        }
+        _propagate_prompts_from_seed(nodes, None)  # type: ignore[arg-type]
+        assert nodes["r"].prompt_template == ""
+
+    def test_unmatched_role_stays_empty(self) -> None:
+        """Roles not in seed keep empty prompt (for Part E to fill)."""
+        nodes: dict[str, AgentNode] = {
+            "s": AgentNode(id="s", role=AgentRole.STRATEGIST),
+        }
+        seed = self._seed_with_prompts()
+        _propagate_prompts_from_seed(nodes, seed)  # type: ignore[arg-type]
+        assert nodes["s"].prompt_template == ""
+
+    def test_multiple_same_role_all_receive_prompt(self) -> None:
+        """Multiple nodes with the same role all get the seed's prompt."""
+        nodes: dict[str, AgentNode] = {
+            "b1": AgentNode(id="b1", role=AgentRole.BUILDER),
+            "b2": AgentNode(id="b2", role=AgentRole.BUILDER),
+        }
+        seed = self._seed_with_prompts()
+        _propagate_prompts_from_seed(nodes, seed)  # type: ignore[arg-type]
+        assert nodes["b1"].prompt_template == "Build the solution carefully."
+        assert nodes["b2"].prompt_template == "Build the solution carefully."
+
+    def test_existing_prompt_not_overwritten(self) -> None:
+        """Nodes that already have a prompt are left alone."""
+        nodes: dict[str, AgentNode] = {
+            "r": AgentNode(
+                id="r", role=AgentRole.RESEARCHER,
+                prompt_template="My custom prompt.",
+            ),
+        }
+        seed = self._seed_with_prompts()
+        _propagate_prompts_from_seed(nodes, seed)  # type: ignore[arg-type]
+        assert nodes["r"].prompt_template == "My custom prompt."
+
+    def test_design_minimal_with_seed_has_prompts(self) -> None:
+        """design_minimal with a seed produces AgentNodes with non-empty prompts."""
+        designer = DesignerAgent()
+        seed = self._seed_with_prompts()
+        wf = designer.design_minimal("bench", seed_workflow=seed)
+        for node in wf.nodes.values():
+            if type(node).__name__ == "AgentNode":
+                assert node.prompt_template, f"Node {node.id} has empty prompt"  # type: ignore[union-attr]
+
+    def test_design_thorough_with_seed_has_prompts(self) -> None:
+        """design_thorough with a seed produces AgentNodes with non-empty prompts."""
+        designer = DesignerAgent()
+        seed = self._seed_with_prompts()
+        wf = designer.design_thorough("bench", seed_workflow=seed)
+        for node in wf.nodes.values():
+            if type(node).__name__ == "AgentNode":
+                assert node.prompt_template, f"Node {node.id} has empty prompt"  # type: ignore[union-attr]
+
+    def test_design_custom_with_seed_has_prompts(self) -> None:
+        """design_custom with a seed produces AgentNodes with non-empty prompts."""
+        designer = DesignerAgent()
+        seed = self._seed_with_prompts()
+        wf = designer.design_custom("bench", {"max_nodes": 6}, seed_workflow=seed)
+        for node in wf.nodes.values():
+            if type(node).__name__ == "AgentNode":
+                assert node.prompt_template, f"Node {node.id} has empty prompt"  # type: ignore[union-attr]
+
+    def test_frozen_node_prompt_wins_over_propagated(self) -> None:
+        """Frozen node's prompt takes priority over propagated prompt."""
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="Frozen prompt wins.",
+                    timeout=999,
+                ),
+            },
+            edges=[],
+            start_node="researcher",
+        )
+        designer = DesignerAgent()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"researcher"},
+        )
+        assert wf.nodes["researcher"].prompt_template == "Frozen prompt wins."  # type: ignore[union-attr]
+
+
+class TestGateEdgeWiring:
+    """Tests for Part D gate edge fix in _rewire_data_nodes."""
+
+    @staticmethod
+    def _seed_with_data_node_and_prompts() -> Workflow:
+        """Seed with DataNode + prompted AgentNodes."""
+        return Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Solve the task.",
+                ),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+
+    def test_gate_exit_gets_proceed_edge(self) -> None:
+        """When DataNode rewiring makes gate_qa the subgraph_exit, a PROCEED edge is added."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node_and_prompts()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        proceed_edges = [
+            e for e in wf.edges
+            if e.source == "gate_qa" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed_edges) >= 1, "gate_qa should have a PROCEED edge after rewiring"
+
+    def test_non_gate_exit_no_proceed_added(self) -> None:
+        """When the terminal node is not a GateNode, no PROCEED edge is added."""
+        # Create a workflow where the terminal node is a FnNode
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="d1", prompt="test")],
+                    subgraph_entry="worker",
+                    subgraph_exit="worker",
+                ),
+                "worker": AgentNode(
+                    id="worker",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Work.",
+                ),
+            },
+            edges=[Edge(source="data", target="worker")],
+            start_node="data",
+        )
+        # Build a minimal workflow that has FnNode as terminal
+        from factory.outer_loop.designer import _inject_frozen_nodes, _rewire_data_nodes
+        nodes: dict = {
+            "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+            "b": FnNode(id="b", command="echo b", reads={"a.txt"}),
+        }
+        edges = [Edge(source="a", target="b")]
+        _inject_frozen_nodes(nodes, edges, seed, {"data"})
+        _rewire_data_nodes(nodes, edges, "a", seed, {"data"})
+        proceed_edges = [
+            e for e in edges
+            if e.condition == VerdictType.PROCEED
+        ]
+        assert proceed_edges == [], "No PROCEED edge should be added for non-gate terminal"
+
+    def test_idempotent_if_proceed_exists(self) -> None:
+        """If gate already has a PROCEED edge, no duplicate is added."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node_and_prompts()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        proceed_edges = [
+            e for e in wf.edges
+            if e.source == "gate_qa" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed_edges) == 1, "Should have exactly one PROCEED edge"
+
+
+class TestValidateAndFixFallback:
+    """Tests for _validate_and_fix (Part E)."""
+
+    def test_noop_on_valid_workflow(self) -> None:
+        """Valid workflow passes through unchanged."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "a": AgentNode(
+                    id="a", role=AgentRole.RESEARCHER,
+                    prompt_template="Do research.",
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        result = _validate_and_fix(wf, None)
+        assert result.nodes["a"].prompt_template == "Do research."  # type: ignore[union-attr]
+
+    def test_fills_empty_prompt_with_generic_default(self) -> None:
+        """Empty prompt_template gets a generic default."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "a": AgentNode(id="a", role=AgentRole.RESEARCHER),
+            },
+            edges=[],
+            start_node="a",
+        )
+        result = _validate_and_fix(wf, None)
+        prompt = result.nodes["a"].prompt_template  # type: ignore[union-attr]
+        assert prompt, "Prompt should be filled"
+        assert "researcher" in prompt
+        assert "{project_path}" in prompt
+
+    def test_adds_proceed_edge_to_non_terminal_gate(self) -> None:
+        """Non-terminal gate missing PROCEED gets one added."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="fn", reads={"a.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="a", condition=VerdictType.RELOOP),
+            ],
+            start_node="a",
+        )
+        result = _validate_and_fix(wf, None)
+        proceed = [
+            e for e in result.edges
+            if e.source == "gate" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed) >= 1
+
+    def test_preserves_existing_prompts(self) -> None:
+        """Non-empty prompts are never overwritten."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "a": AgentNode(
+                    id="a", role=AgentRole.RESEARCHER,
+                    prompt_template="Custom prompt.",
+                ),
+            },
+            edges=[],
+            start_node="a",
+        )
+        result = _validate_and_fix(wf, None)
+        assert result.nodes["a"].prompt_template == "Custom prompt."  # type: ignore[union-attr]
+
+    def test_idempotent(self) -> None:
+        """Calling twice produces the same result."""
+        wf = Workflow(
+            name="test",
+            nodes={
+                "a": AgentNode(id="a", role=AgentRole.RESEARCHER),
+            },
+            edges=[],
+            start_node="a",
+        )
+        result1 = _validate_and_fix(wf, None)
+        result2 = _validate_and_fix(result1, None)
+        assert result1.nodes["a"].prompt_template == result2.nodes["a"].prompt_template  # type: ignore[union-attr]
