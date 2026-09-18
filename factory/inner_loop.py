@@ -579,30 +579,85 @@ class InnerLoop:
         return record
 
     def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
-        """Execute DataNode workflows via WorkflowExecutor regardless of execution_strategy.
+        """Execute DataNode workflows, respecting execution_strategy.
 
-        DataNode workflows always use WorkflowExecutor for per-item iteration because
-        the CEO subprocess does not reliably follow multi-step iteration loops from
-        SKILL.md prose. The ceo-skill and ceo-tool strategies work for non-DataNode
-        workflows. This is a known LLM reliability limitation, not a code issue.
+        executor: WorkflowExecutor handles DataNode iteration internally via _execute_data().
+        ceo-skill: CEO subprocess reads SKILL.md with concrete factory task CLI steps
+            for per-item lifecycle.
+        ceo-tool: Same as ceo-skill but CEO uses tool-based execution engine.
         """
         import asyncio
         import json
 
+        t0 = time.monotonic()
+        assert self.workflow is not None
+
+        if self.execution_strategy in ('ceo-skill', 'ceo-tool'):
+            # CEO subprocess path — same as non-DataNode workflows
+            engine = 'tool' if self.execution_strategy == 'ceo-tool' else 'skill'
+            # Build a prompt that tells the CEO about the DataNode workflow
+            prompt_text = (
+                'Execute this workflow which contains a DataNode for data iteration. '
+                'Follow the SKILL.md instructions to iterate over items using factory task CLI commands.'
+            )
+            exec_result = self._run_ceo_subprocess(prompt_text, engine=engine)
+
+            duration_s = time.monotonic() - t0
+            score = 1.0 if exec_result.success else 0.0
+
+            # Try to recover per-item scores from cycle_summary.json
+            instance_results: list[dict[str, Any]] | None = None
+            summary_path = self.factory_dir / 'outer_loop' / 'runs' / self.mode / 'cycle_summary.json'
+            if summary_path.exists():
+                try:
+                    summary = json.loads(summary_path.read_text())
+                    if 'instance_results' in summary:
+                        instance_results = summary['instance_results']
+                    if 'score' in summary:
+                        score = float(summary['score'])
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            record = CycleRecord(
+                cycle_number=self._step_count + 1,
+                mode=self.mode,
+                started_at=None,
+                ended_at=None,
+                duration_s=duration_s,
+                score_start=None,
+                score_end=score,
+                score_delta=None,
+                instance_results=instance_results,
+            )
+            record.frozen_nodes = sorted(self.frozen_nodes)
+            record.mutable_node_ids = sorted(self.mutable_nodes())
+
+            self._write_cycle_summary(
+                returncode=0 if exec_result.success else 1,
+                event_offset=0,
+                duration_ms=int(duration_s * 1000),
+                builder_committed=False,
+                experiments=0,
+                test_score=score,
+                instance_results=instance_results,
+            )
+
+            self._step_count += 1
+            self._history.append(record)
+            return record
+
+        # executor path — WorkflowExecutor handles DataNode iteration
         from factory.workflow.executor import WorkflowExecutor
 
-        t0 = time.monotonic()
-
-        assert self.workflow is not None
         executor = WorkflowExecutor(
             self.workflow,
             self.project_dir,
         )
-        exec_result = asyncio.run(executor.execute())
+        exec_result_wf = asyncio.run(executor.execute())
 
         duration_s = time.monotonic() - t0
-        score = 1.0 if exec_result.success else 0.0
-        instance_results: list[dict[str, Any]] | None = None
+        score = 1.0 if exec_result_wf.success else 0.0
+        instance_results = None
 
         # Direct lookup: find DataNode ID and read its output
         data_node_id: str | None = None
@@ -611,9 +666,9 @@ class InnerLoop:
                 data_node_id = nid
                 break
 
-        if data_node_id is not None and data_node_id in exec_result.node_outputs:
+        if data_node_id is not None and data_node_id in exec_result_wf.node_outputs:
             try:
-                parsed = json.loads(exec_result.node_outputs[data_node_id])
+                parsed = json.loads(exec_result_wf.node_outputs[data_node_id])
                 if isinstance(parsed, list) and parsed:
                     scores = [r["score"] for r in parsed if "score" in r]
                     if scores:
@@ -645,7 +700,7 @@ class InnerLoop:
         record.mutable_node_ids = sorted(self.mutable_nodes())
 
         self._write_cycle_summary(
-            returncode=0 if exec_result.success else 1,
+            returncode=0 if exec_result_wf.success else 1,
             event_offset=0,
             duration_ms=int(duration_s * 1000),
             builder_committed=False,

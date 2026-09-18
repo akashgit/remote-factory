@@ -354,13 +354,8 @@ class TestDataNodeStrategyDispatch:
 
         mock_data.assert_called_once()
 
-    def test_datanode_ceo_skill_uses_executor(self, tmp_path: Path) -> None:
-        """ceo-skill + DataNode still routes to _step_with_data_node (executor path).
-
-        DataNode workflows always use WorkflowExecutor because the CEO subprocess
-        does not reliably follow multi-step iteration loops. This is a known LLM
-        reliability limitation.
-        """
+    def test_datanode_ceo_skill_uses_subprocess(self, tmp_path: Path) -> None:
+        """ceo-skill + DataNode calls _run_ceo_subprocess inside _step_with_data_node."""
         (tmp_path / ".factory").mkdir()
         wf = _make_data_node_workflow()
 
@@ -375,14 +370,17 @@ class TestDataNodeStrategyDispatch:
             execution_strategy="ceo-skill",
         )
 
-        with patch.object(loop, "_step_with_data_node") as mock_data:
-            mock_data.return_value = MagicMock(score_end=0.9)
-            loop.step()
+        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
+        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
+            record = loop.step()
 
-        mock_data.assert_called_once()
+        mock_run.assert_called_once()
+        # Verify it was called with engine='skill'
+        assert mock_run.call_args[1]["engine"] == "skill"
+        assert record.score_end == 1.0
 
-    def test_datanode_ceo_tool_uses_executor(self, tmp_path: Path) -> None:
-        """ceo-tool + DataNode still routes to _step_with_data_node (executor path)."""
+    def test_datanode_ceo_tool_uses_subprocess(self, tmp_path: Path) -> None:
+        """ceo-tool + DataNode calls _run_ceo_subprocess with engine='tool'."""
         (tmp_path / ".factory").mkdir()
         wf = _make_data_node_workflow()
 
@@ -397,8 +395,10 @@ class TestDataNodeStrategyDispatch:
             execution_strategy="ceo-tool",
         )
 
-        with patch.object(loop, "_step_with_data_node") as mock_data:
-            mock_data.return_value = MagicMock(score_end=0.8)
-            loop.step()
+        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
+        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
+            record = loop.step()
 
-        mock_data.assert_called_once()
+        mock_run.assert_called_once()
+        assert mock_run.call_args[1]["engine"] == "tool"
+        assert record.score_end == 1.0
