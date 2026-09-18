@@ -313,8 +313,11 @@ class WorkflowExecutor:
     def _verify_node_writes(self, node_id: str, writes: set[str]) -> None:
         """Warn when a node's declared writes are missing on disk after execution.
 
+        Phase 1 — observability only: warns but does not halt and does not prevent
+        completed_files from being updated. Phase 2 (enforcement) would move this
+        check before ``completed_files |= node.writes`` and halt on missing files.
+
         Skipped in dry_run (nodes don't execute) and when the write set is empty.
-        Does not halt execution — purely observability.
         """
         if self.dry_run or not writes:
             return
@@ -494,6 +497,7 @@ class WorkflowExecutor:
                 elapsed = (time.monotonic() - start) * 1000
                 self.result.node_outputs[target_id] = output
                 self.completed_files |= target.writes
+                self._verify_node_writes(target_id, target.writes)
                 self.result.nodes_executed += 1
                 self._emit(
                     "node.completed",

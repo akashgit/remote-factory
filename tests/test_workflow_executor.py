@@ -887,6 +887,35 @@ class TestWriteVerification:
 
         assert len(warnings) == 0
 
+    async def test_background_node_missing_write_emits_warning(self, tmp_project: Path) -> None:
+        """Non-blocking (background) node that fails to create its declared write triggers warning."""
+        import structlog
+
+        wf = Workflow(
+            name="bg_missing_write",
+            nodes={
+                "bg": FnNode(id="bg", command="echo hi", writes={"never_created_bg.txt"}, blocking=False),
+            },
+            edges=[],
+            start_node="bg",
+        )
+
+        warnings: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            if event_dict.get("event") == "node.write_missing":
+                warnings.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+            await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert any(w["node_id"] == "bg" for w in warnings)
+
 
 class TestAgentFnInjection:
     """Gap 2: WorkflowExecutor supports agent_fn injection."""
