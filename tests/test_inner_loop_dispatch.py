@@ -215,57 +215,102 @@ class TestLegacyPathUnchanged:
         assert hasattr(loop, "_step_subprocess")
 
 
-class TestDataNodeFallback:
-    """DataNode workflows fall back to executor with warning."""
+def _make_data_node_workflow() -> Workflow:
+    """Create a workflow with a DataNode for dispatch tests."""
+    from factory.workflow.primitives import DataItem, DataNode
 
-    def test_data_node_with_non_executor_logs_warning(self, tmp_path: Path) -> None:
-        from factory.workflow.primitives import DataNode, DataItem
+    items = [DataItem(id="item-1", prompt="test")]
+    data_node = DataNode(
+        id="data",
+        inline_items=items,
+        subgraph_entry="builder",
+        subgraph_exit="builder",
+    )
+    builder = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template="build",
+    )
+    return Workflow(
+        name="data-test",
+        nodes={"data": data_node, "builder": builder},
+        edges=[],
+        start_node="data",
+    )
 
+
+class TestDataNodeStrategyDispatch:
+    """DataNode dispatch respects execution_strategy."""
+
+    def test_datanode_executor_uses_step_with_data_node(self, tmp_path: Path) -> None:
+        """executor + DataNode still routes to _step_with_data_node."""
         (tmp_path / ".factory").mkdir()
-
-        items = [DataItem(id="item-1", prompt="test")]
-        data_node = DataNode(
-            id="data",
-            inline_items=items,
-            subgraph_entry="builder",
-            subgraph_exit="builder",
-        )
-        builder = AgentNode(
-            id="builder",
-            role=AgentRole.BUILDER,
-            prompt_template="build",
-        )
-        wf = Workflow(
-            name="data-test",
-            nodes={"data": data_node, "builder": builder},
-            edges=[],
-            start_node="data",
-        )
+        wf = _make_data_node_workflow()
 
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="inst-1")]
-        task.definition = TaskDefinition(name="mock", scoring=ScoringContract(method="exit_code"))
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        loop = InnerLoop(
+            project_dir=tmp_path, mode="test", task=task, workflow=wf,
+            execution_strategy="executor",
+        )
+
+        with patch.object(loop, "_step_with_data_node") as mock_data:
+            mock_data.return_value = MagicMock(score_end=0.9)
+            loop.step()
+
+        mock_data.assert_called_once()
+
+    def test_datanode_ceo_skill_uses_subprocess(self, tmp_path: Path) -> None:
+        """ceo-skill + DataNode dispatches to _run_ceo_subprocess (not _step_with_data_node)."""
+        (tmp_path / ".factory").mkdir()
+        wf = _make_data_node_workflow()
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.prompt.return_value = "test prompt"
+        task.verify.return_value = VerifyResult(passed=True, score=0.7)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
 
         loop = InnerLoop(
             project_dir=tmp_path, mode="test", task=task, workflow=wf,
             execution_strategy="ceo-skill",
         )
 
-        with (
-            patch("factory.inner_loop.log") as mock_log,
-            patch("factory.workflow.executor.WorkflowExecutor") as MockExecutor,
-        ):
-            mock_exec = MagicMock()
-            mock_exec_result = MagicMock()
-            mock_exec_result.success = True
-            mock_exec_result.node_outputs = {}
-            mock_exec.execute = _async_return(mock_exec_result)
-            MockExecutor.return_value = mock_exec
+        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
+        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
+            record = loop.step()
 
-            loop.step()
+        # Verify it went through _run_ceo_subprocess, not _step_with_data_node
+        mock_run.assert_called_once_with("test prompt", engine="skill")
+        assert record.score_end == 0.7
 
-        warning_calls = [
-            c for c in mock_log.warning.call_args_list
-            if c.args and c.args[0] == "data_node_strategy_fallback"
-        ]
-        assert len(warning_calls) == 1
+    def test_datanode_ceo_tool_uses_subprocess(self, tmp_path: Path) -> None:
+        """ceo-tool + DataNode dispatches to _run_ceo_subprocess."""
+        (tmp_path / ".factory").mkdir()
+        wf = _make_data_node_workflow()
+
+        task = MagicMock()
+        task.instances.return_value = [TaskInstance(id="inst-1")]
+        task.prompt.return_value = "test prompt"
+        task.verify.return_value = VerifyResult(passed=True, score=0.6)
+        task.definition = TaskDefinition(
+            name="mock", scoring=ScoringContract(method="exit_code"),
+        )
+
+        loop = InnerLoop(
+            project_dir=tmp_path, mode="test", task=task, workflow=wf,
+            execution_strategy="ceo-tool",
+        )
+
+        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
+        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
+            record = loop.step()
+
+        mock_run.assert_called_once_with("test prompt", engine="tool")
+        assert record.score_end == 0.6

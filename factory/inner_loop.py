@@ -360,7 +360,7 @@ class InnerLoop:
         if directives:
             self._write_directives(directives)
 
-        if self._workflow_has_data_node():
+        if self._workflow_has_data_node() and self.execution_strategy == "executor":
             return self._step_with_data_node(directives)
 
         # Belt-and-suspenders: catch post-mutation composition failures
@@ -520,14 +520,6 @@ class InnerLoop:
         import json
 
         from factory.workflow.executor import WorkflowExecutor
-
-        if self.execution_strategy != "executor":
-            log.warning(
-                "data_node_strategy_fallback",
-                execution_strategy=self.execution_strategy,
-                note="DataNode requires executor path for per-item scoring; "
-                     "falling back to executor",
-            )
 
         t0 = time.monotonic()
 
