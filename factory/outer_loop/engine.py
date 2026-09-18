@@ -42,24 +42,15 @@ PLATEAU_WINDOW = 3
 def _auto_frozen_nodes(workflow: Workflow) -> set[str]:
     """Return node IDs that should always be frozen during mutation.
 
-    Includes DataNode IDs and all nodes in their subgraphs (entry→exit).
+    Includes ONLY DataNode IDs — their subgraphs are the evolution surface
+    and must remain mutable for the outer loop to improve them.
     """
     from factory.workflow.primitives import DataNode
-    from factory.workflow.executor import _collect_subgraph_nodes
 
     frozen: set[str] = set()
     for nid, node in workflow.nodes.items():
         if isinstance(node, DataNode):
             frozen.add(nid)
-            subgraph_ids = _collect_subgraph_nodes(
-                workflow, node.subgraph_entry, node.subgraph_exit,
-            )
-            frozen.update(subgraph_ids)
-            log.debug(
-                "data_node_subgraph_frozen",
-                data_node=nid,
-                subgraph_ids=list(subgraph_ids),
-            )
     return frozen
 
 

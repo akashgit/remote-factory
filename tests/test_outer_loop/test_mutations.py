@@ -960,7 +960,8 @@ class TestAutoFrozenNodes:
         ]
         wf = Workflow(name="with_data", nodes=nodes, edges=edges, start_node="study")
         frozen = _auto_frozen_nodes(wf)
-        assert frozen == {"data_loader", "builder"}
+        # Only the DataNode ID is frozen; subgraph nodes are the evolution surface
+        assert frozen == {"data_loader"}
 
     def test_auto_frozen_nodes_empty_when_no_data_nodes(self) -> None:
         from factory.outer_loop.engine import _auto_frozen_nodes
@@ -1013,8 +1014,8 @@ class TestAutoFrozenNodes:
             wf, "data_loader", {"timeout": 999}, frozen_nodes=frozen,
         ) is None
 
-    def test_auto_frozen_nodes_includes_multi_node_subgraph(self) -> None:
-        """Subgraph spanning multiple nodes is fully frozen."""
+    def test_auto_frozen_nodes_includes_only_data_node_id(self) -> None:
+        """Only DataNode ID is frozen; subgraph nodes are the evolution surface."""
         from factory.outer_loop.engine import _auto_frozen_nodes
         from factory.workflow.primitives import DataNode, DataItem
 
@@ -1040,13 +1041,17 @@ class TestAutoFrozenNodes:
             name="multi_subgraph", nodes=nodes, edges=edges, start_node="external",
         )
         frozen = _auto_frozen_nodes(wf)
-        # DataNode + all subgraph nodes frozen
-        assert frozen == {"data_loader", "sub_entry", "sub_mid", "sub_exit"}
-        # External node is NOT frozen
+        # Only DataNode ID is frozen
+        assert frozen == {"data_loader"}
+        # Subgraph nodes are NOT frozen — they are the evolution surface
+        assert "sub_entry" not in frozen
+        assert "sub_mid" not in frozen
+        assert "sub_exit" not in frozen
+        # External node is also NOT frozen
         assert "external" not in frozen
 
-    def test_subgraph_node_protected_from_removal(self) -> None:
-        """Subgraph nodes auto-frozen via DataNode cannot be removed."""
+    def test_subgraph_node_is_mutable(self) -> None:
+        """Subgraph nodes are the evolution surface — NOT auto-frozen."""
         from factory.outer_loop.engine import _auto_frozen_nodes
         from factory.workflow.primitives import DataNode, DataItem
 
@@ -1068,22 +1073,13 @@ class TestAutoFrozenNodes:
             name="protected_subgraph", nodes=nodes, edges=edges, start_node="start",
         )
 
-        # With DataNode present, sub_builder is auto-frozen
+        # Only DataNode ID is frozen; sub_builder is mutable (evolution surface)
         frozen = _auto_frozen_nodes(wf)
-        assert "sub_builder" in frozen
-        assert remove_node(wf, "sub_builder", frozen_nodes=frozen) is None
+        assert "data_loader" in frozen
+        assert "sub_builder" not in frozen
 
-        # Without DataNode, sub_builder is NOT frozen and can be removed
-        nodes_no_data: dict[str, AgentNode | FnNode] = {
-            "start": FnNode(id="start", command="echo start"),
-            "sub_builder": AgentNode(id="sub_builder", role=AgentRole.BUILDER),
-        }
-        edges_no_data = [Edge(source="start", target="sub_builder")]
-        wf_no_data = Workflow(
-            name="no_data", nodes=nodes_no_data, edges=edges_no_data,
-            start_node="start",
-        )
-        frozen_no_data = _auto_frozen_nodes(wf_no_data)
-        assert "sub_builder" not in frozen_no_data
-        result = remove_node(wf_no_data, "sub_builder", frozen_nodes=frozen_no_data)
+        # DataNode itself is protected from removal
+        assert remove_node(wf, "data_loader", frozen_nodes=frozen) is None
+        # Subgraph node can be removed (it's not frozen)
+        result = remove_node(wf, "sub_builder", frozen_nodes=frozen)
         assert result is not None
