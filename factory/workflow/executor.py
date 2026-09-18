@@ -230,8 +230,36 @@ class WorkflowExecutor:
             return
 
         if isinstance(node, JoinNode):
+            pending = [
+                s for s in node.sources
+                if s not in self.result.node_outputs
+                and getattr(self.workflow.nodes.get(s), "blocking", True)
+            ]
+            if pending:
+                self.result.halted = True
+                self.result.halt_reason = (
+                    f"JoinNode '{node_id}' reached before sources completed: {pending}"
+                )
+                log.error(
+                    "joinnode.sources_incomplete",
+                    join_id=node_id,
+                    pending=pending,
+                    completed=list(self.result.node_outputs.keys()),
+                )
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=node_id,
+                        node_type="JoinNode",
+                        error=self.result.halt_reason,
+                    ),
+                )
+                return
             self.result.nodes_executed += 1
             self.completed_files |= node.writes
+            self.result.node_outputs[node_id] = ""
             next_id = self._next_unconditional(node_id)
             if next_id:
                 await self._execute_from(next_id)
@@ -385,6 +413,7 @@ class WorkflowExecutor:
             return
 
         self.result.nodes_executed += 1
+        self.result.node_outputs[node_id] = verdict.type.value
 
         self._emit(
             "gate.verdict",
@@ -508,6 +537,7 @@ class WorkflowExecutor:
         if self.result.halted:
             return
 
+        self.result.node_outputs[node.id] = ""
         branch_set = set(node.targets)
         next_id: str | None = None
         for edge in self._edge_index.get(node.id, []):

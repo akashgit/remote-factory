@@ -248,6 +248,169 @@ class TestForkJoin:
         assert "c.txt" in result.completed_files
 
 
+# ── JoinNode barrier semantics (issue #1189) ────────────────────
+
+
+class TestJoinNodeBarrier:
+    async def test_join_with_all_sources_complete_succeeds(self, tmp_project: Path) -> None:
+        """JoinNode proceeds normally when all declared sources are in node_outputs."""
+        wf = Workflow(
+            name="join_barrier_ok",
+            nodes={
+                "fork": ForkNode(id="fork", targets=["a", "b"]),
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+                "join": JoinNode(id="join", sources=["a", "b"], reads={"a.txt", "b.txt"}),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="fork", target="a"),
+                Edge(source="fork", target="b"),
+                Edge(source="a", target="join"),
+                Edge(source="b", target="join"),
+                Edge(source="join", target="final"),
+            ],
+            start_node="fork",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.success
+        assert not result.halted
+
+    async def test_join_with_missing_source_halts(self, tmp_project: Path) -> None:
+        """JoinNode halts with a descriptive error when a declared source has not completed."""
+        wf = Workflow(
+            name="join_barrier_fail",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "join": JoinNode(id="join", sources=["a", "missing_node"]),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="a", target="join"),
+                Edge(source="join", target="final"),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.halted
+        assert "missing_node" in result.halt_reason
+        assert "JoinNode" in result.halt_reason
+
+    async def test_join_with_no_sources_declared_proceeds(self, tmp_project: Path) -> None:
+        """JoinNode with empty sources list proceeds unconditionally (backward compat)."""
+        wf = Workflow(
+            name="join_no_sources",
+            nodes={
+                "a": FnNode(id="a", command="echo a"),
+                "join": JoinNode(id="join", sources=[]),
+                "b": FnNode(id="b", command="echo b"),
+            },
+            edges=[
+                Edge(source="a", target="join"),
+                Edge(source="join", target="b"),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.success
+
+    async def test_gate_in_sources_does_not_false_halt(self, tmp_project: Path) -> None:
+        """GateNode in JoinNode.sources proceeds: gates are now in node_outputs after running."""
+        wf = Workflow(
+            name="gate_in_sources",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(
+                    id="gate",
+                    evaluator_type="fn",
+                    evaluator_command="echo PROCEED",
+                    reads={"a.txt"},
+                ),
+                "join": JoinNode(id="join", sources=["a", "gate"]),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="join", condition=VerdictType.PROCEED),
+                Edge(source="join", target="final"),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.success
+        assert not result.halted
+
+    async def test_joinnode_appears_in_node_outputs(self, tmp_project: Path) -> None:
+        """JoinNode adds itself to node_outputs so nested joins don't false-halt."""
+        wf = Workflow(
+            name="joinnode_in_outputs",
+            nodes={
+                "fork": ForkNode(id="fork", targets=["a", "b"]),
+                "a": FnNode(id="a", command="echo a"),
+                "b": FnNode(id="b", command="echo b"),
+                "join": JoinNode(id="join", sources=["a", "b"]),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="fork", target="a"),
+                Edge(source="fork", target="b"),
+                Edge(source="a", target="join"),
+                Edge(source="b", target="join"),
+                Edge(source="join", target="final"),
+            ],
+            start_node="fork",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.success
+        assert "join" in result.node_outputs
+
+    async def test_barrier_halt_emits_node_failed_event(self, tmp_project: Path) -> None:
+        """Barrier-halt emits a node.failed event consistent with all other halt paths."""
+        wf = Workflow(
+            name="barrier_event",
+            nodes={
+                "a": FnNode(id="a", command="echo a"),
+                "join": JoinNode(id="join", sources=["a", "phantom"]),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="a", target="join"),
+                Edge(source="join", target="final"),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        result = await executor.execute()
+        assert result.halted
+        failed_events = [e for e in result.events if e["type"] == "node.failed"]
+        assert any(e.get("node_id") == "join" for e in failed_events)
+
+    async def test_non_blocking_source_exempted_from_barrier(self, tmp_project: Path) -> None:
+        """Non-blocking sources skip the barrier check — only blocking sources must complete."""
+        wf = Workflow(
+            name="non_blocking_exempt",
+            nodes={
+                "a": FnNode(id="a", command="echo a"),
+                "bg": FnNode(id="bg", command="echo bg", blocking=False),
+                "join": JoinNode(id="join", sources=["a", "bg"]),
+                "final": FnNode(id="final", command="echo done"),
+            },
+            edges=[
+                Edge(source="join", target="final"),
+            ],
+            start_node="join",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor.result.node_outputs["a"] = "done"
+        await executor._execute_from("join")
+        assert not executor.result.halted
+
+
 # ── Non-blocking node ────────────────────────────────────────────
 
 
