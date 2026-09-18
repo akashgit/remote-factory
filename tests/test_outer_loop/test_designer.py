@@ -471,11 +471,12 @@ class TestDataNodeRewiring:
         assert wf.start_node == "positions"
         data_node = wf.nodes["positions"]
         assert isinstance(data_node, DataNode)
-        assert data_node.subgraph_entry == "study"
+        # Data-native thorough template starts with researcher (no study node)
+        assert data_node.subgraph_entry == "researcher"
         assert data_node.subgraph_exit == "gate_qa"
         # No explicit edge from DataNode to subgraph_entry
         edge_pairs = [(e.source, e.target) for e in wf.edges]
-        assert ("positions", "study") not in edge_pairs
+        assert ("positions", "researcher") not in edge_pairs
 
     def test_custom_start_node_is_data_node(self) -> None:
         """design_custom variant with DataNode has start_node == DataNode ID."""
@@ -667,6 +668,133 @@ class TestInjectFrozenDataNodeSubgraph:
             if "no predecessor writes" not in i
         ]
         assert structural == [], f"Structural issues: {structural}"
+
+
+class TestDataSubgraphDesignerAwareness:
+    """Tests for data-aware Designer prompts and templates."""
+
+    @staticmethod
+    def _seed_with_data_node() -> Workflow:
+        return Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(
+                    id="solver",
+                    role=AgentRole.BUILDER,
+                ),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+
+    def test_data_subgraph_prompt_language(self) -> None:
+        """design_minimal with frozen DataNode + executor strategy → entry node
+        prompt contains role framing + 'current_item.json' but NOT generic 'data item' filler."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_minimal(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+            execution_strategy="executor",
+        )
+        data_node = wf.nodes["positions"]
+        assert isinstance(data_node, DataNode)
+        entry_node = wf.nodes[data_node.subgraph_entry]
+        assert isinstance(entry_node, AgentNode)
+        prompt = entry_node.prompt_template or ""
+        assert "current_item.json" in prompt
+        assert "data item" not in prompt
+        # Role framing: prompt starts with 'As a <role>,'
+        role_name = entry_node.role.value.replace("_", " ")
+        assert f"As a {role_name}," in prompt
+
+    def test_data_subgraph_generic_prompt_unchanged(self) -> None:
+        """design_minimal WITHOUT frozen DataNode → entry node prompt contains
+        'project at {project_path}' and NOT data-specific language."""
+        designer = DesignerAgent()
+        wf = designer.design_minimal("bench", execution_strategy="executor")
+        researcher = wf.nodes["researcher"]
+        assert isinstance(researcher, AgentNode)
+        assert "project at {project_path}" in (researcher.prompt_template or "")
+        assert "current_item.json" not in (researcher.prompt_template or "")
+
+    def test_data_thorough_fewer_nodes(self) -> None:
+        """design_thorough with frozen DataNode has fewer nodes
+        (no study, strategist, code_reviewer, adversarial_tester)."""
+        designer = DesignerAgent()
+        seed = self._seed_with_data_node()
+        wf = designer.design_thorough(
+            "bench",
+            seed_workflow=seed,
+            frozen_node_ids={"positions"},
+        )
+        # DataNode + 6 template nodes = 7 total
+        # Nodes that should NOT be present in data subgraph template
+        assert "study" not in wf.nodes
+        assert "strategist" not in wf.nodes
+        assert "code_reviewer" not in wf.nodes
+        assert "adversarial_tester" not in wf.nodes
+        # Nodes that SHOULD be present
+        assert "researcher" in wf.nodes
+        assert "fork_builders" in wf.nodes
+        assert "builder_a" in wf.nodes
+        assert "builder_b" in wf.nodes
+        assert "join_builders" in wf.nodes
+        assert "gate_qa" in wf.nodes
+        assert "positions" in wf.nodes
+
+    def test_rewire_no_longer_patches_prompt(self) -> None:
+        """_rewire_data_nodes only does topology — no reads/prompt changes.
+        The entry node's prompt comes from _populate_executor_fields, not from
+        _rewire_data_nodes patching."""
+        from factory.outer_loop.designer import _rewire_data_nodes
+
+        nodes: dict = {
+            "positions": DataNode(
+                id="positions",
+                inline_items=[DataItem(id="pos1", prompt="test")],
+                subgraph_entry="solver",
+                subgraph_exit="solver",
+            ),
+            "researcher": AgentNode(
+                id="researcher",
+                role=AgentRole.RESEARCHER,
+                writes={".factory/strategy/research.md"},
+                prompt_template="Original prompt.",
+            ),
+            "gate_qa": AgentNode(
+                id="gate_qa",
+                role=AgentRole.BUILDER,
+            ),
+        }
+        edges = [Edge(source="researcher", target="gate_qa")]
+        seed = Workflow(
+            name="seed",
+            nodes={
+                "positions": DataNode(
+                    id="positions",
+                    inline_items=[DataItem(id="pos1", prompt="test")],
+                    subgraph_entry="solver",
+                    subgraph_exit="solver",
+                ),
+                "solver": AgentNode(id="solver", role=AgentRole.BUILDER),
+            },
+            edges=[Edge(source="positions", target="solver")],
+            start_node="positions",
+        )
+        _rewire_data_nodes(nodes, edges, "researcher", seed, {"positions"})
+        # _rewire_data_nodes should NOT have changed researcher's prompt or reads
+        researcher = nodes["researcher"]
+        assert isinstance(researcher, AgentNode)
+        assert researcher.prompt_template == "Original prompt."
+        assert ".factory/current_item.json" not in (researcher.reads or set())
 
 
 class TestDataNodeEvolutionModel:

@@ -28,6 +28,20 @@ from factory.workflow.primitives import (
 log = structlog.get_logger()
 
 
+def _detect_frozen_data_node(
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> DataNode | None:
+    """Return the frozen DataNode if one exists, else None."""
+    if not seed_workflow or not frozen_node_ids:
+        return None
+    for node_id in frozen_node_ids:
+        node = seed_workflow.nodes.get(node_id)
+        if isinstance(node, DataNode):
+            return node
+    return None
+
+
 class DesignerAgent:
     """LLM-guided workflow designer with design and mutation modes.
 
@@ -73,10 +87,13 @@ class DesignerAgent:
             Edge(source="builder", target="gate_qa"),
         ]
 
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
+
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         if execution_strategy == "executor":
-            _populate_executor_fields(nodes, edges)
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
 
         start_node = "researcher"
         new_start = _rewire_data_nodes(
@@ -108,90 +125,146 @@ class DesignerAgent:
         """
         from factory.workflow.primitives import ForkNode, JoinNode
 
-        nodes: dict[str, NodeType] = {
-            "study": FnNode(
-                id="study",
-                command="factory study {project_path}",
-                writes={".factory/strategy/observations.md"},
-            ),
-            "researcher": AgentNode(
-                id="researcher",
-                role=AgentRole.RESEARCHER,
-                reads={".factory/strategy/observations.md"},
-                writes={".factory/strategy/research.md"},
-                timeout=600,
-            ),
-            "strategist": AgentNode(
-                id="strategist",
-                role=AgentRole.STRATEGIST,
-                reads={".factory/strategy/research.md"},
-                writes={".factory/strategy/current.md"},
-                timeout=600,
-            ),
-            "fork_builders": ForkNode(
-                id="fork_builders",
-                targets=["builder_a", "builder_b"],
-                reads={".factory/strategy/current.md"},
-            ),
-            "builder_a": AgentNode(
-                id="builder_a",
-                role=AgentRole.BUILDER,
-                reads={".factory/strategy/current.md"},
-                writes={".factory/reviews/builder-a.md"},
-                timeout=1200,
-            ),
-            "builder_b": AgentNode(
-                id="builder_b",
-                role=AgentRole.BUILDER,
-                reads={".factory/strategy/current.md"},
-                writes={".factory/reviews/builder-b.md"},
-                timeout=1200,
-            ),
-            "join_builders": JoinNode(
-                id="join_builders",
-                sources=["builder_a", "builder_b"],
-            ),
-            "code_reviewer": AgentNode(
-                id="code_reviewer",
-                role=AgentRole.CODE_REVIEWER,
-                reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
-                writes={".factory/reviews/code-review.md"},
-                timeout=900,
-            ),
-            "adversarial_tester": AgentNode(
-                id="adversarial_tester",
-                role=AgentRole.ADVERSARIAL_TESTER,
-                reads={".factory/reviews/code-review.md"},
-                writes={".factory/reviews/adversarial-qa.md"},
-                timeout=1800,
-            ),
-            "gate_qa": GateNode(
-                id="gate_qa",
-                evaluator_type="agent",
-                evaluator_role=AgentRole.CEO,
-                reads={".factory/reviews/adversarial-qa.md"},
-            ),
-        }
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
 
-        edges = [
-            Edge(source="study", target="researcher"),
-            Edge(source="researcher", target="strategist"),
-            Edge(source="strategist", target="fork_builders"),
-            Edge(source="fork_builders", target="builder_a"),
-            Edge(source="fork_builders", target="builder_b"),
-            Edge(source="builder_a", target="join_builders"),
-            Edge(source="builder_b", target="join_builders"),
-            Edge(source="join_builders", target="code_reviewer"),
-            Edge(source="code_reviewer", target="adversarial_tester"),
-            Edge(source="adversarial_tester", target="gate_qa"),
-        ]
+        if is_data_subgraph:
+            # Data-native thorough template: omit study, strategist,
+            # code_reviewer, adversarial_tester (not relevant per-item)
+            nodes: dict[str, NodeType] = {
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    writes={".factory/strategy/research.md"},
+                    timeout=600,
+                ),
+                "fork_builders": ForkNode(
+                    id="fork_builders",
+                    targets=["builder_a", "builder_b"],
+                    reads={".factory/strategy/research.md"},
+                ),
+                "builder_a": AgentNode(
+                    id="builder_a",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/reviews/builder-a.md"},
+                    timeout=1200,
+                ),
+                "builder_b": AgentNode(
+                    id="builder_b",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/reviews/builder-b.md"},
+                    timeout=1200,
+                ),
+                "join_builders": JoinNode(
+                    id="join_builders",
+                    sources=["builder_a", "builder_b"],
+                ),
+                "gate_qa": GateNode(
+                    id="gate_qa",
+                    evaluator_type="agent",
+                    evaluator_role=AgentRole.HEALTH_CHECKER,
+                    reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
+                ),
+            }
+
+            edges = [
+                Edge(source="researcher", target="fork_builders"),
+                Edge(source="fork_builders", target="builder_a"),
+                Edge(source="fork_builders", target="builder_b"),
+                Edge(source="builder_a", target="join_builders"),
+                Edge(source="builder_b", target="join_builders"),
+                Edge(source="join_builders", target="gate_qa"),
+            ]
+
+            start_node = "researcher"
+        else:
+            nodes = {
+                "study": FnNode(
+                    id="study",
+                    command="factory study {project_path}",
+                    writes={".factory/strategy/observations.md"},
+                ),
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    reads={".factory/strategy/observations.md"},
+                    writes={".factory/strategy/research.md"},
+                    timeout=600,
+                ),
+                "strategist": AgentNode(
+                    id="strategist",
+                    role=AgentRole.STRATEGIST,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/strategy/current.md"},
+                    timeout=600,
+                ),
+                "fork_builders": ForkNode(
+                    id="fork_builders",
+                    targets=["builder_a", "builder_b"],
+                    reads={".factory/strategy/current.md"},
+                ),
+                "builder_a": AgentNode(
+                    id="builder_a",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/current.md"},
+                    writes={".factory/reviews/builder-a.md"},
+                    timeout=1200,
+                ),
+                "builder_b": AgentNode(
+                    id="builder_b",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/current.md"},
+                    writes={".factory/reviews/builder-b.md"},
+                    timeout=1200,
+                ),
+                "join_builders": JoinNode(
+                    id="join_builders",
+                    sources=["builder_a", "builder_b"],
+                ),
+                "code_reviewer": AgentNode(
+                    id="code_reviewer",
+                    role=AgentRole.CODE_REVIEWER,
+                    reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
+                    writes={".factory/reviews/code-review.md"},
+                    timeout=900,
+                ),
+                "adversarial_tester": AgentNode(
+                    id="adversarial_tester",
+                    role=AgentRole.ADVERSARIAL_TESTER,
+                    reads={".factory/reviews/code-review.md"},
+                    writes={".factory/reviews/adversarial-qa.md"},
+                    timeout=1800,
+                ),
+                "gate_qa": GateNode(
+                    id="gate_qa",
+                    evaluator_type="agent",
+                    evaluator_role=AgentRole.CEO,
+                    reads={".factory/reviews/adversarial-qa.md"},
+                ),
+            }
+
+            edges = [
+                Edge(source="study", target="researcher"),
+                Edge(source="researcher", target="strategist"),
+                Edge(source="strategist", target="fork_builders"),
+                Edge(source="fork_builders", target="builder_a"),
+                Edge(source="fork_builders", target="builder_b"),
+                Edge(source="builder_a", target="join_builders"),
+                Edge(source="builder_b", target="join_builders"),
+                Edge(source="join_builders", target="code_reviewer"),
+                Edge(source="code_reviewer", target="adversarial_tester"),
+                Edge(source="adversarial_tester", target="gate_qa"),
+            ]
+
+            start_node = "study"
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         if execution_strategy == "executor":
-            _populate_executor_fields(nodes, edges)
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
 
-        start_node = "study"
         new_start = _rewire_data_nodes(
             nodes, edges, start_node, seed_workflow, frozen_node_ids
         )
@@ -227,15 +300,25 @@ class DesignerAgent:
         raw_roles = constraints.get("require_roles", [])
         require_roles: list[object] = list(raw_roles) if isinstance(raw_roles, list) else []
 
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
+
         nodes: dict[str, NodeType] = {}
         edges: list[Edge] = []
         prev_id: str | None = None
 
-        core_roles: list[tuple[str, AgentRole]] = [
-            ("researcher", AgentRole.RESEARCHER),
-            ("strategist", AgentRole.STRATEGIST),
-            ("builder", AgentRole.BUILDER),
-        ]
+        if is_data_subgraph:
+            # Data subgraphs: exclude STRATEGIST and CODE_REVIEWER from defaults
+            core_roles: list[tuple[str, AgentRole]] = [
+                ("researcher", AgentRole.RESEARCHER),
+                ("builder", AgentRole.BUILDER),
+            ]
+        else:
+            core_roles = [
+                ("researcher", AgentRole.RESEARCHER),
+                ("strategist", AgentRole.STRATEGIST),
+                ("builder", AgentRole.BUILDER),
+            ]
 
         for role_str in require_roles:
             if isinstance(role_str, str) and not any(r[0] == role_str for r in core_roles):
@@ -270,7 +353,7 @@ class DesignerAgent:
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
         if execution_strategy == "executor":
-            _populate_executor_fields(nodes, edges)
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
         new_start = _rewire_data_nodes(
@@ -367,39 +450,71 @@ class DesignerAgent:
         return proposals[:3]
 
 
-def _generate_prompt_template(node: AgentNode) -> str:
-    """Derive a functional prompt_template from an AgentNode's metadata."""
+def _generate_prompt_template(node: AgentNode, is_data_subgraph: bool = False) -> str:
+    """Derive a functional prompt_template from an AgentNode's metadata.
+
+    For data subgraphs this is the FALLBACK — seed prompt propagation
+    (via ``_inject_frozen_nodes``) should have already set a better prompt.
+    """
     role_name = node.role.value.replace("_", " ")
-    parts = [f"Act as a {role_name} for the project at {{project_path}}."]
-
-    if node.reads:
-        reads_list = ", ".join(sorted(node.reads))
-        parts.append(f"Read: {reads_list}.")
-
-    if node.writes:
-        writes_list = ", ".join(sorted(node.writes))
-        parts.append(f"Write your output to: {writes_list}.")
-
-    return " ".join(parts)
+    if is_data_subgraph:
+        # Fallback: role framing + data contract. No domain-specific language.
+        # Seed prompt propagation provides domain knowledge when available.
+        parts = [f"As a {role_name},"]
+        parts.append("read .factory/current_item.json for the current item.")
+        if node.reads:
+            parts.append("Read: " + ", ".join(sorted(node.reads)) + ".")
+        if node.writes:
+            parts.append("Write your output to: " + ", ".join(sorted(node.writes)) + ".")
+        return " ".join(parts)
+    else:
+        parts = [f"Act as a {role_name} for the project at {{project_path}}."]
+        if node.reads:
+            parts.append("Read: " + ", ".join(sorted(node.reads)) + ".")
+        if node.writes:
+            parts.append("Write your output to: " + ", ".join(sorted(node.writes)) + ".")
+        return " ".join(parts)
 
 
 def _populate_executor_fields(
     nodes: dict[str, NodeType],
     edges: list[Edge],
+    *,
+    is_data_subgraph: bool = False,
 ) -> None:
     """Populate prompt_template on AgentNodes and PROCEED edges on non-terminal GateNodes.
 
     Required when execution_strategy='executor' so WorkflowExecutor can
     construct agent prompts and follow success paths through gates.
+
+    When *is_data_subgraph* is True, prompts use data-item language and
+    the first AgentNode gets '.factory/current_item.json' added to reads.
     """
     # Find terminal nodes (no outgoing edges)
     sources_with_targets = {e.source for e in edges}
+    first_agent_seen = False
 
     for node_id, node in nodes.items():
-        if isinstance(node, AgentNode) and not node.prompt_template:
-            nodes[node_id] = node.model_copy(
-                update={"prompt_template": _generate_prompt_template(node)}
-            )
+        if isinstance(node, AgentNode):
+            update: dict[str, object] = {}
+
+            if not node.prompt_template:
+                # No propagated prompt — use generated fallback
+                update["prompt_template"] = _generate_prompt_template(node, is_data_subgraph)
+            elif is_data_subgraph and "current_item.json" not in node.prompt_template:
+                # Has propagated prompt but missing data awareness — add prefix
+                update["prompt_template"] = (
+                    "Read .factory/current_item.json for the current item. "
+                    + node.prompt_template
+                )
+
+            # Add current_item.json to reads for data subgraph entry node
+            if is_data_subgraph and not first_agent_seen:
+                update["reads"] = set(node.reads or set()) | {".factory/current_item.json"}
+                first_agent_seen = True
+
+            if update:
+                nodes[node_id] = node.model_copy(update=update)
         elif isinstance(node, GateNode) and node_id in sources_with_targets:
             # Non-terminal gate: check if it already has a PROCEED edge
             has_proceed = any(
@@ -554,24 +669,6 @@ def _rewire_data_nodes(
             update={"subgraph_entry": entry, "subgraph_exit": terminal_node}
         )
         nodes[data_id] = updated
-
-        # Data contract: ensure subgraph entry node reads current_item.json
-        entry_node = nodes.get(entry)
-        if isinstance(entry_node, AgentNode):
-            new_reads = set(entry_node.reads or set()) | {".factory/current_item.json"}
-            item_prefix = (
-                "Read .factory/current_item.json for the current data item. "
-                "Process this specific item according to your role. "
-            )
-            new_prompt = entry_node.prompt_template or ""
-            if new_prompt and ".factory/current_item.json" not in new_prompt:
-                new_prompt = item_prefix + new_prompt
-            elif not new_prompt:
-                new_prompt = item_prefix + "Process the item at {project_path}."
-
-            nodes[entry] = entry_node.model_copy(
-                update={"reads": new_reads, "prompt_template": new_prompt}
-            )
 
         new_start = data_id
 

@@ -937,6 +937,142 @@ class TestMutateParamsValidation:
         assert result is None
 
 
+class TestNodeInsertDataSubgraphAwareness:
+    """Tests for NODE_INSERT data subgraph awareness in mutations."""
+
+    @staticmethod
+    def _workflow_with_data_subgraph() -> Workflow:
+        """Workflow with a DataNode whose subgraph is researcher → builder.
+
+        Includes an explicit edge from DataNode to subgraph entry for
+        validate_and_repair reachability (mirrors real Designer output).
+        """
+        from factory.workflow.primitives import DataItem, DataNode
+
+        return Workflow(
+            name="data_wf",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="item1", prompt="test")],
+                    subgraph_entry="researcher",
+                    subgraph_exit="builder",
+                ),
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    reads={".factory/current_item.json"},
+                    writes={".factory/strategy/research.md"},
+                    prompt_template="Research the data item.",
+                ),
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/reviews/builder-latest.md"},
+                    prompt_template="Build the solution.",
+                ),
+            },
+            edges=[
+                Edge(source="data", target="researcher"),
+                Edge(source="researcher", target="builder"),
+            ],
+            start_node="data",
+        )
+
+    def test_node_insert_in_data_subgraph_reads_current_item(self) -> None:
+        """Insert a node into a DataNode subgraph → new node has
+        .factory/current_item.json in reads and data-aware prompt."""
+        wf = self._workflow_with_data_subgraph()
+
+        # Directly insert after 'researcher' (inside subgraph, not exit node)
+        # to verify data-awareness is applied
+        from factory.outer_loop.mutations import _is_in_data_subgraph
+
+        assert _is_in_data_subgraph(wf, "researcher")
+
+        random.seed(42)
+        found_data_aware = False
+        for _ in range(50):
+            result = _try_mutation(wf, MutationType.NODE_INSERT, {"data"})
+            if result is None:
+                continue
+            child_wf, rec = result
+            new_node = child_wf.nodes.get(rec.target_node)
+            if isinstance(new_node, AgentNode):
+                inserted_after = rec.after.get("inserted_after", "")
+                # When inserted after a node inside the subgraph,
+                # the new node should be data-aware
+                if inserted_after == "researcher":
+                    assert ".factory/current_item.json" in new_node.reads
+                    prompt = new_node.prompt_template or ""
+                    assert "current_item.json" in prompt
+                    assert "data item" not in prompt
+                    # Role framing: prompt starts with 'As a <role>,'
+                    role_name = new_node.role.value.replace("_", " ")
+                    assert f"As a {role_name}," in prompt
+                    found_data_aware = True
+                    break
+        assert found_data_aware, "Expected at least one data-aware insertion in subgraph"
+
+    def test_node_insert_outside_subgraph_no_current_item(self) -> None:
+        """Insert a node NOT in a DataNode subgraph → no current_item.json in reads."""
+        # Workflow with external node outside the subgraph
+        from factory.workflow.primitives import DataItem, DataNode
+
+        wf = Workflow(
+            name="data_wf_ext",
+            nodes={
+                "external": FnNode(
+                    id="external",
+                    command="echo start",
+                    writes={".factory/strategy/observations.md"},
+                ),
+                "data": DataNode(
+                    id="data",
+                    inline_items=[DataItem(id="item1", prompt="test")],
+                    subgraph_entry="sub_builder",
+                    subgraph_exit="sub_builder",
+                ),
+                "sub_builder": AgentNode(
+                    id="sub_builder",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/current_item.json"},
+                    writes={".factory/reviews/builder-latest.md"},
+                    prompt_template="Build.",
+                ),
+                "post": AgentNode(
+                    id="post",
+                    role=AgentRole.RESEARCHER,
+                    reads={".factory/strategy/observations.md"},
+                    writes={".factory/strategy/research.md"},
+                    prompt_template="Research after data processing.",
+                ),
+            },
+            edges=[
+                Edge(source="external", target="data"),
+                Edge(source="data", target="post"),
+            ],
+            start_node="external",
+        )
+        random.seed(0)
+        found_non_data = False
+        for _ in range(50):
+            result = _try_mutation(wf, MutationType.NODE_INSERT, {"data"})
+            if result is None:
+                continue
+            child_wf, rec = result
+            new_node = child_wf.nodes.get(rec.target_node)
+            if isinstance(new_node, AgentNode):
+                inserted_after = rec.after.get("inserted_after", "")
+                if inserted_after not in ("sub_builder",):
+                    # Inserted outside the subgraph
+                    assert ".factory/current_item.json" not in (new_node.reads or set())
+                    found_non_data = True
+                    break
+        assert found_non_data, "Expected at least one insertion outside the subgraph"
+
+
 class TestAutoFrozenNodes:
     """Tests for _auto_frozen_nodes and DataNode auto-freeze in engine."""
 
