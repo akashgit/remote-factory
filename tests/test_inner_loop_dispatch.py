@@ -354,15 +354,18 @@ class TestDataNodeStrategyDispatch:
 
         mock_data.assert_called_once()
 
-    def test_datanode_ceo_skill_uses_subprocess(self, tmp_path: Path) -> None:
-        """ceo-skill + DataNode dispatches to _run_ceo_subprocess (not _step_with_data_node)."""
+    def test_datanode_ceo_skill_uses_executor(self, tmp_path: Path) -> None:
+        """ceo-skill + DataNode still routes to _step_with_data_node (executor path).
+
+        DataNode workflows always use WorkflowExecutor because the CEO subprocess
+        does not reliably follow multi-step iteration loops. This is a known LLM
+        reliability limitation.
+        """
         (tmp_path / ".factory").mkdir()
         wf = _make_data_node_workflow()
 
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="inst-1")]
-        task.prompt.return_value = "test prompt"
-        task.verify.return_value = VerifyResult(passed=True, score=0.7)
         task.definition = TaskDefinition(
             name="mock", scoring=ScoringContract(method="exit_code"),
         )
@@ -372,23 +375,19 @@ class TestDataNodeStrategyDispatch:
             execution_strategy="ceo-skill",
         )
 
-        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
-        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
-            record = loop.step()
+        with patch.object(loop, "_step_with_data_node") as mock_data:
+            mock_data.return_value = MagicMock(score_end=0.9)
+            loop.step()
 
-        # Verify it went through _run_ceo_subprocess, not _step_with_data_node
-        mock_run.assert_called_once_with("test prompt", engine="skill")
-        assert record.score_end == 0.7
+        mock_data.assert_called_once()
 
-    def test_datanode_ceo_tool_uses_subprocess(self, tmp_path: Path) -> None:
-        """ceo-tool + DataNode dispatches to _run_ceo_subprocess."""
+    def test_datanode_ceo_tool_uses_executor(self, tmp_path: Path) -> None:
+        """ceo-tool + DataNode still routes to _step_with_data_node (executor path)."""
         (tmp_path / ".factory").mkdir()
         wf = _make_data_node_workflow()
 
         task = MagicMock()
         task.instances.return_value = [TaskInstance(id="inst-1")]
-        task.prompt.return_value = "test prompt"
-        task.verify.return_value = VerifyResult(passed=True, score=0.6)
         task.definition = TaskDefinition(
             name="mock", scoring=ScoringContract(method="exit_code"),
         )
@@ -398,9 +397,8 @@ class TestDataNodeStrategyDispatch:
             execution_strategy="ceo-tool",
         )
 
-        mock_result = _SubprocessExecutionResult(success=True, nodes_executed=1, duration_ms=50)
-        with patch.object(loop, "_run_ceo_subprocess", return_value=mock_result) as mock_run:
-            record = loop.step()
+        with patch.object(loop, "_step_with_data_node") as mock_data:
+            mock_data.return_value = MagicMock(score_end=0.8)
+            loop.step()
 
-        mock_run.assert_called_once_with("test prompt", engine="tool")
-        assert record.score_end == 0.6
+        mock_data.assert_called_once()

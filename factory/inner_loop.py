@@ -424,7 +424,7 @@ class InnerLoop:
         if directives:
             self._write_directives(directives)
 
-        if self._workflow_has_data_node() and self.execution_strategy == "executor":
+        if self._workflow_has_data_node():
             return self._step_with_data_node(directives)
 
         # Belt-and-suspenders: catch post-mutation composition failures
@@ -579,7 +579,13 @@ class InnerLoop:
         return record
 
     def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
-        """Delegate to the executor when the workflow contains a DataNode."""
+        """Execute DataNode workflows via WorkflowExecutor regardless of execution_strategy.
+
+        DataNode workflows always use WorkflowExecutor for per-item iteration because
+        the CEO subprocess does not reliably follow multi-step iteration loops from
+        SKILL.md prose. The ceo-skill and ceo-tool strategies work for non-DataNode
+        workflows. This is a known LLM reliability limitation, not a code issue.
+        """
         import asyncio
         import json
 

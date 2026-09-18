@@ -1,31 +1,30 @@
-# Builder Review — Ephemeral Mode Registration for CEO Subprocess
+# Builder Review — DataNode always uses executor
 
 ## Summary
 
-Fixed `_run_ceo_subprocess` in `InnerLoop` to register the candidate workflow as an ephemeral mode before spawning the CEO subprocess, preventing "Error: unknown mode task-eval" failures.
+Restored the unconditional DataNode-always-uses-executor behavior. The CEO subprocess
+cannot reliably follow multi-step iteration loops from SKILL.md prose — this is a known
+LLM reliability limitation, not a bug in the execution strategy dispatch.
 
 ## Changes
 
 ### factory/inner_loop.py
-- Added `_ensure_ephemeral_mode()` — registers `self.workflow` as an ephemeral mode by writing:
-  - Mode JSON to `.factory/outer_loop/modes/eval-{mode}-{hash}.json`
-  - Workflow wrapper to `.factory/workflows/eval-{mode}-{hash}.py`
-  - Uses content-based hash in mode name to avoid collisions
-- Added `_cleanup_ephemeral_mode()` — removes the ephemeral mode files after subprocess completes
-- Updated `_run_ceo_subprocess()`:
-  - Calls `_ensure_ephemeral_mode()` before spawning
-  - Uses registered `mode_name` (not `self.mode`) in `--mode` flag
-  - Cleans up in `finally` block (alongside prompt cleanup)
-  - Checks both `mode_name` and `self.mode` paths for cycle_summary.json recovery
+- **Line ~427**: Removed `and self.execution_strategy == 'executor'` condition from the
+  DataNode check in `_step_with_task()`. DataNode workflows now unconditionally route to
+  `_step_with_data_node()` regardless of `execution_strategy`.
+- **`_step_with_data_node()` docstring**: Updated to explain *why* DataNode always uses
+  WorkflowExecutor — documents the LLM reliability limitation.
+- No warning log existed to remove (the code hadn't added one yet).
 
 ### tests/test_inner_loop_dispatch.py
-- Added `TestEphemeralModeRegistration` class with 3 tests:
-  - `test_ceo_subprocess_registers_ephemeral_mode` — verifies mode JSON + wrapper exist during subprocess.run
-  - `test_ceo_subprocess_cleans_up_ephemeral_mode` — verifies files removed after completion
-  - `test_ceo_subprocess_uses_registered_mode_name` — verifies `--mode` flag uses registered name
+- `test_datanode_ceo_skill_uses_subprocess` → renamed to `test_datanode_ceo_skill_uses_executor`,
+  now asserts DataNode + ceo-skill routes to `_step_with_data_node` (not `_run_ceo_subprocess`).
+- `test_datanode_ceo_tool_uses_subprocess` → renamed to `test_datanode_ceo_tool_uses_executor`,
+  now asserts DataNode + ceo-tool routes to `_step_with_data_node`.
+- `test_datanode_executor_uses_step_with_data_node` — kept unchanged, still passes.
 
 ## Verification
-- All 15 tests in test_inner_loop_dispatch.py pass
-- ruff check: clean
-- mypy: clean
-- Smoke tests: 165 passed
+
+- All 15 tests in `test_inner_loop_dispatch.py` pass
+- `ruff check` clean
+- `mypy` clean
