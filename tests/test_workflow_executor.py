@@ -927,3 +927,11 @@ class TestCollectSubgraphNodes:
 
         wf = self._make_workflow(nodes=["a", "b"], edges=[("a", "b")])
         assert _collect_subgraph_nodes(wf, "a", "a") == {"a"}
+
+    def test_disconnected_exit_returns_empty(self) -> None:
+        """When exit_node is not reachable from entry, the intersection is empty."""
+        from factory.workflow.executor import _collect_subgraph_nodes
+
+        # a -> b only; c is disconnected — not reachable from a
+        wf = self._make_workflow(nodes=["a", "b", "c"], edges=[("a", "b")])
+        assert _collect_subgraph_nodes(wf, "a", "c") == set()
