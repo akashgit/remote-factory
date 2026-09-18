@@ -289,10 +289,64 @@ class InnerLoop:
             )
         return self._has_data_node
 
+    def _ensure_ephemeral_mode(self) -> str:
+        """Register self.workflow as an ephemeral mode for CEO subprocess discovery.
+
+        Returns the registered mode name.
+        """
+        import hashlib
+
+        assert self.workflow is not None
+
+        # Use a content-based mode name to avoid collisions
+        wf_hash = hashlib.sha256(
+            self.workflow.model_dump_json().encode()
+        ).hexdigest()[:8]
+        mode_name = f"eval-{self.mode}-{wf_hash}"
+
+        # Write mode JSON so WorkflowRegistry can load it
+        modes_dir = self.factory_dir / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True, exist_ok=True)
+
+        wf_data = self.workflow.to_dict()
+        wf_data["name"] = mode_name
+        mode_path = modes_dir / f"{mode_name}.json"
+        mode_path.write_text(json.dumps(wf_data, indent=2))
+
+        # Write workflow wrapper for WorkflowRegistry discovery
+        workflows_dir = self.factory_dir / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        wrapper = (
+            "import json\n"
+            "from pathlib import Path\n"
+            "from factory.workflow.primitives import Workflow\n"
+            "\n"
+            f"meta = {{'name': '{mode_name}', 'description': 'Ephemeral eval candidate'}}\n"
+            "\n"
+            "def workflow():\n"
+            f"    data_path = Path(__file__).parent.parent / 'outer_loop' / 'modes' / '{mode_name}.json'\n"
+            "    data = json.loads(data_path.read_text())\n"
+            "    return Workflow.from_dict(data)\n"
+        )
+        (workflows_dir / f"{mode_name}.py").write_text(wrapper)
+
+        log.debug("ephemeral_eval_mode_registered", mode=mode_name)
+        return mode_name
+
+    def _cleanup_ephemeral_mode(self, mode_name: str) -> None:
+        """Remove ephemeral mode files after CEO subprocess completes."""
+        mode_json = self.factory_dir / "outer_loop" / "modes" / f"{mode_name}.json"
+        wrapper = self.factory_dir / "workflows" / f"{mode_name}.py"
+        if mode_json.exists():
+            mode_json.unlink()
+        if wrapper.exists():
+            wrapper.unlink()
+
     def _run_ceo_subprocess(self, prompt_text: str, engine: str) -> _SubprocessExecutionResult:
         """Spawn a headless CEO subprocess for workflow evaluation.
 
-        Writes the per-instance prompt to a temp file, spawns
+        Writes the per-instance prompt to a temp file, registers the
+        workflow as an ephemeral mode, spawns
         ``factory ceo --headless --no-worktree --engine <engine>``,
         and recovers metrics from cycle_summary.json.
         """
@@ -300,11 +354,14 @@ class InnerLoop:
         self.factory_dir.mkdir(parents=True, exist_ok=True)
         prompt_path.write_text(prompt_text)
 
+        # Register workflow as ephemeral mode so CEO can discover it
+        mode_name = self._ensure_ephemeral_mode()
+
         cmd = [
             sys.executable, "-m", "factory", "ceo", str(self.project_dir),
             "--headless", "--no-worktree",
             "--engine", engine,
-            "--mode", self.mode,
+            "--mode", mode_name,
             "--prompt", str(prompt_path),
         ]
 
@@ -325,11 +382,18 @@ class InnerLoop:
         finally:
             if prompt_path.exists():
                 prompt_path.unlink()
+            # Cleanup ephemeral mode files
+            self._cleanup_ephemeral_mode(mode_name)
 
         # Recover supplementary metrics from cycle_summary.json
+        # Check registered mode_name path first, fall back to self.mode
         summary_path = (
-            self.factory_dir / "outer_loop" / "runs" / self.mode / "cycle_summary.json"
+            self.factory_dir / "outer_loop" / "runs" / mode_name / "cycle_summary.json"
         )
+        if not summary_path.exists():
+            summary_path = (
+                self.factory_dir / "outer_loop" / "runs" / self.mode / "cycle_summary.json"
+            )
         nodes_executed = 0
         if summary_path.exists():
             try:

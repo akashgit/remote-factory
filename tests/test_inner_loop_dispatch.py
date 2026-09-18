@@ -148,6 +148,96 @@ class TestCeoToolDispatch:
         mock_run.assert_called_once_with("test prompt", engine="tool")
 
 
+class TestEphemeralModeRegistration:
+    """_run_ceo_subprocess registers and cleans up ephemeral mode files."""
+
+    def test_ceo_subprocess_registers_ephemeral_mode(self, tmp_path: Path) -> None:
+        """Before CEO spawns, mode JSON and wrapper files exist in .factory/."""
+        (tmp_path / ".factory").mkdir()
+        task = _make_task()
+        wf = _make_workflow()
+
+        loop = InnerLoop(
+            project_dir=tmp_path, mode="test", task=task, workflow=wf,
+            execution_strategy="ceo-skill",
+        )
+
+        files_existed_during_run: dict[str, int] = {}
+
+        def capture_subprocess(*args: object, **kwargs: object) -> MagicMock:
+            # During subprocess.run, check that ephemeral files exist
+            modes_dir = tmp_path / ".factory" / "outer_loop" / "modes"
+            workflows_dir = tmp_path / ".factory" / "workflows"
+            mode_jsons = list(modes_dir.glob("eval-test-*.json")) if modes_dir.exists() else []
+            wrappers = list(workflows_dir.glob("eval-test-*.py")) if workflows_dir.exists() else []
+            files_existed_during_run["mode_jsons"] = len(mode_jsons)
+            files_existed_during_run["wrappers"] = len(wrappers)
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        with patch("factory.inner_loop.subprocess.run", side_effect=capture_subprocess):
+            loop._run_ceo_subprocess("test prompt", engine="skill")
+
+        assert files_existed_during_run["mode_jsons"] == 1
+        assert files_existed_during_run["wrappers"] == 1
+
+    def test_ceo_subprocess_cleans_up_ephemeral_mode(self, tmp_path: Path) -> None:
+        """After subprocess completes, ephemeral mode files are removed."""
+        (tmp_path / ".factory").mkdir()
+        task = _make_task()
+        wf = _make_workflow()
+
+        loop = InnerLoop(
+            project_dir=tmp_path, mode="test", task=task, workflow=wf,
+            execution_strategy="ceo-skill",
+        )
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("factory.inner_loop.subprocess.run", return_value=mock_result):
+            loop._run_ceo_subprocess("test prompt", engine="skill")
+
+        # After run, ephemeral files should be cleaned up
+        modes_dir = tmp_path / ".factory" / "outer_loop" / "modes"
+        workflows_dir = tmp_path / ".factory" / "workflows"
+        mode_jsons = list(modes_dir.glob("eval-test-*.json")) if modes_dir.exists() else []
+        wrappers = list(workflows_dir.glob("eval-test-*.py")) if workflows_dir.exists() else []
+        assert mode_jsons == []
+        assert wrappers == []
+
+    def test_ceo_subprocess_uses_registered_mode_name(self, tmp_path: Path) -> None:
+        """The --mode flag uses the registered ephemeral mode name, not self.mode."""
+        (tmp_path / ".factory").mkdir()
+        task = _make_task()
+        wf = _make_workflow()
+
+        loop = InnerLoop(
+            project_dir=tmp_path, mode="test", task=task, workflow=wf,
+            execution_strategy="ceo-skill",
+        )
+
+        captured_cmd: list[str] = []
+
+        def capture_subprocess(cmd: list[str], **kwargs: object) -> MagicMock:
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        with patch("factory.inner_loop.subprocess.run", side_effect=capture_subprocess):
+            loop._run_ceo_subprocess("test prompt", engine="skill")
+
+        # Find the --mode argument
+        mode_idx = captured_cmd.index("--mode")
+        mode_value = captured_cmd[mode_idx + 1]
+
+        # Should be the ephemeral name (eval-test-<hash>), not "test"
+        assert mode_value.startswith("eval-test-")
+        assert mode_value != "test"
+
+
 class TestSubprocessExecutionResult:
     """_SubprocessExecutionResult duck-types ExecutionResult."""
 
