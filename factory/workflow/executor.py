@@ -277,6 +277,7 @@ class WorkflowExecutor:
 
             self.result.node_outputs[node_id] = output
             self.completed_files |= node.writes
+            self._verify_node_writes(node_id, node.writes)
             self.result.nodes_executed += 1
 
             self._emit(
@@ -310,6 +311,26 @@ class WorkflowExecutor:
         if next_id:
             await self._execute_from(next_id)
 
+    def _verify_node_writes(self, node_id: str, writes: set[str]) -> None:
+        """Warn when a node's declared writes are missing on disk after execution.
+
+        Phase 1 — observability only: warns but does not halt and does not prevent
+        completed_files from being updated. Phase 2 (enforcement) would move this
+        check before ``completed_files |= node.writes`` and halt on missing files.
+
+        Skipped in dry_run (nodes don't execute) and when the write set is empty.
+        """
+        if self.dry_run or not writes:
+            return
+        for path_str in writes:
+            if not (self.project_path / path_str).exists():
+                log.warning(
+                    "node.write_missing",
+                    node_id=node_id,
+                    path=path_str,
+                    workflow=self.workflow.name,
+                )
+
     async def _run_node_background(self, node: NodeType) -> None:
         """Run a non-blocking node as a background task."""
         node_id = node.id
@@ -329,6 +350,7 @@ class WorkflowExecutor:
             elapsed = (time.monotonic() - start) * 1000
             self.result.node_outputs[node_id] = output
             self.completed_files |= node.writes
+            self._verify_node_writes(node_id, node.writes)
             self.result.nodes_executed += 1
             self._emit(
                 "node.completed",
@@ -476,6 +498,7 @@ class WorkflowExecutor:
                 elapsed = (time.monotonic() - start) * 1000
                 self.result.node_outputs[target_id] = output
                 self.completed_files |= target.writes
+                self._verify_node_writes(target_id, target.writes)
                 self.result.nodes_executed += 1
                 self._emit(
                     "node.completed",
