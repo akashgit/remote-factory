@@ -355,7 +355,7 @@ class InnerLoop:
 
         from factory.compose import validate_composition
         from factory.models import AggregateMethod, InnerLoopConfig
-        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.executor import ExecutionResult, WorkflowExecutor
 
         if directives:
             self._write_directives(directives)
@@ -420,6 +420,7 @@ class InnerLoop:
 
                 prompt_text = self.task.prompt(inst)
 
+                exec_result: _SubprocessExecutionResult | ExecutionResult
                 if self.execution_strategy in ("ceo-skill", "ceo-tool"):
                     engine = "tool" if self.execution_strategy == "ceo-tool" else "skill"
                     exec_result = self._run_ceo_subprocess(prompt_text, engine=engine)
