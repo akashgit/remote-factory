@@ -1,6 +1,6 @@
 """task-setup: Scaffold a new Task class through interactive research and generation.
 
-v2 director topology — 9 nodes, 12 edges. Directors (CEO agents) dynamically
+v2 director topology — 11 nodes, 15 edges. Directors (CEO agents) dynamically
 spawn sub-agents to adapt research depth to domain complexity. Mandatory outer
 loop feedback researcher and evolution-readiness QA ensure every generated Task
 has rich VerifyResult.details for the factory's reflection and improvement
@@ -857,6 +857,99 @@ RELOOP if any dimension failed. When relooping:
 HALT only if the Task is fundamentally broken beyond repair (rare).
 """
 
+_SCORING_VALIDATOR_PROMPT = """\
+You are the Scoring Validator for the task-setup workflow. Your job is to verify
+that the generated Task produces meaningful scores — not just that it compiles,
+but that verify() returns useful, varying scores when given real sample outputs.
+
+## Why This Matters
+
+A Task that passes structural validation but returns score=0.0 on every input is
+useless for the outer loop. The reflector needs score variance to learn. This step
+catches broken scoring formulas before the user wastes hours debugging.
+
+## What To Do
+
+1. Read `.factory/generated-task-name.txt` to get the task name.
+2. Read the Task file at `.factory/tasks/<name>.py` or `.factory/tasks/<name>.toml`.
+3. Understand what verify() expects to find in the workspace (what files, what format).
+
+4. For 2-3 instances from the Task:
+   a. Create a temporary workspace directory
+   b. Run setup() for that instance
+   c. Get the prompt text from prompt()
+   d. Spawn a builder agent to generate sample output:
+      ```
+      factory agent builder --task "You are generating a SAMPLE OUTPUT for scoring
+      validation. This is NOT a real task — you are creating test data.
+
+      The task prompt is:
+      <paste prompt text here>
+
+      Write your output to the workspace. Follow the prompt instructions exactly.
+      Do your best work — this output will be scored to verify the scoring formula
+      works correctly." --project $PROJECT_PATH --timeout 300
+      ```
+   e. Run verify() on the workspace and record the VerifyResult
+
+5. Analyze the results:
+   - **Zero-score check:** Are ALL scores exactly 0.0? If yes, scoring is likely broken.
+   - **Variance check:** Do scores vary across samples? If all identical, scoring may
+     lack gradient (all-or-nothing).
+   - **Details check:** Does the details dict contain the expected numeric keys from
+     the spec? Are any hardcoded to constants?
+   - **Sanity check:** For well-formed sample output, is the score > 0? A score of 0
+     on reasonable output suggests the formula is too harsh or the parsing is wrong.
+
+6. Write your report to `.factory/strategy/scoring-report.md`:
+
+   ```markdown
+   # Scoring Validation Report
+
+   ## Results
+   | Instance | Score | Passed | Key Details |
+   |----------|-------|--------|-------------|
+   | <id>     | <score> | <bool> | <summary of details dict> |
+
+   ## Quality Checks
+   - Zero-score: PASS/FAIL (N/M instances scored > 0)
+   - Variance: PASS/FAIL (score range: min-max, stddev)
+   - Details richness: PASS/FAIL (N numeric keys found)
+   - Sanity: PASS/FAIL (reasonable output scored reasonably)
+
+   ## Verdict: PASS / FAIL
+   <If FAIL, explain what is wrong with the scoring and suggest specific fixes>
+   ```
+
+IMPORTANT: If you cannot run verify() directly (e.g., missing dependencies), document
+what you attempted and report FAIL with the reason. Do not claim PASS without evidence.
+"""
+
+_GATE_SCORING_PROMPT = """\
+Evaluate the scoring validation report for the generated Task.
+
+Read .factory/strategy/scoring-report.md.
+
+PROCEED if ALL of these hold:
+1. At least one instance scored > 0.0 on well-formed sample output
+2. Scores show some variance (not all identical)
+3. Details dict contains the expected numeric keys (not empty or hardcoded)
+4. The scoring formula produces gradient (not all-or-nothing binary)
+
+RELOOP if any of these are true:
+- All scores are 0.0 (broken formula or parsing)
+- All scores are identical (no gradient)
+- Details dict is empty or missing expected keys
+- Scoring formula is provably too harsh (reasonable output gets 0)
+
+When relooping, include SPECIFIC feedback:
+- Which scoring formula is broken and why
+- What the expected score range should be
+- Concrete suggestions for fixing verify()
+
+HALT only if the scoring approach is fundamentally unworkable.
+"""
+
 _ARCHIVIST_PROMPT = """\
 Archive the task-setup workflow session.
 
@@ -867,6 +960,7 @@ Read these files and produce a concise archive entry:
 - .factory/strategy/research-verification.md — verification approach
 - .factory/strategy/research-outer-loop.md — outer loop details design
 - .factory/strategy/qa-report.md — QA results
+- .factory/strategy/scoring-report.md — scoring validation results
 - .factory/generated-task-name.txt — task name
 
 Write to `.factory/archive/task-setup-<TASK_NAME>.md` where <TASK_NAME>
@@ -898,7 +992,7 @@ _VALIDATE_TASK_GATE_COMMAND = (
 
 
 def workflow() -> Workflow:
-    """Build the task-setup v2 workflow graph (9 nodes, 12 edges)."""
+    """Build the task-setup v2 workflow graph (11 nodes, 15 edges)."""
 
     # ── Nodes ──
 
@@ -1039,6 +1133,36 @@ def workflow() -> Workflow:
         reads={".factory/generated-task-name.txt"},
     )
 
+    scoring_validator = AgentNode(
+        id="scoring_validator",
+        role=AgentRole.CEO,
+        prompt_template=_SCORING_VALIDATOR_PROMPT,
+        timeout=900,
+        reads={
+            ".factory/generated-task-name.txt",
+            ".factory/strategy/current.md",
+        },
+        writes={".factory/strategy/scoring-report.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/scoring-report.md",
+                must_exist=True,
+                min_size=200,
+            ),
+        ],
+    )
+
+    gate_scoring = GateNode(
+        id="gate_scoring",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        # Note: max_iterations is advisory metadata; the executor uses
+        # verdict.max_iterations (default 3) for reloop caps.
+        max_iterations=2,  # advisory — see executor docs
+        gate_prompt=_GATE_SCORING_PROMPT,
+        reads={".factory/strategy/scoring-report.md"},
+    )
+
     archivist = AgentNode(
         id="archivist",
         role=AgentRole.ARCHIVIST,
@@ -1050,6 +1174,7 @@ def workflow() -> Workflow:
             ".factory/strategy/research-verification.md",
             ".factory/strategy/research-outer-loop.md",
             ".factory/strategy/qa-report.md",
+            ".factory/strategy/scoring-report.md",
             ".factory/generated-task-name.txt",
         },
         writes={".factory/archive/"},
@@ -1066,10 +1191,12 @@ def workflow() -> Workflow:
         "qa_director": qa_director,
         "gate_qa": gate_qa,
         "validate_task": validate_task,
+        "scoring_validator": scoring_validator,
+        "gate_scoring": gate_scoring,
         "archivist": archivist,
     }
 
-    # ── Edges (12 total) ──
+    # ── Edges (15 total) ──
 
     edges = [
         # 1. Research complete → CEO evaluates quality
@@ -1092,10 +1219,16 @@ def workflow() -> Workflow:
         Edge(source="gate_qa", target="validate_task", condition=VerdictType.PROCEED),
         # 10. QA failed → builder fixes issues (back-edge)
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # 11. Validation passed → archive (non-blocking)
-        Edge(source="validate_task", target="archivist", condition=VerdictType.PROCEED),
+        # 11. Validation passed → scoring validator tests verify() quality
+        Edge(source="validate_task", target="scoring_validator", condition=VerdictType.PROCEED),
         # 12. Validation failed → builder fixes issues (back-edge)
         Edge(source="validate_task", target="builder", condition=VerdictType.RELOOP),
+        # 13. Scoring validation complete → CEO evaluates scoring quality
+        Edge(source="scoring_validator", target="gate_scoring", condition=None),
+        # 14. Scoring quality approved → archive (non-blocking)
+        Edge(source="gate_scoring", target="archivist", condition=VerdictType.PROCEED),
+        # 15. Scoring quality failed → builder fixes verify() (back-edge)
+        Edge(source="gate_scoring", target="builder", condition=VerdictType.RELOOP),
     ]
 
     # ── Build workflow ──

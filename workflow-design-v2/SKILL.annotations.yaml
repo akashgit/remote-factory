@@ -1,10 +1,8 @@
 init_user_intent:
   type: FnNode
   id: init_user_intent
-  command: python3 -c "import datetime, os; project = '{project_path}'; ts = datetime.datetime.now().isoformat(timespec='seconds');
-    idea = os.environ.get('FOCUS', os.environ.get('FACTORY_IDEA', 'No idea provided'));
-    content = f'# User Intent Ledger\n\n## [{ts}] Initial Idea\n{idea}\n'; open(f'{project}/.factory/strategy/user-intent.md',
-    'w').write(content); print(f'User intent ledger initialized at {ts}')"
+  command: python3 -c "from factory.workflow.contributed.design_v2.intent_init import
+    main; main()" "{project_path}"
   reads: []
   writes:
   - .factory/strategy/user-intent.md
@@ -255,16 +253,29 @@ strategy_director:
       }\n]\n```\n\nConstraints:\n- Minimum 2 perspectives, maximum 5\n- Each slug\
       \ must be unique and kebab-case\n- One perspective MUST cover testing/verification\
       \ with explicit acceptance criteria\n- Prompts must reference specific findings\
-      \ from the research reports\n\nPHASE 2 — EXECUTE STRATEGIES\nFor each perspective\
+      \ from the research reports\n\nINTENT FIDELITY CHECK (MANDATORY before spawning\
+      \ strategists):\nBefore writing the strategy plan, extract every distinct ask\
+      \ from\nuser-intent.md — features, constraints, behaviors, requirements the\
+      \ user\nmentioned. Write them as an `\"intent_items\"` array in strategy-plan.json.\n\
+      Then verify: does at least one perspective's prompt cover each intent item?\n\
+      If an intent item is not addressed by any perspective, either add a\nperspective\
+      \ or expand an existing prompt to cover it. No user ask may be\nsilently dropped.\n\
+      \nEach strategist prompt MUST include this line at the end:\n\"IMPORTANT: The\
+      \ user specifically asked for: <list the intent items relevant\nto this perspective>.\
+      \ Your strategy MUST address each of these. Do not\nsubstitute your own ideas\
+      \ for what the user asked for.\"\n\nPHASE 2 — EXECUTE STRATEGIES\nFor each perspective\
       \ in the plan, spawn a strategist agent:\n```\nfactory agent strategist --task\
       \ \"<perspective.prompt>\" --project $PROJECT_PATH\n```\n\nEach strategist writes\
       \ to `.factory/strategy/strategy-<slug>.md`.\n\nAfter ALL strategists complete,\
       \ review quality:\n- Each strategy file exists and has substantive content (>100\
       \ bytes)\n- The testing strategy has a `### Acceptance Criteria` section with\
       \ checkboxes\n- Architecture strategy cites research findings\n- No critical\
-      \ perspective is missing\n\nIf a strategist produced thin output, re-invoke\
-      \ it with a more specific prompt.\n\nWrite a brief strategy summary to the end\
-      \ of strategy-plan.json noting\nwhich perspectives completed and any quality\
+      \ perspective is missing\n- INTENT COVERAGE: re-read user-intent.md and verify\
+      \ every user ask appears\n  in at least one strategy output. If a strategist\
+      \ dropped an intent item,\n  re-invoke it with explicit instructions to address\
+      \ the missing item.\n\nIf a strategist produced thin output, re-invoke it with\
+      \ a more specific prompt.\n\nWrite a brief strategy summary to the end of strategy-plan.json\
+      \ noting\nwhich perspectives completed, intent coverage status, and any quality\
       \ issues.\nRead: .factory/strategy/research-plan.json, .factory/strategy/study-combined.md,\
       \ .factory/strategy/user-intent.md\nWrite output to: .factory/strategy/strategy-plan.json"
     timeout_strategy_director: '3600'
@@ -274,6 +285,7 @@ synthesize_strategy:
   role: strategist
   blocking: 'true'
   reads:
+  - .factory/strategy/strategy-plan.json
   - .factory/strategy/user-intent.md
   writes:
   - .factory/strategy/current.md
@@ -282,24 +294,40 @@ synthesize_strategy:
     condition: null
   slots:
     task_prompt_synthesize_strategy: "You are the Strategy Synthesizer. Compile one\
-      \ final plan from all\nstrategy inputs.\n\nRead:\n- ALL strategy files at `.factory/strategy/strategy-*.md`\n\
-      - `.factory/strategy/strategy-plan.json` — which perspectives were explored\n\
-      - `.factory/strategy/user-intent.md` — ground truth for user's ask\n\nWrite\
-      \ the final plan to `.factory/strategy/current.md`.\n\nRequired sections (in\
-      \ this order):\n### Architecture\n  Merge from architecture strategy. Include\
-      \ component list and interfaces.\n### Phased Plan\n  #### Phase 1: <name>\n\
-      \  - **What:** <specific changes from architecture strategy>\n  - **Why:** <rationale>\n\
-      \  - **Acceptance criteria:** <from testing strategy — inline the relevant criteria>\n\
-      \  - **Risks:** <from risk strategy — inline relevant risks>\n  #### Phase 2:\
-      \ <name>\n  ...\n### Acceptance Criteria\n  Full checklist from testing strategy.\
-      \ Each item must be:\n  - [ ] Specific enough for pass/fail verification\n \
-      \ - Traceable to user intent (cite which part of user-intent.md)\n### MVP Scope\n\
-      \  From risk strategy. In vs deferred.\n### Deferred Features\n  Items requiring\
-      \ human intervention or explicitly deferred.\n\nCRITICAL: The ### Acceptance\
-      \ Criteria section is the contract between\nthe builder and QA. It flows to\
-      \ adversarial testers who verify each\ncriterion independently. Make every item\
-      \ testable and unambiguous.\nRead: .factory/strategy/user-intent.md\nWrite output\
-      \ to: .factory/strategy/current.md"
+      \ final plan from all\nstrategy inputs. Your primary obligation is FIDELITY\
+      \ TO USER INTENT —\nthe plan must capture everything the user asked for.\n\n\
+      Read:\n- `.factory/strategy/user-intent.md` — ground truth for user's ask (READ\
+      \ THIS FIRST)\n- ALL strategy files at `.factory/strategy/strategy-*.md`\n-\
+      \ `.factory/strategy/strategy-plan.json` — which perspectives were explored,\n\
+      \  including the `intent_items` array listing every user ask\n\nSTEP 1 — INTENT\
+      \ EXTRACTION\nBefore synthesizing, extract every distinct ask from user-intent.md\
+      \ into a\nnumbered list. These are the user's requirements. Every single one\
+      \ must\nappear in the final plan — either as a feature in the phased plan, an\n\
+      acceptance criterion, or an explicitly deferred item with rationale.\n\nSTEP\
+      \ 2 — SYNTHESIZE\nWrite the final plan to `.factory/strategy/current.md`.\n\n\
+      Required sections (in this order):\n### Architecture\n  Merge from architecture\
+      \ strategy. Include component list and interfaces.\n### Phased Plan\n  ####\
+      \ Phase 1: <name>\n  - **What:** <specific changes from architecture strategy>\n\
+      \  - **Why:** <rationale>\n  - **Acceptance criteria:** <from testing strategy\
+      \ — inline the relevant criteria>\n  - **Risks:** <from risk strategy — inline\
+      \ relevant risks>\n  #### Phase 2: <name>\n  ...\n### Acceptance Criteria\n\
+      \  Full checklist from testing strategy. Each item must be:\n  - [ ] Specific\
+      \ enough for pass/fail verification\n  - Traceable to user intent (cite which\
+      \ part of user-intent.md)\n### MVP Scope\n  From risk strategy. In vs deferred.\n\
+      ### Deferred Features\n  Items requiring human intervention or explicitly deferred.\n\
+      \nSTEP 3 — INTENT COVERAGE AUDIT\nAfter writing current.md, go back to your\
+      \ numbered intent list from Step 1.\nFor each user ask, verify it appears in\
+      \ the plan:\n- In the phased plan as a deliverable, OR\n- In acceptance criteria\
+      \ as a testable item, OR\n- In deferred features with a rationale for why it's\
+      \ deferred\n\nWrite a `### Intent Coverage` section at the end of current.md:\n\
+      | # | User Ask | Where in Plan | Status |\n|---|----------|--------------|--------|\n\
+      | 1 | <ask> | Phase 1 / Criterion 3 / Deferred | Covered / Deferred |\n\nIf\
+      \ ANY user ask has status \"Missing\" — you have failed. Go back and add it\n\
+      to the appropriate section before finalizing. No user ask may be silently\n\
+      dropped.\n\nCRITICAL: The ### Acceptance Criteria section is the contract between\n\
+      the builder and QA. It flows to adversarial testers who verify each\ncriterion\
+      \ independently. Make every item testable and unambiguous.\nRead: .factory/strategy/strategy-plan.json,\
+      \ .factory/strategy/user-intent.md\nWrite output to: .factory/strategy/current.md"
     timeout_synthesize_strategy: '600'
 design_doc:
   type: AgentNode
@@ -485,44 +513,83 @@ qa_director:
       Read:\n- `.factory/strategy/current.md` — the design document with acceptance\
       \ criteria\n- `.factory/strategy/user-intent.md` — what the user ACTUALLY asked\
       \ for\n- `.factory/reviews/builder-latest.md` — what the builder implemented\n\
-      \nYour task has TWO phases:\n\nPHASE 1 — DESIGN QA APPROACHES\nAnalyze the acceptance\
-      \ criteria, the user's intent, and the builder's\nimplementation to identify\
-      \ K orthogonal testing approaches.\n\nDefault approaches (adapt or replace based\
-      \ on the specific project):\n  - Happy path verification — does each acceptance\
-      \ criterion pass with\n    normal, expected inputs?\n  - Edge case & boundary\
-      \ testing — empty inputs, large inputs, special\n    characters, off-by-one,\
-      \ boundary conditions\n  - User intent verification — does the output match\
-      \ what the user\n    ACTUALLY asked for (from user-intent.md), not just the\
-      \ plan?\n\nYou may add approaches specific to the implementation:\n  - Security\
-      \ testing (for auth, file I/O, user-facing APIs)\n  - Integration testing (for\
-      \ multi-component systems)\n  - Performance testing (for latency-sensitive features)\n\
-      \  - Error handling testing (for systems with many failure modes)\n  - Concurrency\
-      \ testing (for parallel/async systems)\n\nK is NOT fixed — YOU decide based\
-      \ on the complexity of the acceptance\ncriteria and the nature of the implementation:\n\
-      \  - Simple implementation (3-5 criteria): 2 testers\n  - Medium implementation\
-      \ (5-10 criteria): 3 testers\n  - Complex implementation (10+ criteria, security,\
-      \ integrations): 4-5 testers\n\nFor each approach, design a TAILORED prompt\
-      \ — not a generic template.\nBad: \"Test the implementation for edge cases\"\
-      \nGood: \"Test the Obsidian wikilink resolver with these edge cases:\n     \
-      \  nested vault folders (vault/sub/note.md linking to ../other.md),\n      \
-      \ wikilinks with display text ([[note|display]]),\n       wikilinks to non-existent\
-      \ files, wikilinks with anchor\n       fragments ([[note#heading]]), and case-sensitivity\
-      \ mismatches.\"\n\nWrite the QA plan to `.factory/reviews/qa-plan.json`:\n```json\n\
-      [\n  {\"approach\": \"...\", \"slug\": \"...\", \"prompt\": \"...\"}\n]\n```\n\
-      \nConstraints:\n- Minimum 2 approaches, maximum 5\n- Each slug must be unique\
-      \ and kebab-case\n- ALL acceptance criteria from current.md must be covered\
-      \ by at least\n  one tester's prompt\n- One approach MUST verify user intent\
-      \ against user-intent.md\n- Prompts must reference specific acceptance criteria\
-      \ and implementation details\n\nPHASE 2 — EXECUTE QA\nFor each approach in the\
-      \ plan, spawn an adversarial tester agent:\n```\nfactory agent adversarial_tester\
-      \ --task \"<approach.prompt>\" --project $PROJECT_PATH\n```\n\nEach tester writes\
-      \ to `.factory/reviews/adversarial-<slug>-latest.md`.\n\nAfter ALL testers complete,\
-      \ review quality:\n- Each adversarial report exists and has substantive findings\n\
-      - All acceptance criteria are covered by at least one tester\n- No tester missed\
-      \ its assigned focus area\n- Critical findings are actually reproducible (spot-check)\n\
-      \nIf a tester produced thin output, re-invoke it with a more specific prompt.\n\
-      \nWrite a brief QA summary to the end of qa-plan.json noting which\napproaches\
-      \ completed and any quality issues.\nRead: .factory/reviews/builder-latest.md,\
+      \nYour task has THREE phases:\n\nPHASE 1 — DESIGN QA APPROACHES\nAnalyze the\
+      \ acceptance criteria, the user's intent, and the builder's\nimplementation\
+      \ to identify K orthogonal testing approaches.\n\nDefault approaches (adapt\
+      \ or replace based on the specific project):\n  - Happy path verification —\
+      \ does each acceptance criterion pass with\n    normal, expected inputs?\n \
+      \ - Edge case & boundary testing — empty inputs, large inputs, special\n   \
+      \ characters, off-by-one, boundary conditions\n  - User intent verification\
+      \ — does the output match what the user\n    ACTUALLY asked for (from user-intent.md),\
+      \ not just the plan?\n\nYou may add approaches specific to the implementation:\n\
+      \  - Security testing (for auth, file I/O, user-facing APIs)\n  - Integration\
+      \ testing (for multi-component systems)\n  - Performance testing (for latency-sensitive\
+      \ features)\n  - Error handling testing (for systems with many failure modes)\n\
+      \  - Concurrency testing (for parallel/async systems)\n\nK is NOT fixed — YOU\
+      \ decide based on the complexity of the acceptance\ncriteria and the nature\
+      \ of the implementation:\n  - Simple implementation (3-5 criteria): 2 testers\n\
+      \  - Medium implementation (5-10 criteria): 3 testers\n  - Complex implementation\
+      \ (10+ criteria, security, integrations): 4-5 testers\nNote: the code review\
+      \ runs separately as Phase 3 and does NOT count toward K.\n\nFor each approach,\
+      \ design a TAILORED prompt — not a generic template.\nBad: \"Test the implementation\
+      \ for edge cases\"\nGood: \"Test the Obsidian wikilink resolver with these edge\
+      \ cases:\n       nested vault folders (vault/sub/note.md linking to ../other.md),\n\
+      \       wikilinks with display text ([[note|display]]),\n       wikilinks to\
+      \ non-existent files, wikilinks with anchor\n       fragments ([[note#heading]]),\
+      \ and case-sensitivity mismatches.\"\n\nWrite the QA plan to `.factory/reviews/qa-plan.json`:\n\
+      ```json\n[\n  {\"approach\": \"...\", \"slug\": \"...\", \"prompt\": \"...\"\
+      }\n]\n```\n\nConstraints:\n- Minimum 2 approaches, maximum 5\n- Each slug must\
+      \ be unique and kebab-case\n- ALL acceptance criteria from current.md must be\
+      \ covered by at least\n  one tester's prompt\n- One approach MUST verify user\
+      \ intent against user-intent.md\n- Prompts must reference specific acceptance\
+      \ criteria and implementation details\n\nMANDATORY RUN-THE-CODE TESTERS (hardcoded\
+      \ — always include these):\nIn addition to your K designed approaches, you MUST\
+      \ always include these\ntwo hardcoded testers that ACTUALLY RUN the built code.\
+      \ These are non-negotiable.\n\n1. slug: \"smoke-run\"\n   Prompt: \"You are\
+      \ a smoke-test runner. Your ONLY job: actually run what was\n   built. Do NOT\
+      \ just read the code or check tests pass — EXECUTE the\n   application. For\
+      \ a CLI: run it with example inputs from the acceptance\n   criteria. For a\
+      \ server: start it, hit it with curl/httpx, verify responses.\n   For a library:\
+      \ import it and call the main functions. Show the exact\n   commands you ran\
+      \ and the exact output you got. If it crashes, fails to\n   start, or produces\
+      \ wrong output — that is your finding. Keep it fast and\n   simple: 2-3 runs\
+      \ max, focusing on the golden path.\"\n\n2. slug: \"user-scenario\"\n   Prompt:\
+      \ \"You are testing from the user's perspective. Read\n   .factory/strategy/user-intent.md\
+      \ for what the user actually asked for.\n   Now USE the application exactly\
+      \ as the user described they would use it.\n   If the user said 'build a CLI\
+      \ that checks links' — run it on a real\n   markdown file with links. If the\
+      \ user said 'handle wikilinks' — create\n   a test file with wikilinks and run\
+      \ the tool on it. Show exactly what you\n   did and what happened. The user's\
+      \ words are your test script.\"\n\nThese two testers run alongside your K designed\
+      \ testers — they do NOT count\ntoward K. Total agents spawned = K (designed)\
+      \ + 2 (hardcoded) + 1 (code review).\n\nPHASE 2 — EXECUTE QA (ALL IN PARALLEL)\n\
+      Spawn ALL of the following in parallel — K designed testers + 2 hardcoded\n\
+      run-the-code testers + 1 code reviewer:\n\nFor each adversarial approach in\
+      \ the plan:\n```\nfactory agent adversarial_tester --review-tag <slug> --task\
+      \ \"<approach.prompt>\" --project $PROJECT_PATH &\n```\n\nPlus the 2 mandatory\
+      \ run-the-code testers (ALWAYS, non-negotiable):\n```\nfactory agent adversarial_tester\
+      \ --review-tag smoke-run --task \"<smoke-run prompt from above>\" --project\
+      \ $PROJECT_PATH &\nfactory agent adversarial_tester --review-tag user-scenario\
+      \ --task \"<user-scenario prompt from above>\" --project $PROJECT_PATH &\n```\n\
+      \nPlus one mandatory code review (always, regardless of K):\n```\nfactory agent\
+      \ code_reviewer --task \"Review the code changes on this branch. Use /code-review\
+      \ for a thorough review covering correctness bugs, security issues, edge cases,\
+      \ missing tests, style, scope creep, and simplification opportunities. Focus\
+      \ on the diff — what changed, not the entire codebase.\" --project $PROJECT_PATH\
+      \ &\n```\n\nThen `wait` for all K+3 agents to complete.\n\nEach adversarial\
+      \ tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.\nThe code\
+      \ reviewer writes to `.factory/reviews/code-review.md`.\n\nAfter ALL agents\
+      \ complete, review quality:\n- Each adversarial report exists and has substantive\
+      \ findings\n- All acceptance criteria are covered by at least one tester\n-\
+      \ No tester missed its assigned focus area\n- Code review completed — if it\
+      \ found critical or high-severity issues,\n  flag them in your QA summary as\
+      \ blocking\n- Critical findings are actually reproducible (spot-check)\n\nIf\
+      \ a tester produced thin output, re-invoke it with a more specific prompt.\n\
+      \nEach tester should output: Acceptance Criteria Verification (PASS/FAIL per\n\
+      criterion with evidence), Edge Case Findings (steps to reproduce, expected\n\
+      vs actual), and User Intent Verification (does output match user's ask).\n\n\
+      Write a brief QA summary to the end of qa-plan.json noting which\napproaches\
+      \ completed, code review results, and any quality issues.\nRead: .factory/reviews/builder-latest.md,\
       \ .factory/strategy/current.md, .factory/strategy/user-intent.md\nWrite output\
       \ to: .factory/reviews/qa-plan.json"
     timeout_qa_director: '3600'
@@ -541,27 +608,8 @@ join_qa:
 synthesize_qa:
   type: FnNode
   id: synthesize_qa
-  command: 'python3 -c "from pathlib import Path; import re, glob; project = ''{project_path}'';
-    reports = []; for p in sorted(Path(f''{project}/.factory/reviews'').glob(''adversarial-*-latest.md'')):     slug
-    = p.name.replace(''-latest.md'', '''').replace(''adversarial-'', '''');     reports.append((slug,
-    p.read_text())); findings = {}; for tester_slug, text in reports:     for line
-    in text.splitlines():         stripped = line.strip();         if stripped.startswith(''-
-    '') or stripped.startswith(''* ''):             key = re.sub(r''\s+'', '' '',
-    stripped[2:].strip().lower()[:80]);             findings.setdefault(key, []).append(tester_slug);
-    high = [(k, v) for k, v in findings.items() if len(v) >= 2]; medium = [(k, v)
-    for k, v in findings.items() if len(v) == 1]; out = [''# Synthesized QA Report\n''];
-    hc = Path(f''{project}/.factory/reviews/health-check.md''); cr = Path(f''{project}/.factory/reviews/code-review.md'');
-    out.append(''## Health Check\n''); out.append(hc.read_text() if hc.exists() else
-    ''(not available)''); out.append(''\n## Code Review\n''); out.append(cr.read_text()
-    if cr.exists() else ''(not available)''); out.append(''\n## High-Confidence Adversarial
-    Findings (caught by 2+ testers)\n''); [out.append(f''- {k} (testers: {v})'') for
-    k, v in high]; if not high: out.append(''- (none)''); out.append(''\n## Medium-Confidence
-    Adversarial Findings (single tester)\n''); [out.append(f''- {k} (tester: {v[0]})'')
-    for k, v in medium]; if not medium: out.append(''- (none)''); out.append(''\n##
-    Raw Adversarial Reports\n''); [out.append(f''### Tester: {slug}\n{text}\n'') for
-    slug, text in reports]; Path(f''{project}/.factory/reviews/qa-synthesized.md'').write_text(''\n''.join(out));
-    print(f''Synthesized {len(high)} high + {len(medium)} medium findings from {len(reports)}
-    adversarial reports'')"'
+  command: python3 -c "from factory.workflow.contributed.design_v2.qa_synthesis import
+    main; main()" "{project_path}"
   reads:
   - .factory/reviews/code-review.md
   - .factory/reviews/health-check.md
@@ -579,10 +627,10 @@ gate_qa:
   - .factory/reviews/qa-synthesized.md
   - .factory/strategy/user-intent.md
   edges_out:
-  - target: gate_doc_freshness
-    condition: PROCEED
   - target: builder
     condition: RELOOP
+  - target: overwatch
+    condition: PROCEED
   slots:
     gate_prompt_gate_qa: "You are the CEO reviewing QA results. This is the final\
       \ gate before merge.\n\nRead:\n- `.factory/strategy/user-intent.md` — what the\
@@ -602,6 +650,210 @@ gate_qa:
       \ if:\n  - 3 reloops exhausted without resolution\n  - Fundamental design flaw\
       \ that builder iterations cannot fix"
     max_iterations_gate_qa: '3'
+overwatch:
+  type: AgentNode
+  id: overwatch
+  role: ceo
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  - .factory/reviews/code-review.md
+  - .factory/reviews/health-check.md
+  - .factory/reviews/qa-synthesized.md
+  - .factory/strategy/current.md
+  - .factory/strategy/user-intent.md
+  writes:
+  - .factory/reviews/overwatch-latest.md
+  edges_out:
+  - target: gate_overwatch
+    condition: null
+  slots:
+    task_prompt_overwatch: 'You are the Overwatch — the final verification agent before
+      the PR is shown to the user. Your job is to verify that everything the user
+      asked for was actually built and actually tested, with evidence.
+
+
+      You are NOT another QA pass. The adversarial testers already checked the code.
+      You check the COMPLETENESS and HONESTY of the entire pipeline''s output.
+
+
+      Read:
+
+      - .factory/strategy/user-intent.md — every ask the user made
+
+      - .factory/strategy/current.md — the approved strategy with acceptance criteria
+
+      - .factory/reviews/builder-latest.md — what the builder claims to have done
+
+      - .factory/reviews/qa-synthesized.md — merged QA report
+
+      - .factory/reviews/health-check.md — eval and test results
+
+      - .factory/reviews/code-review.md — code review findings
+
+
+      STEP 1 — INTENT CHECKLIST
+
+      Extract every distinct user ask from user-intent.md. For each:
+
+      - Is it in the implementation? (check source code, git diff)
+
+      - Is there test evidence in the QA reports? (command + output, not just claims)
+
+      - Was it actually run? (look for execution evidence — not just "tests pass")
+
+
+      STEP 2 — EVIDENCE AUDIT
+
+      Read each QA report. For every PASS claim, check:
+
+      - Does it show the actual command that was run?
+
+      - Does it show the actual output?
+
+      - Or is it just "verified — PASS" with no evidence?
+
+      Flag every unsupported claim.
+
+
+      STEP 3 — SPOT CHECK (MANDATORY)
+
+      Pick the 2-3 most critical acceptance criteria from current.md.
+
+      Actually run them yourself:
+
+      - Execute the code with the user''s example inputs
+
+      - Start the server/CLI/tool and verify it works with a real request
+
+      - Try one edge case the user specifically mentioned in their feedback
+
+      Show your commands and their output as evidence.
+
+
+      Common agent pitfalls to check for:
+
+      - Feature was compiled/linted but never actually executed
+
+      - Server code exists but was never started
+
+      - Tests mock everything and never hit real code paths
+
+      - User''s specific feedback from intent ledger was ignored
+
+      - CLI was tested with --help but never with actual inputs
+
+      - Error handling was claimed but no error case was actually triggered
+
+
+      STEP 4 — REPORT
+
+      Write a structured report to .factory/reviews/overwatch-latest.md:
+
+
+      # Overwatch Verification Report
+
+
+      ## Intent Coverage
+
+      | # | User Ask | Built? | Tested? | Evidence? | Status |
+
+      |---|----------|--------|---------|-----------|--------|
+
+
+      ## Evidence Audit
+
+      - Claims with evidence: N
+
+      - Claims without evidence: M
+
+      - [list unsupported claims]
+
+
+      ## Spot Check Results
+
+      ### Check 1: <criterion>
+
+      - Command: <what you ran>
+
+      - Output: <what happened>
+
+      - Verdict: PASS/FAIL
+
+
+      ## Verdict
+
+      PASS — all user asks verified with evidence
+
+      FAIL — [list what''s missing or unsupported]
+
+      Read: .factory/reviews/builder-latest.md, .factory/reviews/code-review.md, .factory/reviews/health-check.md,
+      .factory/reviews/qa-synthesized.md, .factory/strategy/current.md, .factory/strategy/user-intent.md
+
+      Write output to: .factory/reviews/overwatch-latest.md'
+    timeout_overwatch: '1800'
+gate_overwatch:
+  type: GateNode
+  id: gate_overwatch
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/overwatch-latest.md
+  - .factory/strategy/user-intent.md
+  edges_out:
+  - target: gate_doc_freshness
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_overwatch: 'You are the CEO reviewing the Overwatch verification
+      report.
+
+
+      Read:
+
+      - .factory/reviews/overwatch-latest.md — the Overwatch''s findings
+
+      - .factory/strategy/user-intent.md — what the user asked for
+
+
+      The Overwatch has verified whether everything the user asked for was actually
+      built and tested with evidence.
+
+
+      PROCEED if:
+
+      - All user asks in the Intent Coverage table show Status = Covered
+
+      - No unsupported claims in the Evidence Audit
+
+      - Spot checks all passed
+
+      - The Overwatch verdict is PASS
+
+
+      RELOOP to builder if:
+
+      - Any user ask is missing or untested
+
+      - There are unsupported QA claims (tests claimed to pass without evidence)
+
+      - Spot checks failed
+
+      - The Overwatch verdict is FAIL
+
+
+      When relooping, include the specific Overwatch findings in your feedback:
+
+      - Which user asks are missing
+
+      - Which claims lack evidence
+
+      - Which spot checks failed and what the output was
+
+
+      The builder will fix the issues and the full QA + Overwatch pipeline will re-run.'
+    max_iterations_gate_overwatch: '3'
 gate_doc_freshness:
   type: GateNode
   id: gate_doc_freshness

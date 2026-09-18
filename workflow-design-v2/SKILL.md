@@ -14,7 +14,7 @@ The user wants: **$ARGUMENTS**
 Creates the user intent ledger with the initial idea.
 
 ```bash
-python3 -c "import datetime, os; project = '$PROJECT_PATH'; ts = datetime.datetime.now().isoformat(timespec='seconds'); idea = os.environ.get('FOCUS', os.environ.get('FACTORY_IDEA', 'No idea provided')); content = f'# User Intent Ledger\n\n## [{ts}] Initial Idea\n{idea}\n'; open(f'{project}/.factory/strategy/user-intent.md', 'w').write(content); print(f'User intent ledger initialized at {ts}')"
+python3 -c "from factory.workflow.contributed.design_v2.intent_init import main; main()" "$PROJECT_PATH"
 ```
 
 ### Gate — Has Factory (Automated)
@@ -266,6 +266,20 @@ Constraints:
 - One perspective MUST cover testing/verification with explicit acceptance criteria
 - Prompts must reference specific findings from the research reports
 
+INTENT FIDELITY CHECK (MANDATORY before spawning strategists):
+Before writing the strategy plan, extract every distinct ask from
+user-intent.md — features, constraints, behaviors, requirements the user
+mentioned. Write them as an `"intent_items"` array in strategy-plan.json.
+Then verify: does at least one perspective's prompt cover each intent item?
+If an intent item is not addressed by any perspective, either add a
+perspective or expand an existing prompt to cover it. No user ask may be
+silently dropped.
+
+Each strategist prompt MUST include this line at the end:
+"IMPORTANT: The user specifically asked for: <list the intent items relevant
+to this perspective>. Your strategy MUST address each of these. Do not
+substitute your own ideas for what the user asked for."
+
 PHASE 2 — EXECUTE STRATEGIES
 For each perspective in the plan, spawn a strategist agent:
 ```
@@ -279,11 +293,14 @@ After ALL strategists complete, review quality:
 - The testing strategy has a `### Acceptance Criteria` section with checkboxes
 - Architecture strategy cites research findings
 - No critical perspective is missing
+- INTENT COVERAGE: re-read user-intent.md and verify every user ask appears
+  in at least one strategy output. If a strategist dropped an intent item,
+  re-invoke it with explicit instructions to address the missing item.
 
 If a strategist produced thin output, re-invoke it with a more specific prompt.
 
 Write a brief strategy summary to the end of strategy-plan.json noting
-which perspectives completed and any quality issues.
+which perspectives completed, intent coverage status, and any quality issues.
 Read: .factory/strategy/research-plan.json, .factory/strategy/study-combined.md, .factory/strategy/user-intent.md
 Write output to: .factory/strategy/strategy-plan.json" --project "$PROJECT_PATH" --timeout 3600
 ```
@@ -305,13 +322,22 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=strategy_director" >> "$PROJ
 
 ```bash
 factory agent strategist --task "You are the Strategy Synthesizer. Compile one final plan from all
-strategy inputs.
+strategy inputs. Your primary obligation is FIDELITY TO USER INTENT —
+the plan must capture everything the user asked for.
 
 Read:
+- `.factory/strategy/user-intent.md` — ground truth for user's ask (READ THIS FIRST)
 - ALL strategy files at `.factory/strategy/strategy-*.md`
-- `.factory/strategy/strategy-plan.json` — which perspectives were explored
-- `.factory/strategy/user-intent.md` — ground truth for user's ask
+- `.factory/strategy/strategy-plan.json` — which perspectives were explored,
+  including the `intent_items` array listing every user ask
 
+STEP 1 — INTENT EXTRACTION
+Before synthesizing, extract every distinct ask from user-intent.md into a
+numbered list. These are the user's requirements. Every single one must
+appear in the final plan — either as a feature in the phased plan, an
+acceptance criterion, or an explicitly deferred item with rationale.
+
+STEP 2 — SYNTHESIZE
 Write the final plan to `.factory/strategy/current.md`.
 
 Required sections (in this order):
@@ -334,10 +360,26 @@ Required sections (in this order):
 ### Deferred Features
   Items requiring human intervention or explicitly deferred.
 
+STEP 3 — INTENT COVERAGE AUDIT
+After writing current.md, go back to your numbered intent list from Step 1.
+For each user ask, verify it appears in the plan:
+- In the phased plan as a deliverable, OR
+- In acceptance criteria as a testable item, OR
+- In deferred features with a rationale for why it's deferred
+
+Write a `### Intent Coverage` section at the end of current.md:
+| # | User Ask | Where in Plan | Status |
+|---|----------|--------------|--------|
+| 1 | <ask> | Phase 1 / Criterion 3 / Deferred | Covered / Deferred |
+
+If ANY user ask has status "Missing" — you have failed. Go back and add it
+to the appropriate section before finalizing. No user ask may be silently
+dropped.
+
 CRITICAL: The ### Acceptance Criteria section is the contract between
 the builder and QA. It flows to adversarial testers who verify each
 criterion independently. Make every item testable and unambiguous.
-Read: .factory/strategy/user-intent.md
+Read: .factory/strategy/strategy-plan.json, .factory/strategy/user-intent.md
 Write output to: .factory/strategy/current.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
@@ -524,7 +566,7 @@ Read:
 - `.factory/strategy/user-intent.md` — what the user ACTUALLY asked for
 - `.factory/reviews/builder-latest.md` — what the builder implemented
 
-Your task has TWO phases:
+Your task has THREE phases:
 
 PHASE 1 — DESIGN QA APPROACHES
 Analyze the acceptance criteria, the user's intent, and the builder's
@@ -550,6 +592,7 @@ criteria and the nature of the implementation:
   - Simple implementation (3-5 criteria): 2 testers
   - Medium implementation (5-10 criteria): 3 testers
   - Complex implementation (10+ criteria, security, integrations): 4-5 testers
+Note: the code review runs separately as Phase 3 and does NOT count toward K.
 
 For each approach, design a TAILORED prompt — not a generic template.
 Bad: "Test the implementation for edge cases"
@@ -574,24 +617,73 @@ Constraints:
 - One approach MUST verify user intent against user-intent.md
 - Prompts must reference specific acceptance criteria and implementation details
 
-PHASE 2 — EXECUTE QA
-For each approach in the plan, spawn an adversarial tester agent:
+MANDATORY RUN-THE-CODE TESTERS (hardcoded — always include these):
+In addition to your K designed approaches, you MUST always include these
+two hardcoded testers that ACTUALLY RUN the built code. These are non-negotiable.
+
+1. slug: "smoke-run"
+   Prompt: "You are a smoke-test runner. Your ONLY job: actually run what was
+   built. Do NOT just read the code or check tests pass — EXECUTE the
+   application. For a CLI: run it with example inputs from the acceptance
+   criteria. For a server: start it, hit it with curl/httpx, verify responses.
+   For a library: import it and call the main functions. Show the exact
+   commands you ran and the exact output you got. If it crashes, fails to
+   start, or produces wrong output — that is your finding. Keep it fast and
+   simple: 2-3 runs max, focusing on the golden path."
+
+2. slug: "user-scenario"
+   Prompt: "You are testing from the user's perspective. Read
+   .factory/strategy/user-intent.md for what the user actually asked for.
+   Now USE the application exactly as the user described they would use it.
+   If the user said 'build a CLI that checks links' — run it on a real
+   markdown file with links. If the user said 'handle wikilinks' — create
+   a test file with wikilinks and run the tool on it. Show exactly what you
+   did and what happened. The user's words are your test script."
+
+These two testers run alongside your K designed testers — they do NOT count
+toward K. Total agents spawned = K (designed) + 2 (hardcoded) + 1 (code review).
+
+PHASE 2 — EXECUTE QA (ALL IN PARALLEL)
+Spawn ALL of the following in parallel — K designed testers + 2 hardcoded
+run-the-code testers + 1 code reviewer:
+
+For each adversarial approach in the plan:
 ```
-factory agent adversarial_tester --task "<approach.prompt>" --project $PROJECT_PATH
+factory agent adversarial_tester --review-tag <slug> --task "<approach.prompt>" --project $PROJECT_PATH &
 ```
 
-Each tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+Plus the 2 mandatory run-the-code testers (ALWAYS, non-negotiable):
+```
+factory agent adversarial_tester --review-tag smoke-run --task "<smoke-run prompt from above>" --project $PROJECT_PATH &
+factory agent adversarial_tester --review-tag user-scenario --task "<user-scenario prompt from above>" --project $PROJECT_PATH &
+```
 
-After ALL testers complete, review quality:
+Plus one mandatory code review (always, regardless of K):
+```
+factory agent code_reviewer --task "Review the code changes on this branch. Use /code-review for a thorough review covering correctness bugs, security issues, edge cases, missing tests, style, scope creep, and simplification opportunities. Focus on the diff — what changed, not the entire codebase." --project $PROJECT_PATH &
+```
+
+Then `wait` for all K+3 agents to complete.
+
+Each adversarial tester writes to `.factory/reviews/adversarial-<slug>-latest.md`.
+The code reviewer writes to `.factory/reviews/code-review.md`.
+
+After ALL agents complete, review quality:
 - Each adversarial report exists and has substantive findings
 - All acceptance criteria are covered by at least one tester
 - No tester missed its assigned focus area
+- Code review completed — if it found critical or high-severity issues,
+  flag them in your QA summary as blocking
 - Critical findings are actually reproducible (spot-check)
 
 If a tester produced thin output, re-invoke it with a more specific prompt.
 
+Each tester should output: Acceptance Criteria Verification (PASS/FAIL per
+criterion with evidence), Edge Case Findings (steps to reproduce, expected
+vs actual), and User Intent Verification (does output match user's ask).
+
 Write a brief QA summary to the end of qa-plan.json noting which
-approaches completed and any quality issues.
+approaches completed, code review results, and any quality issues.
 Read: .factory/reviews/builder-latest.md, .factory/strategy/current.md, .factory/strategy/user-intent.md
 Write output to: .factory/reviews/qa-plan.json" --project "$PROJECT_PATH" --timeout 3600 &
 ```
@@ -644,7 +736,7 @@ Read combined outputs: `.factory/reviews/code-review.md`, `.factory/reviews/heal
 Merges ALL adversarial-*-latest.md reports into one synthesized QA report. Uses glob pattern — works for any K testers. Findings caught by 2+ testers = HIGH confidence. Single-source findings surfaced but marked. Health checker and code reviewer reports included as pass-through.
 
 ```bash
-python3 -c "from pathlib import Path; import re, glob; project = '$PROJECT_PATH'; reports = []; for p in sorted(Path(f'{project}/.factory/reviews').glob('adversarial-*-latest.md')):     slug = p.name.replace('-latest.md', '').replace('adversarial-', '');     reports.append((slug, p.read_text())); findings = {}; for tester_slug, text in reports:     for line in text.splitlines():         stripped = line.strip();         if stripped.startswith('- ') or stripped.startswith('* '):             key = re.sub(r'\s+', ' ', stripped[2:].strip().lower()[:80]);             findings.setdefault(key, []).append(tester_slug); high = [(k, v) for k, v in findings.items() if len(v) >= 2]; medium = [(k, v) for k, v in findings.items() if len(v) == 1]; out = ['# Synthesized QA Report\n']; hc = Path(f'{project}/.factory/reviews/health-check.md'); cr = Path(f'{project}/.factory/reviews/code-review.md'); out.append('## Health Check\n'); out.append(hc.read_text() if hc.exists() else '(not available)'); out.append('\n## Code Review\n'); out.append(cr.read_text() if cr.exists() else '(not available)'); out.append('\n## High-Confidence Adversarial Findings (caught by 2+ testers)\n'); [out.append(f'- {k} (testers: {v})') for k, v in high]; if not high: out.append('- (none)'); out.append('\n## Medium-Confidence Adversarial Findings (single tester)\n'); [out.append(f'- {k} (tester: {v[0]})') for k, v in medium]; if not medium: out.append('- (none)'); out.append('\n## Raw Adversarial Reports\n'); [out.append(f'### Tester: {slug}\n{text}\n') for slug, text in reports]; Path(f'{project}/.factory/reviews/qa-synthesized.md').write_text('\n'.join(out)); print(f'Synthesized {len(high)} high + {len(medium)} medium findings from {len(reports)} adversarial reports')"
+python3 -c "from factory.workflow.contributed.design_v2.qa_synthesis import main; main()" "$PROJECT_PATH"
 ```
 
 ### CEO Review — Qa
@@ -689,6 +781,128 @@ HALT if:
 
 *On RELOOP: return to `builder` (max 3 iterations)*
 
+## Phase 11: Ceo — Overwatch
+
+```bash
+factory agent ceo --task "You are the Overwatch — the final verification agent before the PR is shown to the user. Your job is to verify that everything the user asked for was actually built and actually tested, with evidence.
+
+You are NOT another QA pass. The adversarial testers already checked the code. You check the COMPLETENESS and HONESTY of the entire pipeline's output.
+
+Read:
+- .factory/strategy/user-intent.md — every ask the user made
+- .factory/strategy/current.md — the approved strategy with acceptance criteria
+- .factory/reviews/builder-latest.md — what the builder claims to have done
+- .factory/reviews/qa-synthesized.md — merged QA report
+- .factory/reviews/health-check.md — eval and test results
+- .factory/reviews/code-review.md — code review findings
+
+STEP 1 — INTENT CHECKLIST
+Extract every distinct user ask from user-intent.md. For each:
+- Is it in the implementation? (check source code, git diff)
+- Is there test evidence in the QA reports? (command + output, not just claims)
+- Was it actually run? (look for execution evidence — not just "tests pass")
+
+STEP 2 — EVIDENCE AUDIT
+Read each QA report. For every PASS claim, check:
+- Does it show the actual command that was run?
+- Does it show the actual output?
+- Or is it just "verified — PASS" with no evidence?
+Flag every unsupported claim.
+
+STEP 3 — SPOT CHECK (MANDATORY)
+Pick the 2-3 most critical acceptance criteria from current.md.
+Actually run them yourself:
+- Execute the code with the user's example inputs
+- Start the server/CLI/tool and verify it works with a real request
+- Try one edge case the user specifically mentioned in their feedback
+Show your commands and their output as evidence.
+
+Common agent pitfalls to check for:
+- Feature was compiled/linted but never actually executed
+- Server code exists but was never started
+- Tests mock everything and never hit real code paths
+- User's specific feedback from intent ledger was ignored
+- CLI was tested with --help but never with actual inputs
+- Error handling was claimed but no error case was actually triggered
+
+STEP 4 — REPORT
+Write a structured report to .factory/reviews/overwatch-latest.md:
+
+# Overwatch Verification Report
+
+## Intent Coverage
+| # | User Ask | Built? | Tested? | Evidence? | Status |
+|---|----------|--------|---------|-----------|--------|
+
+## Evidence Audit
+- Claims with evidence: N
+- Claims without evidence: M
+- [list unsupported claims]
+
+## Spot Check Results
+### Check 1: <criterion>
+- Command: <what you ran>
+- Output: <what happened>
+- Verdict: PASS/FAIL
+
+## Verdict
+PASS — all user asks verified with evidence
+FAIL — [list what's missing or unsupported]
+Read: .factory/reviews/builder-latest.md, .factory/reviews/code-review.md, .factory/reviews/health-check.md, .factory/reviews/qa-synthesized.md, .factory/strategy/current.md, .factory/strategy/user-intent.md
+Write output to: .factory/reviews/overwatch-latest.md" --project "$PROJECT_PATH" --timeout 1800
+```
+
+```bash
+# Artifact verification: overwatch
+_vfail=0
+_f="$PROJECT_PATH/.factory/reviews/overwatch-latest.md"
+[ ! -f "$_f" ] && echo "VERIFY FAIL: overwatch: .factory/reviews/overwatch-latest.md missing" && _vfail=1
+[ -f "$_f" ] && [ ! -s "$_f" ] && echo "VERIFY FAIL: overwatch: .factory/reviews/overwatch-latest.md is empty" && _vfail=1
+[ -f "$_f" ] && [ "$(wc -c < "$_f")" -lt 100 ] && echo "VERIFY FAIL: overwatch: .factory/reviews/overwatch-latest.md smaller than 100 bytes" && _vfail=1
+[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node=overwatch" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1
+echo "VERIFY OK: overwatch artifacts validated"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=overwatch" >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"
+```
+*(harness verification — DO NOT SKIP)*
+
+### CEO Review — Overwatch
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/overwatch-latest.md`, `.factory/strategy/user-intent.md`
+3. Assess: You are the CEO reviewing the Overwatch verification report.
+
+Read:
+- .factory/reviews/overwatch-latest.md — the Overwatch's findings
+- .factory/strategy/user-intent.md — what the user asked for
+
+The Overwatch has verified whether everything the user asked for was actually built and tested with evidence.
+
+PROCEED if:
+- All user asks in the Intent Coverage table show Status = Covered
+- No unsupported claims in the Evidence Audit
+- Spot checks all passed
+- The Overwatch verdict is PASS
+
+RELOOP to builder if:
+- Any user ask is missing or untested
+- There are unsupported QA claims (tests claimed to pass without evidence)
+- Spot checks failed
+- The Overwatch verdict is FAIL
+
+When relooping, include the specific Overwatch findings in your feedback:
+- Which user asks are missing
+- Which claims lack evidence
+- Which spot checks failed and what the output was
+
+The builder will fix the issues and the full QA + Overwatch pipeline will re-run.
+4. Write verdict to `.factory/reviews/ceo-verdict-overwatch.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
+
 ### CEO Review — Doc Freshness
 
 Apply the CEO Review Gate protocol:
@@ -713,7 +927,7 @@ factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 - **PROCEED** (exit 0 / no FAIL in output) → continue to `archivist_build`
 - **HALT** (exit non-zero / FAIL in output) → continue to `archivist_build` instead.
 
-## Phase 11: Archivist Build
+## Phase 12: Archivist Build
 
 ```bash
 factory agent archivist --task "Archive the build phase results.

@@ -57,10 +57,10 @@ class TestMeta:
 
 class TestGraphStructure:
     def test_node_count(self, task_setup_wf: Workflow) -> None:
-        assert len(task_setup_wf.nodes) == 9
+        assert len(task_setup_wf.nodes) == 11
 
     def test_edge_count(self, task_setup_wf: Workflow) -> None:
-        assert len(task_setup_wf.edges) == 12
+        assert len(task_setup_wf.edges) == 15
 
     def test_start_node(self, task_setup_wf: Workflow) -> None:
         assert task_setup_wf.start_node == "research_director"
@@ -83,6 +83,8 @@ class TestGraphStructure:
             "qa_director",
             "gate_qa",
             "validate_task",
+            "scoring_validator",
+            "gate_scoring",
             "archivist",
         }
         assert set(task_setup_wf.nodes.keys()) == expected
@@ -143,6 +145,18 @@ class TestNodeTypes:
         assert "factory task validate" in node.evaluator_command
         assert "{project_path}" in node.evaluator_command
 
+    def test_scoring_validator_is_agent_ceo(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["scoring_validator"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.CEO
+        assert node.timeout == 900
+
+    def test_gate_scoring_is_agent_gate(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["gate_scoring"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_type == "agent"
+        assert node.evaluator_role == AgentRole.CEO
+
     def test_archivist_is_non_blocking(self, task_setup_wf: Workflow) -> None:
         node = task_setup_wf.nodes["archivist"]
         assert isinstance(node, AgentNode)
@@ -154,7 +168,7 @@ class TestNodeTypes:
 
 
 class TestTopology:
-    """Verify exact 12-edge wiring matches the specification."""
+    """Verify exact 15-edge wiring matches the specification."""
 
     EXPECTED_EDGES = [
         ("research_director", "gate_research", None),
@@ -167,8 +181,11 @@ class TestTopology:
         ("qa_director", "gate_qa", None),
         ("gate_qa", "validate_task", VerdictType.PROCEED),
         ("gate_qa", "builder", VerdictType.RELOOP),
-        ("validate_task", "archivist", VerdictType.PROCEED),
+        ("validate_task", "scoring_validator", VerdictType.PROCEED),
         ("validate_task", "builder", VerdictType.RELOOP),
+        ("scoring_validator", "gate_scoring", None),
+        ("gate_scoring", "archivist", VerdictType.PROCEED),
+        ("gate_scoring", "builder", VerdictType.RELOOP),
     ]
 
     def test_all_expected_edges_present(self, task_setup_wf: Workflow) -> None:
@@ -187,12 +204,23 @@ class TestTopology:
         assert not extra, f"Extra edges found: {extra}"
 
     def test_back_edges_exist(self, task_setup_wf: Workflow) -> None:
-        """Verify four reloop back-edges."""
+        """Verify five reloop back-edges."""
         edges = {(e.source, e.target, e.condition) for e in task_setup_wf.edges}
         assert ("gate_research", "research_director", VerdictType.RELOOP) in edges
         assert ("gate_strategy", "strategy_director", VerdictType.RELOOP) in edges
         assert ("gate_qa", "builder", VerdictType.RELOOP) in edges
         assert ("validate_task", "builder", VerdictType.RELOOP) in edges
+        assert ("gate_scoring", "builder", VerdictType.RELOOP) in edges
+
+    def test_reloop_to_builder_edges_count(self, task_setup_wf: Workflow) -> None:
+        """Verify three gates can reloop back to builder."""
+        reloop_to_builder = [
+            e for e in task_setup_wf.edges
+            if e.target == "builder" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop_to_builder) == 3
+        sources = {e.source for e in reloop_to_builder}
+        assert sources == {"gate_qa", "validate_task", "gate_scoring"}
 
 
 # ── Prompt quality ──────────────────────────────────────────────
@@ -246,6 +274,12 @@ class TestPromptQuality:
             assert "$PROJECT_PATH" in node.prompt_template, (
                 f"{nid} prompt missing $PROJECT_PATH"
             )
+
+    def test_scoring_validator_prompt_references_verify(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["scoring_validator"]
+        assert isinstance(node, AgentNode)
+        assert "verify()" in node.prompt_template
+        assert "score" in node.prompt_template
 
     def test_no_hardcoded_reflector_references(self, task_setup_wf: Workflow) -> None:
         """Verify prompts don't hardcode references to current reflector algorithm."""
@@ -303,6 +337,35 @@ class TestArtifactChecks:
         node = task_setup_wf.nodes["validate_task"]
         assert ".factory/generated-task-name.txt" in node.reads
 
+    def test_scoring_validator_reads(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["scoring_validator"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/generated-task-name.txt" in node.reads
+        assert ".factory/strategy/current.md" in node.reads
+
+    def test_scoring_validator_writes(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["scoring_validator"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/strategy/scoring-report.md" in node.writes
+
+    def test_scoring_validator_post_checks(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["scoring_validator"]
+        assert isinstance(node, AgentNode)
+        assert len(node.post_checks) == 1
+        assert node.post_checks[0].path == ".factory/strategy/scoring-report.md"
+        assert node.post_checks[0].must_exist is True
+        assert node.post_checks[0].min_size == 200
+
+    def test_gate_scoring_reads(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["gate_scoring"]
+        assert isinstance(node, GateNode)
+        assert ".factory/strategy/scoring-report.md" in node.reads
+
+    def test_archivist_reads_scoring_report(self, task_setup_wf: Workflow) -> None:
+        node = task_setup_wf.nodes["archivist"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/strategy/scoring-report.md" in node.reads
+
 
 # ── Registry discovery ──────────────────────────────────────────
 
@@ -334,5 +397,5 @@ class TestRegistryDiscovery:
         assert wf is not None
         assert isinstance(wf, Workflow)
         assert wf.name == "task-setup"
-        assert len(wf.nodes) == 9
-        assert len(wf.edges) == 12
+        assert len(wf.nodes) == 11
+        assert len(wf.edges) == 15
