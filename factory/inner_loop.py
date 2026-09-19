@@ -45,6 +45,22 @@ class EvalResult:
     artifacts: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _SubprocessExecutionResult:
+    """Duck-types ExecutionResult for CEO subprocess evaluation.
+
+    Provides the same fields that _step_with_task() reads from
+    the real ExecutionResult after execution.
+    """
+
+    success: bool = False
+    halted: bool = False
+    halt_reason: str = ""
+    nodes_executed: int = 0
+    duration_ms: int = 0
+    node_outputs: dict[str, str] = field(default_factory=dict)
+
+
 @runtime_checkable
 class Evaluator(Protocol):
     """Interface for parsing evaluator-specific output artifacts.
@@ -126,6 +142,7 @@ class InnerLoop:
         metric_path: str = "score",
         task: Any | None = None,
         instance: Any | None = None,
+        execution_strategy: str = "executor",
     ) -> None:
         self.project_dir = Path(project_dir).resolve()
         self.factory_dir = self.project_dir / ".factory"
@@ -138,9 +155,11 @@ class InnerLoop:
         self.metric_path = metric_path
         self.task = task
         self.instance = instance
+        self.execution_strategy = execution_strategy
         self._step_count = 0
         self._history: list[CycleRecord] = []
         self._has_data_node: bool | None = None
+        self._ceo_cost_warned = False
         self._validate_frozen_nodes()
 
         # When task is set, derive flat fields from it for backward compat
@@ -270,6 +289,127 @@ class InnerLoop:
             )
         return self._has_data_node
 
+    def _ensure_ephemeral_mode(self) -> str:
+        """Register self.workflow as an ephemeral mode for CEO subprocess discovery.
+
+        Returns the registered mode name.
+        """
+        import hashlib
+
+        assert self.workflow is not None
+
+        # Use a content-based mode name to avoid collisions
+        wf_hash = hashlib.sha256(
+            self.workflow.model_dump_json().encode()
+        ).hexdigest()[:8]
+        mode_name = f"eval-{self.mode}-{wf_hash}"
+
+        # Write mode JSON so WorkflowRegistry can load it
+        modes_dir = self.factory_dir / "outer_loop" / "modes"
+        modes_dir.mkdir(parents=True, exist_ok=True)
+
+        wf_data = self.workflow.to_dict()
+        wf_data["name"] = mode_name
+        mode_path = modes_dir / f"{mode_name}.json"
+        mode_path.write_text(json.dumps(wf_data, indent=2))
+
+        # Write workflow wrapper for WorkflowRegistry discovery
+        workflows_dir = self.factory_dir / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        wrapper = (
+            "import json\n"
+            "from pathlib import Path\n"
+            "from factory.workflow.primitives import Workflow\n"
+            "\n"
+            f"meta = {{'name': '{mode_name}', 'description': 'Ephemeral eval candidate'}}\n"
+            "\n"
+            "def workflow():\n"
+            f"    data_path = Path(__file__).parent.parent / 'outer_loop' / 'modes' / '{mode_name}.json'\n"
+            "    data = json.loads(data_path.read_text())\n"
+            "    return Workflow.from_dict(data)\n"
+        )
+        (workflows_dir / f"{mode_name}.py").write_text(wrapper)
+
+        log.debug("ephemeral_eval_mode_registered", mode=mode_name)
+        return mode_name
+
+    def _cleanup_ephemeral_mode(self, mode_name: str) -> None:
+        """Remove ephemeral mode files after CEO subprocess completes."""
+        mode_json = self.factory_dir / "outer_loop" / "modes" / f"{mode_name}.json"
+        wrapper = self.factory_dir / "workflows" / f"{mode_name}.py"
+        if mode_json.exists():
+            mode_json.unlink()
+        if wrapper.exists():
+            wrapper.unlink()
+
+    def _run_ceo_subprocess(self, prompt_text: str, engine: str) -> _SubprocessExecutionResult:
+        """Spawn a headless CEO subprocess for workflow evaluation.
+
+        Writes the per-instance prompt to a temp file, registers the
+        workflow as an ephemeral mode, spawns
+        ``factory ceo --headless --no-worktree --engine <engine>``,
+        and recovers metrics from cycle_summary.json.
+        """
+        prompt_path = self.factory_dir / "current_prompt.md"
+        self.factory_dir.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_text(prompt_text)
+
+        # Register workflow as ephemeral mode so CEO can discover it
+        mode_name = self._ensure_ephemeral_mode()
+
+        cmd = [
+            sys.executable, "-m", "factory", "ceo", str(self.project_dir),
+            "--headless", "--no-worktree",
+            "--engine", engine,
+            "--mode", mode_name,
+            "--prompt", str(prompt_path),
+        ]
+
+        env = dict(__import__("os").environ)
+        env["FACTORY_CEO_RESPAWN_DISABLED"] = "1"
+
+        t0 = time.monotonic()
+        try:
+            result = subprocess.run(cmd, cwd=self.project_dir, env=env)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+        except Exception as exc:
+            log.error("ceo_subprocess_failed", error=str(exc))
+            return _SubprocessExecutionResult(
+                success=False,
+                halted=True,
+                halt_reason=str(exc),
+            )
+        finally:
+            if prompt_path.exists():
+                prompt_path.unlink()
+            # Cleanup ephemeral mode files
+            self._cleanup_ephemeral_mode(mode_name)
+
+        # Recover supplementary metrics from cycle_summary.json
+        # Check registered mode_name path first, fall back to self.mode
+        summary_path = (
+            self.factory_dir / "outer_loop" / "runs" / mode_name / "cycle_summary.json"
+        )
+        if not summary_path.exists():
+            summary_path = (
+                self.factory_dir / "outer_loop" / "runs" / self.mode / "cycle_summary.json"
+            )
+        nodes_executed = 0
+        if summary_path.exists():
+            try:
+                summary_data = json.loads(summary_path.read_text())
+                nodes_executed = int(summary_data.get("agents_spawned", 0))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        return _SubprocessExecutionResult(
+            success=result.returncode == 0,
+            halted=result.returncode != 0,
+            halt_reason=f"exit code {result.returncode}" if result.returncode != 0 else "",
+            nodes_executed=nodes_executed,
+            duration_ms=duration_ms,
+        )
+
     def _step_with_task(self, directives: dict[str, Any] | None = None) -> CycleRecord:
         """Task-driven step: setup → WorkflowExecutor → verify per instance."""
         assert self.task is not None
@@ -279,7 +419,7 @@ class InnerLoop:
 
         from factory.compose import validate_composition
         from factory.models import AggregateMethod, InnerLoopConfig
-        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.executor import ExecutionResult, WorkflowExecutor
 
         if directives:
             self._write_directives(directives)
@@ -312,6 +452,15 @@ class InnerLoop:
             self._history.append(record)
             return record
 
+        # One-time cost warning for CEO subprocess strategies
+        if self.execution_strategy in ("ceo-skill", "ceo-tool") and not self._ceo_cost_warned:
+            log.warning(
+                "ceo_subprocess_cost_warning",
+                execution_strategy=self.execution_strategy,
+                note="CEO subprocess evaluation is 5-10x more expensive per evaluation than executor",
+            )
+            self._ceo_cost_warned = True
+
         event_offset = self._count_lines(self.factory_dir / "events.jsonl")
 
         t0 = time.monotonic()
@@ -335,12 +484,17 @@ class InnerLoop:
 
                 prompt_text = self.task.prompt(inst)
 
-                executor = WorkflowExecutor(
-                    workflow,
-                    self.project_dir,
-                    initial_context=prompt_text,
-                )
-                exec_result = asyncio.run(executor.execute())
+                exec_result: _SubprocessExecutionResult | ExecutionResult
+                if self.execution_strategy in ("ceo-skill", "ceo-tool"):
+                    engine = "tool" if self.execution_strategy == "ceo-tool" else "skill"
+                    exec_result = self._run_ceo_subprocess(prompt_text, engine=engine)
+                else:
+                    executor = WorkflowExecutor(
+                        workflow,
+                        self.project_dir,
+                        initial_context=prompt_text,
+                    )
+                    exec_result = asyncio.run(executor.execute())
 
                 vr = self.task.verify(inst, self.project_dir)
 
@@ -425,24 +579,85 @@ class InnerLoop:
         return record
 
     def _step_with_data_node(self, directives: dict[str, Any] | None = None) -> CycleRecord:
-        """Delegate to the executor when the workflow contains a DataNode."""
+        """Execute DataNode workflows, respecting execution_strategy.
+
+        executor: WorkflowExecutor handles DataNode iteration internally via _execute_data().
+        ceo-skill: CEO subprocess reads SKILL.md with concrete factory task CLI steps
+            for per-item lifecycle.
+        ceo-tool: Same as ceo-skill but CEO uses tool-based execution engine.
+        """
         import asyncio
         import json
 
+        t0 = time.monotonic()
+        assert self.workflow is not None
+
+        if self.execution_strategy in ('ceo-skill', 'ceo-tool'):
+            # CEO subprocess path — same as non-DataNode workflows
+            engine = 'tool' if self.execution_strategy == 'ceo-tool' else 'skill'
+            # Build a prompt that tells the CEO about the DataNode workflow
+            prompt_text = (
+                'Execute this workflow which contains a DataNode for data iteration. '
+                'Follow the SKILL.md instructions to iterate over items using factory task CLI commands.'
+            )
+            exec_result = self._run_ceo_subprocess(prompt_text, engine=engine)
+
+            duration_s = time.monotonic() - t0
+            score = 1.0 if exec_result.success else 0.0
+
+            # Try to recover per-item scores from cycle_summary.json
+            instance_results: list[dict[str, Any]] | None = None
+            summary_path = self.factory_dir / 'outer_loop' / 'runs' / self.mode / 'cycle_summary.json'
+            if summary_path.exists():
+                try:
+                    summary = json.loads(summary_path.read_text())
+                    if 'instance_results' in summary:
+                        instance_results = summary['instance_results']
+                    if 'score' in summary:
+                        score = float(summary['score'])
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            record = CycleRecord(
+                cycle_number=self._step_count + 1,
+                mode=self.mode,
+                started_at=None,
+                ended_at=None,
+                duration_s=duration_s,
+                score_start=None,
+                score_end=score,
+                score_delta=None,
+                instance_results=instance_results,
+            )
+            record.frozen_nodes = sorted(self.frozen_nodes)
+            record.mutable_node_ids = sorted(self.mutable_nodes())
+
+            self._write_cycle_summary(
+                returncode=0 if exec_result.success else 1,
+                event_offset=0,
+                duration_ms=int(duration_s * 1000),
+                builder_committed=False,
+                experiments=0,
+                test_score=score,
+                instance_results=instance_results,
+            )
+
+            self._step_count += 1
+            self._history.append(record)
+            return record
+
+        # executor path — WorkflowExecutor handles DataNode iteration
         from factory.workflow.executor import WorkflowExecutor
 
-        t0 = time.monotonic()
-
-        assert self.workflow is not None
         executor = WorkflowExecutor(
             self.workflow,
             self.project_dir,
         )
-        exec_result = asyncio.run(executor.execute())
+        exec_result_wf = asyncio.run(executor.execute())
 
         duration_s = time.monotonic() - t0
-        score = 1.0 if exec_result.success else 0.0
-        instance_results: list[dict[str, Any]] | None = None
+        score = 1.0 if exec_result_wf.success else 0.0
+        instance_results = None
 
         # Direct lookup: find DataNode ID and read its output
         data_node_id: str | None = None
@@ -451,9 +666,9 @@ class InnerLoop:
                 data_node_id = nid
                 break
 
-        if data_node_id is not None and data_node_id in exec_result.node_outputs:
+        if data_node_id is not None and data_node_id in exec_result_wf.node_outputs:
             try:
-                parsed = json.loads(exec_result.node_outputs[data_node_id])
+                parsed = json.loads(exec_result_wf.node_outputs[data_node_id])
                 if isinstance(parsed, list) and parsed:
                     scores = [r["score"] for r in parsed if "score" in r]
                     if scores:
@@ -485,7 +700,7 @@ class InnerLoop:
         record.mutable_node_ids = sorted(self.mutable_nodes())
 
         self._write_cycle_summary(
-            returncode=0 if exec_result.success else 1,
+            returncode=0 if exec_result_wf.success else 1,
             event_offset=0,
             duration_ms=int(duration_s * 1000),
             builder_committed=False,
