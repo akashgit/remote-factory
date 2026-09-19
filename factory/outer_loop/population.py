@@ -197,11 +197,13 @@ class MAPElitesArchive:
 
         front: list[Individual] = []
         for candidate in individuals:
+            assert candidate.score is not None  # guaranteed by filter above
             dominated = False
             for other in individuals:
                 if other is candidate:
                     continue
-                if other.score >= candidate.score and all(  # type: ignore[operator]
+                assert other.score is not None  # guaranteed by filter above
+                if other.score >= candidate.score and all(
                     o >= c for o, c in zip(other.features, candidate.features)
                 ) and (
                     other.score > candidate.score
