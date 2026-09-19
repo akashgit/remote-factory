@@ -1457,7 +1457,7 @@ class TestEvaluatePropagatesScoresToPopulation:
             expected[ind.id] = score
         population.save(pop_dir)
 
-        assert all(i.score == 0.0 for i in Population.load(pop_dir).individuals)
+        assert all(i.score is None for i in Population.load(pop_dir).individuals)
 
         mock_evaluator = MagicMock()
         mock_evaluator.evaluate.side_effect = lambda wf, *a, **k: EvalResult(
@@ -1520,7 +1520,7 @@ class TestEvaluatePropagatesScoresToPopulation:
             project, 0, {"evolve-gen0-zzzzzzzz": {"score": 0.9, "cost_usd": 1.0}}
         )
         assert updated == 0
-        assert Population.load(pop_dir).get(ind.id).score == 0.0
+        assert Population.load(pop_dir).get(ind.id).score is None
 
 
 class TestLoadModeScores:
@@ -1802,7 +1802,7 @@ class TestEvolveAddsOffspringToPopulation:
         assert population.get("gen1_0").score == 0.75
         assert population.get("gen1_0").cost_usd == 1.5
         assert population.get("gen1_1").score == 0.25
-        assert population.get("p0").score == 0.0
+        assert population.get("p0").score is None
 
     def test_population_grows_each_generation(self, tmp_path: object) -> None:
         import argparse

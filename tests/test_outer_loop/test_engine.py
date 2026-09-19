@@ -8,6 +8,7 @@ from factory.outer_loop.engine import BudgetTracker, SwarmEngine
 from factory.outer_loop.evaluator import SwarmEvaluator
 from factory.outer_loop.models import EvalResult, SwarmConfig
 from factory.outer_loop.mutations import WeightedRandomStrategy
+from factory.outer_loop.population import Population
 from factory.outer_loop.similarity import NoveltyFilter
 from factory.workflow.primitives import (
     AgentNode,
@@ -466,3 +467,110 @@ class TestSwarmEngineIntegration:
         for hp in result.hyperparameter_history:
             assert hp.mutation_rate > 0
             assert hp.population_size > 0
+
+
+class TestSkipReEvaluation:
+    """Regression tests for issue #1536: already-scored individuals must not be re-evaluated."""
+
+    def test_population_not_reevaluated_across_generations(self) -> None:
+        """Pre-scored individuals must NOT be re-evaluated or consume budget."""
+        eval_calls: list[str] = []
+
+        def tracking_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            eval_calls.append(wf.name)
+            return EvalResult(
+                score=0.0, benchmark_score=0.6, hygiene_score=0.7,
+                cost_usd=0.05, complexity=float(len(wf.nodes)),
+            )
+
+        config = _make_config(budget=50, population_size=2, designer_count=0)
+        evaluator = SwarmEvaluator(config, evaluator_fn=tracking_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        # Build a population with pre-scored individuals
+        pop = Population()
+        wf = _make_workflow()
+        ind1 = Population.make_individual(wf, generation=0, score=0.5)
+        ind2 = Population.make_individual(wf, generation=0, score=0.3)
+        pop.add(ind1)
+        pop.add(ind2)
+
+        # Add to archive so offspring can be generated
+        engine.archive.add(ind1)
+        engine.archive.add(ind2)
+
+        budget_before = engine.budget.remaining
+        eval_calls.clear()
+
+        engine.evolve_generation(pop, generation=1)
+
+        # The pre-scored individuals should NOT have triggered evaluator calls
+        # Only offspring should have been evaluated
+        budget_consumed = budget_before - engine.budget.remaining
+        # Budget should NOT include 2 extra for re-evaluating ind1 and ind2
+        # At most pop_size offspring + holdout
+        assert budget_consumed <= config.population_size + 1  # +1 for potential holdout
+
+    def test_zero_score_not_reevaluated(self) -> None:
+        """Individual with score=0.0 (legitimate zero) must NOT be re-evaluated."""
+        eval_calls: list[str] = []
+
+        def tracking_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            eval_calls.append("called")
+            return EvalResult(
+                score=0.0, benchmark_score=0.5, hygiene_score=0.5,
+                cost_usd=0.05, complexity=3.0,
+            )
+
+        config = _make_config(budget=50, population_size=2, designer_count=0)
+        evaluator = SwarmEvaluator(config, evaluator_fn=tracking_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        # Build population with a zero-scored individual
+        pop = Population()
+        wf = _make_workflow()
+        ind_zero = Population.make_individual(wf, generation=0, score=0.0)
+        pop.add(ind_zero)
+        engine.archive.add(ind_zero)
+
+        eval_calls.clear()
+        budget_before = engine.budget.remaining
+
+        engine.evolve_generation(pop, generation=1)
+
+        # The zero-scored individual should NOT have been re-evaluated
+        # Only offspring evaluations should consume budget
+        budget_consumed = budget_before - engine.budget.remaining
+        # If the zero-scored ind were re-evaluated, budget_consumed would be at least 1 more
+        # than the number of offspring
+        offspring_count = pop.size - 1  # subtract the original zero-scored
+        assert budget_consumed <= offspring_count + 1  # +1 for potential holdout
+
+    def test_none_score_gets_evaluated(self) -> None:
+        """Individual with score=None (unevaluated) MUST be evaluated."""
+        eval_calls: list[str] = []
+
+        def tracking_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            eval_calls.append("called")
+            return EvalResult(
+                score=0.0, benchmark_score=0.75, hygiene_score=0.7,
+                cost_usd=0.05, complexity=3.0,
+            )
+
+        config = _make_config(budget=50, population_size=2, designer_count=0)
+        evaluator = SwarmEvaluator(config, evaluator_fn=tracking_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        # Build population with an unevaluated individual (score=None)
+        pop = Population()
+        wf = _make_workflow()
+        ind_none = Population.make_individual(wf, generation=0)  # score=None by default
+        assert ind_none.score is None
+        pop.add(ind_none)
+
+        eval_calls.clear()
+
+        engine.evolve_generation(pop, generation=0)
+
+        # The None-scored individual MUST be evaluated
+        assert len(eval_calls) >= 1

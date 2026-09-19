@@ -206,6 +206,76 @@ class TestRankWeightedSelection:
         assert counts["b"] > 50
 
 
+class TestNoneScoreHandling:
+    """Tests for None-score sentinel (issue #1536)."""
+
+    def test_best_with_none_scores(self) -> None:
+        """best() should ignore None-scored individuals."""
+        pop = Population()
+        pop.add(Individual(id="a", workflow_data={}, score=None, features=(1, 0, 2, 1)))
+        pop.add(Individual(id="b", workflow_data={}, score=0.5, features=(2, 1, 3, 2)))
+        pop.add(Individual(id="c", workflow_data={}, score=None, features=(3, 0, 1, 0)))
+        best = pop.best()
+        assert best is not None
+        assert best.id == "b"
+
+    def test_best_all_none_scores(self) -> None:
+        """best() returns None when all individuals have None scores."""
+        pop = Population()
+        pop.add(Individual(id="a", workflow_data={}, features=(1, 0, 2, 1)))
+        pop.add(Individual(id="b", workflow_data={}, features=(2, 1, 3, 2)))
+        assert pop.best() is None
+
+    def test_mean_score_with_none_scores(self) -> None:
+        """mean_score() should exclude None-scored individuals."""
+        pop = Population()
+        pop.add(Individual(id="a", workflow_data={}, score=None, features=()))
+        pop.add(Individual(id="b", workflow_data={}, score=0.4, features=()))
+        pop.add(Individual(id="c", workflow_data={}, score=0.8, features=()))
+        assert pop.mean_score() == pytest.approx(0.6)
+
+    def test_mean_score_all_none(self) -> None:
+        """mean_score() returns 0.0 when all scores are None."""
+        pop = Population()
+        pop.add(Individual(id="a", workflow_data={}, features=()))
+        pop.add(Individual(id="b", workflow_data={}, features=()))
+        assert pop.mean_score() == 0.0
+
+    def test_archive_rejects_none_score(self) -> None:
+        """Archive must reject individuals with None score."""
+        archive = MAPElitesArchive()
+        ind = Individual(id="a", workflow_data={}, score=None, features=(1, 0, 2, 1))
+        assert archive.add(ind) is False
+        assert archive.size == 0
+
+    def test_archive_accepts_zero_score(self) -> None:
+        """Archive must accept individuals with score=0.0 (legitimate zero)."""
+        archive = MAPElitesArchive()
+        ind = Individual(id="a", workflow_data={}, score=0.0, features=(1, 0, 2, 1))
+        assert archive.add(ind) is True
+        assert archive.size == 1
+
+    def test_make_individual_default_none_score(self, simple_workflow: Workflow) -> None:
+        """make_individual() should default to score=None."""
+        ind = Population.make_individual(simple_workflow, generation=0)
+        assert ind.score is None
+
+    def test_serialization_round_trip_with_none_score(self, tmp_path: Path) -> None:
+        """Population with None-scored individuals should serialize/deserialize correctly."""
+        pop = Population()
+        pop.add(Individual(id="a", workflow_data={"name": "w"}, score=None, features=(1, 0)))
+        pop.add(Individual(id="b", workflow_data={"name": "w"}, score=0.5, features=(2, 1)))
+
+        pop.save(tmp_path / "pop")
+        loaded = Population.load(tmp_path / "pop")
+
+        assert loaded.size == 2
+        a = loaded.get("a")
+        b = loaded.get("b")
+        assert a is not None and a.score is None
+        assert b is not None and b.score == 0.5
+
+
 class TestAutoRankWeighted:
     def test_auto_activates_by_cell_count(self) -> None:
         archive = MAPElitesArchive()
