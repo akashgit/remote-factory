@@ -44,12 +44,18 @@ class Population:
     def best(self) -> Individual | None:
         if not self._individuals:
             return None
-        return max(self._individuals.values(), key=lambda i: i.score)
+        scored = [i for i in self._individuals.values() if i.score is not None]
+        if not scored:
+            return None
+        return max(scored, key=lambda i: i.score)  # type: ignore[arg-type,return-value]
 
     def mean_score(self) -> float:
         if not self._individuals:
             return 0.0
-        return sum(i.score for i in self._individuals.values()) / len(self._individuals)
+        scored = [i for i in self._individuals.values() if i.score is not None]
+        if not scored:
+            return 0.0
+        return sum(i.score for i in scored) / len(scored)  # type: ignore[misc]
 
     @staticmethod
     def make_individual(
@@ -58,7 +64,7 @@ class Population:
         generation: int = 0,
         parent_id: str | None = None,
         mutation_record: object = None,
-        score: float = 0.0,
+        score: float | None = None,
         cost_usd: float = 0.0,
     ) -> Individual:
         """Create an Individual from a Workflow, computing features automatically."""
@@ -115,10 +121,15 @@ class MAPElitesArchive:
         return len(self._grid)
 
     def add(self, individual: Individual) -> bool:
-        """Add an individual to the archive. Returns True if it was inserted or replaced."""
+        """Add an individual to the archive. Returns True if it was inserted or replaced.
+
+        Rejects individuals with ``score is None`` (not yet evaluated).
+        """
+        if individual.score is None:
+            return False
         key = individual.features
         existing = self._grid.get(key)
-        if existing is None or individual.score > existing.score:
+        if existing is None or individual.score > (existing.score or 0.0):
             self._grid[key] = individual
             return True
         return False
@@ -126,7 +137,10 @@ class MAPElitesArchive:
     def best(self) -> Individual | None:
         if not self._grid:
             return None
-        return max(self._grid.values(), key=lambda i: i.score)
+        scored = [i for i in self._grid.values() if i.score is not None]
+        if not scored:
+            return None
+        return max(scored, key=lambda i: i.score)  # type: ignore[arg-type,return-value]
 
     def all_individuals(self) -> list[Individual]:
         return list(self._grid.values())
@@ -153,7 +167,7 @@ class MAPElitesArchive:
         """
         import random
 
-        individuals = list(self._grid.values())
+        individuals = [i for i in self._grid.values() if i.score is not None]
         if not individuals:
             return None
         k = min(tournament_size, len(individuals))
@@ -163,20 +177,21 @@ class MAPElitesArchive:
             use_rank = True
 
         if use_rank and len(individuals) >= 2:
-            ranked = sorted(individuals, key=lambda i: i.score)
+            ranked = sorted(individuals, key=lambda i: i.score)  # type: ignore[arg-type,return-value]
             weights = [rank + 1.0 for rank in range(len(ranked))]
             tournament = random.choices(ranked, weights=weights, k=k)
         else:
             tournament = random.sample(individuals, k)
-        return max(tournament, key=lambda i: i.score)
+        return max(tournament, key=lambda i: i.score)  # type: ignore[arg-type,return-value]
 
     def pareto_front(self) -> list[Individual]:
         """Return the Pareto-optimal individuals (non-dominated on score + features).
 
         An individual is dominated if another has >= score and dominates on
         all feature axes (higher is better for diversity purposes).
+        Individuals with ``score is None`` are excluded.
         """
-        individuals = list(self._grid.values())
+        individuals = [i for i in self._grid.values() if i.score is not None]
         if len(individuals) <= 1:
             return list(individuals)
 
@@ -186,7 +201,7 @@ class MAPElitesArchive:
             for other in individuals:
                 if other is candidate:
                     continue
-                if other.score >= candidate.score and all(
+                if other.score >= candidate.score and all(  # type: ignore[operator]
                     o >= c for o, c in zip(other.features, candidate.features)
                 ) and (
                     other.score > candidate.score

@@ -47,7 +47,7 @@ class Individual(BaseModel):
 
     id: str
     workflow_data: dict[str, object]
-    score: float = 0.0
+    score: float | None = None
     features: tuple[int, ...] = ()
     generation: int = 0
     parent_id: str | None = None

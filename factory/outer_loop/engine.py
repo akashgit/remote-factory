@@ -292,10 +292,13 @@ class SwarmEngine:
             self._config.training_instances, generation, self._budget.remaining
         )
 
-        # Evaluate current population
+        # Evaluate current population (skip already-scored individuals)
         for ind in population.individuals:
             if self._budget.exhausted:
                 break
+            if ind.score is not None:
+                log.debug("skip_evaluated", individual_id=ind.id, score=ind.score)
+                continue
             wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
             ev = self._evaluator.evaluate(wf, project_dir, instances, individual_id=ind.id)
             self._budget.consume(1, cost_usd=ev.cost_usd)
@@ -310,7 +313,7 @@ class SwarmEngine:
             kvbi: dict[str, dict[str, object]] = {}
             for ind in population.individuals:
                 cycle_rec = self._evaluator.get_cycle_record(ind.id)
-                records.append((ind.id, ind.score, cycle_rec))
+                records.append((ind.id, ind.score if ind.score is not None else 0.0, cycle_rec))
                 ind_wf = Workflow.from_dict(ind.workflow_data)  # type: ignore[arg-type]
                 if ind_wf.knob_values:
                     kvbi[ind.id] = dict(ind_wf.knob_values)
@@ -379,7 +382,7 @@ class SwarmEngine:
 
         # Track best score and diversity
         best = population.best()
-        best_score = best.score if best else 0.0
+        best_score = best.score if best and best.score is not None else 0.0
         mean_score = population.mean_score()
         diversity = self._archive.diversity_metric()
         self._score_trajectory.append(best_score)
@@ -387,7 +390,11 @@ class SwarmEngine:
         if generation == 0:
             self._initial_diversity = diversity if diversity > 0 else 1.0
 
-        top_3 = sorted(population.individuals, key=lambda i: i.score, reverse=True)[:3]
+        top_3 = sorted(
+            population.individuals,
+            key=lambda i: i.score if i.score is not None else -1.0,
+            reverse=True,
+        )[:3]
         self._top_ids_history.append(frozenset(i.id for i in top_3))
 
         self._log_event(generation, best_score, mean_score, diversity, self._archive.size)
@@ -546,7 +553,7 @@ class SwarmEngine:
 
         return OuterLoopResult(
             best_workflow_data=best.workflow_data if best else {},
-            best_score=best.score if best else 0.0,
+            best_score=best.score if best and best.score is not None else 0.0,
             holdout_score=audit_result.holdout_score if audit_result else 0.0,
             overfit_flag=audit_result.overfit_flag if audit_result else False,
             trajectory=summaries,
