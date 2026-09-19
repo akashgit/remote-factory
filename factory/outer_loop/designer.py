@@ -21,10 +21,25 @@ from factory.workflow.primitives import (
     FnNode,
     GateNode,
     NodeType,
+    VerdictType,
     Workflow,
 )
 
 log = structlog.get_logger()
+
+
+def _detect_frozen_data_node(
+    seed_workflow: Workflow | None,
+    frozen_node_ids: set[str] | None,
+) -> DataNode | None:
+    """Return the frozen DataNode if one exists, else None."""
+    if not seed_workflow or not frozen_node_ids:
+        return None
+    for node_id in frozen_node_ids:
+        node = seed_workflow.nodes.get(node_id)
+        if isinstance(node, DataNode):
+            return node
+    return None
 
 
 class DesignerAgent:
@@ -39,6 +54,7 @@ class DesignerAgent:
         benchmark_spec: str,
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create a 3-4 node workflow optimized for speed.
 
@@ -71,7 +87,13 @@ class DesignerAgent:
             Edge(source="builder", target="gate_qa"),
         ]
 
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
+
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
+
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
 
         start_node = "researcher"
         new_start = _rewire_data_nodes(
@@ -94,6 +116,7 @@ class DesignerAgent:
         benchmark_spec: str,
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create an 8-10 node workflow optimized for thoroughness.
 
@@ -102,87 +125,146 @@ class DesignerAgent:
         """
         from factory.workflow.primitives import ForkNode, JoinNode
 
-        nodes: dict[str, NodeType] = {
-            "study": FnNode(
-                id="study",
-                command="factory study {project_path}",
-                writes={".factory/strategy/observations.md"},
-            ),
-            "researcher": AgentNode(
-                id="researcher",
-                role=AgentRole.RESEARCHER,
-                reads={".factory/strategy/observations.md"},
-                writes={".factory/strategy/research.md"},
-                timeout=600,
-            ),
-            "strategist": AgentNode(
-                id="strategist",
-                role=AgentRole.STRATEGIST,
-                reads={".factory/strategy/research.md"},
-                writes={".factory/strategy/current.md"},
-                timeout=600,
-            ),
-            "fork_builders": ForkNode(
-                id="fork_builders",
-                targets=["builder_a", "builder_b"],
-                reads={".factory/strategy/current.md"},
-            ),
-            "builder_a": AgentNode(
-                id="builder_a",
-                role=AgentRole.BUILDER,
-                reads={".factory/strategy/current.md"},
-                writes={".factory/reviews/builder-a.md"},
-                timeout=1200,
-            ),
-            "builder_b": AgentNode(
-                id="builder_b",
-                role=AgentRole.BUILDER,
-                reads={".factory/strategy/current.md"},
-                writes={".factory/reviews/builder-b.md"},
-                timeout=1200,
-            ),
-            "join_builders": JoinNode(
-                id="join_builders",
-                sources=["builder_a", "builder_b"],
-            ),
-            "code_reviewer": AgentNode(
-                id="code_reviewer",
-                role=AgentRole.CODE_REVIEWER,
-                reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
-                writes={".factory/reviews/code-review.md"},
-                timeout=900,
-            ),
-            "adversarial_tester": AgentNode(
-                id="adversarial_tester",
-                role=AgentRole.ADVERSARIAL_TESTER,
-                reads={".factory/reviews/code-review.md"},
-                writes={".factory/reviews/adversarial-qa.md"},
-                timeout=1800,
-            ),
-            "gate_qa": GateNode(
-                id="gate_qa",
-                evaluator_type="agent",
-                evaluator_role=AgentRole.CEO,
-                reads={".factory/reviews/adversarial-qa.md"},
-            ),
-        }
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
 
-        edges = [
-            Edge(source="study", target="researcher"),
-            Edge(source="researcher", target="strategist"),
-            Edge(source="strategist", target="fork_builders"),
-            Edge(source="fork_builders", target="builder_a"),
-            Edge(source="fork_builders", target="builder_b"),
-            Edge(source="builder_a", target="join_builders"),
-            Edge(source="builder_b", target="join_builders"),
-            Edge(source="join_builders", target="code_reviewer"),
-            Edge(source="code_reviewer", target="adversarial_tester"),
-            Edge(source="adversarial_tester", target="gate_qa"),
-        ]
+        if is_data_subgraph:
+            # Data-native thorough template: omit study, strategist,
+            # code_reviewer, adversarial_tester (not relevant per-item)
+            nodes: dict[str, NodeType] = {
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    writes={".factory/strategy/research.md"},
+                    timeout=600,
+                ),
+                "fork_builders": ForkNode(
+                    id="fork_builders",
+                    targets=["builder_a", "builder_b"],
+                    reads={".factory/strategy/research.md"},
+                ),
+                "builder_a": AgentNode(
+                    id="builder_a",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/reviews/builder-a.md"},
+                    timeout=1200,
+                ),
+                "builder_b": AgentNode(
+                    id="builder_b",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/reviews/builder-b.md"},
+                    timeout=1200,
+                ),
+                "join_builders": JoinNode(
+                    id="join_builders",
+                    sources=["builder_a", "builder_b"],
+                ),
+                "gate_qa": GateNode(
+                    id="gate_qa",
+                    evaluator_type="agent",
+                    evaluator_role=AgentRole.HEALTH_CHECKER,
+                    reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
+                ),
+            }
+
+            edges = [
+                Edge(source="researcher", target="fork_builders"),
+                Edge(source="fork_builders", target="builder_a"),
+                Edge(source="fork_builders", target="builder_b"),
+                Edge(source="builder_a", target="join_builders"),
+                Edge(source="builder_b", target="join_builders"),
+                Edge(source="join_builders", target="gate_qa"),
+            ]
+
+            start_node = "researcher"
+        else:
+            nodes = {
+                "study": FnNode(
+                    id="study",
+                    command="factory study {project_path}",
+                    writes={".factory/strategy/observations.md"},
+                ),
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    reads={".factory/strategy/observations.md"},
+                    writes={".factory/strategy/research.md"},
+                    timeout=600,
+                ),
+                "strategist": AgentNode(
+                    id="strategist",
+                    role=AgentRole.STRATEGIST,
+                    reads={".factory/strategy/research.md"},
+                    writes={".factory/strategy/current.md"},
+                    timeout=600,
+                ),
+                "fork_builders": ForkNode(
+                    id="fork_builders",
+                    targets=["builder_a", "builder_b"],
+                    reads={".factory/strategy/current.md"},
+                ),
+                "builder_a": AgentNode(
+                    id="builder_a",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/current.md"},
+                    writes={".factory/reviews/builder-a.md"},
+                    timeout=1200,
+                ),
+                "builder_b": AgentNode(
+                    id="builder_b",
+                    role=AgentRole.BUILDER,
+                    reads={".factory/strategy/current.md"},
+                    writes={".factory/reviews/builder-b.md"},
+                    timeout=1200,
+                ),
+                "join_builders": JoinNode(
+                    id="join_builders",
+                    sources=["builder_a", "builder_b"],
+                ),
+                "code_reviewer": AgentNode(
+                    id="code_reviewer",
+                    role=AgentRole.CODE_REVIEWER,
+                    reads={".factory/reviews/builder-a.md", ".factory/reviews/builder-b.md"},
+                    writes={".factory/reviews/code-review.md"},
+                    timeout=900,
+                ),
+                "adversarial_tester": AgentNode(
+                    id="adversarial_tester",
+                    role=AgentRole.ADVERSARIAL_TESTER,
+                    reads={".factory/reviews/code-review.md"},
+                    writes={".factory/reviews/adversarial-qa.md"},
+                    timeout=1800,
+                ),
+                "gate_qa": GateNode(
+                    id="gate_qa",
+                    evaluator_type="agent",
+                    evaluator_role=AgentRole.CEO,
+                    reads={".factory/reviews/adversarial-qa.md"},
+                ),
+            }
+
+            edges = [
+                Edge(source="study", target="researcher"),
+                Edge(source="researcher", target="strategist"),
+                Edge(source="strategist", target="fork_builders"),
+                Edge(source="fork_builders", target="builder_a"),
+                Edge(source="fork_builders", target="builder_b"),
+                Edge(source="builder_a", target="join_builders"),
+                Edge(source="builder_b", target="join_builders"),
+                Edge(source="join_builders", target="code_reviewer"),
+                Edge(source="code_reviewer", target="adversarial_tester"),
+                Edge(source="adversarial_tester", target="gate_qa"),
+            ]
+
+            start_node = "study"
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
 
-        start_node = "study"
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
+
         new_start = _rewire_data_nodes(
             nodes, edges, start_node, seed_workflow, frozen_node_ids
         )
@@ -204,6 +286,7 @@ class DesignerAgent:
         constraints: dict[str, object],
         seed_workflow: Workflow | None = None,
         frozen_node_ids: set[str] | None = None,
+        execution_strategy: str = "executor",
     ) -> Workflow:
         """Create a custom from-scratch workflow with optional constraints.
 
@@ -217,15 +300,25 @@ class DesignerAgent:
         raw_roles = constraints.get("require_roles", [])
         require_roles: list[object] = list(raw_roles) if isinstance(raw_roles, list) else []
 
+        # Detect if we're creating a subgraph for a DataNode
+        is_data_subgraph = _detect_frozen_data_node(seed_workflow, frozen_node_ids) is not None
+
         nodes: dict[str, NodeType] = {}
         edges: list[Edge] = []
         prev_id: str | None = None
 
-        core_roles: list[tuple[str, AgentRole]] = [
-            ("researcher", AgentRole.RESEARCHER),
-            ("strategist", AgentRole.STRATEGIST),
-            ("builder", AgentRole.BUILDER),
-        ]
+        if is_data_subgraph:
+            # Data subgraphs: exclude STRATEGIST and CODE_REVIEWER from defaults
+            core_roles: list[tuple[str, AgentRole]] = [
+                ("researcher", AgentRole.RESEARCHER),
+                ("builder", AgentRole.BUILDER),
+            ]
+        else:
+            core_roles = [
+                ("researcher", AgentRole.RESEARCHER),
+                ("strategist", AgentRole.STRATEGIST),
+                ("builder", AgentRole.BUILDER),
+            ]
 
         for role_str in require_roles:
             if isinstance(role_str, str) and not any(r[0] == role_str for r in core_roles):
@@ -258,6 +351,9 @@ class DesignerAgent:
             edges.append(Edge(source=prev_id, target=gate_id))
 
         _inject_frozen_nodes(nodes, edges, seed_workflow, frozen_node_ids)
+
+        if execution_strategy == "executor":
+            _populate_executor_fields(nodes, edges, is_data_subgraph=is_data_subgraph)
 
         start = core_roles[0][0] if core_roles else "gate_qa"
         new_start = _rewire_data_nodes(
@@ -354,6 +450,94 @@ class DesignerAgent:
         return proposals[:3]
 
 
+def _generate_prompt_template(node: AgentNode, is_data_subgraph: bool = False) -> str:
+    """Derive a functional prompt_template from an AgentNode's metadata.
+
+    For data subgraphs this is the FALLBACK — seed prompt propagation
+    (via ``_inject_frozen_nodes``) should have already set a better prompt.
+    """
+    role_name = node.role.value.replace("_", " ")
+    if is_data_subgraph:
+        # Fallback: role framing + data contract. No domain-specific language.
+        # Seed prompt propagation provides domain knowledge when available.
+        parts = [f"As a {role_name},"]
+        parts.append("read .factory/current_item.json for the current item.")
+        if node.reads:
+            parts.append("Read: " + ", ".join(sorted(node.reads)) + ".")
+        if node.writes:
+            parts.append("Write your output to: " + ", ".join(sorted(node.writes)) + ".")
+        return " ".join(parts)
+    else:
+        parts = [f"Act as a {role_name} for the project at {{project_path}}."]
+        if node.reads:
+            parts.append("Read: " + ", ".join(sorted(node.reads)) + ".")
+        if node.writes:
+            parts.append("Write your output to: " + ", ".join(sorted(node.writes)) + ".")
+        return " ".join(parts)
+
+
+def _populate_executor_fields(
+    nodes: dict[str, NodeType],
+    edges: list[Edge],
+    *,
+    is_data_subgraph: bool = False,
+) -> None:
+    """Populate prompt_template on AgentNodes and PROCEED edges on non-terminal GateNodes.
+
+    Required when execution_strategy='executor' so WorkflowExecutor can
+    construct agent prompts and follow success paths through gates.
+
+    When *is_data_subgraph* is True, prompts use data-item language and
+    the first AgentNode gets '.factory/current_item.json' added to reads.
+    """
+    # Find terminal nodes (no outgoing edges)
+    sources_with_targets = {e.source for e in edges}
+    first_agent_seen = False
+
+    for node_id, node in nodes.items():
+        if isinstance(node, AgentNode):
+            update: dict[str, object] = {}
+
+            if not node.prompt_template:
+                # No propagated prompt — use generated fallback
+                update["prompt_template"] = _generate_prompt_template(node, is_data_subgraph)
+            elif is_data_subgraph and "current_item.json" not in node.prompt_template:
+                # Has propagated prompt but missing data awareness — add prefix
+                update["prompt_template"] = (
+                    "Read .factory/current_item.json for the current item. "
+                    + node.prompt_template
+                )
+
+            # Add current_item.json to reads for data subgraph entry node
+            if is_data_subgraph and not first_agent_seen:
+                update["reads"] = set(node.reads or set()) | {".factory/current_item.json"}
+                first_agent_seen = True
+
+            if update:
+                nodes[node_id] = node.model_copy(update=update)
+        elif isinstance(node, GateNode) and node_id in sources_with_targets:
+            # Non-terminal gate: check if it already has a PROCEED edge
+            has_proceed = any(
+                e.source == node_id
+                and e.condition is not None
+                and (
+                    e.condition == VerdictType.PROCEED
+                    or (isinstance(e.condition, str) and e.condition.lower() == "proceed")
+                )
+                for e in edges
+            )
+            if not has_proceed:
+                # Find the unconditional target and add a PROCEED edge
+                for e in edges:
+                    if e.source == node_id and e.condition is None:
+                        edges.append(Edge(
+                            source=node_id,
+                            target=e.target,
+                            condition=VerdictType.PROCEED,
+                        ))
+                        break
+
+
 def _inject_frozen_nodes(
     nodes: dict[str, NodeType],
     edges: list[Edge],
@@ -364,17 +548,15 @@ def _inject_frozen_nodes(
 
     Frozen nodes take precedence over template nodes on ID collision.
 
-    When a frozen node is a DataNode, its subgraph nodes (from subgraph_entry
-    to subgraph_exit) and their connecting edges are also injected from the
-    seed workflow. This ensures the DataNode's subgraph references remain valid
-    in the variant.
+    When a frozen node is a DataNode, its subgraph nodes are NOT injected —
+    the template already provides new subgraph nodes (the evolution surface).
+    Instead, prompt_template values are propagated from seed subgraph nodes
+    to template nodes that share the same AgentRole, preserving learned prompts.
 
     Limitation: nested DataNodes within a subgraph are NOT recursively expanded.
     """
     if not seed_workflow or not frozen_node_ids:
         return
-
-    existing_edge_sigs = {(e.source, e.target, e.condition) for e in edges}
 
     for frozen_id in frozen_node_ids:
         if frozen_id in seed_workflow.nodes:
@@ -388,44 +570,36 @@ def _inject_frozen_nodes(
 
             node = seed_workflow.nodes[frozen_id]
             if isinstance(node, DataNode):
-                # Validate subgraph entry/exit exist in seed
-                if node.subgraph_entry not in seed_workflow.nodes:
-                    log.warning(
-                        "data_node_missing_subgraph_entry",
-                        data_node_id=frozen_id,
-                        subgraph_entry=node.subgraph_entry,
+                # DO NOT inject subgraph nodes — template nodes replace them.
+                # Instead, propagate prompt_template from seed subgraph to
+                # template by matching AgentRole.
+                if (node.subgraph_entry in seed_workflow.nodes
+                        and node.subgraph_exit in seed_workflow.nodes):
+                    subgraph_ids = _collect_subgraph_nodes(
+                        seed_workflow, node.subgraph_entry, node.subgraph_exit
                     )
-                    continue
-                if node.subgraph_exit not in seed_workflow.nodes:
-                    log.warning(
-                        "data_node_missing_subgraph_exit",
+                    # Build role→prompt_template map from seed subgraph
+                    seed_prompts: dict[str, str] = {}
+                    for sg_id in subgraph_ids:
+                        sg_node = seed_workflow.nodes.get(sg_id)
+                        if isinstance(sg_node, AgentNode) and sg_node.prompt_template:
+                            role_key = sg_node.role.value if sg_node.role else sg_id
+                            seed_prompts[role_key] = sg_node.prompt_template
+
+                    # Propagate to template nodes with matching roles
+                    for tid, tnode in nodes.items():
+                        if isinstance(tnode, AgentNode) and not tnode.prompt_template:
+                            role_key = tnode.role.value if tnode.role else tid
+                            if role_key in seed_prompts:
+                                nodes[tid] = tnode.model_copy(
+                                    update={"prompt_template": seed_prompts[role_key]}
+                                )
+
+                    log.debug(
+                        "propagating_seed_prompts",
                         data_node_id=frozen_id,
-                        subgraph_exit=node.subgraph_exit,
+                        roles_propagated=list(seed_prompts.keys()),
                     )
-                    continue
-
-                subgraph_ids = _collect_subgraph_nodes(
-                    seed_workflow, node.subgraph_entry, node.subgraph_exit
-                )
-
-                # Copy subgraph nodes, deduplicating
-                for sg_id in subgraph_ids:
-                    if sg_id not in nodes:
-                        nodes[sg_id] = seed_workflow.nodes[sg_id]
-
-                # Copy subgraph-internal edges, deduplicating
-                for edge in seed_workflow.edges:
-                    if edge.source in subgraph_ids and edge.target in subgraph_ids:
-                        sig = (edge.source, edge.target, edge.condition)
-                        if sig not in existing_edge_sigs:
-                            edges.append(edge)
-                            existing_edge_sigs.add(sig)
-
-                log.debug(
-                    "injecting_data_node_subgraph",
-                    data_node_id=frozen_id,
-                    subgraph_node_count=len(subgraph_ids),
-                )
         else:
             log.warning("frozen_node_missing_in_seed", node_id=frozen_id)
 
@@ -439,14 +613,16 @@ def _rewire_data_nodes(
 ) -> str | None:
     """Rewire injected frozen DataNodes so they integrate into the template.
 
-    For each frozen DataNode:
-    1. Update subgraph_entry → template's original start_node
-    2. Update subgraph_exit  → template's terminal node (no outgoing edges)
+    For each frozen DataNode, unconditionally update:
+    - subgraph_entry → template's original start_node (the first template node)
+    - subgraph_exit  → template's terminal node (no outgoing edges)
+
+    The template nodes ARE the new subgraph — the DataNode's old subgraph
+    references are replaced because the outer loop evolves the subgraph
+    topology, not the DataNode infrastructure.
 
     No explicit edge is added from the DataNode to subgraph_entry — the
     executor reads subgraph_entry directly from the DataNode object.
-    Adding an explicit edge would fail validation (_validate_datanode_edges
-    rejects edges from a DataNode to its own subgraph nodes).
 
     Returns the DataNode ID (new start_node) or None if no DataNode was injected.
     """
@@ -468,22 +644,7 @@ def _rewire_data_nodes(
     if not frozen_data_ids:
         return None
 
-    # Exclude DataNodes and their subgraph nodes from terminal candidates.
-    # Subgraph nodes are injected by _inject_frozen_nodes but will be
-    # orphaned after rewiring — they must not influence terminal selection.
-    subgraph_node_ids: set[str] = set()
-    for fid in frozen_data_ids:
-        fnode = nodes[fid]
-        assert isinstance(fnode, DataNode)
-        if (seed_workflow
-                and fnode.subgraph_entry in seed_workflow.nodes
-                and fnode.subgraph_exit in seed_workflow.nodes):
-            subgraph_node_ids |= _collect_subgraph_nodes(
-                seed_workflow, fnode.subgraph_entry, fnode.subgraph_exit
-            )
-
     terminal_candidates -= frozen_data_ids
-    terminal_candidates -= subgraph_node_ids
     terminal_node = next(iter(terminal_candidates)) if terminal_candidates else original_start
 
     new_start: str | None = None
@@ -504,11 +665,11 @@ def _rewire_data_nodes(
                     break
             edges[:] = [e for e in edges if e.source != original_start]
 
-        # Replace with updated subgraph_entry/exit pointing to template nodes
         updated = data_node.model_copy(
             update={"subgraph_entry": entry, "subgraph_exit": terminal_node}
         )
         nodes[data_id] = updated
+
         new_start = data_id
 
     return new_start

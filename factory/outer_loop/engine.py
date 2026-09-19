@@ -42,24 +42,15 @@ PLATEAU_WINDOW = 3
 def _auto_frozen_nodes(workflow: Workflow) -> set[str]:
     """Return node IDs that should always be frozen during mutation.
 
-    Includes DataNode IDs and all nodes in their subgraphs (entry→exit).
+    Includes ONLY DataNode IDs — their subgraphs are the evolution surface
+    and must remain mutable for the outer loop to improve them.
     """
     from factory.workflow.primitives import DataNode
-    from factory.workflow.executor import _collect_subgraph_nodes
 
     frozen: set[str] = set()
     for nid, node in workflow.nodes.items():
         if isinstance(node, DataNode):
             frozen.add(nid)
-            subgraph_ids = _collect_subgraph_nodes(
-                workflow, node.subgraph_entry, node.subgraph_exit,
-            )
-            frozen.update(subgraph_ids)
-            log.debug(
-                "data_node_subgraph_frozen",
-                data_node=nid,
-                subgraph_ids=list(subgraph_ids),
-            )
     return frozen
 
 
@@ -237,12 +228,15 @@ class SwarmEngine:
             frozen_ids |= _auto_frozen_nodes(seed_workflow)
         frozen = frozen_ids if frozen_ids else None
 
+        exec_strategy = cfg.execution_strategy
+
         if designer_count >= 1:
             try:
                 minimal = self._designer.design_minimal(
                     benchmark_spec,
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(minimal)
             except Exception:
@@ -254,6 +248,7 @@ class SwarmEngine:
                     benchmark_spec,
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(thorough)
             except Exception:
@@ -266,6 +261,7 @@ class SwarmEngine:
                     {"max_nodes": 4 + i, "parallel": i % 2 == 0},
                     seed_workflow=seed_workflow,
                     frozen_node_ids=frozen,
+                    execution_strategy=exec_strategy,
                 )
                 designs.append(custom)
             except Exception:

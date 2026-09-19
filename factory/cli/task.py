@@ -6,6 +6,10 @@ import argparse
 import sys
 import urllib.parse
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from factory.task import Task, TaskInstance
 
 
 def add_task_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -36,18 +40,37 @@ def add_task_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[ty
         "--project", "-p", default=".", help="Project directory to write task to"
     )
 
+    # factory task instances --task-ref module:Class
+    p_instances = task_sub.add_parser("instances", help="Print task instances as JSONL")
+    p_instances.add_argument("--task-ref", required=True, help="Task module:Class reference")
+
+    # factory task setup --task-ref module:Class --instance-id X --workspace /path
+    p_setup = task_sub.add_parser("setup", help="Run task setup for one instance")
+    p_setup.add_argument("--task-ref", required=True)
+    p_setup.add_argument("--instance-id", required=True)
+    p_setup.add_argument("--workspace", required=True)
+
+    # factory task verify --task-ref module:Class --instance-id X --workspace /path
+    p_verify = task_sub.add_parser("verify", help="Run task verify for one instance")
+    p_verify.add_argument("--task-ref", required=True)
+    p_verify.add_argument("--instance-id", required=True)
+    p_verify.add_argument("--workspace", required=True)
+
 
 def cmd_task(args: argparse.Namespace) -> int:
     """Dispatch task subcommands."""
     task_cmd = getattr(args, "task_command", None)
     if not task_cmd:
-        print("Usage: factory task {list,validate,create}", file=sys.stderr)
+        print("Usage: factory task {list,validate,create,instances,setup,verify}", file=sys.stderr)
         return 1
 
     handlers = {
         "list": _cmd_task_list,
         "validate": _cmd_task_validate,
         "create": _cmd_task_create,
+        "instances": _cmd_task_instances,
+        "setup": _cmd_task_setup,
+        "verify": _cmd_task_verify,
     }
 
     handler = handlers.get(task_cmd)
@@ -228,6 +251,76 @@ max_retries = 1
     print(f"  Name: {name}")
     print("  ⚠ TODO: Review and customize the generated task definition.")
     print(f"\nRun 'factory task validate {name}' to verify the definition.")
+    return 0
+
+
+def _load_task_from_ref(task_ref: str) -> "Task":  # noqa: F821
+    """Parse 'module.path:ClassName', import the module, instantiate the Task."""
+    import importlib
+
+    from factory.task import Task
+
+    if ":" not in task_ref:
+        raise ValueError(
+            f"Invalid task ref {task_ref!r}. Expected 'module.path:ClassName' format."
+        )
+    module_path, class_name = task_ref.rsplit(":", 1)
+    mod = importlib.import_module(module_path)
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        raise ImportError(
+            f"Module {module_path!r} has no attribute {class_name!r} "
+            f"(from task ref {task_ref!r})."
+        )
+    if not (isinstance(cls, type) and issubclass(cls, Task)):
+        raise TypeError(
+            f"{task_ref!r} resolved to {cls!r}, which is not a Task subclass."
+        )
+    return cls()
+
+
+def _find_instance(task: "Task", instance_id: str) -> "TaskInstance":  # noqa: F821
+    """Iterate task.instances(), return the one with matching id."""
+    for inst in task.instances():
+        if inst.id == instance_id:
+            return inst
+    raise ValueError(f"Instance {instance_id!r} not found")
+
+
+def _cmd_task_instances(args: argparse.Namespace) -> int:
+    """Print task instances as JSONL to stdout."""
+    import json
+
+    task = _load_task_from_ref(args.task_ref)
+    for inst in task.instances():
+        print(json.dumps({
+            "id": inst.id,
+            "path": str(inst.path) if inst.path else None,
+            "metadata": inst.metadata,
+        }))
+    return 0
+
+
+def _cmd_task_setup(args: argparse.Namespace) -> int:
+    """Run task setup for one instance."""
+    task = _load_task_from_ref(args.task_ref)
+    inst = _find_instance(task, args.instance_id)
+    task.setup(inst, Path(args.workspace))
+    return 0
+
+
+def _cmd_task_verify(args: argparse.Namespace) -> int:
+    """Run task verify for one instance, print JSON result."""
+    import json
+
+    task = _load_task_from_ref(args.task_ref)
+    inst = _find_instance(task, args.instance_id)
+    result = task.verify(inst, Path(args.workspace))
+    print(json.dumps({
+        "score": result.score,
+        "passed": result.passed,
+        "details": result.details,
+    }))
     return 0
 
 

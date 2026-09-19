@@ -410,6 +410,196 @@ class TestDataNodeSkillExport:
         assert "Sub End" not in md or md.count("Sub End") <= 1
 
 
+class TestDataInstructionTaskRef:
+    """DataNode with task_ref produces factory task CLI instructions."""
+
+    def test_contains_factory_task_instances(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = _make_task_ref_workflow(task_ref="my.module:MyTask")
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "factory task instances --task-ref my.module:MyTask" in result
+
+    def test_contains_factory_task_setup(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = _make_task_ref_workflow(task_ref="my.module:MyTask")
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "factory task setup --task-ref my.module:MyTask" in result
+
+    def test_contains_factory_task_verify(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = _make_task_ref_workflow(task_ref="my.module:MyTask")
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "factory task verify --task-ref my.module:MyTask" in result
+
+
+class TestDataInstructionSourcePath:
+    """DataNode with source_path produces file-reading instructions."""
+
+    def test_contains_read_items_from(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = Workflow(
+            name="sp_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path="data.jsonl",
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Read items from `data.jsonl`" in result
+
+    def test_jsonl_format_hint(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = Workflow(
+            name="sp_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path="items.jsonl",
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Each line is a JSON object" in result
+
+    def test_directory_format_hint(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = Workflow(
+            name="sp_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path="/data/items",
+                    source_format="directory",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "subdirectory" in result
+
+    def test_csv_format_hint(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = Workflow(
+            name="sp_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path="data.csv",
+                    source_format="csv",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Each row is one item" in result
+
+
+class TestDataInstructionInlineItems:
+    """DataNode with inline_items lists each item."""
+
+    def test_lists_each_item(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        items = [
+            DataItem(id="alpha", prompt="do alpha"),
+            DataItem(id="beta", prompt="do beta"),
+        ]
+        wf = _make_data_workflow(items)
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Item `alpha`" in result
+        assert "Item `beta`" in result
+        assert "do alpha" in result
+        assert "do beta" in result
+
+    def test_no_prompt_shows_placeholder(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        items = [DataItem(id="noprompt")]
+        wf = _make_data_workflow(items)
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "(no prompt)" in result
+
+
+class TestDataInstructionHasAggregateStep:
+    """All DataNode variants include Aggregate scores step."""
+
+    def test_task_ref_has_aggregate(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = _make_task_ref_workflow()
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Aggregate scores" in result
+
+    def test_source_path_has_aggregate(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = Workflow(
+            name="sp_test",
+            nodes={
+                "data": DataNode(
+                    id="data",
+                    source_path="data.jsonl",
+                    source_format="jsonl",
+                    subgraph_entry="sub",
+                    subgraph_exit="sub",
+                ),
+                "sub": FnNode(id="sub", command="echo x"),
+            },
+            edges=[],
+            start_node="data",
+        )
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Aggregate scores" in result
+
+    def test_inline_items_has_aggregate(self) -> None:
+        from factory.workflow.skill_export import _data_to_instruction
+
+        wf = _make_data_workflow([DataItem(id="i")])
+        node = wf.nodes["data"]
+        result = _data_to_instruction(node, wf)
+        assert "Aggregate scores" in result
+
+
 # ── Phase 6: compute_features arity ────────────────────────────────
 
 

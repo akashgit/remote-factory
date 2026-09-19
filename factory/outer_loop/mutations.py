@@ -13,6 +13,7 @@ from factory.outer_loop.models import MutationRecord, MutationType
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    DataNode as _DataNodeType,
     Edge,
     ForkNode,
     JoinNode,
@@ -23,6 +24,23 @@ from factory.workflow.primitives import (
 from factory.outer_loop.reflector import MutationSuggestion, ReflectionReport
 
 log = structlog.get_logger()
+
+
+def _is_in_data_subgraph(workflow: Workflow, node_id: str) -> bool:
+    """Check if node_id is inside any DataNode's subgraph."""
+    from factory.workflow.executor import _collect_subgraph_nodes
+    from factory.workflow.primitives import DataNode
+
+    for nid, node in workflow.nodes.items():
+        if isinstance(node, DataNode):
+            if (node.subgraph_entry in workflow.nodes
+                    and node.subgraph_exit in workflow.nodes):
+                subgraph = _collect_subgraph_nodes(
+                    workflow, node.subgraph_entry, node.subgraph_exit
+                )
+                if node_id in subgraph:
+                    return True
+    return False
 
 
 @runtime_checkable
@@ -184,6 +202,16 @@ def validate_and_repair(workflow: Workflow) -> Workflow | None:
             return None
 
     # Verify reads/writes chain
+    # For nodes inside a DataNode subgraph, .factory/current_item.json is
+    # a system-provided file (written by the executor before subgraph runs).
+    _data_subgraph_nodes: set[str] = set()
+    for _nid, _node in workflow.nodes.items():
+        if isinstance(_node, _DataNodeType):
+            if (_node.subgraph_entry in workflow.nodes
+                    and _node.subgraph_exit in workflow.nodes):
+                from factory.workflow.executor import _collect_subgraph_nodes as _csn
+                _data_subgraph_nodes |= _csn(workflow, _node.subgraph_entry, _node.subgraph_exit)
+
     for nid, node in workflow.nodes.items():
         if node.reads:
             ancestors = nx.ancestors(g2, nid) if nid in g2 else set()
@@ -192,6 +220,9 @@ def validate_and_repair(workflow: Workflow) -> Workflow | None:
                 anc_node = workflow.nodes.get(anc)
                 if anc_node:
                     available_writes |= anc_node.writes
+            # Executor writes .factory/current_item.json for DataNode subgraphs
+            if nid in _data_subgraph_nodes:
+                available_writes.add(".factory/current_item.json")
             broken_reads = node.reads - available_writes
             if broken_reads:
                 node_copy = node.model_copy(update={"reads": node.reads - broken_reads})
@@ -695,6 +726,17 @@ def mutate_prompt(
             variant = random.choice(_PROMPT_VARIANTS)
             new_prompt = f"{old_prompt}\n\n{variant}" if old_prompt else variant
 
+    # If the node is inside a DataNode subgraph, ensure current_item.json
+    # reference is preserved after prompt rewriting
+    if (new_prompt
+            and "current_item.json" not in new_prompt
+            and "current_item.json" in old_prompt
+            and _is_in_data_subgraph(wf, node_id)):
+        new_prompt = (
+            "Read .factory/current_item.json for the current item. "
+            + new_prompt
+        )
+
     try:
         updated = type(node)(**{**node.model_dump(), "prompt_template": new_prompt})
         wf.nodes[node_id] = updated  # type: ignore[assignment]
@@ -1052,6 +1094,22 @@ def _try_mutation(
                 writes=new_writes,
                 prompt_template=prompt_tmpl,
             )
+
+            # If inserting into a DataNode subgraph, make the new node data-aware
+            if _is_in_data_subgraph(workflow, target):
+                data_reads = set(new_node.reads or set()) | {".factory/current_item.json"}
+                data_prompt = (
+                    "As a " + new_node.role.value.replace("_", " ") + ", "
+                    + "read .factory/current_item.json for the current item. "
+                    + (new_node.prompt_template or "")
+                )
+                new_node = AgentNode(
+                    id=new_node.id,
+                    role=new_node.role,
+                    reads=data_reads,
+                    writes=new_node.writes,
+                    prompt_template=data_prompt,
+                )
         else:
             # Fallback: no AgentNodes exist at all
             role = random.choice(list(AgentRole))
