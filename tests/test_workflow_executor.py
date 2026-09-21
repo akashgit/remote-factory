@@ -924,6 +924,134 @@ class TestRunAgentPersistsToNodeWrites:
             assert "output.md" not in f.name
 
 
+# ── Write verification (issue #1242) ────────────────────────────
+
+
+class TestWriteVerification:
+    """_verify_node_writes emits node.write_missing warnings for absent declared writes."""
+
+    async def test_missing_write_emits_warning(self, tmp_project: Path) -> None:
+        """FnNode that claims to write a file but doesn't triggers node.write_missing log."""
+        import structlog
+
+        wf = Workflow(
+            name="missing_write_wf",
+            nodes={
+                "a": FnNode(id="a", command="echo hi", writes={"never_created.txt"}),
+            },
+            edges=[],
+            start_node="a",
+        )
+
+        warnings: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            if event_dict.get("event") == "node.write_missing":
+                warnings.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+            await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert len(warnings) == 1
+        assert warnings[0]["node_id"] == "a"
+        assert warnings[0]["path"] == "never_created.txt"
+
+    async def test_existing_write_no_warning(self, tmp_project: Path) -> None:
+        """FnNode that actually creates its declared write emits no write_missing warning."""
+        import structlog
+
+        out = tmp_project / "output.txt"
+        out.write_text("hello")
+
+        wf = Workflow(
+            name="existing_write_wf",
+            nodes={
+                "a": FnNode(id="a", command="echo hi", writes={"output.txt"}),
+            },
+            edges=[],
+            start_node="a",
+        )
+
+        warnings: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            if event_dict.get("event") == "node.write_missing":
+                warnings.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+            await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert len(warnings) == 0
+
+    async def test_dry_run_skips_write_verification(self, tmp_project: Path) -> None:
+        """dry_run=True never calls _verify_node_writes."""
+        import structlog
+
+        wf = Workflow(
+            name="dry_run_wf",
+            nodes={
+                "a": FnNode(id="a", command="echo hi", writes={"absent.txt"}),
+            },
+            edges=[],
+            start_node="a",
+        )
+
+        warnings: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            if event_dict.get("event") == "node.write_missing":
+                warnings.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+            await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert len(warnings) == 0
+
+    async def test_background_node_missing_write_emits_warning(self, tmp_project: Path) -> None:
+        """Non-blocking (background) node that fails to create its declared write triggers warning."""
+        import structlog
+
+        wf = Workflow(
+            name="bg_missing_write",
+            nodes={
+                "bg": FnNode(id="bg", command="echo hi", writes={"never_created_bg.txt"}, blocking=False),
+            },
+            edges=[],
+            start_node="bg",
+        )
+
+        warnings: list[dict] = []
+
+        def capture_log(_logger, _method, event_dict):
+            if event_dict.get("event") == "node.write_missing":
+                warnings.append(event_dict.copy())
+            return event_dict
+
+        structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
+        try:
+            executor = WorkflowExecutor(wf, tmp_project, dry_run=False)
+            await executor.execute()
+        finally:
+            structlog.reset_defaults()
+
+        assert any(w["node_id"] == "bg" for w in warnings)
+
+
 class TestAgentFnInjection:
     """Gap 2: WorkflowExecutor supports agent_fn injection."""
 
