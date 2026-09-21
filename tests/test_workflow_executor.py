@@ -384,8 +384,8 @@ class TestAutoApprove:
         assert len(gate_events) == 1
         assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
 
-    async def test_executor_default_still_proceeds(self, tmp_project: Path) -> None:
-        """WorkflowExecutor(auto_approve=False) still proceeds through user gates."""
+    async def test_dry_run_skips_user_gate(self, tmp_project: Path) -> None:
+        """dry_run=True bypasses all gate logic, including user gates."""
         wf = Workflow(
             name="default_user_gate",
             nodes={
@@ -447,7 +447,7 @@ class TestAutoApprove:
         assert auto_approved[0]["workflow"] == "log_check_wf"
 
     async def test_auto_approve_false_no_log(self, tmp_project: Path) -> None:
-        """auto_approve=False does not emit gate.auto_approved log for user gates."""
+        """auto_approve=False does not emit gate.auto_approved; prompts user instead."""
         import structlog
 
         wf = Workflow(
@@ -473,7 +473,10 @@ class TestAutoApprove:
         structlog.configure(processors=[capture_log, structlog.dev.ConsoleRenderer()])
 
         try:
-            executor = WorkflowExecutor(wf, tmp_project, dry_run=False, auto_approve=False)
+            executor = WorkflowExecutor(
+                wf, tmp_project, dry_run=False, auto_approve=False,
+                input_fn=lambda _: "proceed",
+            )
             result = await executor.execute()
         finally:
             structlog.reset_defaults()
@@ -481,6 +484,138 @@ class TestAutoApprove:
         assert result.success
         auto_approved = [e for e in captured if e.get("event") == "gate.auto_approved"]
         assert len(auto_approved) == 0
+
+
+# ── User gate interactive input (issue #1243) ────────────────────
+
+
+def _user_gate_workflow() -> Workflow:
+    return Workflow(
+        name="user_gate_wf",
+        nodes={
+            "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+            "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+            "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+        },
+        edges=[
+            Edge(source="a", target="gate"),
+            Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            Edge(source="gate", target="a", condition=VerdictType.RELOOP),
+        ],
+        start_node="a",
+    )
+
+
+class TestUserGateInteractive:
+    async def test_user_proceed(self, tmp_project: Path) -> None:
+        """input_fn returning 'proceed' causes the gate to PROCEED."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "proceed")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.PROCEED
+
+    async def test_user_reloop(self, tmp_project: Path) -> None:
+        """input_fn returning 'reloop' causes the gate to RELOOP."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "reloop")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.RELOOP
+
+    async def test_user_halt(self, tmp_project: Path) -> None:
+        """input_fn returning 'halt' causes the gate to HALT."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "halt")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+
+    async def test_user_gate_halt_stops_workflow(self, tmp_project: Path) -> None:
+        """User responding 'halt' terminates the full workflow."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=False, input_fn=lambda _: "halt")
+        result = await executor.execute()
+        assert result.halted
+        assert "gate" in result.halt_reason
+
+    async def test_auto_approve_does_not_prompt(self, tmp_project: Path) -> None:
+        """auto_approve=True never calls input_fn."""
+        called = []
+        def should_not_be_called(prompt: str) -> str:
+            called.append(prompt)
+            return "proceed"
+
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(
+            wf, tmp_project, auto_approve=True, input_fn=should_not_be_called,
+        )
+        await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert not called, "input_fn should not be called when auto_approve=True"
+
+    async def test_eof_on_stdin_halts_cleanly(self, tmp_project: Path) -> None:
+        """EOFError from stdin (non-interactive context) produces a clean HALT."""
+        def raise_eof(_prompt: str) -> str:
+            raise EOFError
+
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=raise_eof)
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "stdin closed" in verdict.reason
+
+    async def test_reloop_without_edge_halts_cleanly(self, tmp_project: Path) -> None:
+        """User typing 'reloop' on a gate with no RELOOP edge produces a clean HALT."""
+        wf = Workflow(
+            name="no_reloop_edge",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b"),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "reloop")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "no RELOOP edge" in verdict.reason
+
+    async def test_oserror_on_stdin_halts_cleanly(self, tmp_project: Path) -> None:
+        """OSError (pytest captured stdin) produces a clean HALT."""
+        def raise_oserror(_prompt: str) -> str:
+            raise OSError("reading from stdin while output is captured!")
+
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=raise_oserror)
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
+        assert "stdin closed" in verdict.reason
+
+    async def test_unrecognized_input_halts_fail_closed(self, tmp_project: Path) -> None:
+        """Unrecognized input halts fail-closed instead of silently proceeding."""
+        for bad_input in ("yes", "no", "cancel", "hault", ""):
+            wf = _user_gate_workflow()
+            executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _, x=bad_input: x)
+            verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+            assert verdict.type == VerdictType.HALT, f"expected HALT for {bad_input!r}"
+            assert "unrecognized" in verdict.reason
+
+    async def test_halt_word_boundary_not_substring(self, tmp_project: Path) -> None:
+        """'asphalt' does not trigger halt; word-boundary matching is enforced."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "asphalt coloring")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        # 'asphalt' has no whole-word 'halt', 'reloop', or 'proceed' — unrecognized → HALT
+        assert verdict.type == VerdictType.HALT
+        assert "unrecognized" in verdict.reason
+
+    async def test_halt_wins_over_reloop(self, tmp_project: Path) -> None:
+        """When both 'halt' and 'reloop' appear, halt wins (checked first)."""
+        wf = _user_gate_workflow()
+        executor = WorkflowExecutor(wf, tmp_project, input_fn=lambda _: "reloop then halt")
+        verdict = await executor._evaluate_gate(wf.nodes["gate"])  # type: ignore[arg-type]
+        assert verdict.type == VerdictType.HALT
 
 
 # ── Gate verdict parsing fails closed (issue #1250) ──────────────

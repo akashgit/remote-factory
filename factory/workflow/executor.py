@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 from collections import deque
 import json
+import re
 import shlex
 import time
 import uuid
@@ -62,6 +64,9 @@ RELOOP target="<node_id>" feedback="<your feedback>"
 HALT reason="<your reason>"
 """
 
+# Words skipped when parsing an explicit reloop target from user input ("reloop the builder").
+_USER_GATE_RELOOP_FILLERS: frozenset[str] = frozenset({"the", "to", "back", "node", "a", "an", "and"})
+
 
 class ExecutionResult:
     """Result of a workflow execution."""
@@ -90,6 +95,7 @@ class WorkflowExecutor:
         auto_approve: bool = False,
         initial_context: str | None = None,
         agent_fn: Callable[..., Any] | None = None,
+        input_fn: Callable[[str], str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
@@ -102,6 +108,7 @@ class WorkflowExecutor:
             from factory.agents.runner import invoke_agent
 
             self._agent_fn = invoke_agent
+        self._input_fn: Callable[[str], str] = input_fn if input_fn is not None else builtins.input
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -1263,8 +1270,32 @@ class WorkflowExecutor:
         if node.evaluator_type == "user":
             if self.auto_approve:
                 log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
-            return Verdict.proceed()
-
+                return Verdict.proceed()
+            prompt_text = node.gate_prompt or (
+                f"Gate '{node.id}' [{self.workflow.name}] — enter verdict: proceed / reloop / halt"
+            )
+            loop = asyncio.get_event_loop()
+            try:
+                response = await loop.run_in_executor(None, self._input_fn, f"\n{prompt_text}\n> ")
+            except (EOFError, OSError):
+                return Verdict.halt(reason=f"gate '{node.id}': stdin closed (non-interactive context)")
+            r = response.strip().lower()
+            log.info("gate.user_verdict", gate_id=node.id, raw=r)
+            # halt first (most consequential), then reloop, then proceed.
+            # Word-boundary matching avoids false-positives ("asphalt", "halting").
+            if re.search(r"\bhalt\b", r):
+                return Verdict.halt(reason=f"user halted at gate '{node.id}'")
+            if re.search(r"\breloop\b", r):
+                target = self._resolve_reloop_target(r, node.id)
+                if target is None:
+                    return Verdict.halt(reason=f"gate '{node.id}': reloop requested but no RELOOP edge configured")
+                return Verdict.reloop(target=target, feedback=r)
+            if re.search(r"\bproceed\b", r):
+                return Verdict.proceed()
+            # Unrecognized input — fail closed, matching fn/agent gate convention.
+            return Verdict.halt(
+                reason=f"gate '{node.id}': unrecognized input '{response.strip()}' — type 'proceed', 'reloop', or 'halt'",
+            )
         if node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
@@ -1298,6 +1329,25 @@ class WorkflowExecutor:
 
         return self._parse_agent_verdict(stdout, node.id)
 
+    def _resolve_reloop_target(self, response: str, node_id: str) -> str | None:
+        """Extract the reloop target node ID from a user response.
+
+        Tries in order:
+        1. First non-filler word after "reloop" in the response.
+        2. First RELOOP edge target declared in the workflow graph.
+        Returns None when no target can be resolved.
+        """
+        parts = response.split()
+        reloop_idx = next((i for i, p in enumerate(parts) if re.search(r"\breloop\b", p)), None)
+        if reloop_idx is not None:
+            for word in parts[reloop_idx + 1:]:
+                if word not in _USER_GATE_RELOOP_FILLERS:
+                    return word
+        for edge in self._edge_index.get(node_id, []):
+            if edge.condition == VerdictType.RELOOP:
+                return edge.target
+        return None
+
     def _build_gate_prompt(self, node: GateNode) -> str:
         """Build the lightweight CEO gate prompt."""
         if node.gate_prompt:
@@ -1323,7 +1373,6 @@ class WorkflowExecutor:
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse agent output into a Verdict by examining the last non-empty line."""
-        import re
 
         lines = output.strip().splitlines()
         last_line = ""
@@ -1443,7 +1492,6 @@ class WorkflowExecutor:
 
     async def _run_shell_or_exec(self, cmd: str) -> str:
         """Run a command, using exec mode for python3 -c to avoid quote issues."""
-        import re
         m = re.match(r"""^python3\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
         if m:
             code = m.group(2)
