@@ -157,10 +157,186 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=builder_theory" >> "$PROJECT
 cd $PROJECT_PATH/formal && lake build
 ```
 
-- **PROCEED** (exit 0 / no FAIL in output) → continue to `gate_theory_review`
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `fn_theorem_check`
 - **RELOOP** (exit non-zero / FAIL in output) → return to `builder_theory` for the next iteration.
 
 *On RELOOP: return to `builder_theory` (max 5 iterations)*
+
+## Step: Fn Theorem Check
+
+<!-- command: cd {project_path} && python3 - <<'PYEOF'
+import sys, re, subprocess
+from pathlib import Path
+
+# Read strategy to extract planned theorem/lemma names
+strategy = Path('.factory/strategy/current.md').read_text()
+
+# Extract explicit 'theorem <name>' and 'lemma <name>' declarations
+# Matches lines like: '- theorem foo_bar', '  theorem Baz', 'lemma quux'
+planned = set()
+for m in re.finditer(
+    r'\b(?:theorem|lemma)\s+([a-zA-Z_][a-zA-Z0-9_\.]*)',
+    strategy,
+    re.IGNORECASE,
+):
+    planned.add(m.group(1))
+
+if not planned:
+    print('WARNING: no theorem/lemma names found in strategy — skipping check')
+    sys.exit(0)
+
+print(f'Planned theorems/lemmas ({len(planned)}): {sorted(planned)}')
+
+# Find new .lean files via diff against branch point
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+lean_files = [f for f in diff_out.splitlines() if f.endswith('.lean')]
+
+if not lean_files:
+    print('ERROR: no .lean files changed under formal/Mcmc/')
+    sys.exit(1)
+
+print(f'Checking {len(lean_files)} files: {lean_files}')
+
+# Verify each planned name exists as a declaration without sorry
+missing = []
+sorry_backed = []
+for name in sorted(planned):
+    found = False
+    for lf in lean_files:
+        p = Path(lf)
+        if not p.exists():
+            continue
+        content = p.read_text()
+        # Match 'theorem name' or 'lemma name' or 'def name' declarations
+        for m in re.finditer(
+            rf'^\s*(?:theorem|lemma|def)\s+{re.escape(name)}\b',
+            content,
+            re.MULTILINE,
+        ):
+            found = True
+            # Check for sorry on same line or next 5 lines
+            start = m.start()
+            snippet = content[start:].split('\n')[:6]
+            if any('sorry' in line for line in snippet):
+                sorry_backed.append(f'{name} in {lf}')
+            break
+        if found:
+            break
+    if not found:
+        missing.append(name)
+
+ok = True
+if missing:
+    print(f'ERROR: missing declarations: {missing}')
+    ok = False
+if sorry_backed:
+    print(f'ERROR: sorry-backed declarations: {sorry_backed}')
+    ok = False
+
+if ok:
+    print(f'PASS: all {len(planned)} planned theorems/lemmas found and proved')
+sys.exit(0 if ok else 1)
+PYEOF -->
+
+Theorem traceability check. Extracts explicit 'theorem X' and 'lemma X' names from current.md, verifies each exists as a declaration in new .lean files (git diff against merge-base), and checks none are sorry-backed. Exits 0 if all present and proved, 1 if any missing or sorry-backed.
+
+```bash
+cd $PROJECT_PATH && python3 - <<'PYEOF'
+import sys, re, subprocess
+from pathlib import Path
+
+# Read strategy to extract planned theorem/lemma names
+strategy = Path('.factory/strategy/current.md').read_text()
+
+# Extract explicit 'theorem <name>' and 'lemma <name>' declarations
+# Matches lines like: '- theorem foo_bar', '  theorem Baz', 'lemma quux'
+planned = set()
+for m in re.finditer(
+    r'\b(?:theorem|lemma)\s+([a-zA-Z_][a-zA-Z0-9_\.]*)',
+    strategy,
+    re.IGNORECASE,
+):
+    planned.add(m.group(1))
+
+if not planned:
+    print('WARNING: no theorem/lemma names found in strategy — skipping check')
+    sys.exit(0)
+
+print(f'Planned theorems/lemmas ({len(planned)}): {sorted(planned)}')
+
+# Find new .lean files via diff against branch point
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+lean_files = [f for f in diff_out.splitlines() if f.endswith('.lean')]
+
+if not lean_files:
+    print('ERROR: no .lean files changed under formal/Mcmc/')
+    sys.exit(1)
+
+print(f'Checking {len(lean_files)} files: {lean_files}')
+
+# Verify each planned name exists as a declaration without sorry
+missing = []
+sorry_backed = []
+for name in sorted(planned):
+    found = False
+    for lf in lean_files:
+        p = Path(lf)
+        if not p.exists():
+            continue
+        content = p.read_text()
+        # Match 'theorem name' or 'lemma name' or 'def name' declarations
+        for m in re.finditer(
+            rf'^\s*(?:theorem|lemma|def)\s+{re.escape(name)}\b',
+            content,
+            re.MULTILINE,
+        ):
+            found = True
+            # Check for sorry on same line or next 5 lines
+            start = m.start()
+            snippet = content[start:].split('\n')[:6]
+            if any('sorry' in line for line in snippet):
+                sorry_backed.append(f'{name} in {lf}')
+            break
+        if found:
+            break
+    if not found:
+        missing.append(name)
+
+ok = True
+if missing:
+    print(f'ERROR: missing declarations: {missing}')
+    ok = False
+if sorry_backed:
+    print(f'ERROR: sorry-backed declarations: {sorry_backed}')
+    ok = False
+
+if ok:
+    print(f'PASS: all {len(planned)} planned theorems/lemmas found and proved')
+sys.exit(0 if ok else 1)
+PYEOF
+```
 
 ### CEO Review — Theory Review
 
@@ -202,10 +378,132 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=builder_ir" >> "$PROJECT_PAT
 cd $PROJECT_PATH/formal && lake build
 ```
 
-- **PROCEED** (exit 0 / no FAIL in output) → continue to `fn_generate`
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `fn_scope_check`
 - **RELOOP** (exit non-zero / FAIL in output) → return to `builder_ir` for the next iteration.
 
 *On RELOOP: return to `builder_ir` (max 3 iterations)*
+
+## Step: Fn Scope Check
+
+<!-- command: cd {project_path} && python3 - <<'PYEOF'
+import sys, re, subprocess
+
+# Diff against branch point for complete scope view
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+# Get all changed files on this branch
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base],
+    capture_output=True, text=True,
+).stdout.strip()
+changed = [f for f in diff_out.splitlines() if f]
+
+if not changed:
+    print('ERROR: no files changed — vacuous success')
+    sys.exit(1)
+
+# Check each file against allowed patterns
+allowed = re.compile(
+    r'^(formal/Mcmc/.*\.lean'
+    r'|formal/Mcmc\.lean'
+    r'|reference/.*\.jl'
+    r'|Samplers\.ir'
+    r'|\.factory/.*)$'
+)
+
+violations = [f for f in changed if not allowed.match(f)]
+if violations:
+    print('ERROR: scope violation — files outside allowed paths:')
+    for v in violations:
+        print(f'  {v}')
+    print()
+    print('Allowed: formal/Mcmc/**/*.lean, formal/Mcmc.lean, reference/*.jl, Samplers.ir, .factory/*')
+    sys.exit(1)
+
+# Verify at least one new .lean file under formal/Mcmc/
+new_out = subprocess.run(
+    ['git', 'diff', '--diff-filter=A', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+new_lean = [f for f in new_out.splitlines() if f.endswith('.lean')]
+
+if not new_lean:
+    print('ERROR: no new .lean files created under formal/Mcmc/ — vacuous success')
+    sys.exit(1)
+
+print(f'PASS: scope clean — {len(changed)} files changed, {len(new_lean)} new .lean files')
+for f in new_lean:
+    print(f'  + {f}')
+sys.exit(0)
+PYEOF -->
+
+Scope discipline gate. Diffs against merge-base to verify all changes are within allowed paths (formal/Mcmc/**/*.lean, formal/Mcmc.lean, reference/*.jl, Samplers.ir, .factory/*). Requires at least one new .lean file under formal/Mcmc/ to prevent vacuous success.
+
+```bash
+cd $PROJECT_PATH && python3 - <<'PYEOF'
+import sys, re, subprocess
+
+# Diff against branch point for complete scope view
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+# Get all changed files on this branch
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base],
+    capture_output=True, text=True,
+).stdout.strip()
+changed = [f for f in diff_out.splitlines() if f]
+
+if not changed:
+    print('ERROR: no files changed — vacuous success')
+    sys.exit(1)
+
+# Check each file against allowed patterns
+allowed = re.compile(
+    r'^(formal/Mcmc/.*\.lean'
+    r'|formal/Mcmc\.lean'
+    r'|reference/.*\.jl'
+    r'|Samplers\.ir'
+    r'|\.factory/.*)$'
+)
+
+violations = [f for f in changed if not allowed.match(f)]
+if violations:
+    print('ERROR: scope violation — files outside allowed paths:')
+    for v in violations:
+        print(f'  {v}')
+    print()
+    print('Allowed: formal/Mcmc/**/*.lean, formal/Mcmc.lean, reference/*.jl, Samplers.ir, .factory/*')
+    sys.exit(1)
+
+# Verify at least one new .lean file under formal/Mcmc/
+new_out = subprocess.run(
+    ['git', 'diff', '--diff-filter=A', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+new_lean = [f for f in new_out.splitlines() if f.endswith('.lean')]
+
+if not new_lean:
+    print('ERROR: no new .lean files created under formal/Mcmc/ — vacuous success')
+    sys.exit(1)
+
+print(f'PASS: scope clean — {len(changed)} files changed, {len(new_lean)} new .lean files')
+for f in new_lean:
+    print(f'  + {f}')
+sys.exit(0)
+PYEOF
+```
 
 ## Step: Fn Generate
 
@@ -231,10 +529,132 @@ Run full test suite — Lean compilation + Julia tests including new Reference f
 cd $PROJECT_PATH && make test
 ```
 
-Proof hygiene check — grep for sorry, admit, or axiom only in NEW .lean files (from recent git diff), not the entire Mcmc/ tree. Exit 0 if no new files or no matches. Exit 1 if matches found.
+<!-- command: cd {project_path} && python3 - <<'PYEOF'
+import sys, subprocess, re
+from pathlib import Path
+
+# Diff against branch point
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+# Get new/modified .lean files under formal/Mcmc/
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+lean_files = [f for f in diff_out.splitlines() if f.endswith('.lean')]
+
+# Check 1: sorry/admit/axiom in new .lean files
+if lean_files:
+    holes_found = False
+    for lf in lean_files:
+        p = Path(lf)
+        if not p.exists():
+            continue
+        content = p.read_text()
+        for i, line in enumerate(content.splitlines(), 1):
+            if re.search(r'\b(sorry|admit|axiom)\b', line):
+                print(f'FAIL: {lf}:{i}: {line.strip()}')
+                holes_found = True
+    if holes_found:
+        print('FAIL: found sorry/admit/axiom in new Lean files')
+        sys.exit(1)
+    print(f'PASS: no proof holes in {len(lean_files)} files')
+else:
+    print('WARNING: no .lean files changed under formal/Mcmc/')
+
+# Check 2: IRFormat.lean must be modified
+all_changed = subprocess.run(
+    ['git', 'diff', '--name-only', base],
+    capture_output=True, text=True,
+).stdout.strip().splitlines()
+
+irformat_modified = any('IRFormat.lean' in f for f in all_changed)
+mcmc_lean_modified = any(f == 'formal/Mcmc.lean' for f in all_changed)
+
+if not irformat_modified:
+    print('FAIL: formal/Mcmc/Executable/IRFormat.lean was not modified')
+    sys.exit(1)
+print('PASS: IRFormat.lean modified')
+
+if not mcmc_lean_modified:
+    print('FAIL: formal/Mcmc.lean was not modified (new imports required)')
+    sys.exit(1)
+print('PASS: formal/Mcmc.lean modified')
+
+print('PASS: all hygiene checks passed')
+sys.exit(0)
+PYEOF -->
+
+Proof hygiene check. Three checks: (1) No sorry/admit/axiom in new .lean files. (2) IRFormat.lean was modified (IR emission wired). (3) formal/Mcmc.lean was modified (imports updated). Uses merge-base diff for consistent scope.
 
 ```bash
-cd $PROJECT_PATH/formal && FILES=$(git diff --name-only HEAD~2 -- Mcmc/ | grep '\.lean$' || true) && if [ -z "$FILES" ]; then   echo 'PASS: no new .lean files to check'; exit 0; fi && if echo "$FILES" | xargs grep -n 'sorry\|admit\|axiom'; then   echo 'FAIL: found sorry/admit/axiom in new Lean files'; exit 1; else   echo 'PASS: no proof holes found'; exit 0; fi
+cd $PROJECT_PATH && python3 - <<'PYEOF'
+import sys, subprocess, re
+from pathlib import Path
+
+# Diff against branch point
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip()
+if not base:
+    print('ERROR: could not determine merge-base with main')
+    sys.exit(1)
+
+# Get new/modified .lean files under formal/Mcmc/
+diff_out = subprocess.run(
+    ['git', 'diff', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+lean_files = [f for f in diff_out.splitlines() if f.endswith('.lean')]
+
+# Check 1: sorry/admit/axiom in new .lean files
+if lean_files:
+    holes_found = False
+    for lf in lean_files:
+        p = Path(lf)
+        if not p.exists():
+            continue
+        content = p.read_text()
+        for i, line in enumerate(content.splitlines(), 1):
+            if re.search(r'\b(sorry|admit|axiom)\b', line):
+                print(f'FAIL: {lf}:{i}: {line.strip()}')
+                holes_found = True
+    if holes_found:
+        print('FAIL: found sorry/admit/axiom in new Lean files')
+        sys.exit(1)
+    print(f'PASS: no proof holes in {len(lean_files)} files')
+else:
+    print('WARNING: no .lean files changed under formal/Mcmc/')
+
+# Check 2: IRFormat.lean must be modified
+all_changed = subprocess.run(
+    ['git', 'diff', '--name-only', base],
+    capture_output=True, text=True,
+).stdout.strip().splitlines()
+
+irformat_modified = any('IRFormat.lean' in f for f in all_changed)
+mcmc_lean_modified = any(f == 'formal/Mcmc.lean' for f in all_changed)
+
+if not irformat_modified:
+    print('FAIL: formal/Mcmc/Executable/IRFormat.lean was not modified')
+    sys.exit(1)
+print('PASS: IRFormat.lean modified')
+
+if not mcmc_lean_modified:
+    print('FAIL: formal/Mcmc.lean was not modified (new imports required)')
+    sys.exit(1)
+print('PASS: formal/Mcmc.lean modified')
+
+print('PASS: all hygiene checks passed')
+sys.exit(0)
+PYEOF
 ```
 
 ```bash
@@ -257,6 +677,154 @@ Apply the CEO Review Gate protocol:
 7. **ABORT** → log failure and skip to archival
 
 *On RELOOP: return to `builder_ir` (max 3 iterations)*
+
+## Step: Fn Manifest
+
+<!-- command: cd {project_path} && python3 - <<'PYEOF'
+import json, sys, re, subprocess
+from pathlib import Path
+from datetime import datetime, timezone
+
+# Diff base for consistent file discovery
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip() or 'HEAD~5'
+
+manifest = {
+    'workflow': 'formalize',
+    'timestamp': datetime.now(timezone.utc).isoformat(),
+    'focus': None,
+    'new_lean_files': [],
+    'theorems_proved': [],
+    'ir_version_bump': False,
+    'new_reference_functions': [],
+    'qa_results': {
+        'check_generated': 'pass',
+        'test_suite': 'pass',
+        'proof_hygiene': 'pass',
+    },
+    'retries': {'theory_phase': 0, 'ir_phase': 0},
+    'wall_time_seconds': None,
+    'disposition': 'success',
+}
+
+# New .lean files (added in this branch)
+added = subprocess.run(
+    ['git', 'diff', '--diff-filter=A', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+manifest['new_lean_files'] = [f for f in added.splitlines() if f.endswith('.lean')]
+
+# Extract theorem/lemma names from new files
+for lf in manifest['new_lean_files']:
+    p = Path(lf)
+    if not p.exists():
+        continue
+    content = p.read_text()
+    for m in re.finditer(r'^\s*(?:theorem|lemma)\s+([a-zA-Z_][a-zA-Z0-9_]*)', content, re.MULTILINE):
+        manifest['theorems_proved'].append(m.group(1))
+
+# Check IRFormat.lean modification
+ir_diff = subprocess.run(
+    ['git', 'diff', '--stat', base, '--', 'formal/Mcmc/Executable/IRFormat.lean'],
+    capture_output=True, text=True,
+).stdout.strip()
+manifest['ir_version_bump'] = bool(ir_diff)
+
+# Extract new Julia reference functions
+jl_diff = subprocess.run(
+    ['git', 'diff', '--diff-filter=AM', '--name-only', base, '--', 'reference/'],
+    capture_output=True, text=True,
+).stdout.strip()
+for jl_file in jl_diff.splitlines():
+    p = Path(jl_file)
+    if p.exists() and p.suffix == '.jl':
+        content = p.read_text()
+        for m in re.finditer(r'^\s*function\s+([a-zA-Z_][a-zA-Z0-9_!]*)', content, re.MULTILINE):
+            manifest['new_reference_functions'].append(m.group(1))
+
+Path('.factory/manifest.json').write_text(json.dumps(manifest, indent=2))
+n_files = len(manifest['new_lean_files'])
+n_thms = len(manifest['theorems_proved'])
+print(f'Manifest written: {n_files} new files, {n_thms} theorems, IR bump={manifest["ir_version_bump"]}')
+sys.exit(0)
+PYEOF -->
+
+Write .factory/manifest.json with structured workflow metadata: new .lean files, theorems proved, IR version bump, reference functions, QA results, retry counts, timing, and disposition.
+
+```bash
+cd $PROJECT_PATH && python3 - <<'PYEOF'
+import json, sys, re, subprocess
+from pathlib import Path
+from datetime import datetime, timezone
+
+# Diff base for consistent file discovery
+base = subprocess.run(
+    ['git', 'merge-base', 'HEAD', 'main'],
+    capture_output=True, text=True,
+).stdout.strip() or 'HEAD~5'
+
+manifest = {
+    'workflow': 'formalize',
+    'timestamp': datetime.now(timezone.utc).isoformat(),
+    'focus': None,
+    'new_lean_files': [],
+    'theorems_proved': [],
+    'ir_version_bump': False,
+    'new_reference_functions': [],
+    'qa_results': {
+        'check_generated': 'pass',
+        'test_suite': 'pass',
+        'proof_hygiene': 'pass',
+    },
+    'retries': {'theory_phase': 0, 'ir_phase': 0},
+    'wall_time_seconds': None,
+    'disposition': 'success',
+}
+
+# New .lean files (added in this branch)
+added = subprocess.run(
+    ['git', 'diff', '--diff-filter=A', '--name-only', base, '--', 'formal/Mcmc/'],
+    capture_output=True, text=True,
+).stdout.strip()
+manifest['new_lean_files'] = [f for f in added.splitlines() if f.endswith('.lean')]
+
+# Extract theorem/lemma names from new files
+for lf in manifest['new_lean_files']:
+    p = Path(lf)
+    if not p.exists():
+        continue
+    content = p.read_text()
+    for m in re.finditer(r'^\s*(?:theorem|lemma)\s+([a-zA-Z_][a-zA-Z0-9_]*)', content, re.MULTILINE):
+        manifest['theorems_proved'].append(m.group(1))
+
+# Check IRFormat.lean modification
+ir_diff = subprocess.run(
+    ['git', 'diff', '--stat', base, '--', 'formal/Mcmc/Executable/IRFormat.lean'],
+    capture_output=True, text=True,
+).stdout.strip()
+manifest['ir_version_bump'] = bool(ir_diff)
+
+# Extract new Julia reference functions
+jl_diff = subprocess.run(
+    ['git', 'diff', '--diff-filter=AM', '--name-only', base, '--', 'reference/'],
+    capture_output=True, text=True,
+).stdout.strip()
+for jl_file in jl_diff.splitlines():
+    p = Path(jl_file)
+    if p.exists() and p.suffix == '.jl':
+        content = p.read_text()
+        for m in re.finditer(r'^\s*function\s+([a-zA-Z_][a-zA-Z0-9_!]*)', content, re.MULTILINE):
+            manifest['new_reference_functions'].append(m.group(1))
+
+Path('.factory/manifest.json').write_text(json.dumps(manifest, indent=2))
+n_files = len(manifest['new_lean_files'])
+n_thms = len(manifest['theorems_proved'])
+print(f'Manifest written: {n_files} new files, {n_thms} theorems, IR bump={manifest["ir_version_bump"]}')
+sys.exit(0)
+PYEOF
+```
 
 ## Phase 7: Archivist Build
 

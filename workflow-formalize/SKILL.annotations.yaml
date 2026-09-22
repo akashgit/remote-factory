@@ -207,12 +207,22 @@ gate_theory:
   evaluator_command: cd {project_path}/formal && lake build
   reads: []
   edges_out:
-  - target: gate_theory_review
+  - target: fn_theorem_check
     condition: PROCEED
   - target: builder_theory
     condition: RELOOP
   slots:
     max_iterations_gate_theory: '5'
+fn_theorem_check:
+  type: FnNode
+  id: fn_theorem_check
+  command: cd {project_path} && python3 - <<'PYEOF'
+  reads:
+  - .factory/strategy/current.md
+  writes: []
+  edges_out:
+  - target: gate_theory_review
+    condition: null
 gate_theory_review:
   type: GateNode
   id: gate_theory_review
@@ -264,12 +274,21 @@ gate_ir:
   evaluator_command: cd {project_path}/formal && lake build
   reads: []
   edges_out:
-  - target: fn_generate
+  - target: fn_scope_check
     condition: PROCEED
   - target: builder_ir
     condition: RELOOP
   slots:
     max_iterations_gate_ir: '3'
+fn_scope_check:
+  type: FnNode
+  id: fn_scope_check
+  command: cd {project_path} && python3 - <<'PYEOF'
+  reads: []
+  writes: []
+  edges_out:
+  - target: fn_generate
+    condition: null
 fn_generate:
   type: FnNode
   id: fn_generate
@@ -312,11 +331,7 @@ fn_test:
 fn_proof_hygiene:
   type: FnNode
   id: fn_proof_hygiene
-  command: 'cd {project_path}/formal && FILES=$(git diff --name-only HEAD~2 -- Mcmc/
-    | grep ''\.lean$'' || true) && if [ -z "$FILES" ]; then   echo ''PASS: no new
-    .lean files to check''; exit 0; fi && if echo "$FILES" | xargs grep -n ''sorry\|admit\|axiom'';
-    then   echo ''FAIL: found sorry/admit/axiom in new Lean files''; exit 1; else   echo
-    ''PASS: no proof holes found''; exit 0; fi'
+  command: cd {project_path} && python3 - <<'PYEOF'
   reads: []
   writes: []
   edges_out:
@@ -339,7 +354,7 @@ gate_qa:
   reads:
   - .factory/reviews/builder-latest.md
   edges_out:
-  - target: archivist_build
+  - target: fn_manifest
     condition: PROCEED
   - target: builder_ir
     condition: RELOOP
@@ -350,6 +365,16 @@ gate_qa:
       in .lean files If any check failed, RELOOP to builder_ir with specific guidance
       on what to fix (max 3 iterations). If all pass, PROCEED to archivist.'
     max_iterations_gate_qa: '3'
+fn_manifest:
+  type: FnNode
+  id: fn_manifest
+  command: cd {project_path} && python3 - <<'PYEOF'
+  reads: []
+  writes:
+  - .factory/manifest.json
+  edges_out:
+  - target: archivist_build
+    condition: null
 archivist_build:
   type: AgentNode
   id: archivist_build

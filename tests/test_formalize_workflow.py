@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from factory.models import ProjectState
-from factory.workflow.primitives import VerdictType, Workflow
+from factory.workflow.primitives import FnNode, VerdictType, Workflow
 from factory.workflow.registry import WorkflowRegistry
 
 _WF_PATH = Path(".factory/workflows/formalize.py")
@@ -73,7 +73,7 @@ class TestTrigger:
 class TestNodeStructure:
     def test_node_count(self) -> None:
         wf = _load_formalize_workflow()
-        assert len(wf.nodes) == 22
+        assert len(wf.nodes) == 25
 
     def test_expected_node_ids(self) -> None:
         wf = _load_formalize_workflow()
@@ -81,16 +81,16 @@ class TestNodeStructure:
             "fork_research", "researcher_patterns", "researcher_mathlib",
             "researcher_algorithm", "join_research", "gate_research",
             "strategist", "gate_strategy", "archivist_plan",
-            "builder_theory", "gate_theory", "gate_theory_review",
-            "builder_ir", "gate_ir", "fn_generate",
+            "builder_theory", "gate_theory", "fn_theorem_check", "gate_theory_review",
+            "builder_ir", "gate_ir", "fn_scope_check", "fn_generate",
             "fork_qa", "fn_check_generated", "fn_test", "fn_proof_hygiene",
-            "join_qa", "gate_qa", "archivist_build",
+            "join_qa", "gate_qa", "fn_manifest", "archivist_build",
         }
         assert set(wf.nodes.keys()) == expected
 
     def test_edge_count(self) -> None:
         wf = _load_formalize_workflow()
-        assert len(wf.edges) == 31
+        assert len(wf.edges) == 34
 
 
 # ── Terminal flag and start node ────────────────────────────────
@@ -162,3 +162,118 @@ class TestMeta:
         assert "name" in mod.meta
         assert "description" in mod.meta
         assert mod.meta["name"] == "formalize"
+
+
+# ── Gate-hardening nodes ───────────────────────────────────────
+
+
+class TestGateHardeningNodes:
+    def test_fn_theorem_check_exists_and_is_fnnode(self) -> None:
+        wf = _load_formalize_workflow()
+        node = wf.nodes["fn_theorem_check"]
+        assert isinstance(node, FnNode)
+
+    def test_fn_theorem_check_reads_strategy(self) -> None:
+        wf = _load_formalize_workflow()
+        node = wf.nodes["fn_theorem_check"]
+        assert isinstance(node, FnNode)
+        assert ".factory/strategy/current.md" in node.reads
+
+    def test_fn_scope_check_exists_and_is_fnnode(self) -> None:
+        wf = _load_formalize_workflow()
+        node = wf.nodes["fn_scope_check"]
+        assert isinstance(node, FnNode)
+
+    def test_fn_manifest_exists_and_is_fnnode(self) -> None:
+        wf = _load_formalize_workflow()
+        node = wf.nodes["fn_manifest"]
+        assert isinstance(node, FnNode)
+
+    def test_fn_manifest_writes_manifest_json(self) -> None:
+        wf = _load_formalize_workflow()
+        node = wf.nodes["fn_manifest"]
+        assert isinstance(node, FnNode)
+        assert ".factory/manifest.json" in node.writes
+
+
+# ── Gate-hardening edges ───────────────────────────────────────
+
+
+class TestGateHardeningEdges:
+    def test_gate_theory_to_fn_theorem_check(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "gate_theory" and e.target == "fn_theorem_check"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition == VerdictType.PROCEED
+
+    def test_fn_theorem_check_to_gate_theory_review(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "fn_theorem_check" and e.target == "gate_theory_review"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition is None
+
+    def test_gate_ir_to_fn_scope_check(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "gate_ir" and e.target == "fn_scope_check"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition == VerdictType.PROCEED
+
+    def test_fn_scope_check_to_fn_generate(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "fn_scope_check" and e.target == "fn_generate"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition is None
+
+    def test_gate_qa_to_fn_manifest(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "gate_qa" and e.target == "fn_manifest"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition == VerdictType.PROCEED
+
+    def test_fn_manifest_to_archivist_build(self) -> None:
+        wf = _load_formalize_workflow()
+        edge = next(
+            (e for e in wf.edges if e.source == "fn_manifest" and e.target == "archivist_build"),
+            None,
+        )
+        assert edge is not None
+        assert edge.condition is None
+
+    def test_old_edge_gate_theory_to_gate_theory_review_removed(self) -> None:
+        wf = _load_formalize_workflow()
+        old_edge = next(
+            (e for e in wf.edges if e.source == "gate_theory" and e.target == "gate_theory_review"),
+            None,
+        )
+        assert old_edge is None
+
+    def test_old_edge_gate_ir_to_fn_generate_removed(self) -> None:
+        wf = _load_formalize_workflow()
+        old_edge = next(
+            (e for e in wf.edges if e.source == "gate_ir" and e.target == "fn_generate"),
+            None,
+        )
+        assert old_edge is None
+
+    def test_old_edge_gate_qa_to_archivist_build_removed(self) -> None:
+        wf = _load_formalize_workflow()
+        old_edge = next(
+            (e for e in wf.edges if e.source == "gate_qa" and e.target == "archivist_build"),
+            None,
+        )
+        assert old_edge is None
