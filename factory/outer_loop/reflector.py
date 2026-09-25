@@ -87,6 +87,15 @@ class OuterLoopReflector:
         Returns:
             ReflectionReport with patterns and suggestions
         """
+        # Firewall assertion: reject holdout CycleRecords from reflection
+        for _, _, rec in records:
+            if rec is not None and getattr(rec, "split", None) == "val":
+                raise RuntimeError(
+                    "Validation CycleRecord passed to reflector — this violates "
+                    "the train/val firewall. Validation data must never "
+                    "reach the reflector."
+                )
+
         valid = [(id_, score, rec) for id_, score, rec in records if rec is not None]
         if len(valid) < 2:
             log.warning("reflection_insufficient_data", count=len(valid))

@@ -264,7 +264,7 @@ class TestE2EOverfitDetection:
         result = engine.run(seed_wf)
 
         assert result.overfit_flag is True
-        assert result.holdout_score > 0
+        assert result.val_score > 0
 
 
 class TestE2EFilesystem:

@@ -96,6 +96,7 @@ class CycleRecord:
 
     instance_results: list[dict] | None = None
     eval_details: dict[str, object] | None = None
+    split: str | None = None
 
 
 class CycleAnalyzer:

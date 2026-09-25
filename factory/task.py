@@ -41,6 +41,7 @@ class TaskInstance(BaseModel):
     id: str
     path: Path | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    split: Literal["train", "val"] | None = None
 
 
 class VerifyResult(BaseModel):
@@ -213,6 +214,7 @@ class InstancesConfig(BaseModel):
 
     format: str = "directory"
     source: str = ""
+    holdout_ids: list[str] = Field(default_factory=list)
 
 
 class SetupConfig(BaseModel):
@@ -406,12 +408,25 @@ class Task:
 
     # ── Four hooks ───────────────────────────────────────────────
 
-    def instances(self) -> Iterator[TaskInstance]:
+    def instances(
+        self, split: Literal["train", "val", "all"] = "all",
+    ) -> Iterator[TaskInstance]:
         """Discover what to work on.
 
         Default: yield a single instance with id="default".
         Override for multi-instance tasks (directory scanning, API queries).
+
+        Args:
+            split: Filter instances by split assignment. "train" returns
+                only training instances, "val" only validation, "all" returns
+                everything. Default is "all" for backward compatibility.
         """
+        raw = list(self._raw_instances())
+        assigned = self._assign_splits(raw)
+        yield from self._filter_by_split(assigned, split)
+
+    def _raw_instances(self) -> Iterator[TaskInstance]:
+        """Yield unfiltered instances from config. Subclasses may override."""
         cfg = self._definition.instances_config
         if cfg.source and cfg.format == "directory":
             source = Path(cfg.source)
@@ -421,6 +436,41 @@ class Task:
                         yield TaskInstance(id=subdir.name, path=subdir)
                 return
         yield TaskInstance(id="default")
+
+    def _assign_splits(self, instances: list[TaskInstance]) -> list[TaskInstance]:
+        """Assign split labels to instances that don't have one.
+
+        Priority:
+        1. If the instance already has a split set, keep it.
+        2. If holdout_ids is configured, mark matching IDs as val.
+        3. Otherwise (no-split fallback): all instances become train.
+           Splits are opt-in only — no automatic partitioning.
+        """
+        holdout_ids = set(self._definition.instances_config.holdout_ids)
+
+        result: list[TaskInstance] = []
+        for inst in instances:
+            if inst.split is not None:
+                # Explicit split from subclass — keep as-is
+                result.append(inst)
+            elif holdout_ids and inst.id in holdout_ids:
+                result.append(inst.model_copy(update={"split": "val"}))
+            elif holdout_ids:
+                result.append(inst.model_copy(update={"split": "train"}))
+            else:
+                # No-split fallback: everything is train
+                result.append(inst.model_copy(update={"split": "train"}))
+        return result
+
+    @staticmethod
+    def _filter_by_split(
+        instances: list[TaskInstance],
+        split: Literal["train", "val", "all"],
+    ) -> Iterator[TaskInstance]:
+        """Filter instances by split value."""
+        for inst in instances:
+            if split == "all" or inst.split == split:
+                yield inst
 
     def setup(self, instance: TaskInstance, workspace: Path) -> None:
         """Prepare the environment for one instance.

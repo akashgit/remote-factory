@@ -1,30 +1,35 @@
-# Builder Review — DataNode always uses executor
+# Builder Review — PR #1541 Fixes
 
 ## Summary
 
-Restored the unconditional DataNode-always-uses-executor behavior. The CEO subprocess
-cannot reliably follow multi-step iteration loops from SKILL.md prose — this is a known
-LLM reliability limitation, not a bug in the execution strategy dispatch.
+Implemented two fixes on the existing PR #1541 (search/holdout split firewall):
 
-## Changes
+### FIX 1 — Naming: `split='search'` → `split='train'`
 
-### factory/inner_loop.py
-- **Line ~427**: Removed `and self.execution_strategy == 'executor'` condition from the
-  DataNode check in `_step_with_task()`. DataNode workflows now unconditionally route to
-  `_step_with_data_node()` regardless of `execution_strategy`.
-- **`_step_with_data_node()` docstring**: Updated to explain *why* DataNode always uses
-  WorkflowExecutor — documents the LLM reliability limitation.
-- No warning log existed to remove (the code hadn't added one yet).
+Renamed all references from `split="search"` to `split="train"` across 6 files. "train" and "holdout" are standard ML terminology (matching PyTorch train/val/test convention).
 
-### tests/test_inner_loop_dispatch.py
-- `test_datanode_ceo_skill_uses_subprocess` → renamed to `test_datanode_ceo_skill_uses_executor`,
-  now asserts DataNode + ceo-skill routes to `_step_with_data_node` (not `_run_ceo_subprocess`).
-- `test_datanode_ceo_tool_uses_subprocess` → renamed to `test_datanode_ceo_tool_uses_executor`,
-  now asserts DataNode + ceo-tool routes to `_step_with_data_node`.
-- `test_datanode_executor_uses_step_with_data_node` — kept unchanged, still passes.
+**Files changed:**
+- `factory/task.py`: `TaskInstance.split` type, `instances()` param, `_assign_splits()` defaults, `_filter_by_split()` param, docstrings
+- `factory/outer_loop/engine.py`: `task.instances(split='train')` calls
+- `factory/outer_loop/evaluator.py`: `record.split = 'train'`
+- `factory/outer_loop/reflector.py`: Assertion message wording
+- `factory/outer_loop/filesystem.py`: `run_report.json` key → `train_score`
+- `tests/test_outer_loop/test_holdout.py`: All test references updated
 
-## Verification
+### FIX 2 — Backward Compat Fallback
 
-- All 15 tests in `test_inner_loop_dispatch.py` pass
-- `ruff check` clean
-- `mypy` clean
+Added `try/except TypeError` in `engine.py` for when existing Task subclasses override `instances()` without the `split` parameter:
+
+- `evolve_generation()`: Falls back to `SubsetSelector` with config lists on `TypeError`
+- `run()` holdout section: Falls back to `self._config.holdout_instances` / `self._config.training_instances` on `TypeError`
+- Logs `task_instances_no_split` warning when fallback activates
+
+**New tests:**
+- `TestLegacyTaskBackwardCompat::test_evolve_generation_with_legacy_task` — LegacyTask (no split param) works via config fallback
+- `TestLegacyTaskBackwardCompat::test_run_with_legacy_task_no_crash` — Full `run()` cycle completes without crash
+
+## Test Results
+
+- `tests/test_outer_loop/test_holdout.py`: **33/33 passed**
+- `tests/test_outer_loop/` (full suite): **665/665 passed** (595s)
+- `ruff check`: All checks passed
