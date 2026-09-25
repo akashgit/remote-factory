@@ -175,6 +175,20 @@ def save_best(
             json.dumps(audit, indent=2)
         )
 
+    # Write run_report.json with search/holdout summary
+    run_report = {
+        "search_score": result.best_score,
+        "holdout_score": result.holdout_score,
+        "overfit_flag": result.overfit_flag,
+        "total_candidates_evaluated": result.total_candidates_evaluated,
+        "generations_completed": result.generations_completed,
+        "convergence_reason": result.convergence_reason,
+        "total_cost_usd": result.total_cost_usd,
+    }
+    (best_dir / "run_report.json").write_text(
+        json.dumps(run_report, indent=2)
+    )
+
 
 def export_best_workflow(
     project_path: Path,

@@ -65,12 +65,31 @@ class CycleRecordCache:
         blob = json.dumps(workflow.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()
 
-    def get(self, workflow: Workflow) -> CycleRecord | None:
-        key = self.workflow_hash(workflow)
+    @staticmethod
+    def _cache_key(workflow: Workflow, instances: list[str] | None = None) -> str:
+        """Compute composite cache key: hash(workflow) + ':' + hash(sorted(instances)).
+
+        Instance-aware keying prevents cache poisoning where a workflow
+        evaluated on search instances returns cached results for holdout queries.
+        """
+        wf_hash = CycleRecordCache.workflow_hash(workflow)
+        if instances is not None:
+            inst_blob = json.dumps(sorted(instances), separators=(",", ":"))
+            inst_hash = hashlib.sha256(inst_blob.encode()).hexdigest()
+            return f"{wf_hash}:{inst_hash}"
+        return wf_hash
+
+    def get(
+        self, workflow: Workflow, instances: list[str] | None = None,
+    ) -> CycleRecord | None:
+        key = self._cache_key(workflow, instances)
         return self._cache.get(key)
 
-    def put(self, workflow: Workflow, record: CycleRecord) -> None:
-        key = self.workflow_hash(workflow)
+    def put(
+        self, workflow: Workflow, record: CycleRecord,
+        instances: list[str] | None = None,
+    ) -> None:
+        key = self._cache_key(workflow, instances)
         self._cache[key] = record
 
     @property
@@ -314,7 +333,7 @@ class SwarmEvaluator:
         """
         from factory.inner_loop import InnerLoop
 
-        cached_record = self._cycle_cache.get(workflow)
+        cached_record = self._cycle_cache.get(workflow, instances)
         if cached_record is not None:
             score = cached_record.score_end or 0.0
             cost = cached_record.total_cost_usd
@@ -370,7 +389,8 @@ class SwarmEvaluator:
             score = summary_score if summary_score is not None else (record.score_end or 0.0)
             cost = record.total_cost_usd
 
-            self._cycle_cache.put(workflow, record)
+            record.split = "search"
+            self._cycle_cache.put(workflow, record, instances)
             if individual_id:
                 self._cycle_records[individual_id] = record
 

@@ -48,6 +48,7 @@ class Individual(BaseModel):
     id: str
     workflow_data: dict[str, object]
     score: float | None = None
+    holdout_score: float | None = None
     features: tuple[int, ...] = ()
     generation: int = 0
     parent_id: str | None = None
@@ -235,5 +236,6 @@ class OuterLoopResult(BaseModel):
     generations_completed: int = 0
     total_evaluations: int = 0
     archive_size: int = 0
+    total_candidates_evaluated: int = 0
     pareto_front: list[Individual] = Field(default_factory=list)
     hyperparameter_history: list[HyperparameterRecord] = Field(default_factory=list)
