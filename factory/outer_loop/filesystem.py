@@ -175,9 +175,9 @@ def save_best(
             json.dumps(audit, indent=2)
         )
 
-    # Write run_report.json with search/holdout summary
+    # Write run_report.json with train/holdout summary
     run_report = {
-        "search_score": result.best_score,
+        "train_score": result.best_score,
         "holdout_score": result.holdout_score,
         "overfit_flag": result.overfit_flag,
         "total_candidates_evaluated": result.total_candidates_evaluated,

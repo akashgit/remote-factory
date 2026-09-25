@@ -92,7 +92,7 @@ class OuterLoopReflector:
             if rec is not None and getattr(rec, "split", None) == "holdout":
                 raise RuntimeError(
                     "Holdout CycleRecord passed to reflector — this violates "
-                    "the search/holdout firewall. Holdout data must never "
+                    "the train/holdout firewall. Holdout data must never "
                     "reach the reflector."
                 )
 

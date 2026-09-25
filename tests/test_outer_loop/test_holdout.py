@@ -43,24 +43,40 @@ from factory.workflow.primitives import (
 
 
 class DummyTaskWithSplit(Task):
-    """Task with 3 search + 2 holdout instances for testing."""
+    """Task with 3 train + 2 holdout instances for testing."""
 
     def __init__(self) -> None:
         super().__init__(definition=TaskDefinition(name="dummy-split"))
 
     def instances(
-        self, split: Literal["search", "holdout", "all"] = "all",
+        self, split: Literal["train", "holdout", "all"] = "all",
     ) -> Iterator[TaskInstance]:
         all_instances = [
-            TaskInstance(id="s1", split="search"),
-            TaskInstance(id="s2", split="search"),
-            TaskInstance(id="s3", split="search"),
+            TaskInstance(id="s1", split="train"),
+            TaskInstance(id="s2", split="train"),
+            TaskInstance(id="s3", split="train"),
             TaskInstance(id="h1", split="holdout"),
             TaskInstance(id="h2", split="holdout"),
         ]
         for inst in all_instances:
             if split == "all" or inst.split == split:
                 yield inst
+
+
+class LegacyTask(Task):
+    """Task that overrides instances() WITHOUT the split parameter.
+
+    Simulates existing Task subclasses written before the split API was added.
+    Used to verify backward-compat fallback in the engine.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(definition=TaskDefinition(name="legacy-task"))
+
+    def instances(self) -> Iterator[TaskInstance]:  # type: ignore[override]
+        yield TaskInstance(id="leg1")
+        yield TaskInstance(id="leg2")
+        yield TaskInstance(id="leg3")
 
 
 class TrackingEvaluator:
@@ -112,12 +128,12 @@ def _make_config(**overrides: object) -> SwarmConfig:
 class TestTaskInstancesSplitAPI:
     """AC1 — Task.instances() accepts split argument."""
 
-    def test_split_search_returns_only_search(self) -> None:
+    def test_split_train_returns_only_train(self) -> None:
         task = DummyTaskWithSplit()
-        search = list(task.instances(split="search"))
-        assert len(search) == 3
-        assert all(inst.split == "search" for inst in search)
-        assert {inst.id for inst in search} == {"s1", "s2", "s3"}
+        train = list(task.instances(split="train"))
+        assert len(train) == 3
+        assert all(inst.split == "train" for inst in train)
+        assert {inst.id for inst in train} == {"s1", "s2", "s3"}
 
     def test_split_holdout_returns_only_holdout(self) -> None:
         task = DummyTaskWithSplit()
@@ -137,8 +153,8 @@ class TestTaskInstancesSplitAPI:
         assert len(all_insts) == 5
 
     def test_task_instance_has_split_field(self) -> None:
-        inst = TaskInstance(id="test", split="search")
-        assert inst.split == "search"
+        inst = TaskInstance(id="test", split="train")
+        assert inst.split == "train"
         inst2 = TaskInstance(id="test2")
         assert inst2.split is None
 
@@ -220,29 +236,29 @@ class TestReflectorFirewall:
             duration_s=1.0, score_start=None, score_end=0.8, score_delta=None,
             split="holdout",
         )
-        search_rec = CycleRecord(
+        train_rec = CycleRecord(
             cycle_number=2, mode=None, started_at=None, ended_at=None,
             duration_s=1.0, score_start=None, score_end=0.6, score_delta=None,
-            split="search",
+            split="train",
         )
         records = [
             ("id1", 0.8, holdout_rec),
-            ("id2", 0.6, search_rec),
+            ("id2", 0.6, train_rec),
         ]
         with pytest.raises(RuntimeError, match="holdout"):
             reflector.reflect(records, generation=0)
 
-    def test_reflector_accepts_search_records(self) -> None:
+    def test_reflector_accepts_train_records(self) -> None:
         reflector = OuterLoopReflector(k=1)
         rec1 = CycleRecord(
             cycle_number=1, mode=None, started_at=None, ended_at=None,
             duration_s=1.0, score_start=None, score_end=0.8, score_delta=None,
-            split="search",
+            split="train",
         )
         rec2 = CycleRecord(
             cycle_number=2, mode=None, started_at=None, ended_at=None,
             duration_s=1.0, score_start=None, score_end=0.6, score_delta=None,
-            split="search",
+            split="train",
         )
         records = [("id1", 0.8, rec1), ("id2", 0.6, rec2)]
         report = reflector.reflect(records, generation=0)
@@ -276,13 +292,13 @@ class TestCycleRecordSplit:
         )
         assert rec.split is None
 
-    def test_cycle_record_split_search(self) -> None:
+    def test_cycle_record_split_train(self) -> None:
         rec = CycleRecord(
             cycle_number=1, mode=None, started_at=None, ended_at=None,
             duration_s=1.0, score_start=None, score_end=0.8, score_delta=None,
-            split="search",
+            split="train",
         )
-        assert rec.split == "search"
+        assert rec.split == "train"
 
 
 # ── AC5: OverfitDetector ──────────────────────────────────────
@@ -357,7 +373,7 @@ class TestRunReport:
         assert report_path.exists()
         report = json.loads(report_path.read_text())
 
-        assert report["search_score"] == 0.82
+        assert report["train_score"] == 0.82
         assert report["holdout_score"] == 0.76
         assert report["overfit_flag"] is False
         assert report["total_candidates_evaluated"] == 47
@@ -374,9 +390,9 @@ class TestSplitConfiguration:
 
     def test_explicit_split_preserved(self) -> None:
         task = DummyTaskWithSplit()
-        search = list(task.instances(split="search"))
+        train = list(task.instances(split="train"))
         holdout = list(task.instances(split="holdout"))
-        assert len(search) == 3
+        assert len(train) == 3
         assert len(holdout) == 2
 
     def test_holdout_ids_config(self) -> None:
@@ -400,14 +416,14 @@ class TestSplitConfiguration:
 
 
 class TestFallbackNoSplit:
-    """AC10 — When no explicit split is declared, all instances are search."""
+    """AC10 — When no explicit split is declared, all instances are train."""
 
-    def test_no_split_all_search(self) -> None:
-        """Default task with no splits: all instances become search."""
+    def test_no_split_all_train(self) -> None:
+        """Default task with no splits: all instances become train."""
         task = Task(definition=TaskDefinition(name="no-split"))
         insts = list(task.instances(split="all"))
         assert len(insts) == 1
-        assert insts[0].split == "search"
+        assert insts[0].split == "train"
         assert insts[0].id == "default"
 
     def test_no_holdout_when_no_config(self) -> None:
@@ -416,12 +432,12 @@ class TestFallbackNoSplit:
         holdout = list(task.instances(split="holdout"))
         assert len(holdout) == 0
 
-    def test_all_search_when_no_config(self) -> None:
-        """All instances are search when no split is configured."""
+    def test_all_train_when_no_config(self) -> None:
+        """All instances are train when no split is configured."""
         task = Task(definition=TaskDefinition(name="no-split"))
-        search = list(task.instances(split="search"))
-        assert len(search) == 1
-        assert search[0].id == "default"
+        train = list(task.instances(split="train"))
+        assert len(train) == 1
+        assert train[0].id == "default"
 
 
 # ── AC11: Individual.holdout_score lifecycle ──────────────────
@@ -476,8 +492,8 @@ class TestVerifyUnchanged:
 class TestEngineSearchOnlyEvolution:
     """AC2 & AC3 — Evolution uses search-only instances, holdout only at end-of-run."""
 
-    def test_evolve_generation_only_passes_search_instances(self) -> None:
-        """During evolve_generation, only search instance IDs are used."""
+    def test_evolve_generation_only_passes_train_instances(self) -> None:
+        """During evolve_generation, only train instance IDs are used."""
         from factory.outer_loop.engine import SwarmEngine
 
         task = DummyTaskWithSplit()
@@ -497,12 +513,12 @@ class TestEngineSearchOnlyEvolution:
 
         engine.evolve_generation(pop, 0, "/tmp/test")
 
-        search_ids = {"s1", "s2", "s3"}
+        train_ids = {"s1", "s2", "s3"}
         holdout_ids = {"h1", "h2"}
         for call in call_log:
             call_set = set(call)
-            assert call_set.issubset(search_ids), (
-                f"Expected only search IDs, got {call}"
+            assert call_set.issubset(train_ids), (
+                f"Expected only train IDs, got {call}"
             )
             assert not call_set & holdout_ids, (
                 f"Holdout IDs leaked into evolution: {call}"
@@ -522,3 +538,57 @@ class TestOuterLoopResultFields:
     def test_total_candidates_evaluated_set(self) -> None:
         result = OuterLoopResult(total_candidates_evaluated=42)
         assert result.total_candidates_evaluated == 42
+
+
+# ── Backward compat: LegacyTask (no split param) ────────────
+
+
+class TestLegacyTaskBackwardCompat:
+    """FIX 2 — Engine doesn't crash when Task.instances() lacks split param."""
+
+    def test_evolve_generation_with_legacy_task(self) -> None:
+        """LegacyTask.instances() has no split param → engine falls back to config."""
+        from factory.outer_loop.engine import SwarmEngine
+
+        task = LegacyTask()
+        config = _make_config(training_instances=["leg1", "leg2", "leg3"])
+        config.set_task(task)
+
+        call_log: list[list[str]] = []
+
+        def track_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            call_log.append(list(instances))
+            return EvalResult(score=0.5, benchmark_score=0.5, hygiene_score=0.7)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=track_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        pop = engine.seed(_make_workflow())
+        # Should NOT raise TypeError
+        engine.evolve_generation(pop, 0, "/tmp/test")
+
+        # Verify calls were made (fallback worked)
+        assert len(call_log) > 0
+
+    def test_run_with_legacy_task_no_crash(self) -> None:
+        """Full run() with LegacyTask doesn't crash."""
+        from factory.outer_loop.engine import SwarmEngine
+
+        task = LegacyTask()
+        config = _make_config(
+            budget=4,
+            population_size=2,
+            training_instances=["leg1", "leg2"],
+            holdout_instances=["leg3"],
+        )
+        config.set_task(task)
+
+        def simple_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            return EvalResult(score=0.5, benchmark_score=0.5, hygiene_score=0.7)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=simple_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        # Should NOT raise TypeError
+        result = engine.run(_make_workflow())
+        assert result.best_score >= 0.0

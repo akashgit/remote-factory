@@ -41,7 +41,7 @@ class TaskInstance(BaseModel):
     id: str
     path: Path | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    split: Literal["search", "holdout"] | None = None
+    split: Literal["train", "holdout"] | None = None
 
 
 class VerifyResult(BaseModel):
@@ -409,7 +409,7 @@ class Task:
     # ── Four hooks ───────────────────────────────────────────────
 
     def instances(
-        self, split: Literal["search", "holdout", "all"] = "all",
+        self, split: Literal["train", "holdout", "all"] = "all",
     ) -> Iterator[TaskInstance]:
         """Discover what to work on.
 
@@ -417,8 +417,8 @@ class Task:
         Override for multi-instance tasks (directory scanning, API queries).
 
         Args:
-            split: Filter instances by split assignment. "search" returns
-                only search instances, "holdout" only holdout, "all" returns
+            split: Filter instances by split assignment. "train" returns
+                only training instances, "holdout" only holdout, "all" returns
                 everything. Default is "all" for backward compatibility.
         """
         raw = list(self._raw_instances())
@@ -443,7 +443,7 @@ class Task:
         Priority:
         1. If the instance already has a split set, keep it.
         2. If holdout_ids is configured, mark matching IDs as holdout.
-        3. Otherwise (no-split fallback): all instances become search.
+        3. Otherwise (no-split fallback): all instances become train.
            Splits are opt-in only — no automatic partitioning.
         """
         holdout_ids = set(self._definition.instances_config.holdout_ids)
@@ -456,16 +456,16 @@ class Task:
             elif holdout_ids and inst.id in holdout_ids:
                 result.append(inst.model_copy(update={"split": "holdout"}))
             elif holdout_ids:
-                result.append(inst.model_copy(update={"split": "search"}))
+                result.append(inst.model_copy(update={"split": "train"}))
             else:
-                # No-split fallback: everything is search
-                result.append(inst.model_copy(update={"split": "search"}))
+                # No-split fallback: everything is train
+                result.append(inst.model_copy(update={"split": "train"}))
         return result
 
     @staticmethod
     def _filter_by_split(
         instances: list[TaskInstance],
-        split: Literal["search", "holdout", "all"],
+        split: Literal["train", "holdout", "all"],
     ) -> Iterator[TaskInstance]:
         """Filter instances by split value."""
         for inst in instances:

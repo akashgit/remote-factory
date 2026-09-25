@@ -1,68 +1,35 @@
-# Builder Review: Search/Holdout Split Firewall (#1540)
+# Builder Review — PR #1541 Fixes
 
 ## Summary
 
-Implemented all 9 components of the search/holdout split firewall as described in the design doc, with the user-approved modification: no automatic 80/20 seeded random split. Splits are opt-in only.
+Implemented two fixes on the existing PR #1541 (search/holdout split firewall):
 
-## Changes Made
+### FIX 1 — Naming: `split='search'` → `split='train'`
 
-### C1 — Task.instances(split=) API (`factory/task.py`)
-- Added `split` field to `TaskInstance` (`Literal["search", "holdout"] | None`)
-- Added `holdout_ids` field to `InstancesConfig`
-- Added `split` parameter to `instances()` method (default="all")
-- Added `_raw_instances()`, `_assign_splits()`, `_filter_by_split()` helper methods
-- No-split fallback: all instances become `split="search"` when no explicit split configured
+Renamed all references from `split="search"` to `split="train"` across 6 files. "train" and "holdout" are standard ML terminology (matching PyTorch train/val/test convention).
 
-### C2 — Individual.holdout_score (`factory/outer_loop/models.py`)
-- Added `holdout_score: float | None = None` to `Individual`
-- Added `total_candidates_evaluated: int = 0` to `OuterLoopResult`
+**Files changed:**
+- `factory/task.py`: `TaskInstance.split` type, `instances()` param, `_assign_splits()` defaults, `_filter_by_split()` param, docstrings
+- `factory/outer_loop/engine.py`: `task.instances(split='train')` calls
+- `factory/outer_loop/evaluator.py`: `record.split = 'train'`
+- `factory/outer_loop/reflector.py`: Assertion message wording
+- `factory/outer_loop/filesystem.py`: `run_report.json` key → `train_score`
+- `tests/test_outer_loop/test_holdout.py`: All test references updated
 
-### C3 — SwarmEngine holdout firewall (`factory/outer_loop/engine.py`)
-- `evolve_generation()` uses `task.instances(split="search")` when Task is available
-- Deleted per-generation holdout evaluation block (was lines 416-428)
-- End-of-run holdout evaluation calls `evaluate()` WITHOUT `individual_id`
-- Falls back to SwarmConfig `holdout_instances` when Task has no splits
-- Passes pre-computed `training_score` to `OverfitDetector.audit()`
+### FIX 2 — Backward Compat Fallback
 
-### C4 — CycleRecordCache instance-aware keying (`factory/outer_loop/evaluator.py`)
-- Added `_cache_key()` static method: `hash(workflow) + ":" + hash(sorted(instances))`
-- Updated `get()` and `put()` to accept optional `instances` parameter
-- Tags CycleRecords with `split="search"` in `_evaluate_via_inner_loop()`
+Added `try/except TypeError` in `engine.py` for when existing Task subclasses override `instances()` without the `split` parameter:
 
-### C5 — Reflector firewall assertion (`factory/outer_loop/reflector.py`)
-- Added runtime assertion at top of `reflect()`: raises `RuntimeError` if any CycleRecord has `split == "holdout"`
+- `evolve_generation()`: Falls back to `SubsetSelector` with config lists on `TypeError`
+- `run()` holdout section: Falls back to `self._config.holdout_instances` / `self._config.training_instances` on `TypeError`
+- Logs `task_instances_no_split` warning when fallback activates
 
-### C6 — CycleRecord.split field (`factory/cycle_analyzer.py`)
-- Added `split: str | None = None` field to `CycleRecord`
+**New tests:**
+- `TestLegacyTaskBackwardCompat::test_evolve_generation_with_legacy_task` — LegacyTask (no split param) works via config fallback
+- `TestLegacyTaskBackwardCompat::test_run_with_legacy_task_no_crash` — Full `run()` cycle completes without crash
 
-### C7 — Run report (`factory/outer_loop/filesystem.py`)
-- `save_best()` now writes `run_report.json` with: `search_score`, `holdout_score`, `overfit_flag`, `total_candidates_evaluated`, `generations_completed`, `convergence_reason`, `total_cost_usd`
+## Test Results
 
-### C8 — OverfitDetector training_score param (`factory/outer_loop/overfit.py`)
-- Added `training_score: float | None = None` parameter to `audit()`
-- When provided, skips training evaluation
-
-### C9 — No-split fallback
-- Implemented in C1: when no explicit split declared, all instances are search
-- No automatic 80/20 seeded random split (per user approval)
-
-## Test Coverage
-
-31 tests in `tests/test_outer_loop/test_holdout.py` covering:
-- AC1: 5 tests for Task.instances(split=) API
-- AC2/AC3: 1 test for engine search-only evolution
-- AC4: 3 tests for reflector firewall
-- AC5: 2 tests for OverfitDetector training_score
-- AC6: 2 tests for CycleRecord.split field
-- AC7: 1 test for run_report.json
-- AC8: 4 tests for instance-aware cache keys
-- AC9/AC10: 7 tests for split configuration and fallback
-- AC11: 3 tests for Individual.holdout_score lifecycle
-- AC12: 1 test for verify() unchanged
-
-## Regression Status
-
-- 137 tests pass (holdout + models + overfit + task)
-- 165 smoke tests pass
-- 2 previously-failing e2e/engine tests fixed and passing
-- Lint clean (ruff check passes)
+- `tests/test_outer_loop/test_holdout.py`: **33/33 passed**
+- `tests/test_outer_loop/` (full suite): **665/665 passed** (595s)
+- `ruff check`: All checks passed

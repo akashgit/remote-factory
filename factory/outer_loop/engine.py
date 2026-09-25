@@ -284,10 +284,21 @@ class SwarmEngine:
         project_dir: str = "",
     ) -> GenerationSummary:
         """Run one generation of evolution."""
-        # Use Task.instances(split="search") when Task is available (firewall)
+        # Use Task.instances(split="train") when Task is available (firewall)
         task = self._config.get_task()
         if task is not None:
-            instances = [inst.id for inst in task.instances(split="search")]
+            try:
+                instances = [inst.id for inst in task.instances(split="train")]
+            except TypeError:
+                # Backward compat: Task subclass overrides instances() without split param
+                log.warning(
+                    "task_instances_no_split",
+                    task=type(task).__name__,
+                    msg="Task.instances() does not accept split param, falling back to config",
+                )
+                instances = self._subset.select(
+                    self._config.training_instances, generation, self._budget.remaining
+                )
         else:
             # Legacy path: no Task with split support, use SubsetSelector
             instances = self._subset.select(
@@ -532,15 +543,26 @@ class SwarmEngine:
         if best:
             # Determine holdout instances: Task splits take priority, then SwarmConfig
             holdout_instances: list[str] = []
-            search_instances: list[str] = []
+            train_instances: list[str] = []
             if task is not None:
-                holdout_instances = [inst.id for inst in task.instances(split="holdout")]
-                search_instances = [inst.id for inst in task.instances(split="search")]
+                try:
+                    holdout_instances = [inst.id for inst in task.instances(split="holdout")]
+                except TypeError:
+                    log.warning(
+                        "task_instances_no_split",
+                        task=type(task).__name__,
+                        msg="Task.instances() does not accept split param, falling back to config (holdout)",
+                    )
+                    holdout_instances = list(self._config.holdout_instances)
+                try:
+                    train_instances = [inst.id for inst in task.instances(split="train")]
+                except TypeError:
+                    train_instances = list(self._config.training_instances)
 
             # Fall back to SwarmConfig holdout_instances if Task has no splits
             if not holdout_instances and self._config.holdout_instances:
                 holdout_instances = list(self._config.holdout_instances)
-                search_instances = list(self._config.training_instances)
+                train_instances = list(self._config.training_instances)
 
             if holdout_instances:
                 best_wf = Workflow.from_dict(best.workflow_data)  # type: ignore[arg-type]
@@ -554,7 +576,7 @@ class SwarmEngine:
                 # Audit with pre-computed training score to skip redundant re-eval
                 audit_result = self._overfit.audit(
                     best_wf,
-                    search_instances,
+                    train_instances,
                     holdout_instances,
                     self._evaluator,
                     project_dir,

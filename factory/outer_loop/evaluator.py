@@ -389,7 +389,7 @@ class SwarmEvaluator:
             score = summary_score if summary_score is not None else (record.score_end or 0.0)
             cost = record.total_cost_usd
 
-            record.split = "search"
+            record.split = "train"
             self._cycle_cache.put(workflow, record, instances)
             if individual_id:
                 self._cycle_records[individual_id] = record
