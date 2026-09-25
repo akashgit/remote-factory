@@ -11,7 +11,7 @@ AC7  — Run report
 AC8  — Instance-aware cache keys
 AC9  — Split configuration
 AC10 — Fallback behavior (no split → all search)
-AC11 — holdout_score lifecycle
+AC11 — val_score lifecycle
 AC12 — verify() unchanged
 """
 
@@ -43,20 +43,20 @@ from factory.workflow.primitives import (
 
 
 class DummyTaskWithSplit(Task):
-    """Task with 3 train + 2 holdout instances for testing."""
+    """Task with 3 train + 2 val instances for testing."""
 
     def __init__(self) -> None:
         super().__init__(definition=TaskDefinition(name="dummy-split"))
 
     def instances(
-        self, split: Literal["train", "holdout", "all"] = "all",
+        self, split: Literal["train", "val", "all"] = "all",
     ) -> Iterator[TaskInstance]:
         all_instances = [
             TaskInstance(id="s1", split="train"),
             TaskInstance(id="s2", split="train"),
             TaskInstance(id="s3", split="train"),
-            TaskInstance(id="h1", split="holdout"),
-            TaskInstance(id="h2", split="holdout"),
+            TaskInstance(id="h1", split="val"),
+            TaskInstance(id="h2", split="val"),
         ]
         for inst in all_instances:
             if split == "all" or inst.split == split:
@@ -135,11 +135,11 @@ class TestTaskInstancesSplitAPI:
         assert all(inst.split == "train" for inst in train)
         assert {inst.id for inst in train} == {"s1", "s2", "s3"}
 
-    def test_split_holdout_returns_only_holdout(self) -> None:
+    def test_split_val_returns_only_val(self) -> None:
         task = DummyTaskWithSplit()
-        holdout = list(task.instances(split="holdout"))
+        holdout = list(task.instances(split="val"))
         assert len(holdout) == 2
-        assert all(inst.split == "holdout" for inst in holdout)
+        assert all(inst.split == "val" for inst in holdout)
         assert {inst.id for inst in holdout} == {"h1", "h2"}
 
     def test_default_split_is_all(self) -> None:
@@ -229,12 +229,12 @@ class TestCycleRecordCache:
 class TestReflectorFirewall:
     """AC4 — Reflector rejects holdout CycleRecords."""
 
-    def test_reflector_rejects_holdout_records(self) -> None:
+    def test_reflector_rejects_val_records(self) -> None:
         reflector = OuterLoopReflector(k=1)
         holdout_rec = CycleRecord(
             cycle_number=1, mode=None, started_at=None, ended_at=None,
             duration_s=1.0, score_start=None, score_end=0.8, score_delta=None,
-            split="holdout",
+            split="val",
         )
         train_rec = CycleRecord(
             cycle_number=2, mode=None, started_at=None, ended_at=None,
@@ -245,7 +245,7 @@ class TestReflectorFirewall:
             ("id1", 0.8, holdout_rec),
             ("id2", 0.6, train_rec),
         ]
-        with pytest.raises(RuntimeError, match="holdout"):
+        with pytest.raises(RuntimeError, match="Validation"):
             reflector.reflect(records, generation=0)
 
     def test_reflector_accepts_train_records(self) -> None:
@@ -359,7 +359,7 @@ class TestRunReport:
         result = OuterLoopResult(
             best_workflow_data={"name": "test"},
             best_score=0.82,
-            holdout_score=0.76,
+            val_score=0.76,
             overfit_flag=False,
             total_cost_usd=12.34,
             convergence_reason="budget_exhausted",
@@ -374,7 +374,7 @@ class TestRunReport:
         report = json.loads(report_path.read_text())
 
         assert report["train_score"] == 0.82
-        assert report["holdout_score"] == 0.76
+        assert report["val_score"] == 0.76
         assert report["overfit_flag"] is False
         assert report["total_candidates_evaluated"] == 47
         assert report["generations_completed"] == 8
@@ -391,7 +391,7 @@ class TestSplitConfiguration:
     def test_explicit_split_preserved(self) -> None:
         task = DummyTaskWithSplit()
         train = list(task.instances(split="train"))
-        holdout = list(task.instances(split="holdout"))
+        holdout = list(task.instances(split="val"))
         assert len(train) == 3
         assert len(holdout) == 2
 
@@ -402,9 +402,9 @@ class TestSplitConfiguration:
         )
         task = Task(definition=defn)
         all_insts = list(task.instances(split="all"))
-        # Default single-instance task: "default" should be holdout
+        # Default single-instance task: "default" should be val
         assert len(all_insts) == 1
-        assert all_insts[0].split == "holdout"
+        assert all_insts[0].split == "val"
 
     def test_instances_config_has_holdout_ids(self) -> None:
         cfg = InstancesConfig(holdout_ids=["h1", "h2"])
@@ -426,10 +426,10 @@ class TestFallbackNoSplit:
         assert insts[0].split == "train"
         assert insts[0].id == "default"
 
-    def test_no_holdout_when_no_config(self) -> None:
-        """No holdout instances when no split is configured."""
+    def test_no_val_when_no_config(self) -> None:
+        """No val instances when no split is configured."""
         task = Task(definition=TaskDefinition(name="no-split"))
-        holdout = list(task.instances(split="holdout"))
+        holdout = list(task.instances(split="val"))
         assert len(holdout) == 0
 
     def test_all_train_when_no_config(self) -> None:
@@ -440,27 +440,27 @@ class TestFallbackNoSplit:
         assert train[0].id == "default"
 
 
-# ── AC11: Individual.holdout_score lifecycle ──────────────────
+# ── AC11: Individual.val_score lifecycle ──────────────────
 
 
-class TestIndividualHoldoutScore:
-    """AC11 — Individual.holdout_score defaults to None."""
+class TestIndividualValScore:
+    """AC11 — Individual.val_score defaults to None."""
 
     def test_default_none(self) -> None:
         ind = Individual(
             id="test", workflow_data={}, score=0.8,
         )
-        assert ind.holdout_score is None
+        assert ind.val_score is None
 
-    def test_can_set_holdout_score(self) -> None:
+    def test_can_set_val_score(self) -> None:
         ind = Individual(
             id="test", workflow_data={}, score=0.8,
         )
-        updated = ind.model_copy(update={"holdout_score": 0.76})
-        assert updated.holdout_score == 0.76
+        updated = ind.model_copy(update={"val_score": 0.76})
+        assert updated.val_score == 0.76
 
     def test_serialization_backward_compat(self) -> None:
-        """Old JSON without holdout_score deserializes cleanly."""
+        """Old JSON without val_score deserializes cleanly."""
         data = {
             "id": "test",
             "workflow_data": {},
@@ -469,7 +469,7 @@ class TestIndividualHoldoutScore:
             "generation": 0,
         }
         ind = Individual.model_validate(data, strict=False)
-        assert ind.holdout_score is None
+        assert ind.val_score is None
 
 
 # ── AC12: verify() unchanged ─────────────────────────────────

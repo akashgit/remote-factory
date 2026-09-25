@@ -546,12 +546,12 @@ class SwarmEngine:
             train_instances: list[str] = []
             if task is not None:
                 try:
-                    holdout_instances = [inst.id for inst in task.instances(split="holdout")]
+                    holdout_instances = [inst.id for inst in task.instances(split="val")]
                 except TypeError:
                     log.warning(
                         "task_instances_no_split",
                         task=type(task).__name__,
-                        msg="Task.instances() does not accept split param, falling back to config (holdout)",
+                        msg="Task.instances() does not accept split param, falling back to config (val)",
                     )
                     holdout_instances = list(self._config.holdout_instances)
                 try:
@@ -571,7 +571,7 @@ class SwarmEngine:
                     best_wf, project_dir, holdout_instances,
                 )
                 holdout_score_val = holdout_result.score
-                best = best.model_copy(update={"holdout_score": holdout_score_val})
+                best = best.model_copy(update={"val_score": holdout_score_val})
 
                 # Audit with pre-computed training score to skip redundant re-eval
                 audit_result = self._overfit.audit(
@@ -590,7 +590,7 @@ class SwarmEngine:
         return OuterLoopResult(
             best_workflow_data=best.workflow_data if best else {},
             best_score=best.score if best and best.score is not None else 0.0,
-            holdout_score=holdout_score_val,
+            val_score=holdout_score_val,
             overfit_flag=audit_result.overfit_flag if audit_result else False,
             trajectory=summaries,
             total_cost_usd=self._budget.total_cost_usd,

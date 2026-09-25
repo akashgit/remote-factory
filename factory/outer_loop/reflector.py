@@ -89,10 +89,10 @@ class OuterLoopReflector:
         """
         # Firewall assertion: reject holdout CycleRecords from reflection
         for _, _, rec in records:
-            if rec is not None and getattr(rec, "split", None) == "holdout":
+            if rec is not None and getattr(rec, "split", None) == "val":
                 raise RuntimeError(
-                    "Holdout CycleRecord passed to reflector — this violates "
-                    "the train/holdout firewall. Holdout data must never "
+                    "Validation CycleRecord passed to reflector — this violates "
+                    "the train/val firewall. Validation data must never "
                     "reach the reflector."
                 )
 

@@ -165,9 +165,9 @@ def save_best(
         json.dumps(result.best_workflow_data, indent=2, default=str)
     )
 
-    if result.holdout_score > 0 or result.overfit_flag:
+    if result.val_score > 0 or result.overfit_flag:
         audit = {
-            "holdout_score": result.holdout_score,
+            "val_score": result.val_score,
             "overfit_flag": result.overfit_flag,
             "best_score": result.best_score,
         }
@@ -175,10 +175,10 @@ def save_best(
             json.dumps(audit, indent=2)
         )
 
-    # Write run_report.json with train/holdout summary
+    # Write run_report.json with train/val summary
     run_report = {
         "train_score": result.best_score,
-        "holdout_score": result.holdout_score,
+        "val_score": result.val_score,
         "overfit_flag": result.overfit_flag,
         "total_candidates_evaluated": result.total_candidates_evaluated,
         "generations_completed": result.generations_completed,

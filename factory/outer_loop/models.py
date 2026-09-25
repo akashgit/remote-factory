@@ -48,7 +48,7 @@ class Individual(BaseModel):
     id: str
     workflow_data: dict[str, object]
     score: float | None = None
-    holdout_score: float | None = None
+    val_score: float | None = None
     features: tuple[int, ...] = ()
     generation: int = 0
     parent_id: str | None = None
@@ -228,7 +228,7 @@ class OuterLoopResult(BaseModel):
 
     best_workflow_data: dict[str, object] = Field(default_factory=dict)
     best_score: float = 0.0
-    holdout_score: float = 0.0
+    val_score: float = 0.0
     overfit_flag: bool = False
     trajectory: list[GenerationSummary] = Field(default_factory=list)
     total_cost_usd: float = 0.0

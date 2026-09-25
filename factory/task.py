@@ -41,7 +41,7 @@ class TaskInstance(BaseModel):
     id: str
     path: Path | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    split: Literal["train", "holdout"] | None = None
+    split: Literal["train", "val"] | None = None
 
 
 class VerifyResult(BaseModel):
@@ -409,7 +409,7 @@ class Task:
     # ── Four hooks ───────────────────────────────────────────────
 
     def instances(
-        self, split: Literal["train", "holdout", "all"] = "all",
+        self, split: Literal["train", "val", "all"] = "all",
     ) -> Iterator[TaskInstance]:
         """Discover what to work on.
 
@@ -418,7 +418,7 @@ class Task:
 
         Args:
             split: Filter instances by split assignment. "train" returns
-                only training instances, "holdout" only holdout, "all" returns
+                only training instances, "val" only validation, "all" returns
                 everything. Default is "all" for backward compatibility.
         """
         raw = list(self._raw_instances())
@@ -442,7 +442,7 @@ class Task:
 
         Priority:
         1. If the instance already has a split set, keep it.
-        2. If holdout_ids is configured, mark matching IDs as holdout.
+        2. If holdout_ids is configured, mark matching IDs as val.
         3. Otherwise (no-split fallback): all instances become train.
            Splits are opt-in only — no automatic partitioning.
         """
@@ -454,7 +454,7 @@ class Task:
                 # Explicit split from subclass — keep as-is
                 result.append(inst)
             elif holdout_ids and inst.id in holdout_ids:
-                result.append(inst.model_copy(update={"split": "holdout"}))
+                result.append(inst.model_copy(update={"split": "val"}))
             elif holdout_ids:
                 result.append(inst.model_copy(update={"split": "train"}))
             else:
@@ -465,7 +465,7 @@ class Task:
     @staticmethod
     def _filter_by_split(
         instances: list[TaskInstance],
-        split: Literal["train", "holdout", "all"],
+        split: Literal["train", "val", "all"],
     ) -> Iterator[TaskInstance]:
         """Filter instances by split value."""
         for inst in instances:
