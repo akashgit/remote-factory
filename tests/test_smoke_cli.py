@@ -236,10 +236,30 @@ class TestDesignWorkflow:
         canned = {
             "researcher": "## Research findings\nResearch output for testing.",
             "strategist": (
-                "## Strategy\n### Architecture\nTest arch.\n"
-                "### Phase 1: Scaffold\nBuild the scaffold.\n"
+                "## Strategy — Current Cycle\n\n"
+                "### Observations\n"
+                "- Project has good test coverage\n"
+                "- Architecture follows clean separation of concerns\n\n"
+                "### Architecture\nTest architecture with modular design.\n\n"
+                "### Phase 1: Scaffold\n"
+                "Build the core scaffold with proper error handling and validation.\n\n"
+                "### Phase 2: Integration\n"
+                "Wire up the components and add integration tests.\n"
             ),
-            "builder": "## Build output\ncommit abc123\nPR #1 opened.",
+            "builder": (
+                "## Build Output\n\n"
+                "### Changes Made\n"
+                "- Added new module `factory/testing/__init__.py` with FakeAgent and DummyTask exports\n"
+                "- Added `factory/testing/fake_agent.py` with contract-enforcing FakeAgent class\n"
+                "- Added `factory/testing/dummy_task.py` with deterministic DummyTask class\n"
+                "- Updated `factory/workflow/validation.py` with three new semantic checks\n"
+                "- Updated `factory/workflow/executor.py` with post_checks enforcement\n\n"
+                "### Test Results\n"
+                "All tests pass. No regressions detected.\n\n"
+                "### Commit\n"
+                "commit abc123def456\n"
+                "PR #1 opened targeting main.\n"
+            ),
             "health_checker": "## Health Check\nAll tests pass. Score: 0.85.",
             "code_reviewer": "## Code Review\nAll 7 categories PASS.",
             "adversarial_tester": "## Adversarial QA\nAll tests pass. VERDICT: PASS.",

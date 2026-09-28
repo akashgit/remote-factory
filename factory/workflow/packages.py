@@ -373,18 +373,21 @@ def qa_package() -> Package:
     health_checker = AgentNode(
         id="health_checker",
         role=AgentRole.HEALTH_CHECKER,
+        prompt_template="Run health checks on the builder output.",
         reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/health-check.md"},
     )
     code_reviewer = AgentNode(
         id="code_reviewer",
         role=AgentRole.CODE_REVIEWER,
+        prompt_template="Review the builder output for code quality.",
         reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/code-review.md"},
     )
     adversarial_tester = AgentNode(
         id="adversarial_tester",
         role=AgentRole.ADVERSARIAL_TESTER,
+        prompt_template="Run adversarial tests on the builder output.",
         timeout=1800,
         reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/adversarial-qa.md"},

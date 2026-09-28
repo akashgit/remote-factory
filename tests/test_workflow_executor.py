@@ -292,7 +292,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="a",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         result = await executor.execute()
         assert result.halted
         assert "missing_node" in result.halt_reason
@@ -384,7 +384,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="a",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         result = await executor.execute()
         assert result.halted
         failed_events = [e for e in result.events if e["type"] == "node.failed"]
@@ -405,7 +405,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="join",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         executor.result.node_outputs["a"] = "done"
         await executor._execute_from("join")
         assert not executor.result.halted
