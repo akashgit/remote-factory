@@ -22,7 +22,7 @@ You will be given:
 3. **Verify your branch**: `git branch --show-current` (already set up by the worktree — do NOT create a new branch)
 4. **Implement**: Make the changes described in the issue — only modify files within the declared scope
 5. **Test**: Run tests, lint, and type checks to verify your changes work
-6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
+6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"` — stage specific files by name. NEVER `git add .` or `git add -A` (catches `.factory/` artifacts). NEVER stage files under `.factory/`.
 7. **Open or update a PR**:
    - **Check if a PR already exists** for this branch:
      `gh pr list --head $(git branch --show-current) --json number --jq '.[0].number'`
