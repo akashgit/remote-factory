@@ -470,10 +470,13 @@ class InnerLoop:
 
         subset_selector = getattr(self, "_subset_selector", None)
         if subset_selector is not None:
-            selected_ids = set(subset_selector.select(
+            selected_ids = subset_selector.select(
                 [inst.id for inst in all_instances]
-            ))
-            all_instances = [i for i in all_instances if i.id in selected_ids]
+            )
+            if selected_ids:
+                selected_set = set(selected_ids)
+                all_instances = [i for i in all_instances if i.id in selected_set]
+            # If selected_ids is empty, skip filtering (allow all instances)
 
         instance_results: list[dict[str, Any]] = []
         scores: list[float] = []
@@ -649,9 +652,21 @@ class InnerLoop:
         # executor path — WorkflowExecutor handles DataNode iteration
         from factory.workflow.executor import WorkflowExecutor
 
+        # Get allowed instance IDs from subset selector (train/val firewall)
+        subset_selector = getattr(self, '_subset_selector', None)
+        allowed_instance_ids: set[str] | None = None
+        if subset_selector is not None and self.task is not None:
+            all_ids = [inst.id for inst in self.task.instances()]
+            selected = subset_selector.select(all_ids)
+            if selected:
+                allowed_instance_ids = set(selected)
+            # If selected is empty, leave allowed_instance_ids = None (allow everything)
+            # This handles the case where no split is configured and training_instances is empty
+
         executor = WorkflowExecutor(
             self.workflow,
             self.project_dir,
+            allowed_instance_ids=allowed_instance_ids,
         )
         exec_result_wf = asyncio.run(executor.execute())
 
