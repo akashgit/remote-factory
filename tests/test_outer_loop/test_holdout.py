@@ -811,3 +811,78 @@ class TestDataNodeRespectsSubsetSelector:
             "_subset_selector was not passed to WorkflowExecutor"
         )
         assert captured_kwargs["allowed_instance_ids"] == set(train_ids)
+
+    def test_empty_subset_selector_allows_all_instances(self) -> None:
+        """Empty FixedSubsetSelector should NOT filter out all instances.
+
+        When no split is configured (SwarmConfig.training_instances is empty),
+        the subset_selector returns an empty list. Before the fix, this was
+        converted to an empty set which filtered out ALL instances → score 0.0.
+        After the fix, an empty selection leaves allowed_instance_ids = None,
+        meaning no filtering (allow all instances).
+        """
+        from unittest.mock import MagicMock, patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.outer_loop.subset import FixedSubsetSelector
+        from factory.workflow.primitives import DataNode
+
+        task = DummyTaskWithSplit()
+        empty_ids: list[str] = []
+
+        # Create a workflow with a DataNode
+        data_node = DataNode(
+            id="data",
+            task_ref="dummy",
+            subgraph_entry="process",
+            subgraph_exit="process",
+        )
+        process_node = FnNode(id="process", command="echo ok")
+        wf = Workflow(
+            name="test_empty_selector",
+            nodes={"data": data_node, "process": process_node},
+            edges=[Edge(source="data", target="process")],
+            start_node="data",
+        )
+
+        loop = InnerLoop.__new__(InnerLoop)
+        loop.workflow = wf
+        loop._workflow = wf
+        loop.task = task
+        loop.project_dir = "/tmp/test"
+        loop.project_path = Path("/tmp/test")
+        loop.factory_dir = Path("/tmp/test/.factory")
+        loop.mode = "test"
+        loop.execution_strategy = "executor"
+        loop.frozen_nodes = set()
+        loop._step_count = 0
+        loop._history = []
+        loop._subset_selector = FixedSubsetSelector(empty_ids)
+
+        # Capture the WorkflowExecutor constructor call
+        captured_kwargs: dict = {}
+        original_init = WorkflowExecutor.__init__
+
+        def mock_init(self_exec, *args: Any, **kwargs: Any) -> None:
+            captured_kwargs.update(kwargs)
+            original_init(self_exec, *args, **kwargs)
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.node_outputs = {}
+        mock_result.nodes_executed = 1
+        mock_result.halted = False
+        mock_result.duration_ms = 100
+
+        with (
+            patch.object(WorkflowExecutor, "__init__", mock_init),
+            patch("asyncio.run", return_value=mock_result),
+        ):
+            loop._step_with_data_node()
+
+        # allowed_instance_ids should be None (not an empty set)
+        # because the empty selector means "no split configured" → allow all
+        assert captured_kwargs.get("allowed_instance_ids") is None, (
+            "Empty subset selector should result in allowed_instance_ids=None, "
+            f"but got {captured_kwargs.get('allowed_instance_ids')!r}"
+        )
