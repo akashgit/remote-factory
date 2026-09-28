@@ -1,30 +1,19 @@
-# Builder Review — DataNode always uses executor
+## Builder Review — Issue #1543
 
-## Summary
+### What was built
+Modified `factory/agents/prompts/builder.md` to add reloop-aware PR handling, preventing the Builder agent from overwriting PR title/body on follow-up commits.
 
-Restored the unconditional DataNode-always-uses-executor behavior. The CEO subprocess
-cannot reliably follow multi-step iteration loops from SKILL.md prose — this is a known
-LLM reliability limitation, not a bug in the execution strategy dispatch.
+### Changes
+- **Step 7 (Task section):** Replaced single `gh pr create` instruction with a two-branch flow:
+  1. PR existence check via `gh pr list --head $(git branch --show-current) --json number --jq '.[0].number'`
+  2. First run (no PR): create PR as before with `gh pr create`
+  3. Reloop (PR exists): `git push` only, with explicit rules forbidding `gh pr edit --title`, `gh pr edit --body`, and PR comments
+- **Output section:** Updated PR format note to clarify it applies on first run only; on reloop the original body is preserved
+- **Exit conditions:** Split into three cases: Success (first run), Success (reloop), and Blocked
 
-## Changes
+### Tests
+- 165/165 smoke tests pass
+- No code changes (prompt-only fix), so no new tests required
 
-### factory/inner_loop.py
-- **Line ~427**: Removed `and self.execution_strategy == 'executor'` condition from the
-  DataNode check in `_step_with_task()`. DataNode workflows now unconditionally route to
-  `_step_with_data_node()` regardless of `execution_strategy`.
-- **`_step_with_data_node()` docstring**: Updated to explain *why* DataNode always uses
-  WorkflowExecutor — documents the LLM reliability limitation.
-- No warning log existed to remove (the code hadn't added one yet).
-
-### tests/test_inner_loop_dispatch.py
-- `test_datanode_ceo_skill_uses_subprocess` → renamed to `test_datanode_ceo_skill_uses_executor`,
-  now asserts DataNode + ceo-skill routes to `_step_with_data_node` (not `_run_ceo_subprocess`).
-- `test_datanode_ceo_tool_uses_subprocess` → renamed to `test_datanode_ceo_tool_uses_executor`,
-  now asserts DataNode + ceo-tool routes to `_step_with_data_node`.
-- `test_datanode_executor_uses_step_with_data_node` — kept unchanged, still passes.
-
-## Verification
-
-- All 15 tests in `test_inner_loop_dispatch.py` pass
-- `ruff check` clean
-- `mypy` clean
+### Scope verification
+- Only file modified: `factory/agents/prompts/builder.md` (listed in factory.md modifiable scope as `factory/agents/prompts/*.md`)
