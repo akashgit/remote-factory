@@ -363,7 +363,7 @@ class TestSwarmEngineRun:
         wf = _make_workflow()
 
         result = engine.run(wf)
-        assert result.holdout_score > 0
+        assert result.val_score > 0
         assert isinstance(result.overfit_flag, bool)
 
     def test_run_hyperparameter_history(self) -> None:

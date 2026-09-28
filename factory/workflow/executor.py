@@ -96,12 +96,14 @@ class WorkflowExecutor:
         initial_context: str | None = None,
         agent_fn: Callable[..., Any] | None = None,
         input_fn: Callable[[str], str] | None = None,
+        allowed_instance_ids: set[str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
+        self._allowed_instance_ids = allowed_instance_ids
         if agent_fn is not None:
             self._agent_fn = agent_fn
         else:
@@ -786,6 +788,13 @@ class WorkflowExecutor:
                     reader = csv.DictReader(f)
                     for idx, row in enumerate(reader):
                         task_instances.append((DataItem(id=str(idx), metadata=dict(row)), None))
+
+        # Apply authoritative instance filter from SwarmEngine (train/val firewall)
+        if self._allowed_instance_ids is not None:
+            task_instances = [
+                (item, inst) for item, inst in task_instances
+                if item.id in self._allowed_instance_ids
+            ]
 
         # Apply split/shuffle/limit filters to the paired list
         if node.split != "all":
