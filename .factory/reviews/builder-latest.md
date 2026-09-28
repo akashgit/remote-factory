@@ -1,35 +1,29 @@
-# Builder Review — PR #1541 Fixes
+# Builder Output — Engine Fallback Chain Fix
 
-## Summary
+## Issue
+When no split is configured (empty `training_instances` + legacy Task without split param), the TypeError fallback in `engine.py` passes an empty list to SubsetSelector → zero instances → score 0.0.
 
-Implemented two fixes on the existing PR #1541 (search/holdout split firewall):
+## Changes
 
-### FIX 1 — Naming: `split='search'` → `split='train'`
+### `factory/outer_loop/engine.py`
 
-Renamed all references from `split="search"` to `split="train"` across 6 files. "train" and "holdout" are standard ML terminology (matching PyTorch train/val/test convention).
+**`evolve_generation()` (~line 288-309):**
+- Added check: after TypeError catch, if `self._config.training_instances` is non-empty, use SubsetSelector (existing behavior)
+- If `self._config.training_instances` is empty, call `task.instances()` with no args to get ALL instances (pre-split behavior)
 
-**Files changed:**
-- `factory/task.py`: `TaskInstance.split` type, `instances()` param, `_assign_splits()` defaults, `_filter_by_split()` param, docstrings
-- `factory/outer_loop/engine.py`: `task.instances(split='train')` calls
-- `factory/outer_loop/evaluator.py`: `record.split = 'train'`
-- `factory/outer_loop/reflector.py`: Assertion message wording
-- `factory/outer_loop/filesystem.py`: `run_report.json` key → `train_score`
-- `tests/test_outer_loop/test_holdout.py`: All test references updated
+**`run()` end-of-run (~line 561-568):**
+- Same fix for `train_instances` resolution: if config is empty after TypeError, call `task.instances()` for all instances
 
-### FIX 2 — Backward Compat Fallback
-
-Added `try/except TypeError` in `engine.py` for when existing Task subclasses override `instances()` without the `split` parameter:
-
-- `evolve_generation()`: Falls back to `SubsetSelector` with config lists on `TypeError`
-- `run()` holdout section: Falls back to `self._config.holdout_instances` / `self._config.training_instances` on `TypeError`
-- Logs `task_instances_no_split` warning when fallback activates
-
-**New tests:**
-- `TestLegacyTaskBackwardCompat::test_evolve_generation_with_legacy_task` — LegacyTask (no split param) works via config fallback
-- `TestLegacyTaskBackwardCompat::test_run_with_legacy_task_no_crash` — Full `run()` cycle completes without crash
+### `tests/test_outer_loop/test_holdout.py`
+- Added `test_legacy_task_empty_config_uses_all_instances`:
+  - Creates `LegacyTaskFive` yielding 5 instances without split support
+  - Configures SwarmConfig with empty `training_instances` and `holdout_instances`
+  - Calls `evolve_generation()`
+  - Asserts evaluator received ALL 5 instance IDs
 
 ## Test Results
+- `pytest tests/test_outer_loop/test_holdout.py -v`: 34 passed ✅
+- `pytest tests/test_outer_loop/ -v --timeout=300`: 666 passed ✅
 
-- `tests/test_outer_loop/test_holdout.py`: **33/33 passed**
-- `tests/test_outer_loop/` (full suite): **665/665 passed** (595s)
-- `ruff check`: All checks passed
+## PR
+Commit pushed to `factory/run-54df79cd` → PR #1541
