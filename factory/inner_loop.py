@@ -649,9 +649,17 @@ class InnerLoop:
         # executor path — WorkflowExecutor handles DataNode iteration
         from factory.workflow.executor import WorkflowExecutor
 
+        # Get allowed instance IDs from subset selector (train/val firewall)
+        subset_selector = getattr(self, '_subset_selector', None)
+        allowed_instance_ids: set[str] | None = None
+        if subset_selector is not None and self.task is not None:
+            all_ids = [inst.id for inst in self.task.instances()]
+            allowed_instance_ids = set(subset_selector.select(all_ids))
+
         executor = WorkflowExecutor(
             self.workflow,
             self.project_dir,
+            allowed_instance_ids=allowed_instance_ids,
         )
         exec_result_wf = asyncio.run(executor.execute())
 

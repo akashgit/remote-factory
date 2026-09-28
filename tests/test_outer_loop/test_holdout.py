@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Any, Iterator, Literal
 
 import pytest
 
@@ -30,6 +30,7 @@ from factory.outer_loop.overfit import OverfitDetector
 from factory.outer_loop.reflector import OuterLoopReflector
 from factory.outer_loop.filesystem import save_best
 from factory.task import InstancesConfig, Task, TaskDefinition, TaskInstance
+from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -634,3 +635,179 @@ class TestLegacyTaskBackwardCompat:
             assert set(call) == all_ids, (
                 f"Expected all 5 instances {all_ids}, got {set(call)}"
             )
+
+
+# ── DataNode train/val split bypass fix ─────────────────────
+
+
+class TestDataNodeRespectsSubsetSelector:
+    """DataNode workflows must respect _subset_selector (train/val firewall).
+
+    Before the fix, InnerLoop._step_with_data_node() ignored _subset_selector
+    and WorkflowExecutor._execute_data() called task.instances() with no split,
+    bypassing the train/val firewall.
+    """
+
+    def test_allowed_instance_ids_passed_to_executor(self) -> None:
+        """WorkflowExecutor receives allowed_instance_ids when _subset_selector is set."""
+        train_ids = {"s1", "s2", "s3"}
+        executor = WorkflowExecutor(
+            _make_workflow(),
+            "/tmp/test",
+            allowed_instance_ids=train_ids,
+        )
+        assert executor._allowed_instance_ids == train_ids
+
+    def test_allowed_instance_ids_default_none(self) -> None:
+        """WorkflowExecutor defaults allowed_instance_ids to None (no filtering)."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        executor = WorkflowExecutor(_make_workflow(), "/tmp/test")
+        assert executor._allowed_instance_ids is None
+
+    def test_executor_filters_task_instances_by_allowed_ids(self) -> None:
+        """_execute_data() filters task_instances when allowed_instance_ids is set."""
+        import asyncio
+
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.primitives import DataItem, DataNode
+
+        # Create a DataNode workflow with inline items (simpler than task_ref for testing)
+        data_node = DataNode(
+            id="data",
+            inline_items=[
+                DataItem(id="s1", metadata={}),
+                DataItem(id="s2", metadata={}),
+                DataItem(id="s3", metadata={}),
+                DataItem(id="h1", metadata={}),
+                DataItem(id="h2", metadata={}),
+            ],
+            subgraph_entry="process",
+            subgraph_exit="process",
+        )
+        process_node = FnNode(id="process", command="echo ok")
+        wf = Workflow(
+            name="test_datanode_filter",
+            nodes={"data": data_node, "process": process_node},
+            edges=[Edge(source="data", target="process")],
+            start_node="data",
+        )
+
+        # Only allow train IDs
+        train_ids = {"s1", "s2", "s3"}
+        executor = WorkflowExecutor(
+            wf, "/tmp/test", dry_run=True, allowed_instance_ids=train_ids,
+        )
+        result = asyncio.run(executor.execute())
+
+        # The executor should have processed exactly the train items
+        assert result.success
+        # Verify via node_outputs: DataNode output should only contain train items
+        if "data" in result.node_outputs:
+            import json
+            output = json.loads(result.node_outputs["data"])
+            executed_ids = {item["item_id"] for item in output if isinstance(item, dict)}
+            assert executed_ids == train_ids, (
+                f"Expected only train IDs {train_ids}, got {executed_ids}"
+            )
+
+    def test_executor_no_filter_when_allowed_ids_none(self) -> None:
+        """_execute_data() processes all items when allowed_instance_ids is None."""
+        import asyncio
+
+        from factory.workflow.executor import WorkflowExecutor
+        from factory.workflow.primitives import DataItem, DataNode
+
+        data_node = DataNode(
+            id="data",
+            inline_items=[
+                DataItem(id="s1", metadata={}),
+                DataItem(id="h1", metadata={}),
+            ],
+            subgraph_entry="process",
+            subgraph_exit="process",
+        )
+        process_node = FnNode(id="process", command="echo ok")
+        wf = Workflow(
+            name="test_no_filter",
+            nodes={"data": data_node, "process": process_node},
+            edges=[Edge(source="data", target="process")],
+            start_node="data",
+        )
+
+        # No allowed_instance_ids — should process all
+        executor = WorkflowExecutor(wf, "/tmp/test", dry_run=True)
+        result = asyncio.run(executor.execute())
+        assert result.success
+
+        if "data" in result.node_outputs:
+            import json
+            output = json.loads(result.node_outputs["data"])
+            executed_ids = {item["item_id"] for item in output if isinstance(item, dict)}
+            assert executed_ids == {"s1", "h1"}
+
+    def test_inner_loop_passes_subset_selector_to_executor(self) -> None:
+        """InnerLoop._step_with_data_node() passes _subset_selector IDs to executor."""
+        from unittest.mock import MagicMock, patch
+
+        from factory.inner_loop import InnerLoop
+        from factory.outer_loop.subset import FixedSubsetSelector
+        from factory.workflow.primitives import DataNode
+
+        task = DummyTaskWithSplit()
+        train_ids = ["s1", "s2", "s3"]
+
+        # Create a workflow with a DataNode
+        data_node = DataNode(
+            id="data",
+            task_ref="dummy",
+            subgraph_entry="process",
+            subgraph_exit="process",
+        )
+        process_node = FnNode(id="process", command="echo ok")
+        wf = Workflow(
+            name="test_inner_loop_datanode",
+            nodes={"data": data_node, "process": process_node},
+            edges=[Edge(source="data", target="process")],
+            start_node="data",
+        )
+
+        loop = InnerLoop.__new__(InnerLoop)
+        loop.workflow = wf
+        loop._workflow = wf
+        loop.task = task
+        loop.project_dir = "/tmp/test"
+        loop.project_path = Path("/tmp/test")
+        loop.factory_dir = Path("/tmp/test/.factory")
+        loop.mode = "test"
+        loop.execution_strategy = "executor"
+        loop.frozen_nodes = set()
+        loop._step_count = 0
+        loop._history = []
+        loop._subset_selector = FixedSubsetSelector(train_ids)
+
+        # Capture the WorkflowExecutor constructor call
+        captured_kwargs: dict = {}
+        original_init = WorkflowExecutor.__init__
+
+        def mock_init(self_exec, *args: Any, **kwargs: Any) -> None:
+            captured_kwargs.update(kwargs)
+            original_init(self_exec, *args, **kwargs)
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.node_outputs = {}
+        mock_result.nodes_executed = 1
+        mock_result.halted = False
+        mock_result.duration_ms = 100
+
+        with (
+            patch.object(WorkflowExecutor, "__init__", mock_init),
+            patch("asyncio.run", return_value=mock_result),
+        ):
+            loop._step_with_data_node()
+
+        assert "allowed_instance_ids" in captured_kwargs, (
+            "_subset_selector was not passed to WorkflowExecutor"
+        )
+        assert captured_kwargs["allowed_instance_ids"] == set(train_ids)

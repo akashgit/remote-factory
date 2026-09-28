@@ -1,29 +1,34 @@
-# Builder Output — Engine Fallback Chain Fix
+# Builder Review — DataNode train/val split bypass fix
 
 ## Issue
-When no split is configured (empty `training_instances` + legacy Task without split param), the TypeError fallback in `engine.py` passes an empty list to SubsetSelector → zero instances → score 0.0.
+PR #1541: DataNode workflows bypass the train/val split firewall.
 
-## Changes
+## Root Cause
+`InnerLoop._step_with_data_node()` ignores `_subset_selector` and `WorkflowExecutor._execute_data()` calls `task.instances()` with no split parameter, bypassing the train/val firewall set by `SwarmEngine.evolve_generation()`.
 
-### `factory/outer_loop/engine.py`
+## Changes Made
 
-**`evolve_generation()` (~line 288-309):**
-- Added check: after TypeError catch, if `self._config.training_instances` is non-empty, use SubsetSelector (existing behavior)
-- If `self._config.training_instances` is empty, call `task.instances()` with no args to get ALL instances (pre-split behavior)
+### 1. `factory/workflow/executor.py`
+- Added `allowed_instance_ids: set[str] | None = None` keyword parameter to `WorkflowExecutor.__init__()`
+- Stored as `self._allowed_instance_ids`
+- In `_execute_data()`, added filtering of `task_instances` by `allowed_instance_ids` BEFORE the existing `node.split` filter — this ensures the SwarmEngine's authoritative instance list takes precedence
 
-**`run()` end-of-run (~line 561-568):**
-- Same fix for `train_instances` resolution: if config is empty after TypeError, call `task.instances()` for all instances
+### 2. `factory/inner_loop.py`
+- In `_step_with_data_node()` (executor path, ~line 649), extract allowed instance IDs from `_subset_selector` when present
+- Pass `allowed_instance_ids` to `WorkflowExecutor` constructor
 
-### `tests/test_outer_loop/test_holdout.py`
-- Added `test_legacy_task_empty_config_uses_all_instances`:
-  - Creates `LegacyTaskFive` yielding 5 instances without split support
-  - Configures SwarmConfig with empty `training_instances` and `holdout_instances`
-  - Calls `evolve_generation()`
-  - Asserts evaluator received ALL 5 instance IDs
+### 3. `tests/test_outer_loop/test_holdout.py`
+- Added `TestDataNodeRespectsSubsetSelector` test class with 5 tests:
+  - `test_allowed_instance_ids_passed_to_executor`: WorkflowExecutor accepts the parameter
+  - `test_allowed_instance_ids_default_none`: Default is None (backward compat)
+  - `test_executor_filters_task_instances_by_allowed_ids`: DataNode inline items are filtered
+  - `test_executor_no_filter_when_allowed_ids_none`: No filter when None
+  - `test_inner_loop_passes_subset_selector_to_executor`: InnerLoop correctly extracts and passes IDs
+
+## Backward Compatibility
+- `allowed_instance_ids` defaults to `None` — all existing callers are unaffected
+- Verified 5 callers in `factory/` and 50+ callers in `tests/` — none pass this parameter
 
 ## Test Results
-- `pytest tests/test_outer_loop/test_holdout.py -v`: 34 passed ✅
-- `pytest tests/test_outer_loop/ -v --timeout=300`: 666 passed ✅
-
-## PR
-Commit pushed to `factory/run-54df79cd` → PR #1541
+- `pytest tests/test_outer_loop/test_holdout.py -v`: 39/39 passed
+- `ruff check` on changed files: All checks passed
