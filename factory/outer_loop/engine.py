@@ -296,9 +296,13 @@ class SwarmEngine:
                     task=type(task).__name__,
                     msg="Task.instances() does not accept split param, falling back to config",
                 )
-                instances = self._subset.select(
-                    self._config.training_instances, generation, self._budget.remaining
-                )
+                if self._config.training_instances:
+                    instances = self._subset.select(
+                        self._config.training_instances, generation, self._budget.remaining
+                    )
+                else:
+                    # No split configured anywhere — use all instances (pre-split behavior)
+                    instances = [inst.id for inst in task.instances()]
         else:
             # Legacy path: no Task with split support, use SubsetSelector
             instances = self._subset.select(
@@ -557,7 +561,11 @@ class SwarmEngine:
                 try:
                     train_instances = [inst.id for inst in task.instances(split="train")]
                 except TypeError:
-                    train_instances = list(self._config.training_instances)
+                    if self._config.training_instances:
+                        train_instances = list(self._config.training_instances)
+                    else:
+                        # No split configured anywhere — use all instances (pre-split behavior)
+                        train_instances = [inst.id for inst in task.instances()]
 
             # Fall back to SwarmConfig holdout_instances if Task has no splits
             if not holdout_instances and self._config.holdout_instances:

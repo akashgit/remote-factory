@@ -592,3 +592,45 @@ class TestLegacyTaskBackwardCompat:
         # Should NOT raise TypeError
         result = engine.run(_make_workflow())
         assert result.best_score >= 0.0
+
+    def test_legacy_task_empty_config_uses_all_instances(self) -> None:
+        """When LegacyTask has no split AND config has empty training_instances,
+        all instances from task.instances() (no args) should be used."""
+        from factory.outer_loop.engine import SwarmEngine
+
+        class LegacyTaskFive(Task):
+            """Legacy task yielding 5 instances without split support."""
+
+            def __init__(self) -> None:
+                super().__init__(definition=TaskDefinition(name="legacy-five"))
+
+            def instances(self) -> Iterator[TaskInstance]:  # type: ignore[override]
+                for i in range(1, 6):
+                    yield TaskInstance(id=f"inst{i}")
+
+        task = LegacyTaskFive()
+        config = _make_config(
+            training_instances=[],
+            holdout_instances=[],
+        )
+        config.set_task(task)
+
+        call_log: list[list[str]] = []
+
+        def track_eval(wf: Workflow, project_dir: str, instances: list[str]) -> EvalResult:
+            call_log.append(list(instances))
+            return EvalResult(score=0.7, benchmark_score=0.7, hygiene_score=0.8)
+
+        evaluator = SwarmEvaluator(config, evaluator_fn=track_eval)
+        engine = SwarmEngine(config, evaluator)
+
+        pop = engine.seed(_make_workflow())
+        engine.evolve_generation(pop, 0, "/tmp/test")
+
+        # The evaluator should have received ALL 5 instance IDs
+        assert len(call_log) > 0
+        all_ids = {"inst1", "inst2", "inst3", "inst4", "inst5"}
+        for call in call_log:
+            assert set(call) == all_ids, (
+                f"Expected all 5 instances {all_ids}, got {set(call)}"
+            )
