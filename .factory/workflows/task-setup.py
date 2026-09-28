@@ -397,39 +397,51 @@ EXACT structure:
 ## Task Specification
 
 ### Identity
-- **task_name:** <kebab-case, e.g. 'chess-evolve'>
-- **task_class_name:** <PascalCase + 'Task', e.g. 'ChessEvolveTask'> (Python only)
-- **description:** <one-line description>
+- **task_name:** <kebab-case>
+- **task_class_name:** <PascalCase + 'Task'> (Python only)
+- **description:** <one-line>
 - **format:** TOML | Python
 
-### Scoring
-- **method:** exit_code | json
-- **metric_path:** <dot-separated path, default 'score'>
+### 1. Data
+- **Source:** file | API | generated | hardcoded
+- **Count:** <N instances> (train: <T>, holdout: <H>)
+- **Instance schema:**
+  | field | type | description |
+  |---|---|---|
+  | id | str | unique instance identifier |
+  | <field> | <type> | <what it contains> |
 
-### Constraints
-- **timeout:** <seconds, minimum 60>
-- **max_retries:** <integer, default 1>
-- **required_capabilities:** <list or None>
+#### Example Instance
+```python
+TaskInstance(id="example-001", metadata={"key": "value", ...})
+```
+<one paragraph explaining what this instance represents and why it's a good test case>
 
-### Instances
-| id | metadata | description |
-|---|---|---|
-| <id> | `{key: value, ...}` | <what this tests> |
+### 2. Environment
+- **Python dependencies:** <list with versions>
+- **External tools:** <binaries, servers, data files that must exist>
+- **MCP servers:** <if any>
+- **Setup steps:** <what setup() does — create dirs, write files, install deps>
 
-### Setup
-<what setup() does — create dirs, write files, install deps>
+### 3. Task Objective
+- **What prompt() returns:** <the starting prompt for the inner-loop workflow>
+- **Alignment check:** <does this objective align with what verification scores?>
 
-### Prompt
-<prompt template with {metadata} interpolation points>
+#### Example Rendered Prompt
+<render prompt() for one concrete instance from the Data section, so the user can see exactly what the inner-loop workflow receives>
 
-### Verify
-<complete verify() logic — Python code or detailed pseudocode>
+### 4. Verification
+- **Method:** exit_code | json
+- **metric_path:** <dot-separated, default 'score'>
+- **Pass threshold:** <float in [0.0, 1.0]>
+- **Scoring dimensions:**
+  | dimension | weight | what 1.0 means | what 0.0 means |
+  |---|---|---|---|
+  | <dim> | <w> | <concrete perfect example> | <concrete failure example> |
+- **Verify logic:** <Python code or detailed pseudocode for verify()>
 
-### VerifyResult.details Design
-
-This section is CRITICAL for outer loop evolution.
-
-#### Details Schema
+### 5. Evaluation Details
+#### VerifyResult.details Schema
 | key | type | description | learning value |
 |---|---|---|---|
 | <key> | <type> | <what it measures> | <how reflection uses it> |
@@ -438,16 +450,20 @@ This section is CRITICAL for outer loop evolution.
 ```python
 details = {
     '<key1>': <example_value>,
-    '<key2>': <example_value>,
     ...
 }
 ```
 
 #### Per-Instance Granularity
-<describe any sub-evaluation breakdown lists>
+<sub-evaluation breakdown lists>
 
 #### Evolution Signal Quality
-<explain how these keys enable the reflection mechanism to suggest specific improvements>
+<how these keys enable reflection to suggest improvements>
+
+### Constraints
+- **timeout:** <seconds, minimum 60>
+- **max_retries:** <integer, default 1>
+- **required_capabilities:** <list or None>
 ```
 
 ## Critical Rules
@@ -462,18 +478,35 @@ details = {
 5. **Details richness**: VerifyResult.details MUST have at least 4 domain-specific
    numeric keys beyond just {passed, score}. Sparse details = blind evolution.
 6. **No ambiguity**: The Builder must implement from this spec alone.
+7. **Dimension completeness**: All 5 numbered sections (Data, Environment,
+   Task Objective, Verification, Evaluation Details) MUST be present.
+   Skipping any dimension = the Builder gets a broken spec.
 """
 
 _GATE_STRATEGY_PROMPT = """\
 Review the Task specification plan in .factory/strategy/current.md.
 
-Check that it correctly captures:
-1. The domain, instances, and measurement approach
-2. The verification logic and scoring method
-3. The VerifyResult.details design for outer loop evolution
-4. Sufficient detail for the Builder to implement without ambiguity
+Check ALL FIVE dimensions are present and reviewable:
 
-PROCEED to generate the Task file, or RELOOP to refine the specification.
+1. **Data** — Are instances clearly defined? Is there an example instance
+   with full metadata? Can you tell what each instance tests?
+2. **Environment** — Are all dependencies listed? External tools? Would
+   a fresh machine be able to run this Task after following setup steps?
+3. **Task Objective** — Is there an example rendered prompt? Does the
+   objective align with what verification scores? Would the inner-loop
+   workflow know what to do from this prompt alone?
+4. **Verification** — Are scoring dimensions listed with concrete 1.0/0.0
+   examples? Could you catch a broken scorer (e.g., grammar_score=0.0 on
+   clean text) by reading this section? Is the verify logic complete?
+5. **Evaluation details** — Does VerifyResult.details have at least 4
+   domain-specific numeric keys? Is the per-instance breakdown defined?
+   Can the reflector learn from these details?
+
+Also verify:
+6. Identity section has task_name, format, description
+7. Constraints section has timeout >= 60
+
+PROCEED only if all 7 checks pass. RELOOP with specific missing items.
 """
 
 _BUILDER_PROMPT = """\
@@ -1061,7 +1094,14 @@ def workflow() -> Workflow:
                 path=".factory/strategy/current.md",
                 must_exist=True,
                 min_size=500,
-                must_contain=["## Task Specification", "### VerifyResult.details Design"],
+                must_contain=[
+                    "## Task Specification",
+                    "### 1. Data",
+                    "### 2. Environment",
+                    "### 3. Task Objective",
+                    "### 4. Verification",
+                    "### 5. Evaluation Details",
+                ],
             ),
         ],
     )

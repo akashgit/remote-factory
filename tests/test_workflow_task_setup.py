@@ -319,7 +319,11 @@ class TestArtifactChecks:
         assert check.must_exist is True
         assert check.min_size == 500
         assert "## Task Specification" in check.must_contain
-        assert "### VerifyResult.details Design" in check.must_contain
+        assert "### 1. Data" in check.must_contain
+        assert "### 2. Environment" in check.must_contain
+        assert "### 3. Task Objective" in check.must_contain
+        assert "### 4. Verification" in check.must_contain
+        assert "### 5. Evaluation Details" in check.must_contain
 
     def test_builder_post_checks(self, task_setup_wf: Workflow) -> None:
         node = task_setup_wf.nodes["builder"]
