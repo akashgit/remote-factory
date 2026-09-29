@@ -234,7 +234,7 @@ class TestDesignWorkflow:
         assert wf.start_node == "gate_has_factory"
 
         canned = {
-            "researcher": "## Research findings\nResearch output for testing.",
+            "researcher": "## Research findings\nResearch output for testing purposes.",
             "strategist": (
                 "## Strategy — Current Cycle\n\n"
                 "### Observations\n"
