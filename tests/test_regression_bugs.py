@@ -415,7 +415,7 @@ class TestDataNodeSwallowsSubgraphFailures:
 
         agent = FakeAgent(wf, violate_writes=True)
         executor = WorkflowExecutor(
-            wf, tmp_path, agent_fn=agent, validate=False,
+            wf, tmp_path, agent_fn=agent, validate=False, auto_write_outputs=False,
         )
 
         # Patch _wait_for_reads max_wait to 0.5s so the test doesn't
@@ -500,7 +500,7 @@ class TestDataNodeSwallowsSubgraphFailures:
 
         agent = FakeAgent(wf, behavior=selective_behavior)
         executor = WorkflowExecutor(
-            wf, tmp_path, agent_fn=agent, validate=False,
+            wf, tmp_path, agent_fn=agent, validate=False, auto_write_outputs=False,
         )
         result = await executor.execute()
 

@@ -2080,7 +2080,7 @@ class TestDiskReadsRescanAfterSetup:
         assert not issues, f'Validation issues: {issues}'
 
         agent = FakeAgent(wf, behavior=game_behavior)
-        executor = WorkflowExecutor(wf, project_path, agent_fn=agent, validate=False)
+        executor = WorkflowExecutor(wf, project_path, agent_fn=agent, validate=False, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.success, f'Execution failed: {result.halt_reason}'

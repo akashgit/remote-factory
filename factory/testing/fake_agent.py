@@ -53,12 +53,6 @@ class FakeAgent:
         Useful for negative/failure testing.
     """
 
-    # Signal to WorkflowExecutor._run_agent() that this callable manages
-    # its own file writes.  When the executor sees this attribute it skips
-    # the default "write stdout to every node.writes path" behaviour,
-    # allowing violate_writes=True to genuinely simulate missing outputs.
-    manages_writes: bool = True
-
     def __init__(
         self,
         workflow: Workflow,

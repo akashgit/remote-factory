@@ -89,7 +89,7 @@ class TestFakeAgentBehavioral:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.success, f"Execution failed: {result.halt_reason}"
@@ -120,7 +120,7 @@ class TestFakeAgentBehavioral:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         await executor.execute()
 
         assert agent.calls[0].node_id == "researcher"
@@ -128,10 +128,11 @@ class TestFakeAgentBehavioral:
     async def test_fake_agent_violate_writes(self, tmp_path: Path) -> None:
         """FakeAgent with violate_writes=True skips writing files.
 
-        The executor respects FakeAgent.manages_writes=True and skips its
-        own stdout-to-node.writes loop.  Combined with violate_writes=True,
-        no files are produced → _actual_writes() returns empty →
-        completed_files does NOT contain the declared write path.
+        The executor is constructed with auto_write_outputs=False so it
+        skips its own stdout-to-node.writes loop.  Combined with
+        violate_writes=True on FakeAgent, no files are produced →
+        _actual_writes() returns empty → completed_files does NOT contain
+        the declared write path.
         """
         from factory.workflow.executor import WorkflowExecutor
         from factory.workflow.primitives import AgentRole
@@ -151,14 +152,14 @@ class TestFakeAgentBehavioral:
         )
 
         agent = FakeAgent(wf, violate_writes=True)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.success
         assert agent.call_count == 1
-        # With manages_writes + violate_writes, the file should NOT exist
+        # With auto_write_outputs=False + violate_writes, the file should NOT exist
         assert not (tmp_path / ".factory/reviews/builder-latest.md").exists(), (
-            "violate_writes=True with manages_writes should leave files unwritten"
+            "violate_writes=True with auto_write_outputs=False should leave files unwritten"
         )
         assert ".factory/reviews/builder-latest.md" not in result.completed_files
 
@@ -174,11 +175,11 @@ class TestCompletedFilesReflectsDisk:
     the executor checks disk state so that ``_wait_for_reads`` correctly blocks
     downstream nodes whose inputs were never produced.
 
-    Note: when the executor's ``agent_fn`` sets ``manages_writes = True``
-    (e.g. ``FakeAgent``), ``_run_agent`` skips its stdout-to-writes loop,
-    so the agent controls which files actually appear on disk.  For plain
-    ``agent_fn`` callables (no ``manages_writes``), ``_run_agent``
-    auto-writes stdout to all declared ``writes`` paths as before.
+    Note: when the executor is constructed with ``auto_write_outputs=False``
+    (e.g. for tests using ``FakeAgent``), ``_run_agent`` skips its
+    stdout-to-writes loop, so the agent controls which files actually
+    appear on disk.  With the default ``auto_write_outputs=True``,
+    ``_run_agent`` auto-writes stdout to all declared ``writes`` paths.
     """
 
     async def test_missing_writes_blocks_downstream_reads(self, tmp_path: Path) -> None:
@@ -257,10 +258,11 @@ class TestCompletedFilesReflectsDisk:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
-        # FakeAgent (manages_writes=True, violate_writes=False) writes output.txt itself.
+        # FakeAgent (violate_writes=False) writes output.txt itself.
+        # auto_write_outputs=False means executor defers to FakeAgent.
         # _actual_writes() sees it → output.txt IS in completed_files.
         # consumer's _wait_for_reads is satisfied → execution succeeds.
         assert result.success, f"Execution should succeed: {result.halt_reason}"
@@ -272,7 +274,7 @@ class TestCompletedFilesReflectsDisk:
 
         Full chain:
         1. node_a uses FakeAgent(violate_writes=True) → FakeAgent doesn't write
-        2. Executor sees manages_writes=True → skips stdout-to-writes
+        2. Executor has auto_write_outputs=False → skips stdout-to-writes
         3. _actual_writes() returns empty → output.txt NOT in completed_files
         4. node_b reads={'output.txt'} → _wait_for_reads finds it missing → halts
         """
@@ -301,7 +303,7 @@ class TestCompletedFilesReflectsDisk:
         )
 
         agent = FakeAgent(wf, violate_writes=True)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
 
         # Patch _wait_for_reads to fail immediately instead of polling 60s
         async def _fast_wait(node: object) -> None:
@@ -319,7 +321,7 @@ class TestCompletedFilesReflectsDisk:
         result = await executor.execute()
 
         # node_a: FakeAgent(violate_writes=True) doesn't write, executor
-        # respects manages_writes → output.txt never created.
+        # has auto_write_outputs=False → output.txt never created.
         assert not (tmp_path / "output.txt").exists(), (
             "output.txt should not exist when violate_writes=True"
         )
@@ -405,7 +407,7 @@ class TestPostChecksEnforcement:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.halted
@@ -438,7 +440,7 @@ class TestPostChecksEnforcement:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.halted
@@ -470,7 +472,7 @@ class TestPostChecksEnforcement:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.halted
@@ -503,7 +505,7 @@ class TestPostChecksEnforcement:
         )
 
         agent = FakeAgent(wf)
-        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent)
+        executor = WorkflowExecutor(wf, tmp_path, agent_fn=agent, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.success, f"Failed: {result.halt_reason}"

@@ -98,6 +98,7 @@ class WorkflowExecutor:
         input_fn: Callable[[str], str] | None = None,
         allowed_instance_ids: set[str] | None = None,
         validate: bool = True,
+        auto_write_outputs: bool = True,
     ) -> None:
         if validate:
             from factory.workflow.validation import validate_workflow
@@ -122,6 +123,7 @@ class WorkflowExecutor:
 
             self._agent_fn = invoke_agent
         self._input_fn: Callable[[str], str] = input_fn if input_fn is not None else builtins.input
+        self.auto_write_outputs = auto_write_outputs
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -685,6 +687,7 @@ class WorkflowExecutor:
                 agent_pool=self.agent_pool,
                 dry_run=self.dry_run,
                 agent_fn=self._agent_fn,
+                auto_write_outputs=self.auto_write_outputs,
             )
             branch_result = await branch_executor.execute()
 
@@ -1001,6 +1004,7 @@ class WorkflowExecutor:
                             dry_run=self.dry_run,
                             agent_fn=self._agent_fn,
                             initial_context=item.prompt or None,
+                            auto_write_outputs=self.auto_write_outputs,
                         )
                         # Include current_item.json so subgraph nodes don't block on read-wait
                         item_executor.completed_files = self.completed_files | disk_reads | setup_reads | {".factory/current_item.json"}
@@ -1351,9 +1355,8 @@ class WorkflowExecutor:
             )
 
         # Persist output to node.writes paths (mirrors _run_llm pattern).
-        # Skip when agent_fn manages its own writes (e.g., FakeAgent).
-        agent_manages_writes = getattr(self._agent_fn, "manages_writes", False) is True
-        if node.writes and not agent_manages_writes:
+        # Skip when auto_write_outputs is False (e.g., tests using FakeAgent).
+        if node.writes and self.auto_write_outputs:
             for wpath in node.writes:
                 fpath = self.project_path / wpath
                 fpath.parent.mkdir(parents=True, exist_ok=True)
