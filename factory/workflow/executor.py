@@ -110,7 +110,7 @@ class WorkflowExecutor:
                 )
 
         self.workflow = workflow
-        self.project_path = project_path
+        self.project_path = Path(project_path) if not isinstance(project_path, Path) else project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
