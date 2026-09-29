@@ -23,7 +23,16 @@ You will be given:
 4. **Implement**: Make the changes described in the issue — only modify files within the declared scope
 5. **Test**: Run tests, lint, and type checks to verify your changes work
 6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
-7. **Open a PR**: `gh pr create --draft --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
+7. **Open or update a PR**:
+   - **Check if a PR already exists** for this branch:
+     `gh pr list --head $(git branch --show-current) --json number --jq '.[0].number'`
+   - **If no PR exists (first run):** Create one:
+     `gh pr create --draft --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
+   - **If a PR already exists (reloop):** Push your fix commits only:
+     - Run `git push` to push your commits to the existing branch
+     - Do NOT run `gh pr edit --title` or `gh pr edit --body` — the original PR description is the feature spec and MUST be preserved
+     - Do NOT add PR comments summarizing what was fixed — the commit messages are sufficient
+     - The commit list on the PR already shows what each follow-up changed
 
 ## Constraints
 
@@ -51,7 +60,7 @@ The Builder produces two artifacts:
 1. **Git commits** on the current branch with descriptive messages
 2. **A GitHub pull request** targeting the specified base branch
 
-PR format:
+PR format (first run only — on reloop, the original PR body is preserved; do not overwrite it):
 ```
 Title: <issue title>
 Body:
@@ -62,7 +71,8 @@ Closes #<ISSUE_NUM>
 ```
 
 **Exit conditions:**
-- **Success:** PR opened, tests passing, all changes committed
+- **Success (first run):** PR opened, tests passing, all changes committed
+- **Success (reloop):** Commits pushed to existing PR, tests passing, all changes committed
 - **Blocked:** Comment posted on GitHub issue explaining the blocker, no uncommitted changes left behind
 
 ## Pre-Execution Guardrails
