@@ -134,9 +134,41 @@ def gate_verdicts(result: Any) -> list[tuple[str, str]]:
 
 
 _DEFAULT_CANNED = {
-    "researcher": "Research findings complete.",
-    "strategist": "### Phase 1\n### Architecture\nStrategy approved.",
-    "builder": "commit abc123\nPR opened.",
+    "researcher": "## Research Findings\n\nResearch analysis complete with sufficient detail for downstream processing.",
+    "strategist": (
+        "## Strategy — Current Cycle\n\n"
+        "### Observations\n"
+        "- Project structure is solid\n"
+        "- Test coverage is adequate\n\n"
+        "### Architecture\n"
+        "Modular architecture with clear separation of concerns.\n\n"
+        "### Phase 1: Core Implementation\n"
+        "Build the core feature with proper error handling and validation.\n"
+        "Add unit tests and integration tests for all new code paths.\n\n"
+        "### Phase 2: Integration\n"
+        "Wire up components and verify end-to-end data flow.\n"
+    ),
+    "builder": (
+        "## Build Output\n\n"
+        "### Changes Made\n"
+        "- Implemented core feature module with full test coverage\n"
+        "- Added integration tests for the data flow pipeline\n"
+        "- Updated documentation to reflect new API surface\n"
+        "- Refactored validation logic for better error messages\n"
+        "- Added type annotations to all public interfaces\n\n"
+        "### Test Results\n"
+        "All existing tests pass. No regressions detected.\n"
+        "New tests added: 12 unit tests, 3 integration tests.\n"
+        "Coverage increased from 78% to 84% on modified files.\n\n"
+        "### Code Quality\n"
+        "- ruff check: 0 errors, 0 warnings\n"
+        "- mypy: no type errors in modified files\n"
+        "- All pre-commit hooks pass\n\n"
+        "### Artifacts\n"
+        "commit abc123def456789abcdef\n"
+        "PR #1 opened targeting main branch.\n"
+        "Files changed: 8 insertions(+), 3 deletions(-)\n"
+    ),
     "health_checker": "All health checks pass.\nGATE: PASS",
     "code_reviewer": "All categories PASS. No CRITICAL_FOUND.",
     "adversarial_tester": "All tests pass. VERDICT: PASS.",
@@ -210,6 +242,12 @@ async def _run_workflow(
             task = f"{task}\n\n{context}"
         role_str = str(node.role.value)
         response = merged_canned.get(role_str, f"[mock {role_str}] done")
+        # Write declared outputs (mirrors real _run_agent file-writing)
+        if node.writes:
+            for wpath in node.writes:
+                fpath = project / wpath
+                fpath.parent.mkdir(parents=True, exist_ok=True)
+                fpath.write_text(response)
         return response
 
     executor._run_agent = patched_run_agent  # type: ignore[assignment]

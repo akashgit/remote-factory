@@ -1984,7 +1984,7 @@ class TestDiskReadsRescanAfterSetup:
 
         with patch("factory.task.TaskRef.resolve", return_value=fake_task), \
              patch.object(WorkflowExecutor, "execute", spy_execute):
-            executor = WorkflowExecutor(wf, tmp_path, dry_run=True)
+            executor = WorkflowExecutor(wf, tmp_path, dry_run=True, validate=False)
             result = asyncio.run(executor.execute())
 
         assert result.success, f"halted: {result.halt_reason}"
@@ -1994,7 +1994,13 @@ class TestDiskReadsRescanAfterSetup:
 
     @pytest.mark.asyncio
     async def test_data_node_loop_with_agent_body(self, tmp_path: Path) -> None:
-        """DataNode + Loop where body is an AgentNode — loop should iterate via RELOOP."""
+        """DataNode + Loop where body is an AgentNode — loop should iterate via RELOOP.
+
+        Uses FakeAgent (contract-enforcing fake) instead of ad-hoc mock_agent_fn.
+        FakeAgent writes to the node's declared writes set; a custom behavior
+        appends move lines to counter.txt for the gate to count.
+        """
+        from factory.testing import FakeAgent
         from factory.workflow.executor import WorkflowExecutor
         from factory.workflow.package import Loop, Package
         from factory.workflow.primitives import AgentNode, AgentRole, GateNode
@@ -2004,10 +2010,10 @@ class TestDiskReadsRescanAfterSetup:
         counter_file = project_path / 'counter.txt'
         pp = str(project_path)
 
-        # Agent body: mock agent_fn that appends to counter file
+        # Custom behavior: append to counter file (domain-specific side effect)
         call_count = 0
 
-        async def mock_agent_fn(role, task, proj_path, **kwargs):
+        def game_behavior(role, task, proj_path, **kwargs):
             nonlocal call_count
             call_count += 1
             cf = Path(proj_path) / 'counter.txt'
@@ -2021,7 +2027,7 @@ class TestDiskReadsRescanAfterSetup:
             role=AgentRole.BUILDER,
             prompt_template='Generate the next move',
             reads=set(),
-            writes=set(),  # mock_agent_fn handles file I/O directly
+            writes=set(),
             timeout=30,
         )
         body_pkg = Package(
@@ -2073,7 +2079,8 @@ class TestDiskReadsRescanAfterSetup:
         issues = wf.validate_graph()
         assert not issues, f'Validation issues: {issues}'
 
-        executor = WorkflowExecutor(wf, project_path, agent_fn=mock_agent_fn)
+        agent = FakeAgent(wf, behavior=game_behavior)
+        executor = WorkflowExecutor(wf, project_path, agent_fn=agent, validate=False, auto_write_outputs=False)
         result = await executor.execute()
 
         assert result.success, f'Execution failed: {result.halt_reason}'
@@ -2081,6 +2088,9 @@ class TestDiskReadsRescanAfterSetup:
         lines = counter_file.read_text().strip().splitlines()
         assert len(lines) == 3, f'Expected 3 lines (3 iterations), got {len(lines)}: {lines}'
         assert call_count == 3, f'Expected agent called 3 times, got {call_count}'
+        # FakeAgent spy assertions
+        agent.assert_called('builder')
+        agent.assert_call_count(3)
 
     @pytest.mark.asyncio
     async def test_setup_read_path_mismatch_logs_warning(self, tmp_path: Path) -> None:
@@ -2132,11 +2142,13 @@ class TestDiskReadsRescanAfterSetup:
                 waited += poll_interval
 
         with patch.object(WorkflowExecutor, '_wait_for_reads', fast_wait):
-            executor = WorkflowExecutor(wf, project_path, dry_run=False)
+            executor = WorkflowExecutor(wf, project_path, dry_run=False, validate=False)
             result = await executor.execute()
 
-        # DataNode fault-isolates: outer succeeds but inner item fails due to read timeout
-        assert result.success
+        # All items failed (1/1) → DataNode propagates the failure and halts
+        assert not result.success
+        assert result.halted
+        assert 'all' in result.halt_reason.lower() and 'failed' in result.halt_reason.lower()
         parsed = json.loads(result.node_outputs['data'])
         assert len(parsed) == 1
         item_result = parsed[0]

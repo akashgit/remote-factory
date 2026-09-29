@@ -97,9 +97,21 @@ class WorkflowExecutor:
         agent_fn: Callable[..., Any] | None = None,
         input_fn: Callable[[str], str] | None = None,
         allowed_instance_ids: set[str] | None = None,
+        validate: bool = True,
+        auto_write_outputs: bool = True,
     ) -> None:
+        if validate:
+            from factory.workflow.validation import validate_workflow
+
+            issues = validate_workflow(workflow)
+            if issues:
+                raise ValueError(
+                    f"Workflow '{workflow.name}' has validation errors:\n"
+                    + "\n".join(f"  - {i}" for i in issues)
+                )
+
         self.workflow = workflow
-        self.project_path = project_path
+        self.project_path = Path(project_path) if not isinstance(project_path, Path) else project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
         self.auto_approve = auto_approve
@@ -111,6 +123,7 @@ class WorkflowExecutor:
 
             self._agent_fn = invoke_agent
         self._input_fn: Callable[[str], str] = input_fn if input_fn is not None else builtins.input
+        self.auto_write_outputs = auto_write_outputs
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -132,6 +145,24 @@ class WorkflowExecutor:
                     node_type=type(start_node).__name__ if start_node else "missing",
                     reason="initial_context only applies to AgentNode start nodes",
                 )
+
+    def _actual_writes(self, node: NodeType) -> set[str]:
+        """Return the subset of *node.writes* that actually exist on disk.
+
+        In ``dry_run`` mode every declared write is trusted because no files
+        are created.  Otherwise only paths that resolve to an existing file
+        under ``self.project_path`` are returned.  This keeps
+        ``completed_files`` in sync with reality so that downstream
+        ``_wait_for_reads`` checks fail when an upstream node neglects to
+        produce a declared output.
+        """
+        if self.dry_run:
+            return set(node.writes)
+        actual: set[str] = set()
+        for path_str in node.writes:
+            if (self.project_path / path_str).exists():
+                actual.add(path_str)
+        return actual
 
     async def execute(self) -> ExecutionResult:
         """Run the workflow from start to completion."""
@@ -267,7 +298,7 @@ class WorkflowExecutor:
                 )
                 return
             self.result.nodes_executed += 1
-            self.completed_files |= node.writes
+            self.completed_files |= self._actual_writes(node)
             self.result.node_outputs[node_id] = ""
             next_id = self._next_unconditional(node_id)
             if next_id:
@@ -313,7 +344,16 @@ class WorkflowExecutor:
             elapsed = (time.monotonic() - start) * 1000
 
             self.result.node_outputs[node_id] = output
-            self.completed_files |= node.writes
+            self.completed_files |= self._actual_writes(node)
+
+            # SPEC §7.3: enforce post_checks on AgentNodes (skip in dry-run).
+            # Runs after output is recorded so files written by _run_agent
+            # are available for validation.
+            if isinstance(node, AgentNode) and node.post_checks and not self.dry_run:
+                self._validate_post_checks(node)
+
+            # Increment only after post_checks pass — a failed check should
+            # not count as a successfully executed node.
             self.result.nodes_executed += 1
 
             self._emit(
@@ -365,7 +405,12 @@ class WorkflowExecutor:
             output = await self._run_node(node)
             elapsed = (time.monotonic() - start) * 1000
             self.result.node_outputs[node_id] = output
-            self.completed_files |= node.writes
+            self.completed_files |= self._actual_writes(node)
+
+            # Enforce post_checks on background nodes (same as blocking path)
+            if isinstance(node, AgentNode) and node.post_checks and not self.dry_run:
+                self._validate_post_checks(node)
+
             self.result.nodes_executed += 1
             self._emit(
                 "node.completed",
@@ -513,7 +558,12 @@ class WorkflowExecutor:
                 output = await self._run_node(target)
                 elapsed = (time.monotonic() - start) * 1000
                 self.result.node_outputs[target_id] = output
-                self.completed_files |= target.writes
+                self.completed_files |= self._actual_writes(target)
+
+                # Enforce post_checks on fork branches (same as blocking path)
+                if isinstance(target, AgentNode) and target.post_checks and not self.dry_run:
+                    self._validate_post_checks(target)
+
                 self.result.nodes_executed += 1
                 self._emit(
                     "node.completed",
@@ -637,6 +687,7 @@ class WorkflowExecutor:
                 agent_pool=self.agent_pool,
                 dry_run=self.dry_run,
                 agent_fn=self._agent_fn,
+                auto_write_outputs=self.auto_write_outputs,
             )
             branch_result = await branch_executor.execute()
 
@@ -672,7 +723,7 @@ class WorkflowExecutor:
 
         elapsed = (time.monotonic() - start) * 1000
         self.result.node_outputs[node.id] = json.dumps(branch_results)
-        self.completed_files |= node.writes
+        self.completed_files |= self._actual_writes(node)
 
         self._emit(
             "node.completed",
@@ -953,6 +1004,7 @@ class WorkflowExecutor:
                             dry_run=self.dry_run,
                             agent_fn=self._agent_fn,
                             initial_context=item.prompt or None,
+                            auto_write_outputs=self.auto_write_outputs,
                         )
                         # Include current_item.json so subgraph nodes don't block on read-wait
                         item_executor.completed_files = self.completed_files | disk_reads | setup_reads | {".factory/current_item.json"}
@@ -1009,9 +1061,48 @@ class WorkflowExecutor:
             except Exception as wt_exc:
                 log.warning("data_worktree_cleanup_failed", path=str(wt_path), error=str(wt_exc))
 
+        # Propagate DataNode failure when ALL items fail
+        failed_items = [r for r in item_results if not r.get("success", False)]
+        if len(failed_items) == len(item_results) and item_results:
+            # Every single subgraph failed — this is a DataNode failure
+            sample_error = failed_items[0].get("error", "") or failed_items[0].get("halt_reason", "subgraph failed")
+            log.error(
+                "data_node_all_items_failed",
+                node_id=node_id,
+                total_items=len(item_results),
+                sample_error=sample_error,
+            )
+            elapsed = (time.monotonic() - start) * 1000
+            self.result.halted = True
+            self.result.halt_reason = (
+                f"DataNode '{node_id}': all {len(item_results)} items failed. "
+                f"Sample error: {sample_error}"
+            )
+            # Still store the results for debugging
+            self.result.node_outputs[node_id] = json.dumps(item_results)
+            self._emit(
+                "node.failed",
+                NodeFailed(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node_id,
+                    node_type="DataNode",
+                    error=self.result.halt_reason,
+                ),
+            )
+            return  # Don't follow edges — halt here
+        elif failed_items:
+            # Partial failure — log warning but continue
+            log.warning(
+                "data_node_partial_failure",
+                node_id=node_id,
+                failed=len(failed_items),
+                total=len(item_results),
+            )
+
         elapsed = (time.monotonic() - start) * 1000
         self.result.node_outputs[node_id] = json.dumps(item_results)
-        self.completed_files |= node.writes
+        self.completed_files |= self._actual_writes(node)
 
         self._emit(
             "node.completed",
@@ -1063,7 +1154,7 @@ class WorkflowExecutor:
         if self.dry_run or not fork_output:
             selection_result: dict[str, Any] = {"strategy": node.strategy, "winner": None, "reason": "dry-run"}
             self.result.node_outputs[node.id] = json.dumps(selection_result)
-            self.completed_files |= node.writes
+            self.completed_files |= self._actual_writes(node)
             elapsed = (time.monotonic() - start) * 1000
             self._emit(
                 "node.completed",
@@ -1173,7 +1264,7 @@ class WorkflowExecutor:
             "successful_branches": len(successful),
         }
         self.result.node_outputs[node.id] = json.dumps(selection_result)
-        self.completed_files |= node.writes
+        self.completed_files |= self._actual_writes(node)
 
         elapsed = (time.monotonic() - start) * 1000
         self._emit(
@@ -1252,6 +1343,7 @@ class WorkflowExecutor:
             self.project_path,
             model=model or None,
             timeout=float(timeout) if timeout is not None else 600.0,
+            node_id=node.id,
         )
 
         if code != 0:
@@ -1262,8 +1354,9 @@ class WorkflowExecutor:
                 output_len=len(stdout),
             )
 
-        # Persist output to node.writes paths (mirrors _run_llm pattern)
-        if node.writes:
+        # Persist output to node.writes paths (mirrors _run_llm pattern).
+        # Skip when auto_write_outputs is False (e.g., tests using FakeAgent).
+        if node.writes and self.auto_write_outputs:
             for wpath in node.writes:
                 fpath = self.project_path / wpath
                 fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -1610,6 +1703,36 @@ class WorkflowExecutor:
             if edge.condition == verdict_type:
                 return edge.target
         return None
+
+    def _validate_post_checks(self, node: AgentNode) -> None:
+        """Enforce SPEC §7.3: validate post_checks after an AgentNode completes.
+
+        Raises RuntimeError if any ArtifactCheck fails.
+        """
+
+        for check in node.post_checks:
+            fpath = self.project_path / check.path
+            if check.must_exist and not fpath.exists():
+                raise RuntimeError(
+                    f"post_check failed for node '{node.id}': "
+                    f"artifact '{check.path}' must exist but was not found"
+                )
+            if not fpath.exists():
+                continue
+            if check.min_size > 0 and fpath.stat().st_size < check.min_size:
+                raise RuntimeError(
+                    f"post_check failed for node '{node.id}': "
+                    f"artifact '{check.path}' size {fpath.stat().st_size} < "
+                    f"min_size {check.min_size}"
+                )
+            if check.must_contain:
+                content = fpath.read_text()
+                for substr in check.must_contain:
+                    if substr not in content:
+                        raise RuntimeError(
+                            f"post_check failed for node '{node.id}': "
+                            f"artifact '{check.path}' must contain '{substr}'"
+                        )
 
     def _emit(self, event_type: str, event: Any) -> None:
         """Emit a workflow event."""

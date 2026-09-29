@@ -102,7 +102,7 @@ def _make_workflow() -> Workflow:
         name="test_holdout",
         nodes={
             "a": FnNode(id="a", command="echo a"),
-            "b": AgentNode(id="b", role=AgentRole.BUILDER),
+            "b": AgentNode(id="b", role=AgentRole.BUILDER, prompt_template="build it"),
         },
         edges=[Edge(source="a", target="b")],
         start_node="a",
@@ -697,6 +697,7 @@ class TestDataNodeRespectsSubsetSelector:
         train_ids = {"s1", "s2", "s3"}
         executor = WorkflowExecutor(
             wf, "/tmp/test", dry_run=True, allowed_instance_ids=train_ids,
+            validate=False,
         )
         result = asyncio.run(executor.execute())
 
@@ -736,7 +737,7 @@ class TestDataNodeRespectsSubsetSelector:
         )
 
         # No allowed_instance_ids — should process all
-        executor = WorkflowExecutor(wf, "/tmp/test", dry_run=True)
+        executor = WorkflowExecutor(wf, "/tmp/test", dry_run=True, validate=False)
         result = asyncio.run(executor.execute())
         assert result.success
 
@@ -768,7 +769,11 @@ class TestDataNodeRespectsSubsetSelector:
         wf = Workflow(
             name="test_inner_loop_datanode",
             nodes={"data": data_node, "process": process_node},
-            edges=[Edge(source="data", target="process")],
+            # edges=[] is correct: DataNode→subgraph edges are implicit.
+            # The executor auto-follows subgraph_entry internally, and the
+            # validator (_validate_datanode_edges) rejects explicit edges to
+            # subgraph nodes to prevent double-execution.
+            edges=[],
             start_node="data",
         )
 
@@ -841,7 +846,11 @@ class TestDataNodeRespectsSubsetSelector:
         wf = Workflow(
             name="test_empty_selector",
             nodes={"data": data_node, "process": process_node},
-            edges=[Edge(source="data", target="process")],
+            # edges=[] is correct: DataNode→subgraph edges are implicit.
+            # The executor auto-follows subgraph_entry internally, and the
+            # validator (_validate_datanode_edges) rejects explicit edges to
+            # subgraph nodes to prevent double-execution.
+            edges=[],
             start_node="data",
         )
 

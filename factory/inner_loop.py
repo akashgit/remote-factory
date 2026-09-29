@@ -481,6 +481,41 @@ class InnerLoop:
         instance_results: list[dict[str, Any]] = []
         scores: list[float] = []
 
+        # Pre-validate workflow so evolved candidates with empty prompts
+        # get score=0 instead of crashing on every instance.
+        if self.execution_strategy not in ("ceo-skill", "ceo-tool"):
+            try:
+                from factory.workflow.validation import validate_workflow
+
+                issues = validate_workflow(workflow)
+                if issues:
+                    raise ValueError(
+                        f"Workflow '{workflow.name}' has validation errors:\n"
+                        + "\n".join(f"  - {i}" for i in issues)
+                    )
+            except ValueError as exc:
+                log.warning(
+                    "workflow_validation_failed",
+                    error=str(exc),
+                    workflow=getattr(workflow, "name", "unknown"),
+                )
+                duration_s = time.monotonic() - t0
+                record = CycleRecord(
+                    cycle_number=self._step_count + 1,
+                    mode=self.mode,
+                    started_at=None,
+                    ended_at=None,
+                    duration_s=duration_s,
+                    score_start=None,
+                    score_end=0.0,
+                    score_delta=None,
+                )
+                record.frozen_nodes = sorted(self.frozen_nodes)
+                record.mutable_node_ids = sorted(self.mutable_nodes())
+                self._step_count += 1
+                self._history.append(record)
+                return record
+
         for inst in all_instances:
             try:
                 self.task.setup(inst, self.project_dir)
@@ -496,6 +531,7 @@ class InnerLoop:
                         workflow,
                         self.project_dir,
                         initial_context=prompt_text,
+                        validate=False,
                     )
                     exec_result = asyncio.run(executor.execute())
 
@@ -663,12 +699,35 @@ class InnerLoop:
             # If selected is empty, leave allowed_instance_ids = None (allow everything)
             # This handles the case where no split is configured and training_instances is empty
 
-        executor = WorkflowExecutor(
-            self.workflow,
-            self.project_dir,
-            allowed_instance_ids=allowed_instance_ids,
-        )
-        exec_result_wf = asyncio.run(executor.execute())
+        try:
+            executor = WorkflowExecutor(
+                self.workflow,
+                self.project_dir,
+                allowed_instance_ids=allowed_instance_ids,
+            )
+            exec_result_wf = asyncio.run(executor.execute())
+        except ValueError as exc:
+            log.warning(
+                "workflow_validation_failed",
+                error=str(exc),
+                workflow=getattr(self.workflow, "name", "unknown"),
+            )
+            duration_s = time.monotonic() - t0
+            record = CycleRecord(
+                cycle_number=self._step_count + 1,
+                mode=self.mode,
+                started_at=None,
+                ended_at=None,
+                duration_s=duration_s,
+                score_start=None,
+                score_end=0.0,
+                score_delta=None,
+            )
+            record.frozen_nodes = sorted(self.frozen_nodes)
+            record.mutable_node_ids = sorted(self.mutable_nodes())
+            self._step_count += 1
+            self._history.append(record)
+            return record
 
         duration_s = time.monotonic() - t0
         score = 1.0 if exec_result_wf.success else 0.0

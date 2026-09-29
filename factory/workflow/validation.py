@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import structlog
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
 if TYPE_CHECKING:
     from factory.workflow.primitives import Workflow
+
+log = structlog.get_logger()
 
 
 def _validate_start_node(workflow: Workflow, issues: list[str]) -> None:
@@ -191,6 +194,76 @@ def _collect_subgraph_nodes(
     return _exec_collect(workflow, entry, exit_node)
 
 
+def _validate_agent_prompts(workflow: Workflow, issues: list[str]) -> None:
+    """AgentNode.prompt_template must be non-empty and non-whitespace (ERROR)."""
+    from factory.workflow.primitives import AgentNode
+
+    for nid, node in workflow.nodes.items():
+        if isinstance(node, AgentNode) and not node.prompt_template.strip():
+            issues.append(
+                f"AgentNode '{nid}' has empty prompt_template"
+            )
+
+
+def _validate_gate_edges(workflow: Workflow, issues: list[str]) -> None:
+    """GateNode must have at least one PROCEED edge, unconditional edge, or be terminal (ERROR).
+
+    Acceptable patterns:
+    - Terminal gate (no outgoing edges) — workflow-terminating decision point.
+    - Gate with PROCEED or unconditional edge — normal flow.
+    - Gate with only RELOOP/HALT edges — halts after max iterations (valid loop-only gate).
+
+    Only gates with outgoing edges that lack both PROCEED/unconditional edges
+    AND lack RELOOP edges are flagged — they would stall on any verdict.
+    """
+    from factory.workflow.primitives import GateNode, VerdictType
+
+    for nid, node in workflow.nodes.items():
+        if not isinstance(node, GateNode):
+            continue
+        outgoing = [e for e in workflow.edges if e.source == nid]
+        if not outgoing:
+            # Terminal gate — no outgoing edges is fine
+            continue
+        has_proceed = any(e.condition == VerdictType.PROCEED for e in outgoing)
+        has_unconditional = any(e.condition is None for e in outgoing)
+        has_reloop = any(e.condition == VerdictType.RELOOP for e in outgoing)
+        if not has_proceed and not has_unconditional and not has_reloop:
+            issues.append(
+                f"GateNode '{nid}' has outgoing edges but no PROCEED, "
+                f"unconditional, or RELOOP edge — execution will stall"
+            )
+
+
+def _validate_datanode_entry_reads(workflow: Workflow) -> None:
+    """Task-backed DataNode subgraph_entry should read current_item.json (WARNING).
+
+    When a DataNode has a non-empty task_ref, the executor writes
+    .factory/current_item.json before running the subgraph.  The entry
+    node's reads set should include this path so that downstream nodes
+    can rely on it being available.
+
+    This is a WARNING, not an ERROR — some task-backed DataNodes may
+    inject item data through a different mechanism.
+    """
+    from factory.workflow.primitives import DataNode
+
+    for nid, node in workflow.nodes.items():
+        if not isinstance(node, DataNode) or not node.task_ref:
+            continue
+        entry = workflow.nodes.get(node.subgraph_entry)
+        if entry is None:
+            continue
+        if ".factory/current_item.json" not in entry.reads:
+            log.warning(
+                "datanode_entry_missing_current_item",
+                data_node=nid,
+                entry_node=node.subgraph_entry,
+                entry_reads=sorted(entry.reads),
+                hint="task-backed DataNode entry should read .factory/current_item.json",
+            )
+
+
 def validate_workflow(workflow: Workflow) -> list[str]:
     """Validate a workflow graph. Returns a list of issues (empty = valid)."""
     issues: list[str] = []
@@ -226,6 +299,11 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     _validate_fork_join_nodes(workflow, issues)
     _validate_datanode_edges(workflow, issues)
     _validate_datanode_exit(workflow, issues)
+
+    # Semantic checks
+    _validate_agent_prompts(workflow, issues)
+    _validate_gate_edges(workflow, issues)
+    _validate_datanode_entry_reads(workflow)  # WARNING only — does not add to issues
 
     for nid, node in nodes.items():
         if type(node).__name__ == "SubgraphForkNode":

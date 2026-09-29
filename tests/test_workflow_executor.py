@@ -292,7 +292,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="a",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         result = await executor.execute()
         assert result.halted
         assert "missing_node" in result.halt_reason
@@ -384,7 +384,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="a",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         result = await executor.execute()
         assert result.halted
         failed_events = [e for e in result.events if e["type"] == "node.failed"]
@@ -405,7 +405,7 @@ class TestJoinNodeBarrier:
             ],
             start_node="join",
         )
-        executor = WorkflowExecutor(wf, tmp_project, dry_run=True)
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, validate=False)
         executor.result.node_outputs["a"] = "done"
         await executor._execute_from("join")
         assert not executor.result.halted
@@ -578,9 +578,9 @@ class TestAutoApprove:
         wf = Workflow(
             name="log_check_wf",
             nodes={
-                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "a": FnNode(id="a", command="echo a > a.txt", writes={"a.txt"}),
                 "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
-                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+                "b": FnNode(id="b", command="echo b > b.txt", writes={"b.txt"}),
             },
             edges=[
                 Edge(source="a", target="gate"),
@@ -616,9 +616,9 @@ class TestAutoApprove:
         wf = Workflow(
             name="no_log_wf",
             nodes={
-                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "a": FnNode(id="a", command="echo a > a.txt", writes={"a.txt"}),
                 "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
-                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+                "b": FnNode(id="b", command="echo b > b.txt", writes={"b.txt"}),
             },
             edges=[
                 Edge(source="a", target="gate"),
@@ -932,9 +932,9 @@ class TestGateVerdictFailClosed:
         wf = Workflow(
             name="no_cmd_gate",
             nodes={
-                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "a": FnNode(id="a", command="echo a > a.txt", writes={"a.txt"}),
                 "gate": GateNode(id="gate", evaluator_type="fn", reads={"a.txt"}),
-                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+                "b": FnNode(id="b", command="echo b > b.txt", writes={"b.txt"}),
             },
             edges=[
                 Edge(source="a", target="gate"),
