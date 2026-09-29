@@ -134,7 +134,7 @@ def gate_verdicts(result: Any) -> list[tuple[str, str]]:
 
 
 _DEFAULT_CANNED = {
-    "researcher": "Research findings complete.",
+    "researcher": "## Research Findings\n\nResearch analysis complete with sufficient detail for downstream processing.",
     "strategist": (
         "## Strategy — Current Cycle\n\n"
         "### Observations\n"
