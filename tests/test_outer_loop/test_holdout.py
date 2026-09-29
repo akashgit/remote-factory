@@ -769,7 +769,11 @@ class TestDataNodeRespectsSubsetSelector:
         wf = Workflow(
             name="test_inner_loop_datanode",
             nodes={"data": data_node, "process": process_node},
-            edges=[],  # No explicit DataNode→subgraph edges (executor handles internally)
+            # edges=[] is correct: DataNode→subgraph edges are implicit.
+            # The executor auto-follows subgraph_entry internally, and the
+            # validator (_validate_datanode_edges) rejects explicit edges to
+            # subgraph nodes to prevent double-execution.
+            edges=[],
             start_node="data",
         )
 
@@ -842,7 +846,11 @@ class TestDataNodeRespectsSubsetSelector:
         wf = Workflow(
             name="test_empty_selector",
             nodes={"data": data_node, "process": process_node},
-            edges=[],  # No explicit DataNode→subgraph edges (executor handles internally)
+            # edges=[] is correct: DataNode→subgraph edges are implicit.
+            # The executor auto-follows subgraph_entry internally, and the
+            # validator (_validate_datanode_edges) rejects explicit edges to
+            # subgraph nodes to prevent double-execution.
+            edges=[],
             start_node="data",
         )
 

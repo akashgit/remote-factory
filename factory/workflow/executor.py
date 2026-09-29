@@ -343,13 +343,16 @@ class WorkflowExecutor:
 
             self.result.node_outputs[node_id] = output
             self.completed_files |= self._actual_writes(node)
-            self.result.nodes_executed += 1
 
             # SPEC §7.3: enforce post_checks on AgentNodes (skip in dry-run).
             # Runs after output is recorded so files written by _run_agent
             # are available for validation.
             if isinstance(node, AgentNode) and node.post_checks and not self.dry_run:
                 self._validate_post_checks(node)
+
+            # Increment only after post_checks pass — a failed check should
+            # not count as a successfully executed node.
+            self.result.nodes_executed += 1
 
             self._emit(
                 "node.completed",
@@ -401,6 +404,11 @@ class WorkflowExecutor:
             elapsed = (time.monotonic() - start) * 1000
             self.result.node_outputs[node_id] = output
             self.completed_files |= self._actual_writes(node)
+
+            # Enforce post_checks on background nodes (same as blocking path)
+            if isinstance(node, AgentNode) and node.post_checks and not self.dry_run:
+                self._validate_post_checks(node)
+
             self.result.nodes_executed += 1
             self._emit(
                 "node.completed",
@@ -549,6 +557,11 @@ class WorkflowExecutor:
                 elapsed = (time.monotonic() - start) * 1000
                 self.result.node_outputs[target_id] = output
                 self.completed_files |= self._actual_writes(target)
+
+                # Enforce post_checks on fork branches (same as blocking path)
+                if isinstance(target, AgentNode) and target.post_checks and not self.dry_run:
+                    self._validate_post_checks(target)
+
                 self.result.nodes_executed += 1
                 self._emit(
                     "node.completed",
@@ -1045,12 +1058,12 @@ class WorkflowExecutor:
                 log.warning("data_worktree_cleanup_failed", path=str(wt_path), error=str(wt_exc))
 
         # Propagate DataNode failure when ALL items fail
-        failed_items = [r for r in item_results if not r.get('success', False)]
+        failed_items = [r for r in item_results if not r.get("success", False)]
         if len(failed_items) == len(item_results) and item_results:
             # Every single subgraph failed — this is a DataNode failure
-            sample_error = failed_items[0].get('error', '') or failed_items[0].get('halt_reason', 'subgraph failed')
+            sample_error = failed_items[0].get("error", "") or failed_items[0].get("halt_reason", "subgraph failed")
             log.error(
-                'data_node_all_items_failed',
+                "data_node_all_items_failed",
                 node_id=node_id,
                 total_items=len(item_results),
                 sample_error=sample_error,
@@ -1064,12 +1077,12 @@ class WorkflowExecutor:
             # Still store the results for debugging
             self.result.node_outputs[node_id] = json.dumps(item_results)
             self._emit(
-                'node.failed',
+                "node.failed",
                 NodeFailed(
                     workflow_name=self.workflow.name,
                     run_id=self.run_id,
                     node_id=node_id,
-                    node_type='DataNode',
+                    node_type="DataNode",
                     error=self.result.halt_reason,
                 ),
             )
@@ -1077,7 +1090,7 @@ class WorkflowExecutor:
         elif failed_items:
             # Partial failure — log warning but continue
             log.warning(
-                'data_node_partial_failure',
+                "data_node_partial_failure",
                 node_id=node_id,
                 failed=len(failed_items),
                 total=len(item_results),
@@ -1339,7 +1352,7 @@ class WorkflowExecutor:
 
         # Persist output to node.writes paths (mirrors _run_llm pattern).
         # Skip when agent_fn manages its own writes (e.g., FakeAgent).
-        agent_manages_writes = getattr(self._agent_fn, 'manages_writes', False) is True
+        agent_manages_writes = getattr(self._agent_fn, "manages_writes", False) is True
         if node.writes and not agent_manages_writes:
             for wpath in node.writes:
                 fpath = self.project_path / wpath

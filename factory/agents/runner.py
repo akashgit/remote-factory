@@ -257,6 +257,7 @@ async def invoke_agent(
     workflow_mode: str | None = None,
     settings_file: str | None = None,
     prompt_override: str | None = None,
+    node_id: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 

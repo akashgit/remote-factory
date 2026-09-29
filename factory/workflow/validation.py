@@ -235,7 +235,7 @@ def _validate_gate_edges(workflow: Workflow, issues: list[str]) -> None:
             )
 
 
-def _validate_datanode_entry_reads(workflow: Workflow, issues: list[str]) -> None:
+def _validate_datanode_entry_reads(workflow: Workflow) -> None:
     """Task-backed DataNode subgraph_entry should read current_item.json (WARNING).
 
     When a DataNode has a non-empty task_ref, the executor writes
@@ -303,7 +303,7 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     # Semantic checks
     _validate_agent_prompts(workflow, issues)
     _validate_gate_edges(workflow, issues)
-    _validate_datanode_entry_reads(workflow, issues)  # WARNING only — does not add to issues
+    _validate_datanode_entry_reads(workflow)  # WARNING only — does not add to issues
 
     for nid, node in nodes.items():
         if type(node).__name__ == "SubgraphForkNode":

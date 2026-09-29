@@ -18,6 +18,7 @@ Usage::
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -89,8 +90,7 @@ class FakeAgent:
             if callable(self._behavior):
                 result = self._behavior(role, task, proj, **kwargs)
                 # Support both sync and async behaviors
-                import asyncio
-                if asyncio.iscoroutine(result):
+                if inspect.isawaitable(result):
                     result = await result
             else:
                 result = ("ok", 0)

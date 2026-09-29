@@ -303,6 +303,51 @@ class TestValidatorAtExecutorStart:
         assert executor is not None
 
 
+class TestInvokeAgentNodeId:
+    """invoke_agent must accept node_id kwarg without TypeError.
+
+    The executor passes node_id=node.id to the agent_fn. When using the
+    default agent_fn (invoke_agent from runner.py), this would crash with
+    TypeError if the parameter wasn't declared.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_agent_fn_receives_node_id(self, tmp_path: Path):
+        """Patch invoke_agent and verify it receives the node_id kwarg."""
+        from factory.workflow.executor import WorkflowExecutor
+
+        wf = Workflow(
+            name="node-id-test",
+            nodes={
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Do the thing.",
+                    reads=set(),
+                    writes=set(),
+                ),
+            },
+            edges=[],
+            start_node="builder",
+        )
+
+        captured_kwargs: dict = {}
+
+        async def mock_invoke_agent(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return ("ok", 0)
+
+        executor = WorkflowExecutor(
+            wf, tmp_path, agent_fn=mock_invoke_agent, validate=False,
+        )
+        await executor.execute()
+
+        assert "node_id" in captured_kwargs, (
+            "agent_fn should receive node_id kwarg from executor"
+        )
+        assert captured_kwargs["node_id"] == "builder"
+
+
 class TestDataNodeSwallowsSubgraphFailures:
     """DataNode error propagation gap: when ALL subgraph items fail,
     the DataNode still completed successfully and the workflow continued.
