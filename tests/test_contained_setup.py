@@ -69,7 +69,10 @@ def test_the_chooser_is_skipped_when_a_target_was_named(capsys: pytest.CaptureFi
     ask.assert_not_called()
 
 
-@pytest.mark.parametrize(("answer", "expect_k8s"), [("1", False), ("2", True), ("3", True)])
+@pytest.mark.parametrize(
+    ("answer", "expect_k8s"),
+    [("1", False), ("2", True), ("3", False), ("4", True)],
+)
 def test_the_chooser_maps_each_answer_to_a_target(answer: str, expect_k8s: bool) -> None:
     with (
         patch("builtins.input", return_value=answer),

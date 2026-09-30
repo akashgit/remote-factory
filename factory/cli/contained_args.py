@@ -39,6 +39,7 @@ _NAMED_SUBCOMMANDS = ("attach", "rm", "sync")
 # naming: silently ignoring it makes a user believe a namespace or a mount took effect.
 _LOCAL_ONLY = ("mount",)
 _K8S_ONLY = ("namespace", "storage_class", "context")
+_OPENSHELL_ONLY = ("policy", "gateway")
 
 # Flags are described here rather than in argparse's own listing: which target a flag belongs to is
 # the thing a user most needs to know, and a flat alphabetical list hides it.
@@ -51,6 +52,7 @@ working tree is untouched. Everything after `--` is passed through unchanged.
 Targets:
   local   a podman container on this machine (the default). Fastest to start.
   k8s     a pod on a Kubernetes/OpenShift cluster. For long, unattended runs.
+  openshell  a policy-governed sandbox. For runs whose input you do not trust.
 
 Subcommands:
   setup                  Install what is missing, then check it
@@ -62,8 +64,8 @@ Subcommands:
   bundle                 Print the cluster prerequisites as YAML (k8s)
   help                   Print this text (same as --help)
 
-Both targets:
-  --target local|k8s     Which runtime                              (default: local)
+All targets:
+  --target local|k8s|openshell  Which runtime                       (default: local)
   --division             Let the agent build container images
   --name NAME            Name this run                              (default: derived)
   --env KEY=VALUE        Extra environment for the run, repeatable
@@ -79,15 +81,22 @@ K8s only:
   --context NAME         Which kubeconfig context to use    (default: your current one)
   --storage-class SC     Storage class for the workspace volume
 
+Openshell only:
+  --policy PATH          Replace the default sandbox policy (full replacement, never merged)
+  --gateway NAME         Which registered OpenShell gateway to use  (default: the active one)
+
 Environment:
   FACTORY_CONTAINED_IMAGE          Runtime image to use
   FACTORY_CONTAINED_HOME           Where workspace copies live (default ~/.factory-contained)
   FACTORY_CONTAINED_DRY_RUN=1      Print what would run; provision nothing
 
 `contained` gives a run a reproducible environment and keeps it off your working tree.
-It is not a security sandbox: it does not restrict what the agent's code can do, and it
-does not replace reviewing the result. `--division` additionally opens an unauthenticated
-build endpoint on this machine for the length of the run.
+The local and k8s targets are not security sandboxes: they do not restrict what the
+agent's code can do, and they do not replace reviewing the result. The openshell target
+is different by design — kernel-enforced filesystem and network allowlists, credentials
+held by the gateway — but reviewing the result is still yours to do. `--division`
+additionally opens an unauthenticated build endpoint on this machine for the length of
+the run (local), and is not supported on openshell.
 
 Full guide: https://akashgit.github.io/remote-factory/contained/
 """
@@ -181,6 +190,15 @@ def _reject_out_of_scope_flags(
     for dest in _K8S_ONLY:
         if getattr(args, dest) and args.target != "k8s":
             parser.error(f"--{dest.replace('_', '-')} only applies to --target k8s")
+    for dest in _OPENSHELL_ONLY:
+        if getattr(args, dest) and args.target != "openshell":
+            parser.error(f"--{dest.replace('_', '-')} only applies to --target openshell")
+    if args.division and args.target == "openshell":
+        # The build plane reaches outward through an unauthenticated endpoint (local) or the
+        # OpenShift Build API (k8s); an OpenShell sandbox has neither, and egress wide enough to
+        # build images is exactly what its policy denies. Refused here rather than at launch so
+        # nobody reads three steps of provisioning before finding out.
+        parser.error("--division is not supported by --target openshell")
 
 
 def _reject_subcommand_typo(parser: argparse.ArgumentParser, rest: list[str]) -> None:

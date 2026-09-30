@@ -74,18 +74,31 @@ def run_setup(
         )
         code = code or k8s_code
 
+    if target == "openshell":
+        record_target("openshell")
+        _setup_openshell()
+        from factory.contained.openshell_prereq import openshell_checks
+
+        checks = openshell_checks()
+        print(render_checks(checks, setup_command=None))
+        code = code or (0 if all(c.ok for c in checks) else 1)
+
     return code
 
 
 def _ask_target() -> str:
     print(style.section("What are you setting up?"))
-    print(style.note("Pass --target local or --target k8s to skip this question."))
+    print(style.note("Pass --target local, k8s or openshell to skip this question."))
     print()
     print(
         f"  {style.bold('1')}) {style.paint('local', 'cyan')}  a podman container on this machine"
     )
     print(f"  {style.bold('2')}) {style.paint('k8s', 'cyan')}    a pod on a cluster")
-    print(f"  {style.bold('3')}) {style.paint('both', 'cyan')}")
+    print(
+        f"  {style.bold('3')}) {style.paint('openshell', 'cyan')}  a policy-governed sandbox, for "
+        "runs whose input you do not trust"
+    )
+    print(f"  {style.bold('4')}) {style.paint('both', 'cyan')}  local and cluster")
     print()
     try:
         choice = input(style.prompt("Choice", "1")).strip() or "1"
@@ -94,7 +107,40 @@ def _ask_target() -> str:
         # is the documented one; an unanswered prompt must not become a bare `Error:`.
         print("\nNo answer given; setting up the local runtime (the default).")
         return "local"
-    return {"1": "local", "2": "k8s", "3": "both"}.get(choice, "local")
+    return {"1": "local", "2": "k8s", "3": "openshell", "4": "both"}.get(choice, "local")
+
+
+def _setup_openshell() -> None:
+    """Describe the openshell-target steps; automate none of them.
+
+    Unlike the local half (which starts a stopped podman machine and pulls an image), every
+    openshell prerequisite is either an install (the CLI, the SDK extra) or a credential-adjacent
+    act (registering a gateway, creating the provider). The factory automates neither: an
+    install script is the user's to choose, and the provider step is the one place this target
+    touches credential material, so it is described and left to the user.
+    """
+    from factory.contained.openshell import PROVIDER_FIX, SDK_FIX
+    from factory.contained.openshell_prereq import openshell_checks
+
+    print(style.section("OpenShell runtime"))
+    checks = {c.name: c for c in openshell_checks()}
+    cli = checks.get("openshell_cli")
+    if cli is not None and not cli.ok:
+        print(style.line("Install the OpenShell CLI (one line, from the docs):"))
+        print(style.line(f"  {cli.fix}"))
+    else:
+        print(style.note("openshell CLI present; nothing to do."))
+    sdk = checks.get("openshell_sdk")
+    if sdk is not None and not sdk.ok:
+        print(style.line("Install the Python SDK into this environment:"))
+        print(style.line(f"  {SDK_FIX}"))
+    else:
+        print(style.note("openshell SDK importable; nothing to do."))
+    print(style.line("Register a local gateway, if you have not:"))
+    print(style.line("  openshell gateway add --name local --local"))
+    print(style.line("  openshell gateway select local"))
+    print(style.note("Inference is never automated — it touches credential material:"))
+    print(style.line(f"  {PROVIDER_FIX}"))
 
 
 def _setup_local() -> None:

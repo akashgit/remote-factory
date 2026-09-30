@@ -325,11 +325,12 @@ factory contained -- ceo ~/code/rta                      # local container, watc
 factory contained --division -- ceo ~/code/rta           # ...and let the agent build images
 factory contained --target k8s --namespace ns -- run ~/code/rta --loop
 factory contained --target k8s --division -- ceo ~/code/rta
+factory contained --target openshell -- ceo ~/code/untrusted-project   # policy-governed sandbox
 factory contained ls | attach <name> | rm <name> | sync <name> | setup | verify | bundle
 FACTORY_CONTAINED_DRY_RUN=1 factory contained -- study ~/code/rta   # compose, provision nothing
 ```
 
-**The two targets share a command surface and an image, not a threat model.** Neither confines agent-authored code, and neither replaces review. Local is the *weaker* of the two: no egress control, and credentials live inside the container. K8s keeps a restricted SCC and namespace-scoped RBAC. None of this reaches user-facing output in these terms — `--help` says "not a security sandbox" and leaves it there, because a security comparison is not an orientation.
+**The three targets share a command surface and an image, not a threat model.** Local and k8s do not confine agent-authored code and do not replace review — local is the *weaker* of the two (no egress control, credentials live inside the container); k8s keeps a restricted SCC and namespace-scoped RBAC. **`--target openshell` is the exception: it exists to confine untrusted agent code** — kernel Landlock/seccomp, deny-by-default egress through an OpenShell supervisor, credentials held by the gateway and attached as a `claude-code` provider (never in the sandbox env; no fallback, by design). Its default policy (workspace rw, claude→inference endpoints, pip/uv→PyPI, nothing else) is code in `factory/contained/openshell.py`; `--policy` is a full replacement, never a merge. The `openshell` Python SDK is an optional extra (`uv sync --extra contained-openshell`); the run path is `factory/cli/contained_openshell.py`, mirroring `contained_k8s` (self-contained workspace copy, tarball upload via CLI, provenance probes via SDK exec, run in tmux).
 
 Six things are load-bearing and fail quietly if broken:
 
