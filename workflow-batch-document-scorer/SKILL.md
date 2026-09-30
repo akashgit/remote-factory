@@ -103,10 +103,146 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node=score_files" >> "$PROJECT_PA
 
 ## Step: Aggregate Report
 
+<!-- command: python3 -c "import json, sys, statistics
+from pathlib import Path
+
+project = '{project_path}'
+scores_path = Path(project) / '.factory/workspace/doc-scorer/scores.json'
+report_md_path = Path(project) / '.factory/reports/doc-quality-report.md'
+report_json_path = Path(project) / '.factory/reports/doc-quality-report.json'
+
+data = json.loads(scores_path.read_text())
+files = data.get('files', [])
+
+if not files:
+    report_md_path.write_text('# Documentation Quality Report\n\nNo files scored.\n')
+    report_json_path.write_text(json.dumps({'files_scored': 0}, indent=2))
+    sys.exit(0)
+
+for f in files:
+    f['composite'] = round((f.get('grammar',0) + f.get('readability',0) + f.get('structure',0)) / 3, 2)
+
+g_scores = [f['grammar'] for f in files]
+r_scores = [f['readability'] for f in files]
+s_scores = [f['structure'] for f in files]
+c_scores = [f['composite'] for f in files]
+
+def stats(vals):
+    return {'mean': round(statistics.mean(vals), 2), 'median': round(statistics.median(vals), 2), 'min': round(min(vals), 2), 'max': round(max(vals), 2)}
+
+summary = {
+    'files_scored': len(files),
+    'statistics': {
+        'grammar': stats(g_scores),
+        'readability': stats(r_scores),
+        'structure': stats(s_scores),
+        'composite': stats(c_scores)
+    },
+    'files': sorted(files, key=lambda x: x['composite'])
+}
+
+report_json_path.write_text(json.dumps(summary, indent=2))
+
+md_lines = [
+    '# Documentation Quality Report\n',
+    f'**Files Scored**: {len(files)}  ',
+    f'**Avg Grammar**: {stats(g_scores)["mean"]}/10  ',
+    f'**Avg Readability**: {stats(r_scores)["mean"]}/10  ',
+    f'**Avg Structure**: {stats(s_scores)["mean"]}/10  ',
+    f'**Avg Composite**: {stats(c_scores)["mean"]}/10\n',
+    '---\n',
+    '## Per-File Scores\n',
+    '| File | Grammar | Readability | Structure | Composite | Issues |',
+    '|------|---------|-------------|-----------|-----------|--------|',
+]
+
+for f in sorted(files, key=lambda x: x['composite']):
+    issues_str = '; '.join(f.get('issues', [])) if f.get('issues') else 'None'
+    md_lines.append(f'| {f["path"]} | {f["grammar"]} | {f["readability"]} | {f["structure"]} | {f["composite"]} | {issues_str} |')
+
+md_lines.append('\n---\n')
+
+needs_review = [f for f in files if f['composite'] < 7.0]
+if needs_review:
+    md_lines.append(f'## Needs Review ({len(needs_review)} files)\n')
+    for f in needs_review:
+        md_lines.append(f'- **{f["path"]}** (composite: {f["composite"]}): {"; ".join(f.get("issues", ["No specific issues noted"]))}')
+    md_lines.append('')
+
+report_md_path.write_text('\n'.join(md_lines))
+print(f'Report written: {len(files)} files scored')" -->
+
 Aggregate individual file scores from scores.json into summary statistics and two output reports: a markdown summary with per-file table sorted by composite score, and a machine-readable JSON file with full statistics. Files with composite score < 7.0 are flagged in a 'Needs Review' section.
 
 ```bash
-python3 -c "import json, sys, statistics;from pathlib import Path;project = '$PROJECT_PATH';scores_path = Path(project) / '.factory/workspace/doc-scorer/scores.json';report_md_path = Path(project) / '.factory/reports/doc-quality-report.md';report_json_path = Path(project) / '.factory/reports/doc-quality-report.json';data = json.loads(scores_path.read_text());files = data.get('files', []);if not files:    report_md_path.write_text('# Documentation Quality Report\n\nNo files scored.\n');    report_json_path.write_text(json.dumps({'files_scored': 0}, indent=2));    sys.exit(0);for f in files:    f['composite'] = round((f.get('grammar',0) + f.get('readability',0) + f.get('structure',0)) / 3, 2);g_scores = [f['grammar'] for f in files];r_scores = [f['readability'] for f in files];s_scores = [f['structure'] for f in files];c_scores = [f['composite'] for f in files];def stats(vals):    return {'mean': round(statistics.mean(vals), 2), 'median': round(statistics.median(vals), 2), 'min': round(min(vals), 2), 'max': round(max(vals), 2)};summary = {    'files_scored': len(files),    'statistics': {        'grammar': stats(g_scores),        'readability': stats(r_scores),        'structure': stats(s_scores),        'composite': stats(c_scores)    },    'files': sorted(files, key=lambda x: x['composite'])};report_json_path.write_text(json.dumps(summary, indent=2));md_lines = [    '# Documentation Quality Report\n',    f'**Files Scored**: {len(files)}  ',    f'**Avg Grammar**: {stats(g_scores)["mean"]}/10  ',    f'**Avg Readability**: {stats(r_scores)["mean"]}/10  ',    f'**Avg Structure**: {stats(s_scores)["mean"]}/10  ',    f'**Avg Composite**: {stats(c_scores)["mean"]}/10\n',    '---\n',    '## Per-File Scores\n',    '| File | Grammar | Readability | Structure | Composite | Issues |',    '|------|---------|-------------|-----------|-----------|--------|',];for f in sorted(files, key=lambda x: x['composite']):    issues_str = '; '.join(f.get('issues', [])) if f.get('issues') else 'None';    md_lines.append(        f'| {f["path"]} | {f["grammar"]} | {f["readability"]} | {f["structure"]} | {f["composite"]} | {issues_str} |'    );md_lines.append('\n---\n');needs_review = [f for f in files if f['composite'] < 7.0];if needs_review:    md_lines.append(f'## Needs Review ({len(needs_review)} files)\n');    for f in needs_review:        md_lines.append(f'- **{f["path"]}** (composite: {f["composite"]}): {"; ".join(f.get("issues", ["No specific issues noted"]))}');    md_lines.append('');report_md_path.write_text('\n'.join(md_lines));print(f'Report written: {len(files)} files scored')"
+python3 -c "import json, sys, statistics
+from pathlib import Path
+
+project = '$PROJECT_PATH'
+scores_path = Path(project) / '.factory/workspace/doc-scorer/scores.json'
+report_md_path = Path(project) / '.factory/reports/doc-quality-report.md'
+report_json_path = Path(project) / '.factory/reports/doc-quality-report.json'
+
+data = json.loads(scores_path.read_text())
+files = data.get('files', [])
+
+if not files:
+    report_md_path.write_text('# Documentation Quality Report\n\nNo files scored.\n')
+    report_json_path.write_text(json.dumps({'files_scored': 0}, indent=2))
+    sys.exit(0)
+
+for f in files:
+    f['composite'] = round((f.get('grammar',0) + f.get('readability',0) + f.get('structure',0)) / 3, 2)
+
+g_scores = [f['grammar'] for f in files]
+r_scores = [f['readability'] for f in files]
+s_scores = [f['structure'] for f in files]
+c_scores = [f['composite'] for f in files]
+
+def stats(vals):
+    return {'mean': round(statistics.mean(vals), 2), 'median': round(statistics.median(vals), 2), 'min': round(min(vals), 2), 'max': round(max(vals), 2)}
+
+summary = {
+    'files_scored': len(files),
+    'statistics': {
+        'grammar': stats(g_scores),
+        'readability': stats(r_scores),
+        'structure': stats(s_scores),
+        'composite': stats(c_scores)
+    },
+    'files': sorted(files, key=lambda x: x['composite'])
+}
+
+report_json_path.write_text(json.dumps(summary, indent=2))
+
+md_lines = [
+    '# Documentation Quality Report\n',
+    f'**Files Scored**: {len(files)}  ',
+    f'**Avg Grammar**: {stats(g_scores)["mean"]}/10  ',
+    f'**Avg Readability**: {stats(r_scores)["mean"]}/10  ',
+    f'**Avg Structure**: {stats(s_scores)["mean"]}/10  ',
+    f'**Avg Composite**: {stats(c_scores)["mean"]}/10\n',
+    '---\n',
+    '## Per-File Scores\n',
+    '| File | Grammar | Readability | Structure | Composite | Issues |',
+    '|------|---------|-------------|-----------|-----------|--------|',
+]
+
+for f in sorted(files, key=lambda x: x['composite']):
+    issues_str = '; '.join(f.get('issues', [])) if f.get('issues') else 'None'
+    md_lines.append(f'| {f["path"]} | {f["grammar"]} | {f["readability"]} | {f["structure"]} | {f["composite"]} | {issues_str} |')
+
+md_lines.append('\n---\n')
+
+needs_review = [f for f in files if f['composite'] < 7.0]
+if needs_review:
+    md_lines.append(f'## Needs Review ({len(needs_review)} files)\n')
+    for f in needs_review:
+        md_lines.append(f'- **{f["path"]}** (composite: {f["composite"]}): {"; ".join(f.get("issues", ["No specific issues noted"]))}')
+    md_lines.append('')
+
+report_md_path.write_text('\n'.join(md_lines))
+print(f'Report written: {len(files)} files scored')"
 ```
 
 ### Steering Point — Review Gate (User Approval)
