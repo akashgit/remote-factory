@@ -1014,7 +1014,7 @@ class TestPreserveTelemetryNoFactory:
 
 class TestDetectDefaultBranchFallback:
     def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+        """When every detection method fails, raises RuntimeError."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,94 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match="No default branch detected"):
+                detect_default_branch(project)
+
+    def test_error_message_contains_workaround_hints(self, tmp_path: Path) -> None:
+        """Error message mentions both workarounds: target_branch and check out a branch."""
+        project = tmp_path / "bare"
+        project.mkdir()
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+
+        with patch(
+            "factory.worktree.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr="",
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="target_branch") as exc_info:
+                detect_default_branch(project)
+            assert "check out a branch" in str(exc_info.value)
+
+    def test_critical_path_raise_prevents_opaque_git_error(
+        self, tmp_path: Path
+    ) -> None:
+        """Full critical path: detect_default_branch raises before create_worktree
+        can hit the opaque git rev-parse exit-code-128 error.
+
+        Sets up a detached-HEAD repo with no main/master and no origin, then
+        calls create_worktree and verifies the RuntimeError from
+        detect_default_branch propagates — NOT the downstream git error.
+        """
+        project = tmp_path / "detached"
+        project.mkdir()
+        # Initialise with a non-standard branch so main/master don't exist.
+        subprocess.run(
+            ["git", "init", "-b", "scratch"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        # Create a commit so we can detach HEAD.
+        (project / "f.txt").write_text("x")
+        subprocess.run(
+            ["git", "add", "f.txt"], cwd=project, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+            env={
+                **__import__("os").environ,
+                "GIT_AUTHOR_NAME": "test",
+                "GIT_COMMITTER_NAME": "test",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_EMAIL": "t@t",
+            },
+        )
+        # Detach HEAD so current-branch detection returns "HEAD".
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "checkout", sha],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        # Delete the scratch branch so no named branch exists.
+        subprocess.run(
+            ["git", "branch", "-D", "scratch"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        # detect_default_branch must raise with an actionable message,
+        # NOT let a bogus branch propagate to create_worktree.
+        with pytest.raises(RuntimeError, match="No default branch detected"):
+            base = detect_default_branch(project)
+            # If detect_default_branch returned instead of raising,
+            # create_worktree would fail with an opaque git error.
+            create_worktree(project, base_branch=base)
 
 
 class TestDetectDefaultBranchUnborn:

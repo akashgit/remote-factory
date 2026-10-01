@@ -1,30 +1,16 @@
-# Builder Review — DataNode always uses executor
+## Builder Review
 
-## Summary
+### Changes
 
-Restored the unconditional DataNode-always-uses-executor behavior. The CEO subprocess
-cannot reliably follow multi-step iteration loops from SKILL.md prose — this is a known
-LLM reliability limitation, not a bug in the execution strategy dispatch.
+- **factory/worktree.py**: In `detect_default_branch()`, replaced the final `return "main"` fallback with `raise RuntimeError(...)` containing an actionable error message pointing at two workarounds (set `target_branch` in config, or check out a branch). Updated `log.debug` to `log.warning` on the error path. Updated docstring cascade description.
 
-## Changes
+- **tests/test_worktree.py**: In `TestDetectDefaultBranchFallback`:
+  - Updated `test_fallback_when_all_detection_fails` to expect `pytest.raises(RuntimeError)` instead of `assert == "main"`
+  - Added `test_error_message_contains_workaround_hints` verifying both hints are present in the error message
+  - Added `test_critical_path_raise_prevents_opaque_git_error` — a behavioral test exercising the full critical path with a real detached-HEAD repo (no main/master, no origin), proving the raise prevents the opaque git rev-parse exit-code-128 error from ever occurring
 
-### factory/inner_loop.py
-- **Line ~427**: Removed `and self.execution_strategy == 'executor'` condition from the
-  DataNode check in `_step_with_task()`. DataNode workflows now unconditionally route to
-  `_step_with_data_node()` regardless of `execution_strategy`.
-- **`_step_with_data_node()` docstring**: Updated to explain *why* DataNode always uses
-  WorkflowExecutor — documents the LLM reliability limitation.
-- No warning log existed to remove (the code hadn't added one yet).
+### Verification
 
-### tests/test_inner_loop_dispatch.py
-- `test_datanode_ceo_skill_uses_subprocess` → renamed to `test_datanode_ceo_skill_uses_executor`,
-  now asserts DataNode + ceo-skill routes to `_step_with_data_node` (not `_run_ceo_subprocess`).
-- `test_datanode_ceo_tool_uses_subprocess` → renamed to `test_datanode_ceo_tool_uses_executor`,
-  now asserts DataNode + ceo-tool routes to `_step_with_data_node`.
-- `test_datanode_executor_uses_step_with_data_node` — kept unchanged, still passes.
-
-## Verification
-
-- All 15 tests in `test_inner_loop_dispatch.py` pass
-- `ruff check` clean
-- `mypy` clean
+- All 10 `DefaultBranch` tests pass
+- All 3 new/updated fallback tests pass
+- `ruff check` passes on both files
