@@ -1014,7 +1014,7 @@ class TestPreserveTelemetryNoFactory:
 
 class TestDetectDefaultBranchFallback:
     def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+        """When every detection method fails, raises RuntimeError."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,13 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match=r"Cannot detect default branch"):
+                detect_default_branch(project)
+
+    def test_raises_on_bare_path(self, tmp_path: Path) -> None:
+        """detect_default_branch raises on a path with no git repo."""
+        with pytest.raises(RuntimeError, match=r"Cannot detect default branch"):
+            detect_default_branch(tmp_path)
 
 
 class TestDetectDefaultBranchUnborn:

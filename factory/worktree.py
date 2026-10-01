@@ -907,8 +907,10 @@ def detect_default_branch(project_path: Path) -> str:
         log.debug("detect_default_branch", source="symbolic_ref", branch=branch)
         return branch
 
-    log.debug("detect_default_branch", source="fallback", branch="main")
-    return "main"
+    raise RuntimeError(
+        f"Cannot detect default branch for {project_path}. "
+        "Set target_branch in .factory/config.json or check out a branch."
+    )
 
 
 def _list_worktrees_with_branches(project_path: Path) -> dict[str, str]:
