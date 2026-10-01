@@ -14,7 +14,9 @@ shape "nothing mounted from the host, workspace travels as a copy, run unattende
 5. **Assert** provenance inside the sandbox, before the factory starts — the packer copies
    what it is told, so the filtered-transfer trap that a bind mount removes locally is live
    here as on the cluster.
-6. **Start** the run in tmux, launched through the SDK's exec.
+6. **Start** the run as a detached, logged process through the SDK's exec — a sandbox cannot
+   run tmux (PTY allocation is denied by the Landlock allowlist), so the run writes
+   `.factory/run.log`/`run.pid`/`run.exit` inside the project and those files are its interface.
 
 What deliberately does *not* happen anywhere in this file: an inference credential crossing
 into the sandbox. The provider holds it in the gateway; the sandbox sees a placeholder. A run
@@ -143,6 +145,10 @@ def _build_plan(
     env = CONTAINED_ENV_POLICY.resolve(dict(os.environ))
     env.update(forwarded)
     env.update(extra)
+    # The run's stdout is a file (`build_run_launch`), where Python block-buffers; without this,
+    # `attach`'s log tail shows nothing for whole minutes of live work — indistinguishable from
+    # the hang it was reported as. The claude subprocess inherits it.
+    env.setdefault("PYTHONUNBUFFERED", "1")
     if any(is_secret_key(key) for key in env):
         warnings.append(
             "a credential-looking variable is being placed in the sandbox environment. The "
@@ -246,13 +252,10 @@ def _upload_and_start(
     except ContainedError as exc:
         return _sandbox_failure(plan, str(exc))
 
-    # A sandbox of this name may already be mid-run; the tmux launch would collide with the
-    # session already there ("duplicate session: factory" names tmux for what is really "you
-    # already have this run"). Same check, same wording, as the cluster target.
-    existing = openshell.exec_argv(
-        session, ["tmux", "has-session", "-t", "factory"], timeout=60
-    )
-    if existing.exit_code == 0:
+    # A sandbox of this name may already be mid-run; launching again would start a second run
+    # against the same workspace copy. Same question, same wording, as the cluster target's
+    # duplicate-session check — asked of the run's own liveness rather than a tmux session.
+    if openshell.run_liveness_probe(session) == "running":
         print(
             f"contained: {plan.name} is already running a session — this is the same run, not a "
             f"new one.\n"

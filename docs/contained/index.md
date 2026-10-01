@@ -735,16 +735,23 @@ The Python SDK is an optional dependency: `uv sync --extra contained-openshell`.
 target fails with that fix rather than a traceback, and `verify` reports it as a prerequisite.
 
 A run is the same sequence as the cluster target — self-contained workspace copy, secret scan,
-one tarball upload, provenance assertions before the first agent call, then the run starts in
-tmux and the CLI returns. `attach` opens an interactive exec through the gateway (`Ctrl-b d`
-detaches); `sync` downloads the workspace back; `rm` deletes the sandbox and keeps your local
-workspace copy.
+one tarball upload, provenance assertions before the first agent call, then the run starts and
+the CLI returns. One difference from the other targets: the run is **not** in tmux, because a
+sandbox cannot allocate the pseudo-terminal every tmux window needs (denied by the Landlock
+filesystem allowlist). Instead the run is a detached process that writes its output to
+`.factory/run.log` inside the project, its pid to `.factory/run.pid`, and its exit code to
+`.factory/run.exit` — so `attach` follows the log (`Ctrl-C` detaches, and cannot disturb the
+run); `sync` downloads the workspace back, log included; `rm` deletes the sandbox and keeps your
+local workspace copy.
 
-**The policy.** The default grants the workspace read-write, the `claude` binary access to the
-inference endpoints, and `pip`/`uv` access to PyPI — nothing else. `--policy <file>` replaces it
-entirely, in OpenShell's documented YAML format; the file you pass is the whole policy. The
-default allowlist is code (a builder in `factory/contained/openshell.py`, snapshot-tested), so
-changing what untrusted code can reach is a reviewed diff, not a config edit nobody saw.
+**The policy.** The default grants the workspace read-write, read-only access to the runtime
+image's `/opt/factory` install, `pip`/`uv` access to PyPI — and nothing else. Inference egress
+comes from the attached `claude-code` provider, not the policy: the gateway synthesizes its own
+rule for the provider's endpoints, and restating them in the policy is a create-time error.
+`--policy <file>` replaces it entirely, in OpenShell's documented YAML format; the file you pass
+is the whole policy. The default allowlist is code (a builder in
+`factory/contained/openshell.py`, snapshot-tested), so changing what untrusted code can reach is
+a reviewed diff, not a config edit nobody saw.
 
 ---
 

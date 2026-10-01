@@ -64,14 +64,23 @@ path the path of least resistance.
 a `contained-openshell` extra; the target raises a fix-carrying error when the extra is absent,
 and `verify` reports it as a prerequisite.
 
-**Unattended runs, like k8s — and in tmux, like k8s.** An earlier draft ran the factory command
-as the sandbox's canonical main process. That does not survive contact with the provenance
+**Unattended runs, like k8s — but *not* in tmux, unlike k8s.** An earlier draft ran the factory
+command as the sandbox's canonical main process. That does not survive contact with the provenance
 contract: the five assertions must run **after** the workspace is in place and **before** the
 first agent call, and the supervisor launches the main process as soon as the sandbox is ready —
-there is no window between. So the structure is exactly the k8s target's: the main process is an
+there is no window between. So the structure starts as the k8s target's: the main process is an
 idle command (`sleep infinity`, which must outlive the run so a failed one stays inspectable),
-and the run itself starts in a detached tmux session after the probes pass — `build_tmux_launch`
-is shared with the other two targets. Attach goes through the CLI's interactive `exec --tty`.
+and the run starts after the probes pass. A second correction came from live verification
+against a real gateway: the run cannot live in tmux, because **every tmux window needs a
+pseudo-terminal and PTY allocation is denied by the sandbox's Landlock allowlist**
+(`/dev/ptmx` → EACCES; OpenShell issue #749, confirmed unfixed and closed stale). The run is
+instead a detached `nohup` process that writes three artifacts under the project's `.factory/`:
+`run.log` (the scrollback equivalent, which rides `sync` home), `run.pid` (the liveness
+equivalent, read with `kill -0`), and `run.exit` (the exit-code stamp, machine-readable where
+tmux's was a printf). The genuine loss is a live *interactive* terminal on the run; attach is a
+read-only `tail -f` through the CLI's `exec --tty` — the supervisor allocates that outer PTY
+before the Landlock boundary applies, so it works where a nested one cannot. For a
+kernel-confined, unattended sandbox, the read-only interface is the honest one.
 
 **The default policy is a Python builder.** It is testable (snapshot tests against the
 rendered policy) and versioned with the factory. YAML is the override format only — the
@@ -95,8 +104,9 @@ bind-mounted from the host, workspace uploaded as a copy, run unattended.
    transport-agnostic argv lists (that was the point of their design), so this target gets the
    five assertions between provisioning and the first agent call for free. A failed assertion
    aborts naming the file and likely cause, leaving the sandbox up for inspection.
-7. Start the run in a detached tmux session (shared `build_tmux_launch`); record the target;
-   print the attach/sync/rm commands.
+7. Start the run as a detached, logged process (`build_run_launch`: `nohup` + `.factory/`
+   log/pid/exit artifacts — tmux cannot run in a sandbox, see §3); record the target; print
+   the attach/sync/rm commands.
 
 `FACTORY_CONTAINED_DRY_RUN=1` prints the plan — SDK operations as described steps, CLI calls as
 exact argv. The SDK calls are not argv, so the plan carries both forms; this is the one place

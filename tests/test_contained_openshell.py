@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
@@ -177,7 +178,7 @@ def test_the_default_policy_grants_exactly_the_intended_egress() -> None:
     # omitted one falls back to the image's OCI USER whose primary GID is 0 — and the gateway
     # hard-rejects any workload identity containing GID 0. The image's `o=u` mode recipe keeps
     # its writable paths open to this gid, so the other targets are unaffected.
-    assert policy.filesystem == {"include_workdir": True}
+    assert policy.filesystem == {"include_workdir": True, "read_only": ["/opt/factory"]}
     assert policy.process == {"run_as_user": "1001", "run_as_group": "1001"}
 
 
@@ -426,6 +427,110 @@ def test_a_launch_failure_is_distinguished_from_a_command_failure() -> None:
 
     with pytest.raises(ContainedError, match="did not execute at all"):
         exec_argv(_Session(), ["pwd"])
+
+
+# --------------------------------------------------------------------------------------------
+# Run model: detached launch, log/pid/exit artifacts, liveness
+# --------------------------------------------------------------------------------------------
+
+
+def test_the_run_launch_detaches_logs_and_records_its_own_lifecycle() -> None:
+    """The launch script is the target's `build_tmux_launch` replacement, so its properties are
+    the contract: detached (nohup + background), output to the run log, pid to the pidfile, exit
+    code to the exit file — and *no tmux anywhere*, because a sandbox cannot allocate a PTY.
+    This test also executes the script, because a composed-but-unparsed shell string is how the
+    `&`-vs-`cd` precedence bug shipped: the pidfile landed in the launcher's cwd, not the run's.
+    """
+    import subprocess as sp
+
+    from factory.contained.openshell import build_run_launch
+
+    script = build_run_launch("/workspace/rta", "factory study /workspace/rta")
+    assert "nohup" in script and "&" in script          # detached: exec returns immediately
+    for token in (".factory/run.log", ".factory/run.pid", ".factory/run.exit"):
+        assert token in script, f"the run's {token} artifact is missing from the launch"
+    assert "tmux" not in script                          # cannot work in a sandbox (#749)
+    assert sp.run(["sh", "-n"], input=script, text=True).returncode == 0
+
+    # Execute it for real: the three artifacts must exist, in the *run's* directory.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / "proj"
+        project.mkdir()
+        run = build_run_launch(str(project), "echo hi-from-run; sleep 0.1")
+        sp.run(["sh", "-c", run], check=True, cwd=tmp, capture_output=True)
+        deadline = time.monotonic() + 5
+        while not (project / ".factory/run.exit").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        artifacts = sorted(p.name for p in (project / ".factory").iterdir())
+        assert artifacts == ["run.exit", "run.log", "run.pid"]
+        assert (project / ".factory/run.log").read_text().strip() == "hi-from-run"
+        assert (project / ".factory/run.exit").read_text().strip() == "0"
+
+
+def test_run_liveness_reads_the_exit_file_before_the_pid() -> None:
+    """Liveness precedence: the exit file is authoritative (a recycled pid after a sandbox
+    stop/start must not resurrect a finished run), a live pidfile means running, and neither
+    file means no run was started."""
+    from factory.contained.openshell import run_liveness_probe
+
+    @dataclass
+    class _Result:
+        exit_code: int
+        stdout: str
+
+    class _Session:
+        def __init__(self, stdout: str):
+            self._stdout = stdout
+
+        def exec(self, argv, **kwargs):
+            # The probe's shell decides; the fake answers what the shell would print.
+            assert argv[0] == "sh"
+            return _Result(exit_code=0, stdout=self._stdout)
+
+    assert run_liveness_probe(_Session("finished\n")) == "finished"
+    assert run_liveness_probe(_Session("running\n")) == "running"
+    assert run_liveness_probe(_Session("")) == "unknown"          # probe broke: say so
+    assert run_liveness_probe(_Session("garbage\n")) == "unknown"
+
+
+def test_the_attach_argv_follows_the_log_and_never_touches_tmux() -> None:
+    """Attach is a read-only log follow through the CLI's outer PTY (which the supervisor
+    allocates *before* the Landlock boundary, so it works where a nested one cannot)."""
+    from factory.contained.openshell import build_attach_argv
+
+    argv = build_attach_argv("rta-abc123")
+    assert argv[:6] == ["openshell", "sandbox", "exec", "-n", "rta-abc123", "--tty"]
+    script = argv[-1]
+    assert "tail -n 200 -f .factory/run.log" in script
+    assert "run.exit" in script                            # the finished run's stamp
+    assert "tmux" not in script
+
+
+def test_the_run_environment_is_unbuffered() -> None:
+    """The run's stdout is a file, where Python block-buffers; unbuffered output is what keeps
+    `attach`'s log tail distinguishable from a hang."""
+    from factory.cli.contained_openshell import _build_plan
+
+    project = tmp_project()
+    args = _plan_args(project)
+    plan = _build_plan(args, _workspace(project), "rta-abc123", {}, {})
+    assert plan.env["PYTHONUNBUFFERED"] == "1"
+    # setdefault semantics: an explicit --env PYTHONUNBUFFERED=0 is the user's to make
+    plan2 = _build_plan(
+        _plan_args(project, "--env", "PYTHONUNBUFFERED=0"), _workspace(project), "rta-abc123",
+        {}, {"PYTHONUNBUFFERED": "0"},
+    )
+    assert plan2.env["PYTHONUNBUFFERED"] == "0"
+
+
+def tmp_project() -> Path:
+    import tempfile
+
+    path = Path(tempfile.mkdtemp()) / "rta"
+    path.mkdir()
+    return path
 
 
 # --------------------------------------------------------------------------------------------

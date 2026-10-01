@@ -22,10 +22,20 @@ Two shapes differ from the podman/k8s modules and deserve explanation up front.
 
 **The main process is an idle command, not the run.** The provenance assertions have to run
 after the workspace is in place and *before* the first agent call — the same ordering both other
-targets enforce by launching the run in tmux after `podman exec`/`oc exec` probes. So the
-sandbox's canonical main process is `sleep infinity` (it must outlive the run so a failed run
-stays inspectable) and the run itself starts in a detached tmux session, exactly the local
-target's structure with the SDK's `exec()` as the transport instead of `podman exec`.
+targets enforce by launching the run after `podman exec`/`oc exec` probes. So the sandbox's
+canonical main process is `sleep infinity` (it must outlive the run so a failed run stays
+inspectable) and the run itself is started afterwards through the SDK's `exec()`.
+
+**The run is a detached `nohup` process, not a tmux session.** The local and k8s targets hold
+their runs in tmux; inside an OpenShell sandbox that is impossible — every tmux window needs a
+pseudo-terminal, and PTY allocation (`/dev/ptmx`) is denied by the Landlock filesystem allowlist
+(OpenShell issue #749, confirmed unfixed on `main`). The launch therefore writes the run's
+output to a log file under the project's `.factory/`, records its pid, and records its exit code
+when it ends; attach follows the log, liveness reads the pid. What tmux gave those targets for
+free, the sandbox gives anyway: the run outlives the exec channel that started it (verified),
+and the sandbox outlives the run by design. What is genuinely lost is a *live interactive*
+terminal on the run — for a kernel-confined, unattended sandbox that reads-only interface is the
+honest one. See `build_run_launch` for the exact properties.
 
 **Dry-run cannot print argv for SDK calls.** The gateway API is gRPC, not a command line, so the
 plan carries the SDK operations as *described* steps alongside the exact argv for the CLI parts.
@@ -36,6 +46,7 @@ so the parts that *are* commands keep the stronger guarantee.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,9 +72,15 @@ WORKSPACE_ROOT = "/workspace"
 # is what the local target's PID-1 payload runs for the same reasons.
 IDLE_COMMAND: tuple[str, ...] = ("sleep", "infinity")
 
-# One well-known session name, because `attach` has to find it without being told (podman.py
-# owns the convention; the same name is reused so the tmux knowledge stays in one place).
-TMUX_SESSION = "factory"
+# The run's three on-disk artifacts, written by `build_run_launch` inside the project's
+# `.factory/` so they ride the workspace copy home with `sync` — `.factory` is already the
+# project-local, gitignored state dir. A sandbox cannot run tmux (see the module docstring), so
+# these files *are* the run's interface: the log replaces scrollback, the pid replaces the tmux
+# pane state for liveness, and the exit code file replaces the `[factory exited %s]` stamp —
+# with the improvement that it is machine-readable.
+RUN_LOG = ".factory/run.log"
+RUN_PID = ".factory/run.pid"
+RUN_EXIT = ".factory/run.exit"
 
 PROVIDER_FIX = (
     "curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/providers/"
@@ -243,7 +260,7 @@ def plan_steps(plan: OpenShellPlan, tarball: Path, probes: list[Probe]) -> list[
                 description=f"sdk: exec {probe.argv!r} in {plan.project_dir}",
             )
         )
-    steps.append(Step("run", description=f"sdk: exec tmux launch in {plan.project_dir}"))
+    steps.append(Step("run", description=f"sdk: exec detached run launch in {plan.project_dir}"))
     return steps
 
 
@@ -256,8 +273,12 @@ def build_default_policy():
     Rules, in the order a reader should weigh them:
 
     - The workspace (`/workspace`, which `include_workdir` also covers) is read-write; OpenShell
-      adds its baseline read-only system paths on top, so the toolchain works without this
-      policy granting system reads itself.
+      adds its baseline read-only system paths (`/usr`, `/etc`, ...) on top, so the toolchain
+      works without this policy granting system reads itself. **One path must be granted here
+      anyway**: the runtime image installs the factory under `/opt/factory`, which is outside
+      every baseline list, so without this entry the very first `factory` invocation dies with
+      a `PermissionError` reading its own venv — Landlock denies the read no matter what the
+      file mode says.
     - Egress is deny-by-default and the allowlist is deliberately small: read-only package
       registries for `pip`/`uv` so eval environments can be built inside the sandbox. The
       defaults start slightly loose on purpose: loosening is a compatible change, silently
@@ -295,7 +316,11 @@ def build_default_policy():
 
     return sandbox_pb2.SandboxPolicy(
         version=1,
-        filesystem=sandbox_pb2.FilesystemPolicy(include_workdir=True),
+        filesystem=sandbox_pb2.FilesystemPolicy(
+            include_workdir=True,
+            # The runtime image's factory install — see the docstring's `/opt/factory` note.
+            read_only=["/opt/factory"],
+        ),
         process=sandbox_pb2.ProcessPolicy(run_as_user="1001", run_as_group="1001"),
         network_policies={
             "python_packages": _rule(
@@ -348,7 +373,7 @@ def load_policy(path: Path):
 def build_spec(plan: OpenShellPlan, policy) -> "object":
     """Compose the `SandboxSpec` the sandbox is created from.
 
-    The command is the idle payload — see the module docstring for why the run starts in tmux
+    The command is the idle payload — see the module docstring for why the run is launched
     after the provenance probes rather than as the main process. Providers are attached at
     create time so the placeholder environment exists before any process could ask for it.
     """
@@ -379,14 +404,22 @@ def build_download_argv(name: str, sandbox_path: str, dest: Path) -> list[str]:
 def build_attach_argv(name: str) -> list[str]:
     """Compose the interactive attach.
 
-    The SDK has no PTY, so the CLI's `exec --tty` is the transport. tmux is what makes
-    detaching safe (Ctrl-b d) and keeps the finished run's scrollback — the same reasons the
-    podman target routes attach through tmux rather than the container's stdio.
+    The SDK has no PTY, so the CLI's `exec --tty` is the transport — the supervisor allocates
+    that outer PTY before the Landlock boundary applies, so it works where a *nested* one
+    (tmux) cannot. The view is read-only: a finished run's exit stamp prints first (a log that
+    is still growing tells its own story live), then the log is followed. Detaching is Ctrl-C —
+    safe, because following a file cannot disturb the process writing it. The `sh -i` fallback
+    covers a log that does not exist (nothing started) the way the tmux attach's fallback
+    covered a missing session.
     """
+    log, exit_code = shlex.quote(RUN_LOG), shlex.quote(RUN_EXIT)
     return [
         "openshell", "sandbox", "exec", "-n", name, "--tty", "--",
         "sh", "-lc",
-        f'exec tmux attach -t {TMUX_SESSION} 2>/dev/null || exec sh -i',
+        f"if [ -f {log} ]; then "
+        f"[ -f {exit_code} ] && echo \"[factory exited $(cat {exit_code})]\"; "
+        f"tail -n 200 -f {log}; "
+        f"else exec sh -i; fi",
     ]
 
 
@@ -440,16 +473,43 @@ def run_probes(session, plan: OpenShellPlan, probes: list[Probe]) -> None:
             )
 
 
-def start_run(session, plan: OpenShellPlan) -> None:
-    """Start the run in a detached tmux session, mirroring the local target's launch.
+def build_run_launch(workdir: str, run_command: str) -> str:
+    """Compose the shell script that starts the run as a detached, logged process.
 
-    Reuses `build_tmux_launch` from `factory.podman` so the session conventions —
-    remain-on-exit, the pane-died detach hook, the trailing inspectable shell — are defined
-    once and shared by all three targets.
+    This is the openshell target's `build_tmux_launch`: same job (a run that outlives the exec
+    channel that started it, whose output survives it, and whose liveness is observable), no
+    tmux — a sandbox cannot allocate the PTY every tmux window needs (module docstring,
+    OpenShell #749). Property by property:
+
+    - `nohup … &` detaches, so the exec returns as soon as the run is started, and the run
+      survives the exec session ending (verified against a live sandbox).
+    - `> run.log 2>&1` is the scrollback. It lives under the project's `.factory/`, so `sync`
+      downloads it with the workspace — a log the failed run wrote is *stronger* post-mortem
+      state than a tmux pane, because it exists on the host too.
+    - `echo $! > run.pid` is the pane-state equivalent: what `run_liveness` reads.
+    - `echo $? > run.exit` replaces tmux's `[factory exited %s]` stamp, machine-readably. A
+      command that never *returns* (killed, `exec`ed away) writes no exit file — liveness then
+      falls through to the pid, which is dead, so the run still reads as finished; only its
+      exit code is unknown, which is also the truth.
     """
-    from factory.podman import build_tmux_launch
+    inner = f"{run_command}; echo $? > {RUN_EXIT}"
+    log, pid = shlex.quote(RUN_LOG), shlex.quote(RUN_PID)
+    # The brace group is load-bearing: without it `cd … && nohup … & echo $! > pid` parses as
+    # `(cd … && nohup …) & echo …` — the `&` backgrounds the whole `cd` chain, so the pidfile
+    # lands in the *launcher's* cwd (nowhere, usually) rather than beside the log.
+    return (
+        f"cd {shlex.quote(workdir)} && mkdir -p .factory && "
+        f"{{ nohup sh -c {shlex.quote(inner)} > {log} 2>&1 & echo $! > {pid}; }}"
+    )
 
-    script = build_tmux_launch(plan.project_dir, plan.run_command)
+
+def start_run(session, plan: OpenShellPlan) -> None:
+    """Start the run as a detached process, per `build_run_launch`.
+
+    The exec this issues returns immediately — the `&` in the script means the SDK session is
+    only waiting for the shell that *started* the run, not the run itself.
+    """
+    script = build_run_launch(plan.project_dir, plan.run_command)
     exec_argv(session, ["sh", "-lc", script], timeout=60)
 
 
@@ -494,7 +554,7 @@ def _phase_name(phase: int) -> str:
     return {
         0: "unknown",
         1: "provisioning",
-        2: "running",       # READY: the idle main process is up; tmux liveness says if the run is
+        2: "running",       # READY: the idle main process is up; run_liveness says if the run is
         3: "error",
         4: "deleting",
         5: "unknown",
@@ -549,26 +609,48 @@ def remove_runtime(name: str, gateway: str | None = None) -> None:
         raise ContainedError(f"deleting sandbox {name} failed: {exc}") from exc
 
 
-def run_liveness(client, name: str) -> str:
-    """Whether the *run* (not the sandbox) is still alive, for `ls` and `rm`'s prompt.
+def run_liveness_probe(session) -> str:
+    """Whether the *run* (not the sandbox) is still alive, asked of a live session.
 
     The sandbox deliberately outlives its run, so READY says nothing about the factory cycle.
-    The tmux pane state is the answer — the same distinction the podman target draws with
-    `build_pane_liveness_argv`.
-    """
-    from factory.podman import TMUX_SESSION as SESSION
+    The run's own artifacts are the answer, in precedence order:
 
+    1. An exit-code file means the run completed — authoritative even over a live-looking pid,
+       because a sandbox `stop`/`start` preserves the workspace (stale pidfile) and a recycled
+       pid can false-positive `kill -0`.
+    2. A pidfile whose pid answers `kill -0` means the run is going.
+    3. Neither file means no run was ever started, or a workspace from before this convention
+       existed — `finished`, same answer the podman target gives for a missing tmux session.
+
+    The probe is workdir-independent on purpose: it globs `{WORKSPACE_ROOT}/*/.factory/…`
+    because the callers that need it (`_upload_and_start`'s collision check, `rm`'s prompt)
+    know the sandbox by name, not by project dir — and the sandbox holds exactly one project,
+    which is what the glob enumerates.
+    """
+    probe = (
+        f"exit_file=$(ls {shlex.quote(WORKSPACE_ROOT)}/*/{RUN_EXIT} 2>/dev/null | head -1); "
+        f"pid_file=$(ls {shlex.quote(WORKSPACE_ROOT)}/*/{RUN_PID} 2>/dev/null | head -1); "
+        f"if [ -n \"$exit_file\" ]; then echo finished; "
+        f"elif [ -n \"$pid_file\" ] && kill -0 $(cat \"$pid_file\") 2>/dev/null; "
+        f"then echo running; else echo finished; fi"
+    )
     try:
-        session = client.get_session(name, workspace=SANDBOX_WORKSPACE)
-        result = session.exec(
-            ["tmux", "list-panes", "-t", SESSION, "-F", "#{pane_dead}"],
-            timeout_seconds=15,
-        )
+        result = session.exec(["sh", "-c", probe], timeout_seconds=15)
     except Exception:
         return "unknown"
     if result.exit_code != 0:
-        return "finished"            # no session left at all
-    return "running" if "0" in result.stdout.split() else "finished"
+        return "unknown"
+    answer = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+    return answer if answer in ("running", "finished") else "unknown"
+
+
+def run_liveness(client, name: str) -> str:
+    """`run_liveness_probe` for a named sandbox — the client-facing form lifecycle wants."""
+    try:
+        session = client.get_session(name, workspace=SANDBOX_WORKSPACE)
+    except Exception:
+        return "unknown"
+    return run_liveness_probe(session)
 
 
 def cli_available() -> bool:
