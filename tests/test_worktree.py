@@ -1014,7 +1014,7 @@ class TestPreserveTelemetryNoFactory:
 
 class TestDetectDefaultBranchFallback:
     def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+        """When every detection method fails, raises RuntimeError."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,45 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match="Could not detect a default branch"):
+                detect_default_branch(project)
+
+    def test_detached_head_no_main_master_no_origin_raises(self, tmp_path: Path) -> None:
+        """Detached HEAD with no main/master and no origin raises RuntimeError."""
+        project = tmp_path / "detached"
+        project.mkdir()
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "seed"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        # Detach HEAD
+        subprocess.run(
+            ["git", "checkout", "--detach"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        # Delete all branches so main/master probe fails
+        branches = subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for branch in branches.stdout.strip().splitlines():
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=project,
+                capture_output=True,
+                check=True,
+            )
+
+        with pytest.raises(RuntimeError, match="Could not detect a default branch"):
+            detect_default_branch(project)
 
 
 class TestDetectDefaultBranchUnborn:
