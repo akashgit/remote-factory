@@ -48,7 +48,6 @@ from factory.contained.workspace import (
 )
 from factory.podman import (
     build_run_command,
-    container_name,
     dry_run_enabled,
     growth_context_warning,
     project_hash,
@@ -75,7 +74,7 @@ def run_openshell(args: argparse.Namespace) -> int:
 
         project = resolve_project(args.factory_args)
         extra, forwarded = validate_env_args(args)
-        run_id = args.name or container_name(project)
+        run_id = openshell.sandbox_name(project) if not args.name else openshell.validate_sandbox_name(args.name)
         ws = (
             plan_workspace(project, run_id, self_contained=True) if dry_run
             else materialize(project, run_id, self_contained=True)
@@ -170,7 +169,10 @@ def _build_plan(
             "factory.contained": "true",
             "factory.project": project_hash(ws.source),
             "factory.name": run_id,
-            "factory.source": str(ws.source),
+            # No `factory.source` here, unlike the podman target: gateway label values must be
+            # alphanumeric/-/_/. and a source *path* is not. The cluster target makes the same
+            # omission, and `workspace_for` recovers the source from the local workspace copy,
+            # so nothing that needs it goes through the label.
         },
         provider=PROVIDER_NAME,
         policy_path=policy_path,

@@ -83,6 +83,38 @@ def test_the_target_is_a_choice() -> None:
     assert args.gateway is None
 
 
+def test_sandbox_names_fit_the_gateway_budget() -> None:
+    """The gateway enforces names at create time as an INVALID_ARGUMENT; deriving a compliant
+    name here turns that into something a user never sees. Long stems truncate, the hash never
+    does, and illegal characters (underscore, dot, uppercase) collapse like podman's slugs."""
+    from factory.contained.openshell import MAX_SANDBOX_NAME, sandbox_name
+
+    short = sandbox_name(Path("/code/rta"))
+    assert short.startswith("rta-") and len(short) <= MAX_SANDBOX_NAME
+
+    long = sandbox_name(Path("/code/a-really-long-project-stem-here"))
+    assert len(long) == MAX_SANDBOX_NAME
+    # the hash suffix is never the truncated part: 6 hex chars survive at the end
+    assert long[-7] == "-" and len(long.rsplit("-", 1)[-1]) == 6
+
+    weird = sandbox_name(Path("/code/My_Project.v2"))
+    assert len(weird) == MAX_SANDBOX_NAME
+    assert weird.startswith("my-project-v-") and "._" not in weird
+
+
+def test_user_supplied_names_are_validated_before_any_copy() -> None:
+    """`--name` reaches the gateway verbatim; a name it would reject is a parse-time error,
+    not a create-time traceback after the workspace was already copied."""
+    from factory.contained.openshell import validate_sandbox_name
+
+    assert validate_sandbox_name("fine-name") == "fine-name"
+    assert validate_sandbox_name("") == ""
+    with pytest.raises(ContainedError, match="at most 19"):
+        validate_sandbox_name("a" * 20)
+    with pytest.raises(ContainedError, match="lowercase alphanumeric"):
+        validate_sandbox_name("Bad_Name")
+
+
 def test_policy_flag_is_rejected_outside_openshell() -> None:
     with pytest.raises(SystemExit):
         interpret(["--policy", "p.yaml", "--", "study", "/tmp"])
@@ -113,19 +145,18 @@ def test_local_flags_are_rejected_on_openshell() -> None:
 def test_the_default_policy_grants_exactly_the_intended_egress() -> None:
     """The allowlist is the security core; a test that enumerates it is the review artifact.
     Anyone adding an endpoint here changes what untrusted code can reach, and this failing
-    diff is where that fact becomes visible."""
+    diff is where that fact becomes visible.
+
+    Inference egress is granted by the *provider*, not this policy: the gateway synthesizes a
+    `_provider_claude_code` rule when the provider attaches, and a second rule for the same
+    endpoints is a hard create-time failure (ambiguity validation), so its absence here is
+    itself a security property to pin."""
     with patch.object(openshell, "import_protos", _fake_protos):
         policy = openshell.build_default_policy()
 
     assert policy.version == 1
     rules = policy.network_policies
-    assert set(rules) == {"claude_code", "python_packages"}
-
-    claude = rules["claude_code"]
-    claude_hosts = {e["host"] for e in claude.endpoints}
-    assert claude_hosts == {"api.anthropic.com", "statsig.anthropic.com", "sentry.io"}
-    assert all(e["port"] == 443 for e in claude.endpoints)
-    assert {b["path"] for b in claude.binaries} == {"/usr/local/bin/claude", "/usr/bin/claude"}
+    assert set(rules) == {"python_packages"}
 
     pypi = rules["python_packages"]
     assert {e["host"] for e in pypi.endpoints} == {"pypi.org", "files.pythonhosted.org"}
@@ -134,8 +165,20 @@ def test_the_default_policy_grants_exactly_the_intended_egress() -> None:
         "/usr/local/bin/pip", "/usr/bin/pip", "/usr/local/bin/uv", "/usr/bin/uv",
     }
 
-    # The workspace is writable; the process is not root.
-    assert policy.process == {"run_as_user": "1001", "run_as_group": "0"}
+    # No inference endpoints of our own: the attached provider is the only route to them,
+    # and the binary restriction on that route comes from the provider profile.
+    for rule in rules.values():
+        assert all(
+            e["host"] not in {"api.anthropic.com", "statsig.anthropic.com", "sentry.io"}
+            for e in rule.endpoints
+        )
+
+    # The workspace is writable; the process runs as a stated non-root identity, because an
+    # omitted one falls back to the image's OCI USER whose primary GID is 0 — and the gateway
+    # hard-rejects any workload identity containing GID 0. The image's `o=u` mode recipe keeps
+    # its writable paths open to this gid, so the other targets are unaffected.
+    assert policy.filesystem == {"include_workdir": True}
+    assert policy.process == {"run_as_user": "1001", "run_as_group": "1001"}
 
 
 def test_a_policy_file_replaces_the_default_never_merges() -> None:
@@ -294,8 +337,10 @@ def test_labels_carry_the_factory_join_keys(tmp_path: Path) -> None:
 
     assert plan.labels["factory.contained"] == "true"
     assert plan.labels["factory.name"] == "rta-abc123"
-    assert plan.labels["factory.source"] == str(project)
     assert plan.labels["factory.project"]
+    # A source path is not a legal label value on a gateway (alphanumeric/-/_/. only), so it is
+    # deliberately absent — `workspace_for` recovers it from the local workspace copy instead.
+    assert "factory.source" not in plan.labels
     assert plan.project_dir == f"{openshell.WORKSPACE_ROOT}/rta"
 
 

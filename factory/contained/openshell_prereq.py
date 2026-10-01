@@ -37,7 +37,7 @@ def _cli_check() -> Check:
             detail="`openshell` was not found on PATH",
             fix="curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh",
         )
-    result = _run(["openshell", "version"])
+    result = _run(["openshell", "--version"])
     if result is None or result.returncode != 0:
         return Check(
             name="openshell_cli",

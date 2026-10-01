@@ -66,9 +66,55 @@ IDLE_COMMAND: tuple[str, ...] = ("sleep", "infinity")
 TMUX_SESSION = "factory"
 
 PROVIDER_FIX = (
-    "openshell provider create --name claude-code --type claude-code --from-existing"
+    "curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/providers/"
+    "claude-code.yaml -o /tmp/claude-code.yaml\n"
+    "  openshell profile import -f /tmp/claude-code.yaml --global\n"
+    "  openshell provider create --name claude-code --type claude-code --from-existing"
 )
 SDK_FIX = "uv sync --extra contained-openshell   # or: uv pip install openshell"
+
+# The gateway enforces sandbox names itself and says so only as an INVALID_ARGUMENT at create
+# time: at most 19 characters, lowercase alphanumeric and hyphens. 19 is tight, so the readable
+# stem gives up most of podman's 32-char budget and the hash suffix is what keeps two
+# same-named projects apart — it is never the part that is truncated.
+MAX_SANDBOX_NAME = 19
+
+
+def sandbox_name(project_path: Path) -> str:
+    """A `container_name` sibling that fits the gateway's sandbox-name rules.
+
+    Same shape (slugified stem + project-hash suffix) as `factory.podman.container_name`, with a
+    tighter budget: underscores and dots are not legal either, so non-alphanumerics collapse to
+    hyphens like the podman slugs already do.
+    """
+    from factory.podman import project_hash
+
+    digest = project_hash(project_path)[:6]
+    stem = "".join(c if c.isalnum() else "-" for c in project_path.name.lower()).strip("-")
+    stem = stem[: MAX_SANDBOX_NAME - 7].strip("-") or "factory"
+    return f"{stem}-{digest}"
+
+
+def validate_sandbox_name(name: str) -> str:
+    """Reject a user-supplied `--name` the gateway would reject, naming the rule.
+
+    Validating here turns a create-time INVALID_ARGUMENT (a gRPC traceback about a sandbox that
+    never existed) into a parse-time error the user can fix before any workspace copy is made.
+    """
+    if not name:
+        return name
+    if len(name) > MAX_SANDBOX_NAME:
+        raise ContainedError(
+            f"--name {name!r} is {len(name)} characters; a sandbox name is at most "
+            f"{MAX_SANDBOX_NAME} (lowercase alphanumeric and hyphens)"
+        )
+    illegal = {c for c in name if not (c.islower() and c.isalnum() or c == "-")}
+    if illegal:
+        raise ContainedError(
+            f"--name {name!r} contains {sorted(illegal)!r}; a sandbox name is lowercase "
+            "alphanumeric and hyphens only"
+        )
+    return name
 
 # Exit code `exec` reports when the command could not run at all.
 _EXEC_LAUNCH_FAILURE = -1
@@ -212,14 +258,23 @@ def build_default_policy():
     - The workspace (`/workspace`, which `include_workdir` also covers) is read-write; OpenShell
       adds its baseline read-only system paths on top, so the toolchain works without this
       policy granting system reads itself.
-    - Egress is deny-by-default and the allowlist is deliberately small. Inference endpoints
-      for the `claude` binary (mirroring OpenShell's own claude-code provider profile) and
-      read-only package registries for `pip`/`uv` so eval environments can be built inside the
-      sandbox. The defaults start slightly loose on purpose: loosening is a compatible change,
-      silently tightening breaks running workflows. Every addition to this allowlist is a code
-      review, the same as any other security-sensitive default.
-    - The process runs non-root as UID 1001 — the runtime image's `USER`, stated here rather
-      than left to the driver so the policy file a user copies is complete.
+    - Egress is deny-by-default and the allowlist is deliberately small: read-only package
+      registries for `pip`/`uv` so eval environments can be built inside the sandbox. The
+      defaults start slightly loose on purpose: loosening is a compatible change, silently
+      tightening breaks running workflows. Every addition to this allowlist is a code review,
+      the same as any other security-sensitive default.
+    - **Inference egress is deliberately *absent*.** Attaching the `claude-code` provider (which
+      `build_spec` always does) makes the gateway synthesize its own `_provider_claude_code`
+      policy covering api/statsig/sentry for the provider's declared binaries — restating those
+      endpoints here is not redundancy but a hard create-time failure: the gateway's ambiguity
+      validation rejects two rules for the same endpoint whose metadata differs
+      (`transparent_tcp_eligible`), and the synthesized rule cannot be matched field-for-field
+      from a user policy.
+    - Process identity is stated explicitly — `run_as_user`/`run_as_group` 1001 — because an
+      omitted identity falls back to the image's OCI `USER` (1001 with primary GID 0), and the
+      gateway hard-rejects any workload identity containing GID 0. The runtime image's
+      arbitrary-UID recipe (`chgrp 0` + `chmod g=u` + `o=u`) keeps every writable path open to
+      this gid too, so the local/k8s targets' conventions are untouched.
 
     `--policy` replaces this policy *entirely* — never merges (no negation semantics to
     maintain, WYSIWYG, and OpenShell already layers provider rules on top of the base).
@@ -241,14 +296,8 @@ def build_default_policy():
     return sandbox_pb2.SandboxPolicy(
         version=1,
         filesystem=sandbox_pb2.FilesystemPolicy(include_workdir=True),
-        process=sandbox_pb2.ProcessPolicy(run_as_user="1001", run_as_group="0"),
+        process=sandbox_pb2.ProcessPolicy(run_as_user="1001", run_as_group="1001"),
         network_policies={
-            "claude_code": _rule(
-                "claude_code",
-                ["api.anthropic.com", "statsig.anthropic.com", "sentry.io"],
-                # The runtime image installs agent CLIs via npm into /usr/local/bin.
-                ["/usr/local/bin/claude", "/usr/bin/claude"],
-            ),
             "python_packages": _rule(
                 "python_packages",
                 ["pypi.org", "files.pythonhosted.org"],
@@ -342,7 +391,7 @@ def build_attach_argv(name: str) -> list[str]:
 
 
 def build_cli_binary_check_argv() -> list[str]:
-    return ["openshell", "version"]
+    return ["openshell", "--version"]
 
 
 # --- execution (the only place that touches the gateway) ------------------------------
