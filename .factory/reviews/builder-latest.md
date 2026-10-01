@@ -1,30 +1,42 @@
-# Builder Review — DataNode always uses executor
+# Builder Review — batch-doc-scorer workflow
+
+**Date:** 2026-10-01
+**Issue:** #1547 — feat: batch-document-scorer portable workflow
+**Branch:** factory/run-a6f89662
 
 ## Summary
 
-Restored the unconditional DataNode-always-uses-executor behavior. The CEO subprocess
-cannot reliably follow multi-step iteration loops from SKILL.md prose — this is a known
-LLM reliability limitation, not a bug in the execution strategy dispatch.
+Implemented the `batch-doc-scorer` portable workflow as specified in `.factory/strategy/current.md`. The workflow is a 4-node linear pipeline (3 AgentNodes + 1 GateNode) that scores markdown files for grammar and readability.
 
-## Changes
+## Files Created
 
-### factory/inner_loop.py
-- **Line ~427**: Removed `and self.execution_strategy == 'executor'` condition from the
-  DataNode check in `_step_with_task()`. DataNode workflows now unconditionally route to
-  `_step_with_data_node()` regardless of `execution_strategy`.
-- **`_step_with_data_node()` docstring**: Updated to explain *why* DataNode always uses
-  WorkflowExecutor — documents the LLM reliability limitation.
-- No warning log existed to remove (the code hadn't added one yet).
+- `.factory/workflows/batch_doc_scorer.py` — 330-line workflow definition with meta dict, workflow() function, 4 nodes, 5 edges, trigger function
+- `tests/test_workflow_batch_doc_scorer.py` — 12 tests covering graph validation, meta completeness, trigger function, node connectivity, start node, edge validity, gate RELOOP, post-checks, data lineage, terminal flag, name consistency, and import constraints
 
-### tests/test_inner_loop_dispatch.py
-- `test_datanode_ceo_skill_uses_subprocess` → renamed to `test_datanode_ceo_skill_uses_executor`,
-  now asserts DataNode + ceo-skill routes to `_step_with_data_node` (not `_run_ceo_subprocess`).
-- `test_datanode_ceo_tool_uses_subprocess` → renamed to `test_datanode_ceo_tool_uses_executor`,
-  now asserts DataNode + ceo-tool routes to `_step_with_data_node`.
-- `test_datanode_executor_uses_step_with_data_node` — kept unchanged, still passes.
+## Validation
 
-## Verification
+- `factory workflow validate --file .factory/workflows/batch_doc_scorer.py` → VALID (4 nodes, 5 edges)
+- `factory workflow export-skills` → Generated `workflow-batch-doc-scorer/SKILL.md` (253 lines)
+- `ruff check` → All checks passed
+- `pytest tests/test_workflow_batch_doc_scorer.py -v` → 12/12 passed
 
-- All 15 tests in `test_inner_loop_dispatch.py` pass
-- `ruff check` clean
-- `mypy` clean
+## Architecture
+
+```
+collect_files → score_documents → generate_report → gate_report
+                                        ↑                |
+                                        └── RELOOP ──────┘
+                                        └── HALT ────────┘
+```
+
+- **collect_files** (RESEARCHER/haiku/120s): Find and validate .md files, write manifest
+- **score_documents** (RESEARCHER/sonnet/900s): Score grammar + readability per file
+- **generate_report** (RESEARCHER/sonnet/600s): Aggregate statistics and recommendations
+- **gate_report** (CEO agent gate, max 2 iterations): Quality check on 5 criteria
+
+## Notes
+
+- Copied code EXACTLY from Section 1 of the spec — no improvisation
+- Test 9 (data lineage) needed cycle-safe predecessor traversal due to RELOOP/HALT edges
+- Registry auto-discovers the workflow from `.factory/workflows/` when `project_path` is provided
+- No modifications to `definitions.py`, `register_all()`, or CLI wiring
