@@ -852,7 +852,7 @@ def _bootstrap_unborn_repo(project_path: Path) -> None:
 def detect_default_branch(project_path: Path) -> str:
     """Detect the default branch for a git repository.
 
-    Cascade: remote HEAD → probe main/master → current HEAD → fallback 'main'.
+    Cascade: remote HEAD → probe main/master → current HEAD → symbolic-ref → raise RuntimeError.
     """
     project_path = project_path.resolve()
 
