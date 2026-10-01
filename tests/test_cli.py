@@ -735,13 +735,19 @@ class TestCmdHistory:
 class TestCmdRun:
     def test_run_success(self, tmp_path):
         """cmd_run returns 0 when CEO agent succeeds."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.worktree.detect_default_branch", return_value="main"),
+        ):
             result = main(["run", str(tmp_path)])
         assert result == 0
 
     def test_run_agent_failure(self, tmp_path):
         """cmd_run returns 1 when CEO agent fails."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()),
+            patch("factory.worktree.detect_default_branch", return_value="main"),
+        ):
             result = main(["run", str(tmp_path)])
         assert result == 1
 
@@ -984,7 +990,7 @@ class TestRunWithGitHubUrl:
         """cmd_run with a local path does not clone — just invokes CEO."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path)])
 
@@ -995,7 +1001,7 @@ class TestRunWithGitHubUrl:
         """cmd_run with --mode=design passes design task to CEO."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path), "--mode", "design"])
 
@@ -1008,7 +1014,7 @@ class TestRunWithGitHubUrl:
         """cmd_run with --mode=meta passes meta task to CEO."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path), "--mode", "meta"])
 
@@ -1064,7 +1070,7 @@ class TestHeartbeatLoop:
         """Without --loop, cmd_run executes exactly one cycle."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path)])
         assert result == 0
@@ -1074,7 +1080,7 @@ class TestHeartbeatLoop:
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(
                 [
@@ -1100,7 +1106,7 @@ class TestHeartbeatLoop:
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(
                 [
@@ -1137,7 +1143,7 @@ class TestHeartbeatLoop:
                 "factory.agents.runner.invoke_agent",
                 AsyncMock(side_effect=_trigger_sigterm_after_cycle),
             ),
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
@@ -1166,7 +1172,7 @@ class TestHeartbeatLoop:
                 "factory.agents.runner.invoke_agent",
                 AsyncMock(side_effect=_trigger_sigint_after_cycle),
             ),
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
@@ -1178,7 +1184,7 @@ class TestHeartbeatLoop:
         """Verify the sleep log message appears between cycles."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(
                 [
@@ -1509,7 +1515,7 @@ class TestCmdCeo:
         """cmd_ceo --headless spawns CEO agent via invoke_agent."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["ceo", str(tmp_path), "--headless"])
         assert result == 0
@@ -1522,7 +1528,7 @@ class TestCmdCeo:
         """cmd_ceo --headless with --mode=meta includes meta instructions."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
         assert result == 0
@@ -1551,7 +1557,7 @@ class TestCmdCeo:
         """CEO agent gets 7200s timeout in headless mode."""
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
@@ -1861,7 +1867,7 @@ class TestResearchMode:
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         with (
             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
-
+            patch("factory.worktree.detect_default_branch", return_value="main"),
         ):
             result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])
         assert result == 0
