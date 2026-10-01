@@ -91,23 +91,29 @@ PROVIDER_FIX = (
 SDK_FIX = "uv sync --extra contained-openshell   # or: uv pip install openshell"
 
 # The gateway enforces sandbox names itself and says so only as an INVALID_ARGUMENT at create
-# time: at most 19 characters, lowercase alphanumeric and hyphens. 19 is tight, so the readable
-# stem gives up most of podman's 32-char budget and the hash suffix is what keeps two
+# time: at most 19 characters, lowercase ASCII alphanumeric and hyphens. 19 is tight, so the
+# readable stem gives up most of podman's 32-char budget and the hash suffix is what keeps two
 # same-named projects apart — it is never the part that is truncated.
 MAX_SANDBOX_NAME = 19
+
+# Stated once, as a set, so the generator and the validator cannot disagree about the alphabet —
+# an earlier `c.islower() and c.isalnum() or c == "-"` formulation disagreed with itself through
+# operator precedence and rejected digits, and `str.isalnum` would have admitted unicode letters
+# the gateway refuses. ASCII, explicit, shared.
+_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 def sandbox_name(project_path: Path) -> str:
     """A `container_name` sibling that fits the gateway's sandbox-name rules.
 
     Same shape (slugified stem + project-hash suffix) as `factory.podman.container_name`, with a
-    tighter budget: underscores and dots are not legal either, so non-alphanumerics collapse to
-    hyphens like the podman slugs already do.
+    tighter budget: underscores, dots, and everything outside the ASCII alphabet are not legal,
+    so they all collapse to hyphens.
     """
     from factory.podman import project_hash
 
     digest = project_hash(project_path)[:6]
-    stem = "".join(c if c.isalnum() else "-" for c in project_path.name.lower()).strip("-")
+    stem = "".join(c if c in _NAME_CHARS else "-" for c in project_path.name.lower()).strip("-")
     stem = stem[: MAX_SANDBOX_NAME - 7].strip("-") or "factory"
     return f"{stem}-{digest}"
 
@@ -125,7 +131,7 @@ def validate_sandbox_name(name: str) -> str:
             f"--name {name!r} is {len(name)} characters; a sandbox name is at most "
             f"{MAX_SANDBOX_NAME} (lowercase alphanumeric and hyphens)"
         )
-    illegal = {c for c in name if not (c.islower() and c.isalnum() or c == "-")}
+    illegal = {c for c in name if c not in _NAME_CHARS}
     if illegal:
         raise ContainedError(
             f"--name {name!r} contains {sorted(illegal)!r}; a sandbox name is lowercase "

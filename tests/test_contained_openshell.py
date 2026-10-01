@@ -102,6 +102,10 @@ def test_sandbox_names_fit_the_gateway_budget() -> None:
     assert len(weird) == MAX_SANDBOX_NAME
     assert weird.startswith("my-project-v-") and "._" not in weird
 
+    # Non-ASCII letters are legal to `str.isalnum` and illegal to the gateway; they collapse.
+    unicode_stem = sandbox_name(Path("/code/café"))
+    assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in unicode_stem)
+
 
 def test_user_supplied_names_are_validated_before_any_copy() -> None:
     """`--name` reaches the gateway verbatim; a name it would reject is a parse-time error,
@@ -109,11 +113,27 @@ def test_user_supplied_names_are_validated_before_any_copy() -> None:
     from factory.contained.openshell import validate_sandbox_name
 
     assert validate_sandbox_name("fine-name") == "fine-name"
+    assert validate_sandbox_name("run-1") == "run-1"      # digits are legal — a precedence bug
+    # in an earlier formulation rejected them while the error message claimed otherwise
+    assert validate_sandbox_name("run2") == "run2"
     assert validate_sandbox_name("") == ""
     with pytest.raises(ContainedError, match="at most 19"):
         validate_sandbox_name("a" * 20)
     with pytest.raises(ContainedError, match="lowercase alphanumeric"):
         validate_sandbox_name("Bad_Name")
+    with pytest.raises(ContainedError, match="lowercase alphanumeric"):
+        validate_sandbox_name("café")                     # non-ASCII is not in the gateway's set
+
+
+def test_every_generated_name_passes_validation() -> None:
+    """The invariant the review's precedence bug broke in spirit: `sandbox_name` output must
+    always satisfy `validate_sandbox_name`, so a user can copy a name out of `ls` into `--name`
+    (and a future change to either half of the alphabet cannot drift from the other)."""
+    from factory.contained.openshell import sandbox_name, validate_sandbox_name
+
+    for stem in ("rta", "My_Project.v2", "café", "a-very-long-project-stem", "digits-123"):
+        generated = sandbox_name(Path(f"/code/{stem}"))
+        assert validate_sandbox_name(generated) == generated
 
 
 def test_policy_flag_is_rejected_outside_openshell() -> None:
