@@ -1014,7 +1014,7 @@ class TestPreserveTelemetryNoFactory:
 
 class TestDetectDefaultBranchFallback:
     def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+        """When every detection method fails, raises RuntimeError."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,42 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match=r"Cannot detect default branch"):
+                detect_default_branch(project)
+
+    def test_raises_when_all_detection_fails(self, tmp_path: Path) -> None:
+        """Detached HEAD with no branches and no origin raises RuntimeError."""
+        project = tmp_path / "detached"
+        project.mkdir()
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        subprocess.run(
+            ["git", "init", "-b", "main"], cwd=project, capture_output=True, check=True, env=env,
+        )
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "init"],
+            cwd=project, capture_output=True, check=True, env=env,
+        )
+        subprocess.run(
+            ["git", "checkout", "--detach"],
+            cwd=project, capture_output=True, check=True, env=env,
+        )
+        subprocess.run(
+            ["git", "branch", "-D", "main"],
+            cwd=project, capture_output=True, check=True, env=env,
+        )
+
+        with pytest.raises(RuntimeError, match=r"target_branch"):
+            detect_default_branch(project)
+
+        with pytest.raises(RuntimeError, match=r"check out a branch"):
+            detect_default_branch(project)
 
 
 class TestDetectDefaultBranchUnborn:

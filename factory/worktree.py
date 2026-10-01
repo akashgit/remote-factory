@@ -852,7 +852,10 @@ def _bootstrap_unborn_repo(project_path: Path) -> None:
 def detect_default_branch(project_path: Path) -> str:
     """Detect the default branch for a git repository.
 
-    Cascade: remote HEAD → probe main/master → current HEAD → fallback 'main'.
+    Cascade: remote HEAD → probe main/master → current HEAD → symbolic-ref HEAD.
+
+    Raises:
+        RuntimeError: If no default branch can be detected.
     """
     project_path = project_path.resolve()
 
@@ -907,8 +910,10 @@ def detect_default_branch(project_path: Path) -> str:
         log.debug("detect_default_branch", source="symbolic_ref", branch=branch)
         return branch
 
-    log.debug("detect_default_branch", source="fallback", branch="main")
-    return "main"
+    raise RuntimeError(
+        f"Cannot detect default branch for {project_path}. "
+        "Set target_branch in .factory/config.json or check out a branch."
+    )
 
 
 def _list_worktrees_with_branches(project_path: Path) -> dict[str, str]:
