@@ -1013,8 +1013,8 @@ class TestPreserveTelemetryNoFactory:
 
 
 class TestDetectDefaultBranchFallback:
-    def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+    def test_raises_when_all_detection_fails(self, tmp_path: Path) -> None:
+        """When every detection method fails, raises RuntimeError."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,41 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match="No default branch detected") as exc_info:
+                detect_default_branch(project)
+            assert "target_branch" in str(exc_info.value)
+            assert "check out a branch" in str(exc_info.value)
+
+    def test_detached_head_no_main_no_origin(self, tmp_path: Path) -> None:
+        """Detached HEAD with no main/master and no origin raises RuntimeError."""
+        project = tmp_path / "detached"
+        project.mkdir()
+        subprocess.run(
+            ["git", "init", "-b", "main"], cwd=project, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "init"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "--detach"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "branch", "-D", "main"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        with pytest.raises(RuntimeError, match="No default branch detected") as exc_info:
+            detect_default_branch(project)
+        assert "target_branch" in str(exc_info.value)
+        assert "check out a branch" in str(exc_info.value)
 
 
 class TestDetectDefaultBranchUnborn:
