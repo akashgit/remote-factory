@@ -1014,7 +1014,7 @@ class TestPreserveTelemetryNoFactory:
 
 class TestDetectDefaultBranchFallback:
     def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
-        """When every detection method fails, returns 'main'."""
+        """When every detection method fails, raises RuntimeError with actionable message."""
         project = tmp_path / "bare"
         project.mkdir()
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
@@ -1028,7 +1028,61 @@ class TestDetectDefaultBranchFallback:
                 stderr="",
             ),
         ):
-            assert detect_default_branch(project) == "main"
+            with pytest.raises(RuntimeError, match="Could not detect default branch"):
+                detect_default_branch(project)
+
+    def test_detached_head_no_branches_no_origin_raises(self, tmp_path: Path) -> None:
+        """Detached HEAD with no main/master and no remote raises RuntimeError."""
+        project = tmp_path / "detached"
+        project.mkdir()
+
+        # Create repo with a temporary branch
+        subprocess.run(
+            ["git", "init", "-b", "temp"], cwd=project, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        # Create and commit a file
+        (project / "f.txt").write_text("x")
+        subprocess.run(
+            ["git", "add", "f.txt"], cwd=project, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        # Detach HEAD
+        subprocess.run(
+            ["git", "checkout", "--detach"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        # Delete the temp branch
+        subprocess.run(
+            ["git", "branch", "-D", "temp"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        with pytest.raises(RuntimeError, match="Could not detect default branch"):
+            detect_default_branch(project)
 
 
 class TestDetectDefaultBranchUnborn:
