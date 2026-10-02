@@ -39,6 +39,16 @@ _NAMED_SUBCOMMANDS = ("attach", "rm", "sync")
 # naming: silently ignoring it makes a user believe a namespace or a mount took effect.
 _LOCAL_ONLY = ("mount",)
 _K8S_ONLY = ("namespace", "storage_class", "context")
+_OPENSHELL_ONLY = ("policy", "gateway")
+
+# Factory commands whose CEO runs interactively (a `claude` subprocess with inherited stdio, or
+# a terminal multiplexer). An OpenShell sandbox has no PTY for any of them: the run is a
+# detached `nohup` process writing a log (a sandbox cannot allocate `/dev/ptmx` — OpenShell
+# #749), so an interactive payload would sit at prompts nobody can answer, burning tokens on
+# the way. `--headless` is the fix; design mode also needs `--auto-approve`, which its own
+# validation requires. Everything else (study, agent, diff, backlog, ...) is non-interactive
+# and passes untouched.
+_INTERACTIVE_COMMANDS = frozenset({"ceo", "run", "resume", "tmux"})
 
 # Flags are described here rather than in argparse's own listing: which target a flag belongs to is
 # the thing a user most needs to know, and a flat alphabetical list hides it.
@@ -51,6 +61,9 @@ working tree is untouched. Everything after `--` is passed through unchanged.
 Targets:
   local   a podman container on this machine (the default). Fastest to start.
   k8s     a pod on a Kubernetes/OpenShift cluster. For long, unattended runs.
+  openshell  (experimental) a policy-governed sandbox. For runs whose input you
+          do not trust. The run is unattended: a sandbox has no terminal, so
+          interactive commands (ceo, run, resume, tmux) need --headless.
 
 Subcommands:
   setup                  Install what is missing, then check it
@@ -62,8 +75,8 @@ Subcommands:
   bundle                 Print the cluster prerequisites as YAML (k8s)
   help                   Print this text (same as --help)
 
-Both targets:
-  --target local|k8s     Which runtime                              (default: local)
+All targets:
+  --target local|k8s|openshell  Which runtime                       (default: local)
   --division             Let the agent build container images
   --name NAME            Name this run                              (default: derived)
   --env KEY=VALUE        Extra environment for the run, repeatable
@@ -79,15 +92,22 @@ K8s only:
   --context NAME         Which kubeconfig context to use    (default: your current one)
   --storage-class SC     Storage class for the workspace volume
 
+Openshell only:
+  --policy PATH          Replace the default sandbox policy (full replacement, never merged)
+  --gateway NAME         Which registered OpenShell gateway to use  (default: the active one)
+
 Environment:
   FACTORY_CONTAINED_IMAGE          Runtime image to use
   FACTORY_CONTAINED_HOME           Where workspace copies live (default ~/.factory-contained)
   FACTORY_CONTAINED_DRY_RUN=1      Print what would run; provision nothing
 
 `contained` gives a run a reproducible environment and keeps it off your working tree.
-It is not a security sandbox: it does not restrict what the agent's code can do, and it
-does not replace reviewing the result. `--division` additionally opens an unauthenticated
-build endpoint on this machine for the length of the run.
+The local and k8s targets are not security sandboxes: they do not restrict what the
+agent's code can do, and they do not replace reviewing the result. The openshell target
+is different by design — kernel-enforced filesystem and network allowlists, credentials
+held by the gateway — but reviewing the result is still yours to do. `--division`
+additionally opens an unauthenticated build endpoint on this machine for the length of
+the run (local), and is not supported on openshell.
 
 Full guide: https://akashgit.github.io/remote-factory/contained/
 """
@@ -113,6 +133,7 @@ def interpret(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
         args.target = "k8s"
 
     _reject_out_of_scope_flags(parser, args)
+    _reject_interactive_payload(parser, args)
 
     if args.subcommand in _NAMED_SUBCOMMANDS and not args.name:
         parser.error(f"`factory contained {args.subcommand}` needs a runtime name. Try `ls`.")
@@ -181,6 +202,41 @@ def _reject_out_of_scope_flags(
     for dest in _K8S_ONLY:
         if getattr(args, dest) and args.target != "k8s":
             parser.error(f"--{dest.replace('_', '-')} only applies to --target k8s")
+    for dest in _OPENSHELL_ONLY:
+        if getattr(args, dest) and args.target != "openshell":
+            parser.error(f"--{dest.replace('_', '-')} only applies to --target openshell")
+    if args.division and args.target == "openshell":
+        # The build plane reaches outward through an unauthenticated endpoint (local) or the
+        # OpenShift Build API (k8s); an OpenShell sandbox has neither, and egress wide enough to
+        # build images is exactly what its policy denies. Refused here rather than at launch so
+        # nobody reads three steps of provisioning before finding out.
+        parser.error("--division is not supported by --target openshell")
+
+
+def _reject_interactive_payload(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """An openshell run has no terminal, so an interactive payload cannot work there.
+
+    The payload after `--` is verbatim by contract, and this is the one narrow exception — the
+    same precedent as refusing `--division`: a command that cannot possibly succeed in the
+    target is named at parse time rather than three provisioning steps in, after the workspace
+    was copied and the sandbox created. Only the *first word* is looked at, and only for the
+    commands whose defining property is interactivity; `--headless` anywhere in the payload
+    opts out, because that is exactly what the flag is for.
+    """
+    if args.target != "openshell" or args.subcommand or not args.factory_args:
+        return
+    if args.factory_args[0] not in _INTERACTIVE_COMMANDS:
+        return
+    if "--headless" in args.factory_args:
+        return
+    command = args.factory_args[0]
+    parser.error(
+        f"`factory {command}` runs interactively, and an OpenShell sandbox has no terminal for "
+        f"it — the run is a detached process writing .factory/run.log.\n"
+        f"  Re-run with --headless:  factory contained --target openshell -- {command} "
+        f"<path> --headless\n"
+        f"  (design mode also needs --auto-approve, which --headless requires there)"
+    )
 
 
 def _reject_subcommand_typo(parser: argparse.ArgumentParser, rest: list[str]) -> None:
