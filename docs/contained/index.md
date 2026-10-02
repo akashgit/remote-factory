@@ -75,17 +75,23 @@ with namespace-scoped permissions — but the point above still stands for both.
 
 ### The openshell target is different, by design
 
-The openshell target exists for the case the other two exclude: running the factory on input you do
-not trust — an arbitrary GitHub issue, a spec from a stranger, a codebase you were sent. Inside an
-OpenShell sandbox, agent-authored code is confined at the **kernel level**:
+The openshell target (experimental) exists for the case the other two exclude: running the factory
+on input you do not trust — an arbitrary GitHub issue, a spec from a stranger, a codebase you were
+sent. Inside an OpenShell sandbox, agent-authored code is confined at the **kernel level**:
 
 - **Filesystem**: Landlock allowlists. The workspace is read-write; nothing else is writable.
 - **Network**: deny-by-default. Every connection is intercepted and decided by a supervisor against
-  the policy — the `claude` binary may reach the inference endpoints, `pip`/`uv` may reach PyPI, and
+  the policy — `uv` may reach PyPI, the `claude-code` provider allows the inference endpoint, and
   nothing else gets out.
 - **Credentials**: your API key never enters the sandbox. The gateway holds it and resolves it only
   for requests the provider allows, so a key bound to `api.anthropic.com` cannot be exfiltrated
-  anywhere else.
+  anywhere else. What that does *not* mean: OpenShell's binary rules match parent processes, so
+  every command the agent's Bash tool runs — a descendant of `claude` — inherits claude's egress
+  and can *use* the placeholder against the provider's endpoint. The key cannot be extracted, but
+  it can be proxied by confined code; that is the documented floor of the confinement, and the
+  reason the provider profile is copy-edited to allow `api.anthropic.com` only (never the stock
+  profile, whose `statsig`/`sentry` endpoints would be exfiltration channels) and the reason the
+  allowlist stays small.
 
 There is no skip-permissions flag to abuse: enforcement is in the kernel, not in the agent CLI's own
 prompting, so it fails closed no matter what the model tries.
@@ -223,11 +229,14 @@ $ factory contained setup
 
   1) local  a podman container on this machine
   2) k8s    a pod on a cluster
-  3) openshell  a policy-governed sandbox, for runs whose input you do not trust
-  4) both  local and cluster
+  3) both  local and cluster
+  4) openshell  a policy-governed sandbox, for runs whose input you do not trust
 
 Choice [1]:
 ```
+
+`openshell` is option 4, appended rather than inserted, so `3` has always meant `both` and
+still does.
 
 Pass `--target local`, `--target k8s` or `--target openshell` to skip the question. `setup` is
 idempotent — re-running changes nothing that is already correct, and it is the supported way to
@@ -711,12 +720,35 @@ what changes about the security story; this section is how it works day to day.
 ```bash
 factory contained setup --target openshell     # guided: CLI, SDK extra, gateway, provider
 factory contained verify --target openshell    # each failure with its fix
-factory contained --target openshell -- ceo ~/code/untrusted-project
+factory contained --target openshell -- ceo ~/code/untrusted-project --headless
 ```
+
+The `--headless` is required: a sandbox has no terminal (tmux needs a PTY; a sandbox cannot
+allocate one), so interactive commands — `ceo`, `run`, `resume`, `tmux` — are refused at parse
+time without it, and design mode additionally needs `--auto-approve` as it does everywhere
+else. The run is a detached process; `attach` follows its log.
 
 Setup automates nothing — every step either installs software (yours to choose) or touches
 credential material (the `claude-code` provider, which the factory describes but never creates
-for you):
+for you). One trap it does name, because the failure names neither the gateway nor the VM: on
+macOS/WSL with Docker Desktop, the sandbox supervisor runs in the VM's host network and cannot
+reach a gateway bound to `127.0.0.1` — sandboxes then die at startup with
+`ControlSupervisorStartFailed`. Point the docker driver at the host instead, in
+`~/.config/openshell/gateway.toml`:
+
+```toml
+[openshell.drivers.docker]
+grpc_endpoint = "https://host.docker.internal:17670"
+```
+
+The provider step is a **copy-edit-import**, not an import of the stock profile — the stock
+profile's own header says to copy and edit it. Two edits are mandatory: drop the
+`statsig.anthropic.com` and `sentry.io` endpoints (binary rules match parent processes, so
+untrusted code descended from claude could otherwise reach them — sentry.io is a multi-tenant
+ingest service, i.e. an exfiltration channel), and name the *resolved* claude path
+(`readlink -f "$(command -v claude)"` — the kernel matches `/proc/<pid>/exe`, which follows
+symlinks, so the stock `/usr/local/bin/claude` never matches and inference egress is silently
+denied):
 
 ```console
 $ factory contained setup --target openshell
@@ -727,7 +759,17 @@ $ factory contained setup --target openshell
    Register a local gateway, if you have not:
      openshell gateway add --name local --local
      openshell gateway select local
+   macOS/WSL with Docker Desktop: the sandbox supervisor cannot reach a
+   gateway bound to 127.0.0.1. If sandboxes die at startup, point the
+   docker driver at the host instead, in ~/.config/openshell/gateway.toml:
+     [openshell.drivers.docker]
+     grpc_endpoint = "https://host.docker.internal:17670"
    Inference is never automated — it touches credential material:
+     curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/providers/claude-code.yaml -o /tmp/claude-code.yaml
+       # edit the copy: drop the statsig.anthropic.com and sentry.io endpoints, and point
+       # the binary at `readlink -f "$(command -v claude)"` (the kernel resolves symlinks)
+       $EDITOR /tmp/claude-code.yaml
+     openshell profile import -f /tmp/claude-code.yaml --global
      openshell provider create --name claude-code --type claude-code --from-existing
 ```
 
@@ -745,13 +787,19 @@ run); `sync` downloads the workspace back, log included; `rm` deletes the sandbo
 local workspace copy.
 
 **The policy.** The default grants the workspace read-write, read-only access to the runtime
-image's `/opt/factory` install, `pip`/`uv` access to PyPI — and nothing else. Inference egress
+image's `/opt/factory` install, `uv` access to PyPI — and nothing else. (`pip` is deliberately
+absent: OpenShell matches binaries by the kernel-resolved executable, and pip runs as the
+Python interpreter, so a pip path never matches — install with `uv pip`.) Inference egress
 comes from the attached `claude-code` provider, not the policy: the gateway synthesizes its own
 rule for the provider's endpoints, and restating them in the policy is a create-time error.
 `--policy <file>` replaces it entirely, in OpenShell's documented YAML format; the file you pass
 is the whole policy. The default allowlist is code (a builder in
 `factory/contained/openshell.py`, snapshot-tested), so changing what untrusted code can reach is
 a reviewed diff, not a config edit nobody saw.
+
+Only PyPI is allowlisted, and only for `uv`. npm, GitHub, and every other registry are denied —
+a non-Python project (or a run that needs to push branches and open PRs) needs a `--policy`
+file that says so, which is the point: egress for untrusted code should be a reviewed decision.
 
 ---
 

@@ -13,7 +13,13 @@ network through a supervisor proxy — which is what running the factory on untr
 - **Credentials never enter the sandbox.** They attach as a gateway-held provider; the sandbox
   sees an opaque placeholder the supervisor resolves only for requests to the provider's
   endpoints. There is deliberately no env-var fallback — a fallback would make the insecure
-  route the path of least resistance.
+  route the path of least resistance. What this does *not* mean: the key cannot be extracted,
+  but **any descendant of `claude` can use it** — OpenShell binary rules match parent
+  processes too, so every command the agent's Bash tool runs inherits claude's egress and the
+  placeholder resolves for it. That residual capability is why the provider profile must drop
+  `statsig.anthropic.com` and `sentry.io` (see `PROVIDER_FIX`) and why the allowlist stays
+  small: the endpoints it names are reachable by exactly the untrusted code this target
+  exists to confine.
 - **The SDK is an optional dependency** (`contained-openshell` extra; grpc/protobuf do not
   belong in every install), so importing it raises a `ContainedError` carrying the fix rather
   than a bare `ImportError` at CLI startup.
@@ -75,16 +81,32 @@ IDLE_COMMAND: tuple[str, ...] = ("sleep", "infinity")
 # The run's three on-disk artifacts, written by `build_run_launch` inside the project's
 # `.factory/` so they ride the workspace copy home with `sync` — `.factory` is already the
 # project-local, gitignored state dir. A sandbox cannot run tmux (see the module docstring), so
-# these files *are* the run's interface: the log replaces scrollback, the pid replaces the tmux
-# pane state for liveness, and the exit code file replaces the `[factory exited %s]` stamp —
-# with the improvement that it is machine-readable.
+# these files *are* the run's interface: the log replaces scrollback, the pid names the process
+# for anyone inspecting the sandbox, and the exit code file replaces the
+# `[factory exited %s]` stamp — with the improvement that it is machine-readable.
 RUN_LOG = ".factory/run.log"
 RUN_PID = ".factory/run.pid"
 RUN_EXIT = ".factory/run.exit"
 
+# The provider setup, as the copy-edit-import flow the stock profile's own header asks for
+# ("Copy and edit this file rather than importing it unchanged"). Two edits are mandatory, not
+# cosmetic:
+#
+# - **Drop `statsig.anthropic.com` and `sentry.io`.** OpenShell binary rules match "the
+#   executable that opens the connection *or any of its parent processes*", so every command
+#   the agent's Bash tool runs — a descendant of `claude` — inherits this egress, and the
+#   placeholder resolves for them too (profiles are endpoint-scoped, not yet binary-scoped).
+#   sentry.io is a multi-tenant ingest service, which makes it an exfiltration channel if
+#   untrusted code can reach it.
+# - **Name the resolved claude path.** The kernel matches `/proc/<pid>/exe`, which follows
+#   symlinks — `command -v claude` is a symlink to the npm-packaged binary, so the stock
+#   profile's `/usr/local/bin/claude` never matches and inference egress is silently denied.
 PROVIDER_FIX = (
     "curl -fsSL https://raw.githubusercontent.com/NVIDIA/OpenShell/main/providers/"
     "claude-code.yaml -o /tmp/claude-code.yaml\n"
+    "  # edit the copy: drop the statsig.anthropic.com and sentry.io endpoints, and point\n"
+    "  # the binary at `readlink -f \"$(command -v claude)\"` (the kernel resolves symlinks)\n"
+    "  $EDITOR /tmp/claude-code.yaml\n"
     "  openshell profile import -f /tmp/claude-code.yaml --global\n"
     "  openshell provider create --name claude-code --type claude-code --from-existing"
 )
@@ -218,6 +240,11 @@ class OpenShellPlan:
     policy_path: Path | None
     run_command: str
     factory_command: str
+    # Which registered gateway every gateway-bound operation — SDK *and* CLI — must use. The
+    # CLI composers take it too: without it, an upload with `--gateway X` while `Y` is active
+    # lands in a same-named sandbox on Y (the name is deterministic per project), which is
+    # worse than a clean failure.
+    gateway: str | None = None
     warnings: tuple[str, ...] = field(default=())
 
 
@@ -286,22 +313,30 @@ def build_default_policy():
       a `PermissionError` reading its own venv — Landlock denies the read no matter what the
       file mode says.
     - Egress is deny-by-default and the allowlist is deliberately small: read-only package
-      registries for `pip`/`uv` so eval environments can be built inside the sandbox. The
-      defaults start slightly loose on purpose: loosening is a compatible change, silently
-      tightening breaks running workflows. Every addition to this allowlist is a code review,
-      the same as any other security-sensitive default.
+      registries for `uv` so eval environments can be built inside the sandbox. `pip` is
+      deliberately absent — binary matching resolves `/proc/<pid>/exe`, and pip runs as the
+      Python interpreter, so a `pip` path never matches (the docs say it directly: "Scripts
+      run as their interpreter, so list the interpreter"); granting the *interpreter* PyPI
+      access would grant it to every script the agent writes. `uv` is a native binary, so it
+      matches. The defaults start slightly loose on purpose: loosening is a compatible
+      change, silently tightening breaks running workflows. Every addition to this allowlist
+      is a code review, the same as any other security-sensitive default.
     - **Inference egress is deliberately *absent*.** Attaching the `claude-code` provider (which
       `build_spec` always does) makes the gateway synthesize its own `_provider_claude_code`
-      policy covering api/statsig/sentry for the provider's declared binaries — restating those
-      endpoints here is not redundancy but a hard create-time failure: the gateway's ambiguity
-      validation rejects two rules for the same endpoint whose metadata differs
-      (`transparent_tcp_eligible`), and the synthesized rule cannot be matched field-for-field
-      from a user policy.
+      policy covering the provider profile's endpoints for the provider's declared binaries —
+      restating those endpoints here is not redundancy but a hard create-time failure: the
+      gateway's ambiguity validation rejects two rules for the same endpoint whose metadata
+      differs (`transparent_tcp_eligible`), and the synthesized rule cannot be matched
+      field-for-field from a user policy. The provider profile is the copy-edited one
+      (`PROVIDER_FIX`): api.anthropic.com for the resolved claude binary, and *nothing else* —
+      which matters because binary rules match parent processes, so those endpoints are
+      reachable by every command the agent's Bash tool runs.
     - Process identity is stated explicitly — `run_as_user`/`run_as_group` 1001 — because an
       omitted identity falls back to the image's OCI `USER` (1001 with primary GID 0), and the
       gateway hard-rejects any workload identity containing GID 0. The runtime image's
-      arbitrary-UID recipe (`chgrp 0` + `chmod g=u` + `o=u`) keeps every writable path open to
-      this gid too, so the local/k8s targets' conventions are untouched.
+      arbitrary-UID recipe (`chgrp 0` + `chmod g=u`, plus `o=u` on the container home and
+      `/workspace` only) keeps the paths a sandboxed run writes open to this gid, while
+      `/opt/factory` — read-only here — needs and gets no world-widening.
 
     `--policy` replaces this policy *entirely* — never merges (no negation semantics to
     maintain, WYSIWYG, and OpenShell already layers provider rules on top of the base).
@@ -332,7 +367,7 @@ def build_default_policy():
             "python_packages": _rule(
                 "python_packages",
                 ["pypi.org", "files.pythonhosted.org"],
-                ["/usr/local/bin/pip", "/usr/bin/pip", "/usr/local/bin/uv", "/usr/bin/uv"],
+                ["/usr/local/bin/uv", "/usr/bin/uv"],
             ),
         },
     )
@@ -396,18 +431,37 @@ def build_spec(plan: OpenShellPlan, policy) -> "object":
 # --- CLI argv (composed, never executed here) ----------------------------------------
 
 
-def build_upload_argv(name: str, tarball: Path) -> list[str]:
+def _cli(gateway: str | None, *rest: str) -> list[str]:
+    """One `openshell` invocation, pinned to the gateway the user selected.
+
+    `-g/--gateway` is a CLI-global flag. It is *omitted*, not passed empty, when no gateway
+    was named — the flag with no value is an error, and the CLI's default (the active gateway,
+    `$OPENSHELL_GATEWAY` or `~/.config/openshell/active_gateway`) is what an unnamed run
+    wants. The SDK's `connect()` reads the same state, so the two transports stay in
+    agreement either way.
+    """
+    return ["openshell", *(["--gateway", gateway] if gateway else []), *rest]
+
+
+def build_upload_argv(name: str, tarball: Path, gateway: str | None = None) -> list[str]:
     """Compose the workspace upload. The tarball is a single file, so `.gitignore` filtering
     (which the CLI applies to directory uploads) has nothing to bite on — and the copy must
     carry gitignored state like `.factory/` the way the k8s target's tarball does."""
-    return ["openshell", "sandbox", "upload", name, str(tarball)]
+    return _cli(gateway, "sandbox", "upload", name, str(tarball))
 
 
-def build_download_argv(name: str, sandbox_path: str, dest: Path) -> list[str]:
-    return ["openshell", "sandbox", "download", name, sandbox_path, str(dest)]
+def build_download_argv(
+    name: str, sandbox_path: str, dest: Path, gateway: str | None = None
+) -> list[str]:
+    return _cli(gateway, "sandbox", "download", name, sandbox_path, str(dest))
 
 
-def build_attach_argv(name: str) -> list[str]:
+def build_provider_list_argv(gateway: str | None = None) -> list[str]:
+    """Compose the provider listing the provider check reads (shape only, never material)."""
+    return _cli(gateway, "provider", "list", "--output", "json")
+
+
+def build_attach_argv(name: str, gateway: str | None = None) -> list[str]:
     """Compose the interactive attach.
 
     The SDK has no PTY, so the CLI's `exec --tty` is the transport — the supervisor allocates
@@ -419,14 +473,15 @@ def build_attach_argv(name: str) -> list[str]:
     covered a missing session.
     """
     log, exit_code = shlex.quote(RUN_LOG), shlex.quote(RUN_EXIT)
-    return [
-        "openshell", "sandbox", "exec", "-n", name, "--tty", "--",
+    return _cli(
+        gateway,
+        "sandbox", "exec", "-n", name, "--tty", "--",
         "sh", "-lc",
         f"if [ -f {log} ]; then "
         f"[ -f {exit_code} ] && echo \"[factory exited $(cat {exit_code})]\"; "
         f"tail -n 200 -f {log}; "
         f"else exec sh -i; fi",
-    ]
+    )
 
 
 def build_cli_binary_check_argv() -> list[str]:
@@ -483,28 +538,32 @@ def build_run_launch(workdir: str, run_command: str) -> str:
     """Compose the shell script that starts the run as a detached, logged process.
 
     This is the openshell target's `build_tmux_launch`: same job (a run that outlives the exec
-    channel that started it, whose output survives it, and whose liveness is observable), no
+    channel that started it, whose output survives it, and whose exit is observable), no
     tmux — a sandbox cannot allocate the PTY every tmux window needs (module docstring,
     OpenShell #749). Property by property:
 
+    - `rm -f` of the three run artifacts comes first: a fresh sandbox's workspace can carry
+      them from an earlier run's `sync` (the upload packs the workspace copy, which the
+      download wrote the previous run's artifacts into), and a stale `run.exit` makes `attach`
+      print a phantom `[factory exited N]` before the new run has done anything.
     - `nohup … &` detaches, so the exec returns as soon as the run is started, and the run
       survives the exec session ending (verified against a live sandbox).
     - `> run.log 2>&1` is the scrollback. It lives under the project's `.factory/`, so `sync`
       downloads it with the workspace — a log the failed run wrote is *stronger* post-mortem
       state than a tmux pane, because it exists on the host too.
-    - `echo $! > run.pid` is the pane-state equivalent: what `run_liveness` reads.
+    - `echo $! > run.pid` records the run's pid.
     - `echo $? > run.exit` replaces tmux's `[factory exited %s]` stamp, machine-readably. A
-      command that never *returns* (killed, `exec`ed away) writes no exit file — liveness then
-      falls through to the pid, which is dead, so the run still reads as finished; only its
+      command that never *returns* (killed, `exec`ed away) writes no exit file — only its
       exit code is unknown, which is also the truth.
     """
     inner = f"{run_command}; echo $? > {RUN_EXIT}"
     log, pid = shlex.quote(RUN_LOG), shlex.quote(RUN_PID)
+    stale = " ".join(shlex.quote(artifact) for artifact in (RUN_LOG, RUN_PID, RUN_EXIT))
     # The brace group is load-bearing: without it `cd … && nohup … & echo $! > pid` parses as
     # `(cd … && nohup …) & echo …` — the `&` backgrounds the whole `cd` chain, so the pidfile
     # lands in the *launcher's* cwd (nowhere, usually) rather than beside the log.
     return (
-        f"cd {shlex.quote(workdir)} && mkdir -p .factory && "
+        f"cd {shlex.quote(workdir)} && mkdir -p .factory && rm -f {stale} && "
         f"{{ nohup sh -c {shlex.quote(inner)} > {log} 2>&1 & echo $! > {pid}; }}"
     )
 
@@ -560,8 +619,8 @@ def _phase_name(phase: int) -> str:
     return {
         0: "unknown",
         1: "provisioning",
-        2: "running",       # READY: the idle main process is up; run_liveness says if the run is
-        3: "error",
+        2: "running",       # READY: the idle main process is up; the run's own state is in
+                            # `.factory/run.{log,pid,exit}` — `attach` shows it        3: "error",
         4: "deleting",
         5: "unknown",
         6: "stopping",
@@ -613,50 +672,6 @@ def remove_runtime(name: str, gateway: str | None = None) -> None:
         raise
     except Exception as exc:
         raise ContainedError(f"deleting sandbox {name} failed: {exc}") from exc
-
-
-def run_liveness_probe(session) -> str:
-    """Whether the *run* (not the sandbox) is still alive, asked of a live session.
-
-    The sandbox deliberately outlives its run, so READY says nothing about the factory cycle.
-    The run's own artifacts are the answer, in precedence order:
-
-    1. An exit-code file means the run completed — authoritative even over a live-looking pid,
-       because a sandbox `stop`/`start` preserves the workspace (stale pidfile) and a recycled
-       pid can false-positive `kill -0`.
-    2. A pidfile whose pid answers `kill -0` means the run is going.
-    3. Neither file means no run was ever started, or a workspace from before this convention
-       existed — `finished`, same answer the podman target gives for a missing tmux session.
-
-    The probe is workdir-independent on purpose: it globs `{WORKSPACE_ROOT}/*/.factory/…`
-    because the callers that need it (`_upload_and_start`'s collision check, `rm`'s prompt)
-    know the sandbox by name, not by project dir — and the sandbox holds exactly one project,
-    which is what the glob enumerates.
-    """
-    probe = (
-        f"exit_file=$(ls {shlex.quote(WORKSPACE_ROOT)}/*/{RUN_EXIT} 2>/dev/null | head -1); "
-        f"pid_file=$(ls {shlex.quote(WORKSPACE_ROOT)}/*/{RUN_PID} 2>/dev/null | head -1); "
-        f"if [ -n \"$exit_file\" ]; then echo finished; "
-        f"elif [ -n \"$pid_file\" ] && kill -0 $(cat \"$pid_file\") 2>/dev/null; "
-        f"then echo running; else echo finished; fi"
-    )
-    try:
-        result = session.exec(["sh", "-c", probe], timeout_seconds=15)
-    except Exception:
-        return "unknown"
-    if result.exit_code != 0:
-        return "unknown"
-    answer = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
-    return answer if answer in ("running", "finished") else "unknown"
-
-
-def run_liveness(client, name: str) -> str:
-    """`run_liveness_probe` for a named sandbox — the client-facing form lifecycle wants."""
-    try:
-        session = client.get_session(name, workspace=SANDBOX_WORKSPACE)
-    except Exception:
-        return "unknown"
-    return run_liveness_probe(session)
 
 
 def cli_available() -> bool:

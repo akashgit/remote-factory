@@ -42,6 +42,7 @@ def run_setup(
     namespace: str | None = None,
     division: bool = False,
     assume_yes: bool = False,
+    gateway: str | None = None,
 ) -> int:
     """Run setup for one target, or ask which when not told."""
     if target is None and interactive:
@@ -76,10 +77,10 @@ def run_setup(
 
     if target == "openshell":
         record_target("openshell")
-        _setup_openshell()
+        _setup_openshell(gateway)
         from factory.contained.openshell_prereq import openshell_checks
 
-        checks = openshell_checks()
+        checks = openshell_checks(gateway)
         print(render_checks(checks, setup_command=None))
         code = code or (0 if all(c.ok for c in checks) else 1)
 
@@ -94,11 +95,11 @@ def _ask_target() -> str:
         f"  {style.bold('1')}) {style.paint('local', 'cyan')}  a podman container on this machine"
     )
     print(f"  {style.bold('2')}) {style.paint('k8s', 'cyan')}    a pod on a cluster")
+    print(f"  {style.bold('3')}) {style.paint('both', 'cyan')}  local and cluster")
     print(
-        f"  {style.bold('3')}) {style.paint('openshell', 'cyan')}  a policy-governed sandbox, for "
+        f"  {style.bold('4')}) {style.paint('openshell', 'cyan')}  a policy-governed sandbox, for "
         "runs whose input you do not trust"
     )
-    print(f"  {style.bold('4')}) {style.paint('both', 'cyan')}  local and cluster")
     print()
     try:
         choice = input(style.prompt("Choice", "1")).strip() or "1"
@@ -107,10 +108,12 @@ def _ask_target() -> str:
         # is the documented one; an unanswered prompt must not become a bare `Error:`.
         print("\nNo answer given; setting up the local runtime (the default).")
         return "local"
-    return {"1": "local", "2": "k8s", "3": "openshell", "4": "both"}.get(choice, "local")
+    # openshell is 4, not 3, so `both` keeps the number it has always had — anything scripted
+    # against this menu (an answer piped in, a documented `echo 3`) keeps working.
+    return {"1": "local", "2": "k8s", "3": "both", "4": "openshell"}.get(choice, "local")
 
 
-def _setup_openshell() -> None:
+def _setup_openshell(gateway: str | None = None) -> None:
     """Describe the openshell-target steps; automate none of them.
 
     Unlike the local half (which starts a stopped podman machine and pulls an image), every
@@ -123,7 +126,7 @@ def _setup_openshell() -> None:
     from factory.contained.openshell_prereq import openshell_checks
 
     print(style.section("OpenShell runtime"))
-    checks = {c.name: c for c in openshell_checks()}
+    checks = {c.name: c for c in openshell_checks(gateway)}
     cli = checks.get("openshell_cli")
     if cli is not None and not cli.ok:
         print(style.line("Install the OpenShell CLI (one line, from the docs):"))
@@ -139,6 +142,15 @@ def _setup_openshell() -> None:
     print(style.line("Register a local gateway, if you have not:"))
     print(style.line("  openshell gateway add --name local --local"))
     print(style.line("  openshell gateway select local"))
+    # The one trap that turns a healthy gateway into `ControlSupervisorStartFailed` for every
+    # sandbox: on macOS/WSL the supervisor lives in the Docker Desktop VM's host network and
+    # cannot reach a gateway bound to 127.0.0.1. Worth surfacing here because the failure
+    # names neither the gateway nor the VM.
+    print(style.note("macOS/WSL with Docker Desktop: the sandbox supervisor cannot reach a"))
+    print(style.note("gateway bound to 127.0.0.1. If sandboxes die at startup, point the"))
+    print(style.note("docker driver at the host instead, in ~/.config/openshell/gateway.toml:"))
+    print(style.line('  [openshell.drivers.docker]'))
+    print(style.line('  grpc_endpoint = "https://host.docker.internal:17670"'))
     print(style.note("Inference is never automated — it touches credential material:"))
     print(style.line(f"  {PROVIDER_FIX}"))
 

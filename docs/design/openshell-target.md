@@ -35,7 +35,12 @@ supervisor, and an untrusted sandbox side that runs the agent — with a thin Py
 - **Credentials that never enter the sandbox.** Providers hold secrets in the gateway; the
   agent sees an opaque placeholder that the supervisor resolves only for requests to the
   endpoints the provider allows — so a key bound to `api.anthropic.com` cannot be exfiltrated
-  to anywhere else. There is a first-class `claude-code` provider profile upstream.
+  to anywhere else. There is a first-class `claude-code` provider profile upstream. One
+  consequence to hold onto: OpenShell's binary rules match parent processes, so **every
+  descendant of `claude` — each command the agent's Bash tool runs — can *use* the
+  placeholder** against the provider's endpoints. The key cannot be extracted, but it can be
+  proxied; that residual capability is why the provider profile is copy-edited rather than
+  imported stock (see §5).
 - **A policy prover.** Policy changes are formally verified before approval.
 
 Its canonical example is exactly our use case: running Claude Code as the sandbox's main
@@ -89,7 +94,11 @@ format a `--policy` file is written in, not the format the default ships in.
 ## 4. Execution model
 
 The run path mirrors `run_k8s`, because both targets share the same shape: nothing
-bind-mounted from the host, workspace uploaded as a copy, run unattended.
+bind-mounted from the host, workspace uploaded as a copy, run unattended. One consequence the
+other targets don't share: **the run is unattended in the strong sense — there is no terminal
+at all** (tmux needs a PTY; a sandbox cannot allocate one, OpenShell #749), so interactive
+payloads (`ceo`, `run`, `resume`, `tmux` without `--headless`) are refused at parse time
+rather than left to sit at prompts nobody can answer.
 
 1. Resolve the project from the verbatim payload, validate `--env`/`--forward` — before
    anything is created.
@@ -119,13 +128,27 @@ This is why the target exists, so the default is strict and the escape hatch is 
 - **Filesystem:** read-write `/sandbox` (the workspace, including `.factory/` state);
   read-only elsewhere for the toolchain. Nothing writable outside the workspace.
 - **Process:** non-root (the runtime image's arbitrary-UID convention already covers this).
-- **Network:** deny-by-default, with a deliberately small default allowlist: the `claude`
-  binary may reach `api.anthropic.com`, `statsig.anthropic.com`, and `sentry.io` (mirroring
-  OpenShell's own claude-code provider profile), and `pip`/`uv` may reach `pypi.org` and
-  `files.pythonhosted.org` so eval environments can be built inside the sandbox. The defaults
+- **Network:** deny-by-default, with a deliberately small default allowlist: `uv` may reach
+  `pypi.org` and `files.pythonhosted.org` so eval environments can be built inside the sandbox
+  (`pip` is deliberately absent — binary matching resolves `/proc/<pid>/exe` and pip runs as
+  the Python interpreter, so a pip path never matches, and allowing the interpreter would
+  grant PyPI to every script the agent writes). The defaults
   start slightly loose on purpose: loosening later as we learn how the target is used is a
   compatible change, while silently tightening defaults would break running workflows. The
   allowlist stays small enough that every entry is defensible in a review.
+- **Inference egress comes from the provider, not this policy** — attaching the `claude-code`
+  provider makes the gateway synthesize its own rule. The stock upstream profile allows
+  `api.anthropic.com`, `statsig.anthropic.com`, and `sentry.io` for the claude binary, but it
+  is **copy-edited, never imported unchanged** (its own header says so): binary rules match
+  parent processes, so every command the agent's Bash tool runs inherits that egress and can
+  use the placeholder — `sentry.io` is a multi-tenant ingest service, i.e. an exfiltration
+  channel. The edited profile keeps `api.anthropic.com` only, names the *resolved* claude path
+  (the kernel resolves symlinks; `command -v claude` is a symlink to the npm-packaged binary),
+  and the plan env sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` so Claude's own
+  statsig/sentry traffic stops rather than being denied connection-by-connection. The
+  residual capability, stated plainly: agent-authored code that is a descendant of claude can
+  make calls to `api.anthropic.com` with the placeholder. That is the documented floor of
+  what confinement means here.
 - A new openshell-only `--policy <path>` flag accepts a full OpenShell policy. **It replaces
   the default policy entirely — it never merges with it.** Three reasons:
   1. Additive merge needs negations/removals to express "everything except X", which means

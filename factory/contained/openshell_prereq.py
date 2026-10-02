@@ -138,7 +138,12 @@ def _provider_check(gateway: str | None) -> Check:
             fix="fix the gateway first, then re-run verify",
         )
     try:
-        result = _run(["openshell", "provider", "list", "--output", "json"])
+        # The argv is composed through the openshell module (not built inline) so it carries
+        # the selected gateway the same way every other CLI call does — a provider check run
+        # against the wrong gateway reports the wrong gateway's providers.
+        from factory.contained.openshell import build_provider_list_argv
+
+        result = _run(build_provider_list_argv(gateway))
         known = False
         if result is not None and result.returncode == 0:
             import json

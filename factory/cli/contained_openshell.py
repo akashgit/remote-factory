@@ -21,7 +21,11 @@ shape "nothing mounted from the host, workspace travels as a copy, run unattende
 What deliberately does *not* happen anywhere in this file: an inference credential crossing
 into the sandbox. The provider holds it in the gateway; the sandbox sees a placeholder. A run
 without a configured provider fails fast with the fix, because a fallback to `--env` would
-make the insecure route the path of least resistance.
+make the insecure route the path of least resistance. What the provider does *not* buy: the
+placeholder resolves for any descendant of `claude` — every command the agent's Bash tool
+runs — so the key cannot be extracted but can be *used* against the provider's endpoints.
+The profile edits in `openshell.PROVIDER_FIX` exist to keep that endpoint set as small as
+the inference call itself.
 """
 
 from __future__ import annotations
@@ -64,6 +68,13 @@ PACK_EXCLUDES = frozenset({
     ".venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache",
     ".factory-worktrees",
 })
+
+# The previous run's interface files. `sync` writes them into the local workspace copy, and
+# `_materialize_copy` refreshes that copy without deleting, so without this exclusion the next
+# run's upload carries them — and `attach` prints a stale `[factory exited N]` before the new
+# run has done anything. They name the *previous* run by construction; a project file that
+# happens to be called `run.log` outside `.factory` is not one of them and still packs.
+RUN_ARTIFACTS = frozenset({"run.log", "run.pid", "run.exit"})
 
 PROVIDER_NAME = "claude-code"
 
@@ -149,6 +160,11 @@ def _build_plan(
     # `attach`'s log tail shows nothing for whole minutes of live work — indistinguishable from
     # the hang it was reported as. The claude subprocess inherits it.
     env.setdefault("PYTHONUNBUFFERED", "1")
+    # Claude Code's telemetry/statsig/sentry traffic is egress this target's policy story says
+    # untrusted code should not have — and the provider profile may not even allow it (see
+    # openshell.PROVIDER_FIX). Claude itself honours this switch, so its own non-essential
+    # traffic stops rather than being denied connection-by-connection.
+    env.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
     if any(is_secret_key(key) for key in env):
         warnings.append(
             "a credential-looking variable is being placed in the sandbox environment. The "
@@ -184,6 +200,7 @@ def _build_plan(
         policy_path=policy_path,
         run_command=build_run_command(project_dir, inner),
         factory_command=inner,
+        gateway=args.gateway,
         warnings=tuple(warnings),
     )
 
@@ -206,8 +223,13 @@ def _pack(ws: Workspace, run_id: str) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     def _filter(entry: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        parts = set(Path(entry.name).parts)
-        return None if parts & PACK_EXCLUDES else entry
+        parts = Path(entry.name).parts
+        if set(parts) & PACK_EXCLUDES:
+            return None
+        # A previous run's artifacts, exactly as `sync` wrote them: `.factory/run.*`.
+        if ".factory" in parts[:-1] and parts[-1] in RUN_ARTIFACTS:
+            return None
+        return entry
 
     with tarfile.open(destination, "w:gz") as archive:
         archive.add(ws.path, arcname=ws.source.name, filter=_filter)
@@ -231,7 +253,9 @@ def _upload_and_start(
     # is a run they cannot manage.
     print(plan.name)
 
-    uploaded = openshell.run_cli(openshell.build_upload_argv(plan.name, tarball))
+    uploaded = openshell.run_cli(
+        openshell.build_upload_argv(plan.name, tarball, gateway=plan.gateway)
+    )
     if uploaded.returncode != 0:
         return _sandbox_failure(
             plan, f"uploading the workspace failed: {uploaded.stderr.strip()[:300]}"
@@ -252,18 +276,11 @@ def _upload_and_start(
     except ContainedError as exc:
         return _sandbox_failure(plan, str(exc))
 
-    # A sandbox of this name may already be mid-run; launching again would start a second run
-    # against the same workspace copy. Same question, same wording, as the cluster target's
-    # duplicate-session check — asked of the run's own liveness rather than a tmux session.
-    if openshell.run_liveness_probe(session) == "running":
-        print(
-            f"contained: {plan.name} is already running a session — this is the same run, not a "
-            f"new one.\n"
-            f"  attach:  factory contained --target openshell attach {plan.name}\n"
-            f"  restart: factory contained --target openshell rm {plan.name}, then run this again",
-            file=sys.stderr,
-        )
-        return 1
+    # No "already running" check here, unlike the tmux targets: a same-named sandbox was
+    # already refused at `create` (the gateway rejects the collision — live-verified), so this
+    # sandbox was created by *this* invocation and nothing can be mid-run in it yet. A check
+    # here could only ever fire on stale pid/exit files from the uploaded copy, which
+    # `build_run_launch` deletes before starting.
 
     try:
         openshell.start_run(session, plan)

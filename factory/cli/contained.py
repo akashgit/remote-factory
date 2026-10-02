@@ -96,7 +96,10 @@ def _verify(args: argparse.Namespace) -> int:
             on_check=lambda c: print(format_check(c), flush=True),
         )
         print()
-        print(summary_line(checks, ready_command="factory contained --target openshell -- ceo <path>"))
+        print(summary_line(
+            checks,
+            ready_command="factory contained --target openshell -- ceo <path> --headless",
+        ))
         return 0 if all(c.ok for c in checks) else 1
     if args.target == "k8s":
         from factory.contained.k8s_setup import verify_k8s
@@ -155,6 +158,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             namespace=args.namespace,
             division=args.division,
             assume_yes=args.yes,
+            gateway=getattr(args, "gateway", None),
         )
     if args.subcommand == "bundle":
         from factory.contained.bundle import render_bundle

@@ -338,7 +338,7 @@ def attach(
     if runtime.target == "openshell":
         from factory.contained.openshell import build_attach_argv as build_sandbox_attach
 
-        return subprocess.call(build_sandbox_attach(name))
+        return subprocess.call(build_sandbox_attach(name, gateway=gateway))
     return subprocess.call(build_attach_argv(name))
 
 
@@ -508,7 +508,7 @@ def sync(
 
         return sync_cluster_runtime(name, namespace=namespace)
     if runtime.target == "openshell":
-        return _sync_openshell(name)
+        return _sync_openshell(name, gateway)
     ws = workspace_for(name)
     if ws is None:
         print(
@@ -523,7 +523,7 @@ def sync(
     return 0
 
 
-def _sync_openshell(name: str) -> int:
+def _sync_openshell(name: str, gateway: str | None = None) -> int:
     """Fetch the sandbox's workspace back as one tarball, mirroring the cluster sync output.
 
     The download is run rather than merely suggested — unlike the cluster target, whose `oc cp`
@@ -537,7 +537,7 @@ def _sync_openshell(name: str) -> int:
     # The project directory name is not recoverable from the sandbox listing alone (labels
     # carry a path hash, not a name), so the download covers the workspace root; the tarball
     # the run uploaded unpacked to `<root>/<project>`, so `<root>` is the faithful inverse.
-    argv = build_download_argv(name, ".", destination)
+    argv = build_download_argv(name, ".", destination, gateway=gateway)
     result = run_cli(argv, timeout=1800)
     if result.returncode != 0:
         print(
@@ -545,9 +545,16 @@ def _sync_openshell(name: str) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"{name}: workspace fetched to {destination}.")
-    print(f"  Review:  ls {destination}")
-    print(f"  Unpack:  tar xzf {destination}/*.tar.gz -C <dir>  # if archived")
+    # What the download left behind decides what the instructions say — a guessed
+    # "tar xzf *.tar.gz" for a directory download is a command that cannot run. The
+    # destination is also where the local workspace copy lives, which the hint below leans on.
+    archives = sorted(destination.glob("*.tar.gz"))
+    if archives:
+        print(f"{name}: workspace fetched to {archives[0]}.")
+        print(f"  Unpack:  tar xzf {archives[0]} -C <dir>")
+    else:
+        print(f"{name}: workspace fetched to {destination}.")
+        print(f"  Review:  ls {destination}")
     ws = workspace_for(name)
     if ws is not None:
         print(merge_hint(ws))

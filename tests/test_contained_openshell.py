@@ -159,6 +159,82 @@ def test_local_flags_are_rejected_on_openshell() -> None:
 
 
 # --------------------------------------------------------------------------------------------
+# Interactive payloads (no terminal in a sandbox)
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["ceo", "run", "resume", "tmux"])
+def test_interactive_payloads_are_rejected_without_headless(command: str) -> None:
+    """An OpenShell run is a detached process writing a log — it has no terminal for an
+    interactive CEO to sit at, and a design-mode gate would wait forever on an answer nobody
+    can give. Refused at parse time, the way `--division` is, rather than three provisioning
+    steps in."""
+    with pytest.raises(SystemExit):
+        interpret(["--target", "openshell", "--", command, "/tmp/project"])
+
+
+def test_headless_opts_the_interactive_check_out() -> None:
+    args = interpret(["--target", "openshell", "--", "ceo", "/tmp/project", "--headless"])
+    assert args.factory_args[0] == "ceo"
+
+
+def test_non_interactive_payloads_pass_untouched() -> None:
+    """Only the commands whose defining property is interactivity are looked at; everything
+    else is verbatim by contract."""
+    args = interpret(["--target", "openshell", "--", "study", "/tmp/project"])
+    assert args.factory_args == ["study", "/tmp/project"]
+
+
+def test_interactive_payloads_are_fine_on_the_other_targets() -> None:
+    """local and k8s run in tmux, which supplies the terminal — the check is openshell's."""
+    args = interpret(["--", "ceo", "/tmp/project"])
+    assert args.factory_args[0] == "ceo"
+
+
+# --------------------------------------------------------------------------------------------
+# Gateway selection on every CLI invocation
+# --------------------------------------------------------------------------------------------
+
+
+def test_every_cli_composer_carries_the_selected_gateway() -> None:
+    """`--gateway X` must reach the CLI calls, not just the SDK: with Y active, an upload
+    without the flag lands in a same-named sandbox on Y (the name is deterministic per
+    project) — worse than a clean failure. Omitted, not empty, when no gateway was named."""
+    from factory.contained.openshell import (
+        build_attach_argv,
+        build_download_argv,
+        build_provider_list_argv,
+        build_upload_argv,
+    )
+
+    tarball = Path("/tmp/upload.tar.gz")
+    for argv in (
+        build_upload_argv("rta-abc123", tarball, gateway="gw"),
+        build_download_argv("rta-abc123", ".", Path("/tmp/dest"), gateway="gw"),
+        build_attach_argv("rta-abc123", gateway="gw"),
+        build_provider_list_argv("gw"),
+    ):
+        assert argv[:3] == ["openshell", "--gateway", "gw"], argv
+    for argv in (
+        build_upload_argv("rta-abc123", tarball),
+        build_download_argv("rta-abc123", ".", Path("/tmp/dest")),
+        build_attach_argv("rta-abc123"),
+        build_provider_list_argv(),
+    ):
+        assert "--gateway" not in argv, argv
+
+
+def test_the_plan_carries_the_gateway_for_the_run_path(tmp_path: Path) -> None:
+    from factory.cli.contained_openshell import _build_plan
+
+    project = tmp_path / "rta"
+    project.mkdir()
+    args = _plan_args(project, "--gateway", "gw")
+    plan = _build_plan(args, _workspace(project), "rta-abc123", {}, {})
+    assert plan.gateway == "gw"
+
+
+# --------------------------------------------------------------------------------------------
 # Policy
 # --------------------------------------------------------------------------------------------
 
@@ -182,9 +258,10 @@ def test_the_default_policy_grants_exactly_the_intended_egress() -> None:
     pypi = rules["python_packages"]
     assert {e["host"] for e in pypi.endpoints} == {"pypi.org", "files.pythonhosted.org"}
     assert all(e["port"] == 443 for e in pypi.endpoints)
-    assert {b["path"] for b in pypi.binaries} == {
-        "/usr/local/bin/pip", "/usr/bin/pip", "/usr/local/bin/uv", "/usr/bin/uv",
-    }
+    # uv only, deliberately: binary matching resolves /proc/<pid>/exe, and pip runs as the
+    # Python interpreter, so a pip path never matches — while allowing the *interpreter* would
+    # grant PyPI egress to every script the agent writes.
+    assert {b["path"] for b in pypi.binaries} == {"/usr/local/bin/uv", "/usr/bin/uv"}
 
     # No inference endpoints of our own: the attached provider is the only route to them,
     # and the binary restriction on that route comes from the provider profile.
@@ -196,8 +273,9 @@ def test_the_default_policy_grants_exactly_the_intended_egress() -> None:
 
     # The workspace is writable; the process runs as a stated non-root identity, because an
     # omitted one falls back to the image's OCI USER whose primary GID is 0 — and the gateway
-    # hard-rejects any workload identity containing GID 0. The image's `o=u` mode recipe keeps
-    # its writable paths open to this gid, so the other targets are unaffected.
+    # hard-rejects any workload identity containing GID 0. The image's mode recipe (`o=u` on
+    # the container home and /workspace only) keeps its writable paths open to this gid, so
+    # the other targets are unaffected.
     assert policy.filesystem == {"include_workdir": True, "read_only": ["/opt/factory"]}
     assert policy.process == {"run_as_user": "1001", "run_as_group": "1001"}
 
@@ -250,6 +328,36 @@ def test_a_malformed_policy_file_is_an_error_naming_the_file() -> None:
          patch.object(Path, "is_file", return_value=True):
         with pytest.raises(ContainedError, match="policy file"):
             openshell.load_policy(path)
+
+
+def test_the_builders_construct_real_proto_messages_when_the_sdk_is_installed() -> None:
+    """The fakes above prove composition, not that the messages exist or accept these fields —
+    every hard create-time rejection found in live verification (names, labels, endpoint
+    ambiguity, GID 0) was exactly that class of drift. When the optional SDK is installed
+    (locally via `uv sync --extra contained-openshell`, in CI via the opt-in job), build the
+    real `SandboxSpec`/`SandboxPolicy` and assert the fields the gateway validates actually
+    carry what the builders meant to send. Skipped, not failed, when the extra is absent."""
+    pytest.importorskip("openshell", reason="contained-openshell extra not installed")
+
+    policy = openshell.build_default_policy()
+    assert policy.version == 1
+    assert policy.filesystem.include_workdir is True
+    assert list(policy.filesystem.read_only) == ["/opt/factory"]
+    rule = policy.network_policies["python_packages"]
+    assert {e.host for e in rule.endpoints} == {"pypi.org", "files.pythonhosted.org"}
+    assert {b.path for b in rule.binaries} == {"/usr/local/bin/uv", "/usr/bin/uv"}
+
+    plan = openshell.OpenShellPlan(
+        name="rta-abc123", image="img", project_dir="/workspace/rta", env={},
+        labels={"factory.contained": "true"}, provider="claude-code", policy_path=None,
+        run_command="factory study /workspace/rta", factory_command="factory study /workspace/rta",
+    )
+    spec = openshell.build_spec(plan, policy)
+    assert list(spec.providers) == ["claude-code"]
+    assert list(spec.command) == list(openshell.IDLE_COMMAND)
+    # Protobuf copies the sub-message on assignment, so identity is off the table — the
+    # serialized forms are the honest comparison.
+    assert spec.policy.SerializeToString() == policy.SerializeToString()
 
 
 # --------------------------------------------------------------------------------------------
@@ -469,6 +577,7 @@ def test_the_run_launch_detaches_logs_and_records_its_own_lifecycle() -> None:
     assert "nohup" in script and "&" in script          # detached: exec returns immediately
     for token in (".factory/run.log", ".factory/run.pid", ".factory/run.exit"):
         assert token in script, f"the run's {token} artifact is missing from the launch"
+    assert "rm -f" in script                             # a stale prior run's artifacts go first
     assert "tmux" not in script                          # cannot work in a sandbox (#749)
     assert sp.run(["sh", "-n"], input=script, text=True).returncode == 0
 
@@ -489,30 +598,57 @@ def test_the_run_launch_detaches_logs_and_records_its_own_lifecycle() -> None:
         assert (project / ".factory/run.exit").read_text().strip() == "0"
 
 
-def test_run_liveness_reads_the_exit_file_before_the_pid() -> None:
-    """Liveness precedence: the exit file is authoritative (a recycled pid after a sandbox
-    stop/start must not resurrect a finished run), a live pidfile means running, and neither
-    file means no run was started."""
-    from factory.contained.openshell import run_liveness_probe
+def test_the_run_launch_deletes_a_prior_runs_stale_artifacts() -> None:
+    """`sync` writes a finished run's artifacts into the local workspace copy, and the copy is
+    what the next run uploads — so without the `rm -f`, `attach` on the new run opens with a
+    phantom `[factory exited N]` from the old one."""
+    import subprocess as sp
+    import tempfile
 
-    @dataclass
-    class _Result:
-        exit_code: int
-        stdout: str
+    from factory.contained.openshell import build_run_launch
 
-    class _Session:
-        def __init__(self, stdout: str):
-            self._stdout = stdout
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / "proj"
+        factory = project / ".factory"
+        factory.mkdir(parents=True)
+        (factory / "run.exit").write_text("7")
+        (factory / "run.pid").write_text("999999")
+        (factory / "run.log").write_text("a finished run's log")
 
-        def exec(self, argv, **kwargs):
-            # The probe's shell decides; the fake answers what the shell would print.
-            assert argv[0] == "sh"
-            return _Result(exit_code=0, stdout=self._stdout)
+        run = build_run_launch(str(project), "echo fresh-run")
+        sp.run(["sh", "-c", run], check=True, cwd=tmp, capture_output=True)
+        deadline = time.monotonic() + 5
+        while not (factory / "run.exit").exists() or "fresh-run" not in (factory / "run.log").read_text():
+            if time.monotonic() > deadline:
+                raise AssertionError("the fresh run never started")
+            time.sleep(0.05)
+        assert (factory / "run.exit").read_text().strip() == "0"
+        assert "finished run" not in (factory / "run.log").read_text()
 
-    assert run_liveness_probe(_Session("finished\n")) == "finished"
-    assert run_liveness_probe(_Session("running\n")) == "running"
-    assert run_liveness_probe(_Session("")) == "unknown"          # probe broke: say so
-    assert run_liveness_probe(_Session("garbage\n")) == "unknown"
+
+def test_the_pack_excludes_a_prior_runs_artifacts(tmp_path: Path) -> None:
+    """The upload must not carry a previous run's interface files (see the launch test above
+    for why) — but a project file that happens to share a name outside `.factory` still packs."""
+    import tarfile
+
+    from factory.cli.contained_openshell import _pack
+    from factory.contained.workspace import Workspace
+
+    project = tmp_path / "rta"
+    (project / ".factory").mkdir(parents=True)
+    (project / ".factory" / "run.exit").write_text("0")
+    (project / ".factory" / "run.log").write_text("old")
+    (project / "docs").mkdir()
+    (project / "docs" / "run.log").write_text("a project file, not a run artifact")
+
+    ws = Workspace(source=project, path=project, kind="copy", branch="")
+    tarball = _pack(ws, "rta-abc123")
+
+    with tarfile.open(tarball) as archive:
+        names = archive.getnames()
+    assert "rta/.factory/run.exit" not in names
+    assert "rta/.factory/run.log" not in names
+    assert "rta/docs/run.log" in names
 
 
 def test_the_attach_argv_follows_the_log_and_never_touches_tmux() -> None:
@@ -543,6 +679,24 @@ def test_the_run_environment_is_unbuffered() -> None:
         {}, {"PYTHONUNBUFFERED": "0"},
     )
     assert plan2.env["PYTHONUNBUFFERED"] == "0"
+
+
+def test_the_run_environment_disables_claude_nonessential_traffic() -> None:
+    """Claude's telemetry/statsig/sentry traffic is egress the provider profile deliberately
+    does not allow — Claude honours this switch, so its own non-essential traffic stops rather
+    than being denied connection-by-connection. setdefault semantics, like PYTHONUNBUFFERED."""
+    from factory.cli.contained_openshell import _build_plan
+
+    project = tmp_project()
+    args = _plan_args(project)
+    plan = _build_plan(args, _workspace(project), "rta-abc123", {}, {})
+    assert plan.env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+    plan2 = _build_plan(
+        _plan_args(project, "--env", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0"),
+        _workspace(project), "rta-abc123",
+        {}, {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "0"},
+    )
+    assert plan2.env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "0"
 
 
 def tmp_project() -> Path:
